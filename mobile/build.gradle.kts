@@ -39,10 +39,6 @@ android {
         compose = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
-    }
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -60,6 +56,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.runtime:runtime")
     implementation(libs.compose.ui.tooling.preview)
+
+    implementation("com.google.android.material:material:1.12.0")
 
     implementation(project(":core:common"))
 
