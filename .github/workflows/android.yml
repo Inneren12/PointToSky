@@ -27,8 +27,9 @@ jobs:
             - name: Setup Gradle
               uses: gradle/actions/setup-gradle@v3
 
-            - name: Build Wear debug
-              run: ./gradlew :wear:assembleDebug
+            - name: Build Wear (debug) with verbose compiler logs
+              run: >-
+                  ./gradlew :wear:sensors:compileDebugKotlin :wear:assembleDebug --stacktrace --info --no-parallel --rerun-tasks
 
             - name: Build Mobile debug
               run: ./gradlew :mobile:assembleDebug
