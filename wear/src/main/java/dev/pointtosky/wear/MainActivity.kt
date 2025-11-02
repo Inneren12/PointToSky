@@ -22,6 +22,12 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.BuildConfig
+
+private const val ROUTE_HOME = "home"
+private const val ROUTE_AIM = "aim"
+private const val ROUTE_IDENTIFY = "identify"
+private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,10 +37,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
-private const val ROUTE_HOME = "home"
-private const val ROUTE_AIM = "aim"
-private const val ROUTE_IDENTIFY = "identify"
 
 @Composable
 fun PointToSkyWearApp() {
@@ -48,11 +50,16 @@ fun PointToSkyWearApp() {
             composable(ROUTE_HOME) {
                 HomeScreen(
                     onAimClick = { navController.navigate(ROUTE_AIM) },
-                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) }
+                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
+                    onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
+                    showSensorsDebug = BuildConfig.DEBUG,
                 )
             }
             composable(ROUTE_AIM) { AimScreen() }
             composable(ROUTE_IDENTIFY) { IdentifyScreen() }
+            if (BuildConfig.DEBUG) {
+                composable(ROUTE_SENSORS_DEBUG) { SensorsDebugScreen() }
+            }
         }
     }
 }
@@ -61,6 +68,8 @@ fun PointToSkyWearApp() {
 fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
+    onSensorsDebugClick: () -> Unit,
+    showSensorsDebug: Boolean,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -83,6 +92,15 @@ fun HomeScreen(
             colors = ButtonDefaults.primaryButtonColors()
         ) {
             Text(text = stringResource(id = R.string.identify_label))
+        }
+        if (showSensorsDebug) {
+            Button(
+                onClick = onSensorsDebugClick,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.primaryButtonColors()
+            ) {
+                Text(text = stringResource(id = R.string.sensors_debug_label))
+            }
         }
     }
 }
@@ -113,11 +131,29 @@ fun IdentifyScreen(modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
+fun SensorsDebugScreen(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "Sensors debug placeholder")
+    }
+}
+
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen(onAimClick = {}, onIdentifyClick = {})
+        HomeScreen(
+            onAimClick = {},
+            onIdentifyClick = {},
+            onSensorsDebugClick = {},
+            showSensorsDebug = true,
+        )
     }
 }
 
@@ -134,5 +170,13 @@ fun AimScreenPreview() {
 fun IdentifyScreenPreview() {
     MaterialTheme {
         IdentifyScreen()
+    }
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
+@Composable
+fun SensorsDebugScreenPreview() {
+    MaterialTheme {
+        SensorsDebugScreen()
     }
 }

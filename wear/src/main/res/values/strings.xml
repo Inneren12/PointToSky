@@ -2,4 +2,5 @@
     <string name="app_name">Point-to-Sky Wear</string>
     <string name="find_label">Найти</string>
     <string name="identify_label">Что там?</string>
+    <string name="sensors_debug_label">Sensors Debug</string>
 </resources>
