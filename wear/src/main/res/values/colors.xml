@@ -1,0 +1,5 @@
+<resources>
+    <color name="wear_primary">#1E88E5</color>
+    <color name="wear_on_primary">#FFFFFF</color>
+    <color name="wear_background">#121212</color>
+</resources>

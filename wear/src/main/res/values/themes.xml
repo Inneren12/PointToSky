@@ -1,0 +1,11 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.PointToSky.Wear" parent="Theme.MaterialComponents">
+        <item name="colorPrimary">@color/wear_primary</item>
+        <item name="colorOnPrimary">@color/wear_on_primary</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowBackground">@color/wear_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+    </style>
+</resources>

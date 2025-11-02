@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.PointToSky.Mobile" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/mobile_primary</item>
+        <item name="colorOnPrimary">@color/mobile_on_primary</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+</resources>

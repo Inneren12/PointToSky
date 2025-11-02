@@ -1,0 +1,6 @@
+<resources>
+    <color name="mobile_primary">#2962FF</color>
+    <color name="mobile_on_primary">#FFFFFF</color>
+    <color name="mobile_surface">#121212</color>
+    <color name="mobile_on_surface">#FFFFFF</color>
+</resources>
