@@ -66,6 +66,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.runtime:runtime")
     implementation(libs.play.services.wearable)
+    implementation(project(":wear:sensors"))
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)

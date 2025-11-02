@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
 private const val ROUTE_HOME = "home"
 private const val ROUTE_AIM = "aim"
 private const val ROUTE_IDENTIFY = "identify"
+private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 
 @Composable
 fun PointToSkyWearApp() {
@@ -48,11 +49,13 @@ fun PointToSkyWearApp() {
             composable(ROUTE_HOME) {
                 HomeScreen(
                     onAimClick = { navController.navigate(ROUTE_AIM) },
-                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) }
+                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
+                    onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) }
                 )
             }
             composable(ROUTE_AIM) { AimScreen() }
             composable(ROUTE_IDENTIFY) { IdentifyScreen() }
+            composable(ROUTE_SENSORS_DEBUG) { SensorsDebugScreen() }
         }
     }
 }
@@ -61,6 +64,7 @@ fun PointToSkyWearApp() {
 fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
+    onSensorsDebugClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -83,6 +87,13 @@ fun HomeScreen(
             colors = ButtonDefaults.primaryButtonColors()
         ) {
             Text(text = stringResource(id = R.string.identify_label))
+        }
+        Button(
+            onClick = onSensorsDebugClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.secondaryButtonColors()
+        ) {
+            Text(text = stringResource(id = R.string.sensors_debug_label))
         }
     }
 }
@@ -113,11 +124,24 @@ fun IdentifyScreen(modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
+fun SensorsDebugScreen(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "Sensors debug placeholder")
+    }
+}
+
 @Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen(onAimClick = {}, onIdentifyClick = {})
+        HomeScreen(onAimClick = {}, onIdentifyClick = {}, onSensorsDebugClick = {})
     }
 }
 
@@ -134,5 +158,13 @@ fun AimScreenPreview() {
 fun IdentifyScreenPreview() {
     MaterialTheme {
         IdentifyScreen()
+    }
+}
+
+@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
+@Composable
+fun SensorsDebugScreenPreview() {
+    MaterialTheme {
+        SensorsDebugScreen()
     }
 }
