@@ -16,5 +16,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "PointToSky"
 include(":wear")
+include(":wear:sensors")
 include(":mobile")
 include(":core:common")
