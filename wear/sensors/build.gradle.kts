@@ -25,5 +25,5 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.play.services.wearable)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation(libs.kotlinx.coroutines.android)
 }
