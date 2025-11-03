@@ -22,5 +22,6 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:time"))
     testImplementation(kotlin("test"))
 }
