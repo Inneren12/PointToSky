@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import dev.pointtosky.mobile.BuildConfig
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,6 +31,11 @@ class MainActivity : ComponentActivity() {
                         getString(R.string.open_card),
                         Toast.LENGTH_SHORT
                     ).show()
+                },
+                onCrashTest = if (BuildConfig.DEBUG) {
+                    { throw RuntimeException("Crash test (mobile)") }
+                } else {
+                    null
                 }
             )
         }
@@ -37,16 +43,26 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun PointToSkyMobileApp(onOpenCard: () -> Unit) {
+fun PointToSkyMobileApp(
+    onOpenCard: () -> Unit,
+    onCrashTest: (() -> Unit)? = null,
+) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            MobileHome(onOpenCard = onOpenCard)
+            MobileHome(
+                onOpenCard = onOpenCard,
+                onCrashTest = onCrashTest,
+            )
         }
     }
 }
 
 @Composable
-fun MobileHome(onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
+fun MobileHome(
+    onOpenCard: () -> Unit,
+    onCrashTest: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -61,11 +77,22 @@ fun MobileHome(onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
         ) {
             Text(text = stringResource(id = R.string.open_card))
         }
+        if (onCrashTest != null) {
+            Button(
+                onClick = onCrashTest,
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.crash_test))
+            }
+        }
     }
 }
 
 @Preview(showSystemUi = true)
 @Composable
 fun MobileHomePreview() {
-    PointToSkyMobileApp(onOpenCard = {})
+    PointToSkyMobileApp(
+        onOpenCard = {},
+        onCrashTest = null,
+    )
 }

@@ -17,7 +17,10 @@ class RingBufferSinkTest {
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
             isDebug = true,
-            diagnosticsEnabled = true
+            diagnosticsEnabled = true,
+            flavor = "test",
+            supportedAbis = listOf("x86_64"),
+            sensors = emptyMap()
         )
         val process = ProcessSnapshot(pid = 1, processName = "proc")
         val thread = ThreadSnapshot(name = "main", id = 1L, isMainThread = true)

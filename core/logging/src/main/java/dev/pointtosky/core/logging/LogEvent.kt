@@ -2,6 +2,8 @@ package dev.pointtosky.core.logging
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Build
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -98,7 +100,10 @@ data class DeviceInfo(
     val appVersionCode: Long,
     val packageName: String,
     val isDebug: Boolean,
-    val diagnosticsEnabled: Boolean
+    val diagnosticsEnabled: Boolean,
+    val flavor: String,
+    val supportedAbis: List<String>,
+    val sensors: Map<String, Boolean>,
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("manufacturer", manufacturer)
@@ -110,13 +115,25 @@ data class DeviceInfo(
         put("packageName", packageName)
         put("isDebug", isDebug)
         put("diagnosticsEnabled", diagnosticsEnabled)
+        put("flavor", flavor)
+        put("supportedAbis", buildJsonArray {
+            supportedAbis.forEach { add(JsonPrimitive(it)) }
+        })
+        if (sensors.isNotEmpty()) {
+            put("sensors", buildJsonObject {
+                sensors.toSortedMap().forEach { (name, available) ->
+                    put(name, JsonPrimitive(available))
+                }
+            })
+        }
     }
 
     companion object {
         fun from(
             context: Context,
             isDebug: Boolean,
-            diagnosticsEnabled: Boolean = isDebug
+            diagnosticsEnabled: Boolean = isDebug,
+            flavor: String = "default"
         ): DeviceInfo {
             val packageManager = context.packageManager
             val packageName = context.packageName
@@ -129,6 +146,7 @@ data class DeviceInfo(
             } else {
                 0L
             }
+            val supportedAbis = Build.SUPPORTED_ABIS?.filterNotNull().orEmpty()
             return DeviceInfo(
                 manufacturer = Build.MANUFACTURER.orEmptyFallback("unknown"),
                 model = Build.MODEL.orEmptyFallback("unknown"),
@@ -138,7 +156,10 @@ data class DeviceInfo(
                 appVersionCode = versionCode,
                 packageName = packageName,
                 isDebug = isDebug,
-                diagnosticsEnabled = diagnosticsEnabled
+                diagnosticsEnabled = diagnosticsEnabled,
+                flavor = flavor,
+                supportedAbis = supportedAbis,
+                sensors = resolveSensorSnapshot(context)
             )
         }
 
@@ -151,6 +172,19 @@ data class DeviceInfo(
             }
 
         private fun String?.orEmptyFallback(fallback: String): String = this?.takeIf { it.isNotBlank() } ?: fallback
+
+        private fun resolveSensorSnapshot(context: Context): Map<String, Boolean> {
+            val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+                ?: return emptyMap()
+            val sensors = listOf(
+                Sensor.TYPE_ACCELEROMETER to "accelerometer",
+                Sensor.TYPE_GYROSCOPE to "gyroscope",
+                Sensor.TYPE_MAGNETIC_FIELD to "magnetometer"
+            )
+            return sensors.associate { (type, name) ->
+                name to (sensorManager.getDefaultSensor(type) != null)
+            }
+        }
     }
 }
 

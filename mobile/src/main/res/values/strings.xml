@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Открыть карточку</string>
+    <string name="crash_test">Crash Test</string>
 </resources>

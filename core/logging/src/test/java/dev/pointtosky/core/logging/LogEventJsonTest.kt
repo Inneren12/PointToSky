@@ -20,7 +20,10 @@ class LogEventJsonTest {
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
             isDebug = true,
-            diagnosticsEnabled = true
+            diagnosticsEnabled = true,
+            flavor = "test",
+            supportedAbis = listOf("x86_64"),
+            sensors = mapOf("accelerometer" to true, "gyroscope" to false)
         )
         val thread = ThreadSnapshot(name = "TestThread", id = 1L, isMainThread = false)
         val process = ProcessSnapshot(pid = 42, processName = "test")

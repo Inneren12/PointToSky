@@ -23,11 +23,13 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import dev.pointtosky.wear.BuildConfig
 import dev.pointtosky.core.logging.FrameTraceMode
 import dev.pointtosky.core.logging.LogWriterStats
 import dev.pointtosky.wear.R
@@ -50,6 +52,7 @@ fun SensorsDebugScreen(
     onFrameTraceModeSelected: (FrameTraceMode) -> Unit,
     onScreenRotationSelected: (ScreenRotation) -> Unit,
     onNavigateToCalibrate: () -> Unit,
+    onCrashTest: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberScalingLazyListState()
@@ -199,6 +202,13 @@ fun SensorsDebugScreen(
                 },
                 colors = colors,
             )
+        }
+        if (BuildConfig.DEBUG && onCrashTest != null) {
+            item {
+                Button(onClick = onCrashTest) {
+                    Text(text = stringResource(id = R.string.crash_test))
+                }
+            }
         }
         item {
             Chip(

@@ -31,6 +31,7 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.BuildConfig
 import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
 import dev.pointtosky.wear.sensors.SensorsDebugScreen
 import dev.pointtosky.wear.sensors.SensorsViewModel
@@ -131,6 +132,11 @@ fun PointToSkyWearApp(
                     onFrameTraceModeSelected = sensorsViewModel::selectFrameTraceMode,
                     onScreenRotationSelected = sensorsViewModel::selectScreenRotation,
                     onNavigateToCalibrate = { navController.navigate(ROUTE_SENSORS_CALIBRATE) },
+                    onCrashTest = if (BuildConfig.DEBUG) {
+                        { throw RuntimeException("Crash test (wear)") }
+                    } else {
+                        null
+                    },
                 )
             }
             composable(ROUTE_SENSORS_CALIBRATE) {

@@ -15,6 +15,7 @@
         tools:replace="android:allowBackup"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:name=".PointToSkyApp"
         android:supportsRtl="true"
         android:theme="@style/Theme.PointToSky.Wear">
         <uses-library

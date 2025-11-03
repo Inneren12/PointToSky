@@ -4,4 +4,8 @@ object CrashSafeFlush {
     fun onCrash() {
         LogBus.flushAndSyncBlocking()
     }
+
+    fun flushAndSync() {
+        LogBus.flushAndSyncBlocking()
+    }
 }

@@ -37,4 +37,5 @@
     <string name="sensor_status_inactive">Сенсор выключен</string>
     <string name="sensor_status_icon_active">Иконка активного сенсора</string>
     <string name="sensor_status_icon_inactive">Иконка неактивного сенсора</string>
+    <string name="crash_test">Crash Test</string>
 </resources>
