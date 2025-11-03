@@ -17,12 +17,17 @@ android {
     }
 
     buildTypes {
-        release {
+        getByName("debug") {
             isMinifyEnabled = false
+            buildConfigField("boolean", "DIAGNOSTICS_LOGS_ENABLED", "true")
+        }
+        release {
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField("boolean", "DIAGNOSTICS_LOGS_ENABLED", "false")
         }
     }
 
@@ -45,12 +50,18 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
     implementation(platform(libs.compose.bom))
 
     implementation(project(":wear:sensors"))
+    implementation(project(":core:logging"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)

@@ -8,11 +8,20 @@ import java.io.File
 
 object LoggerInitializer {
     fun init(context: Context, isDebug: Boolean, deviceInfo: DeviceInfo): Logger {
+        return init(context, isDebug, diagnosticsLogsEnabled = false, deviceInfo = deviceInfo)
+    }
+
+    fun init(
+        context: Context,
+        isDebug: Boolean,
+        diagnosticsLogsEnabled: Boolean,
+        deviceInfo: DeviceInfo
+    ): Logger {
         val logsDirectory = File(context.filesDir, "logs")
         if (!logsDirectory.exists()) {
             logsDirectory.mkdirs()
         }
-        val diagnosticsEnabled = isDebug || deviceInfo.diagnosticsEnabled
+        val diagnosticsEnabled = isDebug || diagnosticsLogsEnabled || deviceInfo.diagnosticsEnabled
         val config = LoggerConfig(
             logsDirectory = logsDirectory,
             diagnosticsEnabled = diagnosticsEnabled
@@ -27,7 +36,10 @@ object LoggerInitializer {
         val sink = if (sinks.size == 1) sinks.first() else MultiSink(sinks)
         val writer = LogWriter(sink, flushIntervalMs = config.flushIntervalMs)
         val process = resolveProcess(context)
-        val enrichedDeviceInfo = deviceInfo.copy(isDebug = isDebug, diagnosticsEnabled = diagnosticsEnabled)
+        val enrichedDeviceInfo = deviceInfo.copy(
+            isDebug = isDebug,
+            diagnosticsEnabled = diagnosticsEnabled
+        )
         LogBus.install(writer, config, enrichedDeviceInfo, process, ringBuffer)
         return LogBus
     }
