@@ -22,12 +22,13 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.BuildConfig
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            PointToSkyWearApp()
+            PointToSkyWearApp(onCrashTest = { throw RuntimeException("Crash Test triggered") })
         }
     }
 }
@@ -37,7 +38,7 @@ private const val ROUTE_AIM = "aim"
 private const val ROUTE_IDENTIFY = "identify"
 
 @Composable
-fun PointToSkyWearApp() {
+fun PointToSkyWearApp(onCrashTest: (() -> Unit)? = null) {
     val navController = rememberSwipeDismissableNavController()
 
     MaterialTheme {
@@ -48,7 +49,8 @@ fun PointToSkyWearApp() {
             composable(ROUTE_HOME) {
                 HomeScreen(
                     onAimClick = { navController.navigate(ROUTE_AIM) },
-                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) }
+                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
+                    onCrashTest = onCrashTest
                 )
             }
             composable(ROUTE_AIM) { AimScreen() }
@@ -61,6 +63,7 @@ fun PointToSkyWearApp() {
 fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
+    onCrashTest: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -83,6 +86,15 @@ fun HomeScreen(
             colors = ButtonDefaults.primaryButtonColors()
         ) {
             Text(text = stringResource(id = R.string.identify_label))
+        }
+        if (BuildConfig.DEBUG) {
+            Button(
+                onClick = { (onCrashTest ?: { throw RuntimeException("Crash Test triggered") }).invoke() },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.secondaryButtonColors()
+            ) {
+                Text(text = stringResource(id = R.string.crash_test))
+            }
         }
     }
 }
@@ -117,7 +129,7 @@ fun IdentifyScreen(modifier: Modifier = Modifier) {
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen(onAimClick = {}, onIdentifyClick = {})
+        HomeScreen(onAimClick = {}, onIdentifyClick = {}, onCrashTest = {})
     }
 }
 

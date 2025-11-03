@@ -98,7 +98,8 @@ data class DeviceInfo(
     val appVersionCode: Long,
     val packageName: String,
     val isDebug: Boolean,
-    val diagnosticsEnabled: Boolean
+    val diagnosticsEnabled: Boolean,
+    val extras: Map<String, Any?> = emptyMap()
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("manufacturer", manufacturer)
@@ -110,13 +111,17 @@ data class DeviceInfo(
         put("packageName", packageName)
         put("isDebug", isDebug)
         put("diagnosticsEnabled", diagnosticsEnabled)
+        if (extras.isNotEmpty()) {
+            put("extras", PayloadConverter.toJson(extras))
+        }
     }
 
     companion object {
         fun from(
             context: Context,
             isDebug: Boolean,
-            diagnosticsEnabled: Boolean = isDebug
+            diagnosticsEnabled: Boolean = isDebug,
+            extras: Map<String, Any?> = emptyMap()
         ): DeviceInfo {
             val packageManager = context.packageManager
             val packageName = context.packageName
@@ -138,7 +143,8 @@ data class DeviceInfo(
                 appVersionCode = versionCode,
                 packageName = packageName,
                 isDebug = isDebug,
-                diagnosticsEnabled = diagnosticsEnabled
+                diagnosticsEnabled = diagnosticsEnabled,
+                extras = extras
             )
         }
 

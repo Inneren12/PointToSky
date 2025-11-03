@@ -1,7 +1,11 @@
 package dev.pointtosky.core.logging
 
 object CrashSafeFlush {
-    fun onCrash() {
+    fun flushAndSync() {
         LogBus.flushAndSyncBlocking()
+    }
+
+    fun onCrash() {
+        flushAndSync()
     }
 }
