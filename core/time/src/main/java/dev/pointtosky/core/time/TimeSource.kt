@@ -1,6 +1,7 @@
 package dev.pointtosky.core.time
 
 import java.time.Instant
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.TickerMode
 import kotlinx.coroutines.channels.awaitClose
@@ -40,9 +41,8 @@ class SystemTimeSource(
 
     override fun now(): Instant = clock()
 
-    @OptIn(ObsoleteCoroutinesApi::class)
+    @OptIn(ObsoleteCoroutinesApi::class, ExperimentalCoroutinesApi::class)
     override val ticks: Flow<Instant> = _periodMs
-        .distinctUntilChanged()
         .flatMapLatest { period ->
             callbackFlow {
                 trySend(now())

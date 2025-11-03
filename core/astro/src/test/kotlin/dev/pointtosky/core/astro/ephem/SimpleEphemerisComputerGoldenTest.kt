@@ -7,13 +7,34 @@ import java.time.Instant
 import kotlin.math.abs
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
+import org.opentest4j.TestAbortedException
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SimpleEphemerisComputerGoldenTest {
 
     private val computer = SimpleEphemerisComputer()
+    private val golden = GOLDEN_DATA
+
+    @BeforeAll
+    fun maybeUpdateGolden() {
+        if (!REQUEST_UPDATE) {
+            return
+        }
+        if (!CAN_WRITE_GOLDEN) {
+            throw TestAbortedException(
+                "Golden ephemerides update requested, but disabled when CI environment is detected.",
+            )
+        }
+
+        val updated = golden.recompute(computer)
+        writeGolden(updated)
+        throw TestAbortedException("Golden ephemerides updated. Re-run without -PupdateGolden=true.")
+    }
 
     @ParameterizedTest(name = "{0} @ {1}")
     @MethodSource("goldenSamples")
@@ -32,21 +53,23 @@ class SimpleEphemerisComputerGoldenTest {
         )
 
         val expectedDistance = sample.expectedDistanceAu
-        val expectedTolerance = sample.distanceToleranceAu
-        if (expectedDistance != null && expectedTolerance != null) {
+        if (expectedDistance != null) {
             val actual = ephemeris.distanceAu
             assertNotNull(actual, "${sample.body} distance should be reported")
             val delta = abs(actual - expectedDistance)
+            val expectedTolerance = DISTANCE_TOLERANCES.getValue(sample.body)
             assertTrue(
                 delta <= expectedTolerance,
                 "${sample.body} distance differs by $delta AU",
             )
         }
 
-        if (sample.body == Body.MOON) {
+        val expectedPhase = sample.expectedPhase
+        if (expectedPhase != null) {
             val phase = ephemeris.phase
-            assertNotNull(phase, "Moon phase must be reported")
-            assertTrue(phase in 0.0..1.0, "Moon phase should be normalized, was $phase")
+            assertNotNull(phase, "${sample.body} phase must be reported")
+            val delta = abs(phase - expectedPhase)
+            assertTrue(delta <= PHASE_TOLERANCE, "${sample.body} phase differs by $delta")
         }
     }
 
@@ -59,11 +82,7 @@ class SimpleEphemerisComputerGoldenTest {
 
     @Test
     fun `moon phase remains normalized across day samples`() {
-        val instants = listOf(
-            Instant.parse("2025-01-01T00:00:00Z"),
-            Instant.parse("2025-06-01T00:00:00Z"),
-        )
-        instants.forEach { instant ->
+        golden.dates.map { it.instant }.forEach { instant ->
             val phase = computer.compute(Body.MOON, instant).phase
             assertNotNull(phase, "Moon phase must be reported")
             assertTrue(phase in 0.0..1.0, "Moon phase should be normalized, was $phase")
@@ -71,69 +90,19 @@ class SimpleEphemerisComputerGoldenTest {
     }
 
     companion object {
-        private val GOLDEN_SAMPLES = listOf(
-            GoldenSample(
-                body = Body.SUN,
-                instant = Instant.parse("2025-01-01T00:00:00Z"),
-                expected = Equatorial(281.3816159480803, -23.023818073708256),
-                expectedDistanceAu = 0.9833531533438115,
-                distanceToleranceAu = 0.02,
-            ),
-            GoldenSample(
-                body = Body.MOON,
-                instant = Instant.parse("2025-01-01T00:00:00Z"),
-                expected = Equatorial(296.2989546824331, -25.9204566071867),
-                expectedDistanceAu = 0.0025518035774020897,
-                distanceToleranceAu = 0.0004,
-            ),
-            GoldenSample(
-                body = Body.JUPITER,
-                instant = Instant.parse("2025-01-01T00:00:00Z"),
-                expected = Equatorial(71.50940460653568, 21.741416618004354),
-                expectedDistanceAu = 4.190749912839749,
-                distanceToleranceAu = 0.2,
-            ),
-            GoldenSample(
-                body = Body.SATURN,
-                instant = Instant.parse("2025-01-01T00:00:00Z"),
-                expected = Equatorial(346.1911014538766, -8.05146645994369),
-                expectedDistanceAu = 10.025328436790733,
-                distanceToleranceAu = 0.3,
-            ),
-            GoldenSample(
-                body = Body.SUN,
-                instant = Instant.parse("2025-06-01T00:00:00Z"),
-                expected = Equatorial(68.80564636440339, 22.006648932678075),
-                expectedDistanceAu = 1.0139673291310598,
-                distanceToleranceAu = 0.02,
-            ),
-            GoldenSample(
-                body = Body.MOON,
-                instant = Instant.parse("2025-06-01T00:00:00Z"),
-                expected = Equatorial(138.579535833587, 19.299590609285758),
-                expectedDistanceAu = 0.002565808135291837,
-                distanceToleranceAu = 0.0004,
-            ),
-            GoldenSample(
-                body = Body.JUPITER,
-                instant = Instant.parse("2025-06-01T00:00:00Z"),
-                expected = Equatorial(87.43588963964672, 23.236182742783996),
-                expectedDistanceAu = 6.094027326980883,
-                distanceToleranceAu = 0.3,
-            ),
-            GoldenSample(
-                body = Body.SATURN,
-                instant = Instant.parse("2025-06-01T00:00:00Z"),
-                expected = Equatorial(0.958012106242118, -1.8813509195325069),
-                expectedDistanceAu = 9.878564617518304,
-                distanceToleranceAu = 0.3,
-            ),
+        private val GOLDEN_DATA = readGolden()
+        private val REQUEST_UPDATE = System.getProperty("updateGolden")?.toBoolean() == true
+        private val CAN_WRITE_GOLDEN = REQUEST_UPDATE && System.getenv("CI") == null
+        private val DISTANCE_TOLERANCES = mapOf(
+            Body.SUN to 0.02,
+            Body.MOON to 0.0005,
+            Body.JUPITER to 0.3,
+            Body.SATURN to 0.3,
         )
-
-        // TODO(S4.D-T2): Replace stubbed golden values with authoritative ephemerides.
+        private const val PHASE_TOLERANCE = 5e-4
 
         @JvmStatic
-        fun goldenSamples(): java.util.stream.Stream<GoldenSample> = GOLDEN_SAMPLES.stream()
+        fun goldenSamples(): java.util.stream.Stream<GoldenSample> = GOLDEN_DATA.toSamples().stream()
     }
 
     data class GoldenSample(
@@ -141,6 +110,6 @@ class SimpleEphemerisComputerGoldenTest {
         val instant: Instant,
         val expected: Equatorial,
         val expectedDistanceAu: Double?,
-        val distanceToleranceAu: Double?,
+        val expectedPhase: Double?,
     )
 }

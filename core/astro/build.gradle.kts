@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -37,4 +38,5 @@ dependencies {
     testRuntimeOnly(libs.junit.jupiter.engine)
     // Allow legacy JUnit4 tests to continue running on the JUnit Platform
     testRuntimeOnly(libs.junit.vintage.engine)
+    testImplementation(libs.kotlinx.serialization.json)
 }

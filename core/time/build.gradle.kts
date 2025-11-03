@@ -23,6 +23,7 @@ android {
 
 dependencies {
     api(libs.kotlinx.coroutines.core)
+    implementation(libs.androidx.core.ktx)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)

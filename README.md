@@ -48,3 +48,10 @@ LogBus.e(
 
 ## CI
 При пуше или pull request запускается GitHub Actions workflow `android.yml`, который собирает оба приложения и кэширует Gradle.
+
+## S4.D tests
+- Голден-эпимериды для `SimpleEphemerisComputer` хранятся в `core/astro/src/test/resources/ephem_golden_v1.json`.
+- Проверка против текущих значений: `./gradlew :core:astro:test`.
+- Обновление голденов: `./gradlew :core:astro:test -PupdateGolden=true`.
+  - Перезапись выполняется только локально (когда переменная окружения `CI` отсутствует).
+  - После успешной генерации тесты помечаются как пропущенные — запустите сборку ещё раз без флага для валидации.
