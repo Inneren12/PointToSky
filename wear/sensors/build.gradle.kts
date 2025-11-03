@@ -26,4 +26,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.android)
+
+    testImplementation(kotlin("test"))
 }
