@@ -19,4 +19,14 @@
     <string name="location_setup_lon_error_range">Долгота должна быть в диапазоне от -180 до 180.</string>
     <string name="location_setup_save">Сохранить координаты</string>
     <string name="location_setup_saved_toast">Координаты сохранены</string>
+    <string name="location_share_toggle">Делиться локацией с часами</string>
+    <string name="location_share_description">Позволяет часам запросить текущие координаты, пока приложение открыто.</string>
+    <string name="location_share_last_request">Последний запрос: %1$s (TTL %2$s)</string>
+    <string name="location_share_status_success">Последний ответ: %1$s • %2$s</string>
+    <string name="location_share_status_disabled">Последний ответ: обмен выключен</string>
+    <string name="location_share_status_permission_denied">Последний ответ: нет разрешения на локацию</string>
+    <string name="location_share_status_unavailable">Последний ответ: локация недоступна</string>
+    <string name="location_share_status_send_failed">Последний ответ: ошибка отправки</string>
+    <string name="location_share_accuracy">±%1$.0f м</string>
+    <string name="location_share_ttl_seconds">%1$d с</string>
 </resources>

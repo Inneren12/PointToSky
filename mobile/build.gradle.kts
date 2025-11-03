@@ -63,6 +63,8 @@ dependencies {
     implementation(project(":core:location"))
     implementation(project(":core:time"))
 
+    implementation(libs.play.services.wearable)
+
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 }
