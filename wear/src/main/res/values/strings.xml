@@ -59,4 +59,7 @@
     <string name="location_phone_source_label">Источник: %1$s</string>
     <string name="location_phone_source_phone">PHONE</string>
     <string name="location_phone_source_unknown">—</string>
+    <string name="time_debug_label">Время</string>
+    <string name="time_debug_toggle">1 Гц / 0.2 Гц</string>
+    <string name="time_debug_back">Назад</string>
 </resources>

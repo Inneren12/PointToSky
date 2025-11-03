@@ -29,4 +29,7 @@
     <string name="location_share_status_send_failed">Последний ответ: ошибка отправки</string>
     <string name="location_share_accuracy">±%1$.0f м</string>
     <string name="location_share_ttl_seconds">%1$d с</string>
+    <string name="time_debug">Отладка времени</string>
+    <string name="time_debug_toggle">1 Гц / 0.2 Гц</string>
+    <string name="time_debug_back">Назад</string>
 </resources>
