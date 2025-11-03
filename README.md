@@ -22,6 +22,28 @@
 ./gradlew :mobile:assembleDebug
 ```
 
+## CLI для эпемерид
+Для ручной проверки расчётов без Android Studio можно собрать утилиту `:tools:ephem-cli`:
+
+```bash
+./gradlew :tools:ephem-cli:installDist
+```
+
+Запуск примерного сценария (первые 24 часа 2025-01-01 с шагом 1 час):
+
+```bash
+build/install/ephem-cli/bin/ephem-cli \
+  --instant=2025-01-01T00:00:00Z \
+  --body=JUPITER \
+  --stepHours=1 \
+  --count=24
+```
+
+Программа печатает CSV с колонками `instant, body, raDeg, decDeg, distanceAu, phase`. Значения можно
+сверять с внешними источниками (например, [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/app.html)
+или [In-The-Sky.org](https://in-the-sky.org/ephemeris.php)): достаточно указать тот же момент времени и
+координаты тела, после чего сравнить прав ascension/declination, расстояние и фазу.
+
 ## Структурированное логирование
 Модуль `:core:logging` предоставляет фасад `LogBus` для структурированного логирования в формате JSONL.
 
