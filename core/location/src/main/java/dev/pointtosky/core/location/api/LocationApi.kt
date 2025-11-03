@@ -29,7 +29,7 @@ interface LocationRepository {
 }
 
 interface LocationOrchestrator : LocationRepository {
-    fun setManual(point: GeoPoint?)
+    suspend fun setManual(point: GeoPoint?)
 
-    fun preferPhoneFallback(enabled: Boolean)
+    suspend fun preferPhoneFallback(enabled: Boolean)
 }

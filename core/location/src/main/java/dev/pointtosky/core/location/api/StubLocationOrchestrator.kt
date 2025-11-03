@@ -32,7 +32,7 @@ class StubLocationOrchestrator(
     override suspend fun getLastKnown(): LocationFix? =
         manualFix.value ?: delegate.getLastKnown()
 
-    override fun setManual(point: GeoPoint?) {
+    override suspend fun setManual(point: GeoPoint?) {
         manualFix.value = point?.let {
             LocationFix(
                 point = it,
@@ -43,7 +43,7 @@ class StubLocationOrchestrator(
         }
     }
 
-    override fun preferPhoneFallback(enabled: Boolean) {
+    override suspend fun preferPhoneFallback(enabled: Boolean) {
         phoneFallbackPreferred.value = enabled
     }
 
