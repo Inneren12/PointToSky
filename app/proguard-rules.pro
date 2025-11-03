@@ -1,4 +1,6 @@
 # Add project specific ProGuard rules here.
+# Structured logging is handled by dev.pointtosky.core.logging. Do not strip android.util.Log
+# or the custom logger — both remain available for diagnostics builds.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #
