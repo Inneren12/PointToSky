@@ -22,6 +22,8 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.core.logging.LogBridge
+import dev.pointtosky.wear.BuildConfig
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,6 +41,10 @@ private const val ROUTE_IDENTIFY = "identify"
 @Composable
 fun PointToSkyWearApp() {
     val navController = rememberSwipeDismissableNavController()
+    val crashTest: () -> Unit = {
+        LogBridge.e("CRASH_TEST", "Wear crash test triggered by user")
+        throw RuntimeException("Crash test from wear debug UI")
+    }
 
     MaterialTheme {
         SwipeDismissableNavHost(
@@ -48,7 +54,8 @@ fun PointToSkyWearApp() {
             composable(ROUTE_HOME) {
                 HomeScreen(
                     onAimClick = { navController.navigate(ROUTE_AIM) },
-                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) }
+                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
+                    onCrashTest = crashTest
                 )
             }
             composable(ROUTE_AIM) { AimScreen() }
@@ -61,7 +68,8 @@ fun PointToSkyWearApp() {
 fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onCrashTest: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -83,6 +91,15 @@ fun HomeScreen(
             colors = ButtonDefaults.primaryButtonColors()
         ) {
             Text(text = stringResource(id = R.string.identify_label))
+        }
+        if (BuildConfig.DEBUG) {
+            Button(
+                onClick = onCrashTest,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.secondaryButtonColors()
+            ) {
+                Text(text = stringResource(id = R.string.crash_test))
+            }
         }
     }
 }

@@ -97,6 +97,9 @@ data class DeviceInfo(
     val appVersionName: String,
     val appVersionCode: Long,
     val packageName: String,
+    val appFlavor: String,
+    val supportedAbis: List<String>,
+    val sensors: SensorsInfo,
     val isDebug: Boolean,
     val diagnosticsEnabled: Boolean
 ) {
@@ -108,6 +111,11 @@ data class DeviceInfo(
         put("appVersionName", appVersionName)
         put("appVersionCode", appVersionCode)
         put("packageName", packageName)
+        put("appFlavor", appFlavor)
+        if (supportedAbis.isNotEmpty()) {
+            put("supportedAbis", JsonArray(supportedAbis.map(::JsonPrimitive)))
+        }
+        put("sensors", sensors.toJson())
         put("isDebug", isDebug)
         put("diagnosticsEnabled", diagnosticsEnabled)
     }
@@ -116,7 +124,10 @@ data class DeviceInfo(
         fun from(
             context: Context,
             isDebug: Boolean,
-            diagnosticsEnabled: Boolean = isDebug
+            diagnosticsEnabled: Boolean = isDebug,
+            flavor: String = "unknown",
+            abiList: List<String> = Build.SUPPORTED_ABIS.toList(),
+            sensorsInfo: SensorsInfo = SensorsInfo.from(context)
         ): DeviceInfo {
             val packageManager = context.packageManager
             val packageName = context.packageName
@@ -137,6 +148,9 @@ data class DeviceInfo(
                 appVersionName = versionName,
                 appVersionCode = versionCode,
                 packageName = packageName,
+                appFlavor = flavor,
+                supportedAbis = abiList,
+                sensors = sensorsInfo,
                 isDebug = isDebug,
                 diagnosticsEnabled = diagnosticsEnabled
             )
@@ -151,6 +165,36 @@ data class DeviceInfo(
             }
 
         private fun String?.orEmptyFallback(fallback: String): String = this?.takeIf { it.isNotBlank() } ?: fallback
+    }
+}
+
+data class SensorsInfo(
+    val hasAccelerometer: Boolean,
+    val hasGyroscope: Boolean,
+    val hasMagnetometer: Boolean,
+    val hasRotationVector: Boolean
+) {
+    fun toJson(): JsonObject = buildJsonObject {
+        put("accelerometer", hasAccelerometer)
+        put("gyroscope", hasGyroscope)
+        put("magnetometer", hasMagnetometer)
+        put("rotationVector", hasRotationVector)
+    }
+
+    companion object {
+        fun from(context: Context): SensorsInfo {
+            val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? android.hardware.SensorManager
+            val accelerometer = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER) != null
+            val gyroscope = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_GYROSCOPE) != null
+            val magnetometer = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_MAGNETIC_FIELD) != null
+            val rotation = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_ROTATION_VECTOR) != null
+            return SensorsInfo(
+                hasAccelerometer = accelerometer,
+                hasGyroscope = gyroscope,
+                hasMagnetometer = magnetometer,
+                hasRotationVector = rotation
+            )
+        }
     }
 }
 
