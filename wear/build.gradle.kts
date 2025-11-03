@@ -66,6 +66,7 @@ dependencies {
     implementation("androidx.compose.runtime:runtime")
     implementation(libs.play.services.wearable)
 
+    implementation(project(":core:logging"))
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.compose.ui.tooling.preview)

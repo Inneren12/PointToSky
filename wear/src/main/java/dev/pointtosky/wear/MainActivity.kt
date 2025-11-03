@@ -37,7 +37,7 @@ private const val ROUTE_AIM = "aim"
 private const val ROUTE_IDENTIFY = "identify"
 
 @Composable
-fun PointToSkyWearApp() {
+fun PointToSkyWearApp(showCrashTestButton: Boolean = BuildConfig.DEBUG) {
     val navController = rememberSwipeDismissableNavController()
 
     MaterialTheme {
@@ -48,7 +48,8 @@ fun PointToSkyWearApp() {
             composable(ROUTE_HOME) {
                 HomeScreen(
                     onAimClick = { navController.navigate(ROUTE_AIM) },
-                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) }
+                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
+                    showCrashTestButton = showCrashTestButton
                 )
             }
             composable(ROUTE_AIM) { AimScreen() }
@@ -61,6 +62,7 @@ fun PointToSkyWearApp() {
 fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
+    showCrashTestButton: Boolean,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -83,6 +85,15 @@ fun HomeScreen(
             colors = ButtonDefaults.primaryButtonColors()
         ) {
             Text(text = stringResource(id = R.string.identify_label))
+        }
+        if (showCrashTestButton) {
+            Button(
+                onClick = { throw RuntimeException("Crash test triggered") },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.secondaryButtonColors()
+            ) {
+                Text(text = stringResource(id = R.string.crash_test))
+            }
         }
     }
 }
@@ -117,7 +128,7 @@ fun IdentifyScreen(modifier: Modifier = Modifier) {
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen(onAimClick = {}, onIdentifyClick = {})
+        HomeScreen(onAimClick = {}, onIdentifyClick = {}, showCrashTestButton = true)
     }
 }
 

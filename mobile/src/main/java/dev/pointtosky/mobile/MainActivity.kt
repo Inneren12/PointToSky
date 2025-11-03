@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,16 +38,23 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun PointToSkyMobileApp(onOpenCard: () -> Unit) {
+fun PointToSkyMobileApp(onOpenCard: () -> Unit, showCrashTestButton: Boolean = BuildConfig.DEBUG) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            MobileHome(onOpenCard = onOpenCard)
+            MobileHome(
+                onOpenCard = onOpenCard,
+                showCrashTestButton = showCrashTestButton
+            )
         }
     }
 }
 
 @Composable
-fun MobileHome(onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
+fun MobileHome(
+    onOpenCard: () -> Unit,
+    showCrashTestButton: Boolean,
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -61,11 +69,19 @@ fun MobileHome(onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
         ) {
             Text(text = stringResource(id = R.string.open_card))
         }
+        if (showCrashTestButton) {
+            Button(
+                onClick = { throw RuntimeException("Crash test triggered") },
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.crash_test))
+            }
+        }
     }
 }
 
 @Preview(showSystemUi = true)
 @Composable
 fun MobileHomePreview() {
-    PointToSkyMobileApp(onOpenCard = {})
+    PointToSkyMobileApp(onOpenCard = {}, showCrashTestButton = true)
 }
