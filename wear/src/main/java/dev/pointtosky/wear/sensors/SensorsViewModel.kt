@@ -53,9 +53,11 @@ class SensorsViewModel(
         }
     }
 
-    fun setZeroAzimuthOffset(offsetDeg: Float) {
-        if (offsetDeg.isNaN() || offsetDeg.isInfinite()) return
-        orientationRepository.setZeroAzimuthOffset(normalizeDeg(offsetDeg))
+    fun setZeroAzimuthOffset(calibratedDeg: Float) {
+        if (calibratedDeg.isNaN() || calibratedDeg.isInfinite()) return
+        val currentOffset = _zero.value.azimuthOffsetDeg
+        val newOffset = normalizeDeg(currentOffset - calibratedDeg)
+        orientationRepository.setZeroAzimuthOffset(newOffset)
     }
 
     fun resetZero() {
