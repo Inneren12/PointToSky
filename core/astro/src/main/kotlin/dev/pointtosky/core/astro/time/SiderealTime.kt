@@ -23,10 +23,11 @@ private const val JULIAN_CENTURY_DAYS = 36_525.0
  * @return Greenwich mean sidereal time normalized to the [0°, 360°) interval.
  */
 public fun gmstDeg(julianDay: Double): Double {
-    val centuries = (julianDay - JULIAN_DAY_AT_J2000) / JULIAN_CENTURY_DAYS
-    val theta = 280.46061837 +
-        360.98564736629 * (julianDay - JULIAN_DAY_AT_J2000) +
-        0.000387933 * centuries * centuries -
+    val deltaDays = julianDay - JULIAN_DAY_AT_J2000
+    val centuries = deltaDays / JULIAN_CENTURY_DAYS
+    val theta = 280.460_618_37 +
+        360.985_647_366_29 * deltaDays +
+        0.000_387_933 * centuries * centuries -
         (centuries * centuries * centuries) / 38_710_000.0
     return wrapDeg0_360(theta)
 }
