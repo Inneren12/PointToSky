@@ -1,11 +1,16 @@
 package dev.pointtosky.wear.sensors
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -18,6 +23,7 @@ import androidx.wear.compose.material.Text
 import dev.pointtosky.core.logging.FrameTraceMode
 import dev.pointtosky.core.logging.LogWriterStats
 import dev.pointtosky.wear.R
+import dev.pointtosky.wear.sensors.orientation.OrientationAccuracy
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationSource
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
@@ -81,13 +87,32 @@ fun SensorsDebugScreen(
             )
         }
         item {
-            val accuracyText = frame?.accuracy?.let { accuracy ->
-                stringResource(id = orientationAccuracyStringRes(accuracy))
-            } ?: stringResource(id = R.string.value_not_available)
-            Text(
-                text = stringResource(R.string.current_accuracy_label, accuracyText),
-                style = MaterialTheme.typography.body2,
-            )
+            val accuracy = frame?.accuracy
+            if (accuracy != null) {
+                val accuracyText = stringResource(id = orientationAccuracyStringRes(accuracy))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.current_accuracy_label, accuracyText),
+                        style = MaterialTheme.typography.body2,
+                    )
+                    AccuracyIndicator(accuracy = accuracy)
+                    if (accuracy == OrientationAccuracy.LOW || accuracy == OrientationAccuracy.UNRELIABLE) {
+                        Text(
+                            text = stringResource(id = R.string.accuracy_hint_figure_eight),
+                            style = MaterialTheme.typography.caption2,
+                            color = MaterialTheme.colors.secondary,
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = stringResource(
+                        id = R.string.current_accuracy_label,
+                        stringResource(id = R.string.value_not_available),
+                    ),
+                    style = MaterialTheme.typography.body2,
+                )
+            }
         }
         item {
             val sourceText = when (source) {
@@ -175,4 +200,37 @@ fun SensorsDebugScreen(
             )
         }
     }
+}
+
+@Composable
+private fun AccuracyIndicator(
+    accuracy: OrientationAccuracy,
+    modifier: Modifier = Modifier,
+) {
+    val label = stringResource(id = orientationAccuracyStringRes(accuracy))
+    val (background, content) = accuracyColors(accuracy)
+    Text(
+        text = label,
+        style = MaterialTheme.typography.caption2,
+        color = content,
+        modifier = modifier
+            .clip(MaterialTheme.shapes.small)
+            .background(background)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun accuracyColors(accuracy: OrientationAccuracy): Pair<Color, Color> {
+    val background = when (accuracy) {
+        OrientationAccuracy.HIGH -> colorResource(id = R.color.accuracy_high)
+        OrientationAccuracy.MEDIUM -> colorResource(id = R.color.accuracy_medium)
+        OrientationAccuracy.LOW -> colorResource(id = R.color.accuracy_low)
+        OrientationAccuracy.UNRELIABLE -> colorResource(id = R.color.accuracy_unreliable)
+    }
+    val content = when (accuracy) {
+        OrientationAccuracy.HIGH, OrientationAccuracy.UNRELIABLE -> Color.White
+        OrientationAccuracy.MEDIUM, OrientationAccuracy.LOW -> Color.Black
+    }
+    return background to content
 }

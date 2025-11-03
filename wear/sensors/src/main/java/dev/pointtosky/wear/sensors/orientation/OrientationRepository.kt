@@ -11,6 +11,7 @@ interface OrientationRepository {
     val zero: StateFlow<OrientationZero>
     val fps: StateFlow<Float?>
     val source: OrientationSource
+    val activeSource: StateFlow<OrientationSource>
 
     fun start()
 
@@ -33,11 +34,22 @@ interface OrientationRepository {
             val appContext = context.applicationContext
             val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
             val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-            return if (rotationSensor != null) {
+            val accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            val magnetSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+
+            val primary = rotationSensor?.let {
                 RotationVectorOrientationRepository(sensorManager = sensorManager)
-            } else {
-                AccelMagOrientationRepository(sensorManager = sensorManager)
             }
+            val fallback = if (accelSensor != null && magnetSensor != null) {
+                AccelMagOrientationRepository(sensorManager = sensorManager)
+            } else {
+                null
+            }
+
+            return DelegatingOrientationRepository(
+                primary = primary,
+                fallback = fallback,
+            )
         }
     }
 }

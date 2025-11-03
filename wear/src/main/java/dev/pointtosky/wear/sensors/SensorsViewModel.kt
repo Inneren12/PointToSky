@@ -41,7 +41,7 @@ class SensorsViewModel(
     private val _writerStats = MutableStateFlow(LogWriterStats())
     val writerStats: StateFlow<LogWriterStats> = _writerStats.asStateFlow()
 
-    val source: OrientationSource = orientationRepository.source
+    val source: StateFlow<OrientationSource> = orientationRepository.activeSource
 
     init {
         orientationRepository.start()
