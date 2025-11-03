@@ -37,4 +37,23 @@
     <string name="sensor_status_inactive">Сенсор выключен</string>
     <string name="sensor_status_icon_active">Иконка активного сенсора</string>
     <string name="sensor_status_icon_inactive">Иконка неактивного сенсора</string>
+    <string name="location_settings">Локация</string>
+    <string name="location_setup_title">Настройка локации</string>
+    <string name="location_setup_description">Локация нужна для расчёта видимой части неба.</string>
+    <string name="location_setup_request_permission">Разрешить локацию</string>
+    <string name="location_setup_open_settings">Открыть настройки</string>
+    <string name="location_setup_permission_granted">Разрешение на геолокацию уже выдано.</string>
+    <string name="location_setup_manual_toggle">Ввести координаты вручную</string>
+    <string name="location_setup_manual_hint">Широта и долгота в десятичных градусах, например 55.7558 / 37.6176</string>
+    <string name="location_setup_lat_label">Широта</string>
+    <string name="location_setup_lat_hint">Например: 55.7558</string>
+    <string name="location_setup_lat_error_format">Введите широту в формате десятичных градусов.</string>
+    <string name="location_setup_lat_error_range">Широта должна быть в диапазоне от -90 до 90.</string>
+    <string name="location_setup_lon_label">Долгота</string>
+    <string name="location_setup_lon_hint">Например: 37.6176</string>
+    <string name="location_setup_lon_error_format">Введите долготу в формате десятичных градусов.</string>
+    <string name="location_setup_lon_error_range">Долгота должна быть в диапазоне от -180 до 180.</string>
+    <string name="location_setup_save">Сохранить координаты</string>
+    <string name="location_setup_saved_toast">Координаты сохранены</string>
+    <string name="location_setup_use_phone_fallback">Использовать локацию телефона</string>
 </resources>

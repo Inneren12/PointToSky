@@ -1,4 +1,22 @@
 <resources>
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Открыть карточку</string>
+    <string name="location_settings">Локация</string>
+    <string name="location_setup_title">Настройка локации</string>
+    <string name="location_setup_description">Локация помогает рассчитать видимую часть неба и подобрать объекты.</string>
+    <string name="location_setup_request_permission">Разрешить локацию</string>
+    <string name="location_setup_open_settings">Открыть настройки</string>
+    <string name="location_setup_permission_granted">Разрешение на геолокацию уже выдано.</string>
+    <string name="location_setup_manual_toggle">Использовать координаты вручную</string>
+    <string name="location_setup_manual_hint">Введите координаты в десятичном формате. Например: 55.7558 / 37.6176</string>
+    <string name="location_setup_lat_label">Широта</string>
+    <string name="location_setup_lat_hint">Например: 55.7558</string>
+    <string name="location_setup_lat_error_format">Введите широту в формате десятичных градусов.</string>
+    <string name="location_setup_lat_error_range">Широта должна быть в диапазоне от -90 до 90.</string>
+    <string name="location_setup_lon_label">Долгота</string>
+    <string name="location_setup_lon_hint">Например: 37.6176</string>
+    <string name="location_setup_lon_error_format">Введите долготу в формате десятичных градусов.</string>
+    <string name="location_setup_lon_error_range">Долгота должна быть в диапазоне от -180 до 180.</string>
+    <string name="location_setup_save">Сохранить координаты</string>
+    <string name="location_setup_saved_toast">Координаты сохранены</string>
 </resources>
