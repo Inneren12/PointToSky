@@ -1,0 +1,41 @@
+name: Android
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  astro_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-home-cache-cleanup: true
+
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x ./gradlew
+
+      - name: Run astro unit tests
+        run: ./gradlew :core:astro:test --stacktrace --no-daemon
+
+      - name: Build ephem CLI distribution
+        run: ./gradlew :tools:ephem-cli:installDist --stacktrace --no-daemon
+
+      - name: Publish ephem-cli artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ephem-cli
+          path: tools/ephem-cli/build/install/ephem-cli/**
+          if-no-files-found: error
