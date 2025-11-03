@@ -30,7 +30,11 @@ android {
 dependencies {
     implementation(project(":core:time"))
     testImplementation(kotlin("test"))
+    // Bind kotlin.test to the JUnit 5 platform
+    testImplementation(kotlin("test-junit5"))
     testImplementation(libs.junit.jupiter.api)
     testImplementation(libs.junit.jupiter.params)
     testRuntimeOnly(libs.junit.jupiter.engine)
+    // Allow legacy JUnit4 tests to continue running on the JUnit Platform
+    testRuntimeOnly(libs.junit.vintage.engine)
 }
