@@ -75,7 +75,7 @@ fun PointToSkyWearApp() {
                 val fps by sensorsViewModel.fps.collectAsState()
                 val frameTraceMode by sensorsViewModel.frameTraceMode.collectAsState()
                 val writerStats by sensorsViewModel.writerStats.collectAsState()
-                val source = sensorsViewModel.source
+                val source by sensorsViewModel.source.collectAsState()
                 SensorsDebugScreen(
                     frame = frame,
                     zero = zero,

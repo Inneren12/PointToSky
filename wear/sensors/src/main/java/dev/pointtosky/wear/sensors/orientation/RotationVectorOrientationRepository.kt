@@ -40,6 +40,8 @@ class RotationVectorOrientationRepository(
     override val fps: StateFlow<Float?> = _fps.asStateFlow()
 
     override val source: OrientationSource = OrientationSource.ROTATION_VECTOR
+    private val _activeSource = MutableStateFlow(source)
+    override val activeSource: StateFlow<OrientationSource> = _activeSource.asStateFlow()
 
     private val frameLogger = OrientationFrameLogger(
         source = source,

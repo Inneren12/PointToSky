@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlin.jvm.Volatile
 
+private const val LOW_PASS_ALPHA = 0.15f // TODO: tune
+
 class AccelMagOrientationRepository(
     private val sensorManager: SensorManager,
     private val config: OrientationRepositoryConfig = OrientationRepositoryConfig(),
@@ -40,6 +42,8 @@ class AccelMagOrientationRepository(
     override val fps: StateFlow<Float?> = _fps.asStateFlow()
 
     override val source: OrientationSource = OrientationSource.ACCEL_MAG
+    private val _activeSource = MutableStateFlow(source)
+    override val activeSource: StateFlow<OrientationSource> = _activeSource.asStateFlow()
 
     private val frameLogger = OrientationFrameLogger(
         source = source,
@@ -127,6 +131,8 @@ class AccelMagOrientationRepository(
 
         val gravity = FloatArray(3)
         val geomagnetic = FloatArray(3)
+        val accelFilter = ExponentialLowPassFilter(alpha = LOW_PASS_ALPHA, dimension = gravity.size)
+        val magnetFilter = ExponentialLowPassFilter(alpha = LOW_PASS_ALPHA, dimension = geomagnetic.size)
         val rotationMatrix = FloatArray(9)
         val remappedMatrix = FloatArray(9)
         val orientation = FloatArray(3)
@@ -134,19 +140,17 @@ class AccelMagOrientationRepository(
         var lastEmitTimestampNs = 0L
         var accelSet = false
         var magnetSet = false
-        var accelAccuracyStatus = SensorManager.SENSOR_STATUS_NO_CONTACT
-        var magnetAccuracyStatus = SensorManager.SENSOR_STATUS_NO_CONTACT
+        var magnetAccuracyStatus = SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM
 
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
                 when (event.sensor?.type) {
                     Sensor.TYPE_ACCELEROMETER -> {
-                        System.arraycopy(event.values, 0, gravity, 0, gravity.size)
+                        accelFilter.filter(event.values, gravity)
                         accelSet = true
-                        accelAccuracyStatus = event.accuracy
                     }
                     Sensor.TYPE_MAGNETIC_FIELD -> {
-                        System.arraycopy(event.values, 0, geomagnetic, 0, geomagnetic.size)
+                        magnetFilter.filter(event.values, geomagnetic)
                         magnetSet = true
                         magnetAccuracyStatus = event.accuracy
                     }
@@ -174,7 +178,7 @@ class AccelMagOrientationRepository(
 
                 val forward = extractForwardVector(activeMatrix)
                 val normalizedForward = normalizeVector(forward)
-                val combinedAccuracy = mapAccuracy(minOf(accelAccuracyStatus, magnetAccuracyStatus))
+                val combinedAccuracy = mapAccuracy(magnetAccuracyStatus)
 
                 val frame = OrientationFrame(
                     timestampNanos = event.timestamp,
@@ -190,11 +194,11 @@ class AccelMagOrientationRepository(
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-                when (sensor?.type) {
-                    Sensor.TYPE_ACCELEROMETER -> accelAccuracyStatus = accuracy
-                    Sensor.TYPE_MAGNETIC_FIELD -> magnetAccuracyStatus = accuracy
+                if (sensor?.type != Sensor.TYPE_MAGNETIC_FIELD) {
+                    return
                 }
-                val combinedAccuracy = mapAccuracy(minOf(accelAccuracyStatus, magnetAccuracyStatus))
+                magnetAccuracyStatus = accuracy
+                val combinedAccuracy = mapAccuracy(magnetAccuracyStatus)
                 if (combinedAccuracy != lastAccuracy) {
                     lastAccuracy = combinedAccuracy
                     LogBus.d(
