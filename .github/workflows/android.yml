@@ -12,8 +12,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout (exact ref)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          clean: true
+
+      - name: Show HEAD and files
+        run: |
+          echo "HEAD = $(git rev-parse HEAD)"
+          echo "--- PointToSkyApp.kt matches ---"
+          git ls-files | grep -i 'PointToSkyApp\.kt' || true
+          echo "--- FLAVOR usages in wear/ ---"
+          git grep -In -- 'FLAVOR' -- wear/ || true
+          echo "--- All .kt under wear/ ---"
+          find wear -type f -name '*.kt' | sort || true
 
       # 1) Сначала JDK
       - name: Set up JDK
