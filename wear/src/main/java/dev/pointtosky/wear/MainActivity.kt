@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -19,7 +18,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.ambient.AmbientModeSupport
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
@@ -27,16 +31,44 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.sensors.orientation.OrientationRepository
+import dev.pointtosky.wear.sensors.orientation.OrientationRepositoryConfig
 import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
 import dev.pointtosky.wear.sensors.SensorsDebugScreen
 import dev.pointtosky.wear.sensors.SensorsViewModel
 import dev.pointtosky.wear.sensors.SensorsViewModelFactory
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val orientationRepository: OrientationRepository by lazy {
+        OrientationRepository.create(applicationContext)
+    }
+
+    private val ambientCallback = object : AmbientModeSupport.AmbientCallback() {
+        override fun onEnterAmbient(ambientDetails: AmbientModeSupport.AmbientDetails?) {
+            // TODO: reduce rate in ambient
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        AmbientModeSupport.attach(this, ambientCallback)
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                orientationRepository.start(OrientationRepositoryConfig())
+                try {
+                    awaitCancellation()
+                } finally {
+                    orientationRepository.stop()
+                }
+            }
+        }
+
         setContent {
-            PointToSkyWearApp()
+            PointToSkyWearApp(orientationRepository = orientationRepository)
         }
     }
 }
@@ -48,10 +80,17 @@ private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
 
 @Composable
-fun PointToSkyWearApp() {
+fun PointToSkyWearApp(
+    orientationRepository: OrientationRepository,
+) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
-    val viewModelFactory = remember { SensorsViewModelFactory(context.applicationContext) }
+    val viewModelFactory = remember {
+        SensorsViewModelFactory(
+            orientationRepository = orientationRepository,
+            appContext = context.applicationContext,
+        )
+    }
     val sensorsViewModel: SensorsViewModel = viewModel(factory = viewModelFactory)
 
     MaterialTheme {
@@ -69,19 +108,23 @@ fun PointToSkyWearApp() {
             composable(ROUTE_AIM) { AimScreen() }
             composable(ROUTE_IDENTIFY) { IdentifyScreen() }
             composable(ROUTE_SENSORS_DEBUG) {
-                val frame by sensorsViewModel.frame.collectAsState()
-                val zero by sensorsViewModel.zero.collectAsState()
-                val screenRotation by sensorsViewModel.screenRotation.collectAsState()
+                val frame by sensorsViewModel.frame.collectAsStateWithLifecycle()
+                val zero by sensorsViewModel.zero.collectAsStateWithLifecycle()
+                val screenRotation by sensorsViewModel.screenRotation.collectAsStateWithLifecycle()
+                val frameRate by sensorsViewModel.frameRate.collectAsStateWithLifecycle()
+                val isSensorActive by sensorsViewModel.isSensorActive.collectAsStateWithLifecycle()
                 SensorsDebugScreen(
                     frame = frame,
                     zero = zero,
                     screenRotation = screenRotation,
+                    frameRate = frameRate,
+                    isSensorActive = isSensorActive,
                     onScreenRotationSelected = sensorsViewModel::selectScreenRotation,
                     onNavigateToCalibrate = { navController.navigate(ROUTE_SENSORS_CALIBRATE) },
                 )
             }
             composable(ROUTE_SENSORS_CALIBRATE) {
-                val frame by sensorsViewModel.frame.collectAsState()
+                val frame by sensorsViewModel.frame.collectAsStateWithLifecycle()
                 SensorsCalibrateScreen(
                     azimuthDeg = frame?.azimuthDeg,
                     accuracy = frame?.accuracy,

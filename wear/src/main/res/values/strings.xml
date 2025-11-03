@@ -13,6 +13,10 @@
     <string name="current_pitch_label">Тангаж: %1$.1f°</string>
     <string name="current_roll_label">Крен: %1$.1f°</string>
     <string name="current_accuracy_label">Точность: %1$s</string>
+    <string name="current_frame_rate_label">Частота: %1$.1f Гц</string>
+    <string name="current_frame_rate_unknown_label">Частота: —</string>
+    <string name="sensor_active_label">Датчик: активен</string>
+    <string name="sensor_inactive_label">Датчик: выключен</string>
     <string name="zero_offset_label">Смещение нуля: %1$.1f°</string>
     <string name="screen_rotation_label">Поворот экрана</string>
     <string name="screen_rotation_option">Поворот %1$d°</string>

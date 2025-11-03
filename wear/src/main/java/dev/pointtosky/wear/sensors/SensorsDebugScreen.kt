@@ -2,12 +2,16 @@ package dev.pointtosky.wear.sensors
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material.Icon
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -15,6 +19,9 @@ import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
@@ -25,6 +32,8 @@ fun SensorsDebugScreen(
     frame: OrientationFrame?,
     zero: OrientationZero,
     screenRotation: ScreenRotation,
+    frameRate: Float?,
+    isSensorActive: Boolean,
     onScreenRotationSelected: (ScreenRotation) -> Unit,
     onNavigateToCalibrate: () -> Unit,
     modifier: Modifier = Modifier,
@@ -41,6 +50,21 @@ fun SensorsDebugScreen(
             Text(
                 text = stringResource(id = R.string.sensors_debug_title),
                 style = MaterialTheme.typography.title3,
+            )
+        }
+        item {
+            SensorStatusRow(
+                isSensorActive = isSensorActive,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        item {
+            val frameRateText = frameRate?.let {
+                stringResource(id = R.string.current_frame_rate_label, it)
+            } ?: stringResource(id = R.string.current_frame_rate_unknown_label)
+            Text(
+                text = frameRateText,
+                style = MaterialTheme.typography.body2,
             )
         }
         item {
@@ -110,5 +134,40 @@ fun SensorsDebugScreen(
                 colors = ChipDefaults.primaryChipColors(),
             )
         }
+    }
+}
+
+@Composable
+private fun SensorStatusRow(
+    isSensorActive: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val statusText = stringResource(
+        id = if (isSensorActive) {
+            R.string.sensor_active_label
+        } else {
+            R.string.sensor_inactive_label
+        },
+    )
+    val icon = if (isSensorActive) {
+        Icons.Filled.PlayArrow
+    } else {
+        Icons.Filled.Pause
+    }
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = statusText,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colors.primary,
+        )
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.body2,
+        )
     }
 }

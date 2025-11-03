@@ -23,11 +23,11 @@ import kotlin.math.sqrt
 
 class RotationVectorOrientationRepository(
     private val sensorManager: SensorManager,
-    private val config: OrientationRepositoryConfig = OrientationRepositoryConfig(),
+    private val defaultConfig: OrientationRepositoryConfig = OrientationRepositoryConfig(),
     private val externalScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : OrientationRepository {
     @Volatile
-    private var screenRotation: ScreenRotation = config.screenRotation
+    private var screenRotation: ScreenRotation = defaultConfig.screenRotation
 
     private val _zero = MutableStateFlow(OrientationZero())
     override val zero: StateFlow<OrientationZero> = _zero.asStateFlow()
@@ -35,20 +35,32 @@ class RotationVectorOrientationRepository(
     private val framesSharedFlow = MutableSharedFlow<OrientationFrame>(replay = 1, extraBufferCapacity = 1)
     override val frames: SharedFlow<OrientationFrame> = framesSharedFlow.asSharedFlow()
 
+    private val _isActive = MutableStateFlow(false)
+    override val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
+
     private var collectionJob: Job? = null
 
-    override fun start() {
+    override fun start(config: OrientationRepositoryConfig) {
         if (collectionJob?.isActive == true) {
+            screenRotation = config.screenRotation
             return
         }
 
+        screenRotation = config.screenRotation
+
         collectionJob = externalScope.launch {
-            rotationVectorFrames().collect { frame ->
-                framesSharedFlow.emit(frame)
+            try {
+                rotationVectorFrames(config).collect { frame ->
+                    framesSharedFlow.emit(frame)
+                }
+            } finally {
+                _isActive.value = false
             }
         }.also { job ->
+            _isActive.value = true
             job.invokeOnCompletion {
                 collectionJob = null
+                _isActive.value = false
             }
         }
     }
@@ -65,7 +77,7 @@ class RotationVectorOrientationRepository(
         this.screenRotation = screenRotation
     }
 
-    private fun rotationVectorFrames(): Flow<OrientationFrame> = callbackFlow {
+    private fun rotationVectorFrames(config: OrientationRepositoryConfig): Flow<OrientationFrame> = callbackFlow {
         val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         if (sensor == null) {
             close(IllegalStateException("Rotation vector sensor not available"))

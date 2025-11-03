@@ -8,8 +8,9 @@ import kotlinx.coroutines.flow.StateFlow
 interface OrientationRepository {
     val frames: Flow<OrientationFrame>
     val zero: StateFlow<OrientationZero>
+    val isActive: StateFlow<Boolean>
 
-    fun start()
+    fun start(config: OrientationRepositoryConfig = OrientationRepositoryConfig())
 
     fun stop()
 

@@ -2,6 +2,7 @@ package dev.pointtosky.wear.sensors
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.pointtosky.wear.sensors.util.FrameRateAverager
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
@@ -17,8 +18,13 @@ class SensorsViewModel(
     private val settingsDataStore: SensorsSettingsDataStore,
 ) : ViewModel() {
 
+    private val frameRateAverager = FrameRateAverager()
+
     private val _frame = MutableStateFlow<OrientationFrame?>(null)
     val frame: StateFlow<OrientationFrame?> = _frame.asStateFlow()
+
+    private val _frameRate = MutableStateFlow<Float?>(null)
+    val frameRate: StateFlow<Float?> = _frameRate.asStateFlow()
 
     private val _zero = MutableStateFlow(OrientationZero())
     val zero: StateFlow<OrientationZero> = _zero.asStateFlow()
@@ -26,12 +32,13 @@ class SensorsViewModel(
     private val _screenRotation = MutableStateFlow(ScreenRotation.ROT_0)
     val screenRotation: StateFlow<ScreenRotation> = _screenRotation.asStateFlow()
 
-    init {
-        orientationRepository.start()
+    val isSensorActive: StateFlow<Boolean> = orientationRepository.isActive
 
+    init {
         viewModelScope.launch {
             orientationRepository.frames.collect { frame ->
                 _frame.value = frame
+                _frameRate.value = frameRateAverager.addSample(frame.timestampNanos)
             }
         }
         viewModelScope.launch {
@@ -43,6 +50,14 @@ class SensorsViewModel(
             settingsDataStore.screenRotation.collect { rotation ->
                 _screenRotation.value = rotation
                 orientationRepository.setRemap(rotation)
+            }
+        }
+        viewModelScope.launch {
+            orientationRepository.isActive.collect { active ->
+                if (!active) {
+                    frameRateAverager.reset()
+                    _frameRate.value = null
+                }
             }
         }
     }
@@ -62,11 +77,6 @@ class SensorsViewModel(
 
     fun resetZero() {
         orientationRepository.resetZero()
-    }
-
-    override fun onCleared() {
-        orientationRepository.stop()
-        super.onCleared()
     }
 }
 
