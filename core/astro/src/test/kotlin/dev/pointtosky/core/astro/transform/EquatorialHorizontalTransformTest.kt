@@ -6,74 +6,134 @@ import dev.pointtosky.core.astro.units.wrapDeg0_360
 import dev.pointtosky.core.astro.units.wrapDegN180_180
 import kotlin.math.abs
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+
+private const val ANGLE_TOLERANCE = 1e-6
+
+private fun deltaAngleDeg(expected: Double, actual: Double): Double {
+    val diff = wrapDegN180_180(actual - expected)
+    return abs(diff)
+}
 
 class EquatorialHorizontalTransformTest {
 
     @Test
-    fun `equatorial to horizontal round trip stability`() {
+    fun roundTripWithoutRefractionIsAccurate() {
+        val lstDeg = 200.0
         val latitudes = listOf(-60.0, 0.0, 60.0)
         val declinations = listOf(-60.0, 0.0, 60.0)
-        val taus = (-150..150 step 30).map { it.toDouble() }
-        val lstDeg = 123.0
+        val hourAngles = (-150..150 step 30).map { it.toDouble() }
 
         for (lat in latitudes) {
             for (dec in declinations) {
-                for (tau in taus) {
+                for (tau in hourAngles) {
                     val ra = wrapDeg0_360(lstDeg - tau)
-                    val eq = Equatorial(raDeg = ra, decDeg = dec)
-                    val horizontal = raDecToAltAz(eq, lstDeg, lat, applyRefraction = false)
-                    val eqBack = altAzToRaDec(horizontal, lstDeg, lat)
-                    val horizontalBack = raDecToAltAz(eqBack, lstDeg, lat, applyRefraction = false)
+                    val equatorial = Equatorial(raDeg = ra, decDeg = dec)
 
-                    val raDiff = abs(wrapDegN180_180(eq.raDeg - eqBack.raDeg))
-                    val decDiff = abs(eq.decDeg - eqBack.decDeg)
-                    val altDiff = abs(horizontal.altDeg - horizontalBack.altDeg)
-                    val azDiff = abs(wrapDegN180_180(horizontal.azDeg - horizontalBack.azDeg))
+                    val horizontal = raDecToAltAz(
+                        eq = equatorial,
+                        lstDeg = lstDeg,
+                        latDeg = lat,
+                        applyRefraction = false,
+                    )
 
-                    assertTrue(raDiff <= 1e-6, "RA mismatch $raDiff for lat=$lat dec=$dec tau=$tau")
-                    assertTrue(decDiff <= 1e-6, "Dec mismatch $decDiff for lat=$lat dec=$dec tau=$tau")
-                    assertTrue(altDiff <= 1e-6, "Alt mismatch $altDiff for lat=$lat dec=$dec tau=$tau")
-                    assertTrue(azDiff <= 1e-6, "Az mismatch $azDiff for lat=$lat dec=$dec tau=$tau")
+                    val equatorialBack = altAzToRaDec(
+                        hor = horizontal,
+                        lstDeg = lstDeg,
+                        latDeg = lat,
+                    )
+
+                    val horizontalBack = raDecToAltAz(
+                        eq = equatorialBack,
+                        lstDeg = lstDeg,
+                        latDeg = lat,
+                        applyRefraction = false,
+                    )
+
+                    assertTrue(
+                        deltaAngleDeg(equatorial.raDeg, equatorialBack.raDeg) <= ANGLE_TOLERANCE,
+                        "RA mismatch for lat=$lat dec=$dec tau=$tau: expected ${equatorial.raDeg}, got ${equatorialBack.raDeg}",
+                    )
+                    assertTrue(
+                        abs(equatorial.decDeg - equatorialBack.decDeg) <= ANGLE_TOLERANCE,
+                        "Dec mismatch for lat=$lat dec=$dec tau=$tau: expected ${equatorial.decDeg}, got ${equatorialBack.decDeg}",
+                    )
+                    assertTrue(
+                        deltaAngleDeg(horizontal.azDeg, horizontalBack.azDeg) <= ANGLE_TOLERANCE,
+                        "Az mismatch for lat=$lat dec=$dec tau=$tau: expected ${horizontal.azDeg}, got ${horizontalBack.azDeg}",
+                    )
+                    assertTrue(
+                        abs(horizontal.altDeg - horizontalBack.altDeg) <= ANGLE_TOLERANCE,
+                        "Alt mismatch for lat=$lat dec=$dec tau=$tau: expected ${horizontal.altDeg}, got ${horizontalBack.altDeg}",
+                    )
                 }
             }
         }
     }
 
     @Test
-    fun `meridian transit hits zenith`() {
-        val latDeg = 45.0
-        val decDeg = latDeg
-        val lstDeg = 200.0
-        val raDeg = lstDeg
+    fun latitudeMatchesDeclinationGivesZenith() {
+        val lstDeg = 45.0
+        val latitudes = listOf(-60.0, -30.0, 0.0, 30.0, 60.0)
 
-        val horizontal = raDecToAltAz(Equatorial(raDeg, decDeg), lstDeg, latDeg, applyRefraction = false)
-        assertTrue(horizontal.altDeg > 89.999, "Altitude not near zenith: ${horizontal.altDeg}")
+        for (lat in latitudes) {
+            val equatorial = Equatorial(raDeg = lstDeg, decDeg = lat)
+            val horizontal = raDecToAltAz(
+                eq = equatorial,
+                lstDeg = lstDeg,
+                latDeg = lat,
+                applyRefraction = false,
+            )
+            assertEquals(90.0, horizontal.altDeg, 1e-9, "Altitude should be ~90° at zenith for lat=$lat")
+        }
     }
 
     @Test
-    fun `hour angle ninety gives horizon`() {
+    fun hourAngleNinetyDegreesIsOnHorizon() {
+        val lstDeg = 120.0
         val latDeg = 0.0
-        val decDeg = 0.0
-        val lstDeg = 50.0
-        val tauDeg = 90.0
-        val raDeg = wrapDeg0_360(lstDeg - tauDeg)
+        val taus = listOf(-90.0, 90.0)
 
-        val horizontal = raDecToAltAz(Equatorial(raDeg, decDeg), lstDeg, latDeg, applyRefraction = false)
-        assertTrue(abs(horizontal.altDeg) < 1e-6, "Altitude not on horizon: ${horizontal.altDeg}")
+        for (tau in taus) {
+            val ra = wrapDeg0_360(lstDeg - tau)
+            val equatorial = Equatorial(raDeg = ra, decDeg = 0.0)
+            val horizontal = raDecToAltAz(
+                eq = equatorial,
+                lstDeg = lstDeg,
+                latDeg = latDeg,
+                applyRefraction = false,
+            )
+            assertEquals(0.0, horizontal.altDeg, 1e-9, "Altitude should be ~0° on horizon for tau=$tau")
+        }
     }
 
     @Test
-    fun `saemundsson refraction adds expected offset`() {
-        val lstDeg = 80.0
-        val latDeg = 52.0
-        val target = Horizontal(azDeg = 180.0, altDeg = 10.0)
-        val equatorial = altAzToRaDec(target, lstDeg, latDeg)
+    fun saemundssonRefractionRaisesAltitudeAroundTenDegrees() {
+        val lstDeg = 10.0
+        val latDeg = 45.0
+        val targetHorizontal = Horizontal(azDeg = 45.0, altDeg = 10.0)
 
-        val withoutRef = raDecToAltAz(equatorial, lstDeg, latDeg, applyRefraction = false)
-        val withRef = raDecToAltAz(equatorial, lstDeg, latDeg, applyRefraction = true)
+        val equatorial = altAzToRaDec(
+            hor = targetHorizontal,
+            lstDeg = lstDeg,
+            latDeg = latDeg,
+        )
 
-        val delta = withRef.altDeg - withoutRef.altDeg
-        assertTrue(delta in 0.1..0.2, "Refraction delta $delta not in expected range")
+        val horizontalWithoutRefraction = raDecToAltAz(
+            eq = equatorial,
+            lstDeg = lstDeg,
+            latDeg = latDeg,
+            applyRefraction = false,
+        )
+        val horizontalWithRefraction = raDecToAltAz(
+            eq = equatorial,
+            lstDeg = lstDeg,
+            latDeg = latDeg,
+            applyRefraction = true,
+        )
+
+        val delta = horizontalWithRefraction.altDeg - horizontalWithoutRefraction.altDeg
+        assertTrue(delta in 0.1..0.2, "Refraction correction should be between 0.1° and 0.2°, was $delta")
     }
 }
