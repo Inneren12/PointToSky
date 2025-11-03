@@ -70,7 +70,9 @@ class SensorsViewModel(
 
     fun setZeroAzimuthOffset(calibratedDeg: Float) {
         if (calibratedDeg.isNaN() || calibratedDeg.isInfinite()) return
-        val currentOffset = _zero.value.azimuthOffsetDeg
+
+        val currentOffset = zero.value.azimuthOffsetDeg
+        // Keep the invariant: calibrated = normalize(raw + offset)
         val newOffset = normalizeDeg(currentOffset - calibratedDeg)
         orientationRepository.setZeroAzimuthOffset(newOffset)
     }
