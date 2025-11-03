@@ -7,8 +7,10 @@ import android.content.IntentFilter
 import androidx.core.content.ContextCompat
 import java.time.ZoneId
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 class ZoneRepo(
     private val context: Context,
@@ -27,7 +29,7 @@ class ZoneRepo(
 ) {
 
     val zoneFlow: Flow<ZoneId> = callbackFlow {
-        trySend(zoneProvider())
+        trySendBlocking(zoneProvider())
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_TIMEZONE_CHANGED)
             addAction(Intent.ACTION_TIME_CHANGED)
@@ -35,14 +37,14 @@ class ZoneRepo(
         }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                trySend(zoneProvider())
+                trySendBlocking(zoneProvider())
             }
         }
         registerReceiver(context, receiver, filter)
         awaitClose {
             unregisterReceiver(context, receiver)
         }
-    }
+    }.distinctUntilChanged()
 
     fun current(): ZoneId = zoneProvider()
 }

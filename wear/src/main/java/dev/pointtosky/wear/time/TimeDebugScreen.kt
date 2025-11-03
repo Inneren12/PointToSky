@@ -61,7 +61,8 @@ private fun TimeDebugContent(
     val utcText = utcFormatter.format(instant)
     val localDateTime = instant.atZone(zoneId)
     val localText = localDateTime.format(localFormatter)
-    val offset = localDateTime.offset.id
+    val offset = localDateTime.offset
+    val offsetText = String.format(Locale.US, "%s (%d с)", offset.id, offset.totalSeconds)
     val avgPeriodText = tickMetrics.avgPeriodMs?.let { String.format(Locale.US, "%.1f мс", it) } ?: "—"
     val frequencyText = tickMetrics.frequencyHz?.let { String.format(Locale.US, "%.3f Гц", it) } ?: "—"
     val currentPeriodText = String.format(Locale.US, "%d мс", periodMs)
@@ -77,7 +78,7 @@ private fun TimeDebugContent(
         item { Text(text = "UTC: $utcText") }
         item { Text(text = "Local: $localText") }
         item { Text(text = "ZoneId: ${zoneId.id}") }
-        item { Text(text = "Offset: $offset") }
+        item { Text(text = "Offset: $offsetText") }
         item { Text(text = "Avg Δt: $avgPeriodText") }
         item { Text(text = "Avg Hz: $frequencyText") }
         item { Text(text = "Period: $currentPeriodText") }
