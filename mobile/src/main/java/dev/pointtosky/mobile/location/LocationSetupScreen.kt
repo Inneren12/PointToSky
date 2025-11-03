@@ -57,7 +57,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.location.share.PhoneLocationBridge
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 
@@ -65,6 +68,8 @@ import kotlin.math.abs
 @Composable
 fun LocationSetupScreen(
     locationPrefs: LocationPrefs,
+    shareState: PhoneLocationBridge.PhoneLocationBridgeState,
+    onShareToggle: (Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -111,6 +116,8 @@ fun LocationSetupScreen(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            val dateFormat = remember { DateFormat.getTimeInstance(DateFormat.SHORT) }
+
             Text(
                 text = stringResource(id = R.string.location_setup_description),
                 style = MaterialTheme.typography.bodyLarge
@@ -129,6 +136,82 @@ fun LocationSetupScreen(
                     OutlinedButton(onClick = permissionState.openSettings) {
                         Text(text = stringResource(id = R.string.location_setup_open_settings))
                     }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.location_share_toggle),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = shareState.shareEnabled,
+                        onCheckedChange = onShareToggle,
+                    )
+                }
+
+                Text(
+                    text = stringResource(id = R.string.location_share_description),
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                shareState.lastRequest?.let { request ->
+                    val timeString = dateFormat.format(Date(request.timestampMs))
+                    val ttlString = stringResource(
+                        id = R.string.location_share_ttl_seconds,
+                        (request.freshTtlMs / 1000L).coerceAtLeast(0L).toInt()
+                    )
+                    Text(
+                        text = stringResource(
+                            id = R.string.location_share_last_request,
+                            timeString,
+                            ttlString
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                shareState.lastResponse?.let { response ->
+                    val timeString = dateFormat.format(Date(response.timestampMs))
+                    val message = when (response.status) {
+                        PhoneLocationBridge.ResponseStatus.SUCCESS -> {
+                            val accuracyText = response.accuracyM?.let {
+                                stringResource(id = R.string.location_share_accuracy, it)
+                            }
+                            val info = listOfNotNull(response.provider, accuracyText)
+                                .joinToString(separator = " • ")
+                                .ifEmpty { response.provider ?: "" }
+                            stringResource(
+                                id = R.string.location_share_status_success,
+                                timeString,
+                                info.ifEmpty { "—" }
+                            )
+                        }
+
+                        PhoneLocationBridge.ResponseStatus.SHARING_DISABLED -> stringResource(
+                            id = R.string.location_share_status_disabled
+                        )
+
+                        PhoneLocationBridge.ResponseStatus.PERMISSION_DENIED -> stringResource(
+                            id = R.string.location_share_status_permission_denied
+                        )
+
+                        PhoneLocationBridge.ResponseStatus.LOCATION_UNAVAILABLE -> stringResource(
+                            id = R.string.location_share_status_unavailable
+                        )
+
+                        PhoneLocationBridge.ResponseStatus.SEND_FAILED -> stringResource(
+                            id = R.string.location_share_status_send_failed
+                        )
+                    }
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
 

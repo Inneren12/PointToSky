@@ -56,4 +56,7 @@
     <string name="location_setup_save">Сохранить координаты</string>
     <string name="location_setup_saved_toast">Координаты сохранены</string>
     <string name="location_setup_use_phone_fallback">Использовать локацию телефона</string>
+    <string name="location_phone_source_label">Источник: %1$s</string>
+    <string name="location_phone_source_phone">PHONE</string>
+    <string name="location_phone_source_unknown">—</string>
 </resources>

@@ -13,9 +13,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,17 +28,28 @@ import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
 import dev.pointtosky.mobile.location.LocationSetupScreen
+import dev.pointtosky.mobile.location.share.PhoneLocationBridge
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val locationPrefs: LocationPrefs by lazy {
         LocationPrefs.fromContext(applicationContext)
     }
 
+    private val phoneLocationBridge: PhoneLocationBridge by lazy {
+        PhoneLocationBridge(
+            context = this,
+            locationPrefs = locationPrefs,
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            val bridgeState by phoneLocationBridge.state.collectAsState()
+            val coroutineScope = rememberCoroutineScope()
             PointToSkyMobileApp(
                 onOpenCard = {
                     Toast.makeText(
@@ -45,9 +58,25 @@ class MainActivity : ComponentActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                 },
-                locationPrefs = locationPrefs
+                locationPrefs = locationPrefs,
+                shareState = bridgeState,
+                onShareToggle = { enabled ->
+                    coroutineScope.launch {
+                        phoneLocationBridge.setShareEnabled(enabled)
+                    }
+                }
             )
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        phoneLocationBridge.start()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        phoneLocationBridge.stop()
     }
 }
 
@@ -55,6 +84,8 @@ class MainActivity : ComponentActivity() {
 fun PointToSkyMobileApp(
     onOpenCard: () -> Unit,
     locationPrefs: LocationPrefs,
+    shareState: PhoneLocationBridge.PhoneLocationBridgeState,
+    onShareToggle: (Boolean) -> Unit,
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -67,6 +98,8 @@ fun PointToSkyMobileApp(
 
                 MobileDestination.LocationSetup -> LocationSetupScreen(
                     locationPrefs = locationPrefs,
+                    shareState = shareState,
+                    onShareToggle = onShareToggle,
                     onBack = { destination = MobileDestination.Home }
                 )
             }
@@ -108,12 +141,19 @@ private enum class MobileDestination { Home, LocationSetup }
 private class PreviewLocationPrefs : LocationPrefs {
     override val manualPointFlow: Flow<GeoPoint?> = flowOf(null)
     override val usePhoneFallbackFlow: Flow<Boolean> = flowOf(false)
+    override val shareLocationWithWatchFlow: Flow<Boolean> = flowOf(false)
     override suspend fun setManual(point: GeoPoint?) = Unit
     override suspend fun setUsePhoneFallback(usePhoneFallback: Boolean) = Unit
+    override suspend fun setShareLocationWithWatch(share: Boolean) = Unit
 }
 
 @Preview(showSystemUi = true)
 @Composable
 fun MobileHomePreview() {
-    PointToSkyMobileApp(onOpenCard = {}, locationPrefs = PreviewLocationPrefs())
+    PointToSkyMobileApp(
+        onOpenCard = {},
+        locationPrefs = PreviewLocationPrefs(),
+        shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
+        onShareToggle = {}
+    )
 }

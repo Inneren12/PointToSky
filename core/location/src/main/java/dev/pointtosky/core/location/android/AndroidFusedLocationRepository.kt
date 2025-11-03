@@ -10,7 +10,9 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import dev.pointtosky.core.location.api.LocationConfig
+import dev.pointtosky.core.location.api.LocationPriority
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.model.LocationFix
@@ -120,6 +122,22 @@ class AndroidFusedLocationRepository(
         return runCatching { fetchLastKnown() }.getOrNull()
     }
 
+    suspend fun getCurrentLocation(
+        timeoutMs: Long,
+        priority: LocationPriority = LocationPriority.BALANCED,
+    ): LocationFix? {
+        val fusedPriority = when (priority) {
+            LocationPriority.PASSIVE -> Priority.PRIORITY_PASSIVE
+            LocationPriority.BALANCED -> Priority.PRIORITY_BALANCED_POWER_ACCURACY
+            LocationPriority.HIGH_ACCURACY -> Priority.PRIORITY_HIGH_ACCURACY
+        }
+        return try {
+            delegate.currentLocation(timeoutMs, fusedPriority)?.toLocationFix()
+        } catch (_: SecurityException) {
+            null
+        }
+    }
+
     private suspend fun fetchFreshLastKnown(ttlMs: Long): LocationFix? {
         val fix = runCatching { fetchLastKnown() }.getOrNull() ?: return null
         val isFresh = timeProvider.invoke() - fix.timeMs <= ttlMs
@@ -139,6 +157,8 @@ class AndroidFusedLocationRepository(
         fun locationUpdates(request: LocationRequest): Flow<LocationFix>
 
         suspend fun lastLocation(): Location?
+
+        suspend fun currentLocation(timeoutMs: Long, priority: Int): Location?
     }
 
     class RealFusedClientDelegate(
@@ -171,6 +191,26 @@ class AndroidFusedLocationRepository(
                         task.addOnSuccessListener { cont.resume(it) }
                         task.addOnFailureListener { err -> cont.resumeWithException(err) }
                         cont.invokeOnCancellation { }
+                    }
+                }
+            } catch (se: SecurityException) {
+                null
+            }
+        }
+
+        override suspend fun currentLocation(timeoutMs: Long, priority: Int): Location? {
+            return try {
+                withTimeoutOrNull(timeoutMs) {
+                    suspendCancellableCoroutine<Location?> { cont ->
+                        val tokenSource = CancellationTokenSource()
+                        val task = client.getCurrentLocation(priority, tokenSource.token)
+                        task.addOnSuccessListener { location ->
+                            cont.resume(location)
+                        }
+                        task.addOnFailureListener { error ->
+                            cont.resumeWithException(error)
+                        }
+                        cont.invokeOnCancellation { tokenSource.cancel() }
                     }
                 }
             } catch (se: SecurityException) {

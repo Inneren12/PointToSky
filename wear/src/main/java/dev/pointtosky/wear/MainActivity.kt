@@ -31,9 +31,12 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.core.location.api.LocationConfig
+import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
 import dev.pointtosky.wear.location.LocationSetupScreen
+import dev.pointtosky.wear.location.remote.PhoneLocationRepository
 import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
 import dev.pointtosky.wear.sensors.SensorsDebugScreen
 import dev.pointtosky.wear.sensors.SensorsViewModel
@@ -51,6 +54,18 @@ class MainActivity : ComponentActivity() {
 
     private val locationPrefs: LocationPrefs by lazy {
         LocationPrefs.fromContext(applicationContext)
+    }
+
+    private val phoneLocationRepository: PhoneLocationRepository by lazy {
+        PhoneLocationRepository(applicationContext)
+    }
+
+    private val locationOrchestrator: DefaultLocationOrchestrator by lazy {
+        DefaultLocationOrchestrator(
+            fused = null,
+            manualPrefs = locationPrefs,
+            remotePhone = phoneLocationRepository,
+        )
     }
 
     @Suppress("UnusedPrivateMember")
@@ -74,10 +89,22 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                locationOrchestrator.start(LocationConfig())
+                try {
+                    awaitCancellation()
+                } finally {
+                    locationOrchestrator.stop()
+                }
+            }
+        }
+
         setContent {
             PointToSkyWearApp(
                 orientationRepository = orientationRepository,
-                locationPrefs = locationPrefs
+                locationPrefs = locationPrefs,
+                phoneLocationRepository = phoneLocationRepository,
             )
         }
     }
@@ -94,6 +121,7 @@ private const val ROUTE_LOCATION = "location"
 fun PointToSkyWearApp(
     orientationRepository: OrientationRepository,
     locationPrefs: LocationPrefs,
+    phoneLocationRepository: PhoneLocationRepository,
 ) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
@@ -158,8 +186,10 @@ fun PointToSkyWearApp(
                 )
             }
             composable(ROUTE_LOCATION) {
+                val phoneFix by phoneLocationRepository.lastKnownFix.collectAsStateWithLifecycle(initialValue = null)
                 LocationSetupScreen(
                     locationPrefs = locationPrefs,
+                    phoneFix = phoneFix,
                     onBack = { navController.popBackStack() }
                 )
             }

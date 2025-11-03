@@ -22,9 +22,13 @@ interface LocationPrefs {
 
     val usePhoneFallbackFlow: Flow<Boolean>
 
+    val shareLocationWithWatchFlow: Flow<Boolean>
+
     suspend fun setManual(point: GeoPoint?)
 
     suspend fun setUsePhoneFallback(usePhoneFallback: Boolean)
+
+    suspend fun setShareLocationWithWatch(share: Boolean)
 
     companion object
 }
@@ -63,6 +67,18 @@ class DataStoreLocationPrefs(
             preferences[USE_PHONE_FALLBACK_KEY] ?: false
         }
 
+    override val shareLocationWithWatchFlow: Flow<Boolean> = dataStore.data
+        .catch { error ->
+            if (error is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw error
+            }
+        }
+        .map { preferences ->
+            preferences[SHARE_LOCATION_WITH_WATCH_KEY] ?: false
+        }
+
     override suspend fun setManual(point: GeoPoint?) {
         dataStore.edit { preferences ->
             if (point == null) {
@@ -81,10 +97,17 @@ class DataStoreLocationPrefs(
         }
     }
 
+    override suspend fun setShareLocationWithWatch(share: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SHARE_LOCATION_WITH_WATCH_KEY] = share
+        }
+    }
+
     companion object {
         private val MANUAL_LAT_KEY = doublePreferencesKey("manual_lat")
         private val MANUAL_LON_KEY = doublePreferencesKey("manual_lon")
         private val USE_PHONE_FALLBACK_KEY = booleanPreferencesKey("use_phone_fallback")
+        private val SHARE_LOCATION_WITH_WATCH_KEY = booleanPreferencesKey("share_location_with_watch")
     }
 }
 

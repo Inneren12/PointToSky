@@ -48,7 +48,10 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TextField
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.rememberScalingLazyListState
+import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.model.GeoPoint
+import dev.pointtosky.core.location.model.LocationFix
+import dev.pointtosky.core.location.model.ProviderType
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.wear.R
 import kotlinx.coroutines.launch
@@ -58,6 +61,7 @@ import kotlin.math.abs
 @Composable
 fun LocationSetupScreen(
     locationPrefs: LocationPrefs,
+    phoneFix: LocationFix?,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -244,6 +248,24 @@ fun LocationSetupScreen(
                     Text(text = stringResource(id = R.string.location_setup_save))
                 }
             }
+        }
+
+        item {
+            val now = System.currentTimeMillis()
+            val isPhoneFresh = phoneFix != null &&
+                phoneFix.provider == ProviderType.REMOTE_PHONE &&
+                now - phoneFix.timeMs <= LocationConfig().freshTtlMs
+            val sourceLabel = if (isPhoneFresh) {
+                stringResource(id = R.string.location_phone_source_phone)
+            } else {
+                stringResource(id = R.string.location_phone_source_unknown)
+            }
+            Text(
+                text = stringResource(id = R.string.location_phone_source_label, sourceLabel),
+                style = MaterialTheme.typography.body2,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         item {
