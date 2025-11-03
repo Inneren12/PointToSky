@@ -19,4 +19,7 @@
     <string name="location_setup_lon_error_range">Longitude must be between -180 and 180.</string>
     <string name="location_setup_save">Save coordinates</string>
     <string name="location_setup_saved_toast">Coordinates saved</string>
+    <string name="time_debug">Time debug</string>
+    <string name="time_debug_toggle">1 Hz / 0.2 Hz</string>
+    <string name="time_debug_back">Back</string>
 </resources>

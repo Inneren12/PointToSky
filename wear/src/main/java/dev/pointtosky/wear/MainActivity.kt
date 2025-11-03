@@ -44,6 +44,7 @@ import dev.pointtosky.wear.sensors.SensorsViewModelFactory
 import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationRepositoryConfig
+import dev.pointtosky.wear.time.TimeDebugScreen
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 
@@ -116,6 +117,7 @@ private const val ROUTE_IDENTIFY = "identify"
 private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
 private const val ROUTE_LOCATION = "location"
+private const val ROUTE_TIME_DEBUG = "time_debug"
 
 @Composable
 fun PointToSkyWearApp(
@@ -145,6 +147,7 @@ fun PointToSkyWearApp(
                     onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
                     onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
                     onLocationClick = { navController.navigate(ROUTE_LOCATION) },
+                    onTimeDebugClick = { navController.navigate(ROUTE_TIME_DEBUG) },
                 )
             }
             composable(ROUTE_AIM) { AimScreen() }
@@ -193,6 +196,11 @@ fun PointToSkyWearApp(
                     onBack = { navController.popBackStack() }
                 )
             }
+            composable(ROUTE_TIME_DEBUG) {
+                TimeDebugScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
@@ -203,6 +211,7 @@ fun HomeScreen(
     onIdentifyClick: () -> Unit,
     onSensorsDebugClick: () -> Unit,
     onLocationClick: () -> Unit,
+    onTimeDebugClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -239,6 +248,13 @@ fun HomeScreen(
             colors = ButtonDefaults.secondaryButtonColors(),
         ) {
             Text(text = stringResource(id = R.string.sensors_debug_label))
+        }
+        Button(
+            onClick = onTimeDebugClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.secondaryButtonColors(),
+        ) {
+            Text(text = stringResource(id = R.string.time_debug_label))
         }
     }
 }
@@ -277,7 +293,8 @@ fun HomeScreenPreview() {
             onAimClick = {},
             onIdentifyClick = {},
             onSensorsDebugClick = {},
-            onLocationClick = {}
+            onLocationClick = {},
+            onTimeDebugClick = {}
         )
     }
 }

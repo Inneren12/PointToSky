@@ -29,6 +29,7 @@ import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
 import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
+import dev.pointtosky.mobile.time.TimeDebugScreen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -94,12 +95,17 @@ fun PointToSkyMobileApp(
                 MobileDestination.Home -> MobileHome(
                     onOpenCard = onOpenCard,
                     onLocationSetup = { destination = MobileDestination.LocationSetup },
+                    onTimeDebug = { destination = MobileDestination.TimeDebug },
                 )
 
                 MobileDestination.LocationSetup -> LocationSetupScreen(
                     locationPrefs = locationPrefs,
                     shareState = shareState,
                     onShareToggle = onShareToggle,
+                    onBack = { destination = MobileDestination.Home }
+                )
+
+                MobileDestination.TimeDebug -> TimeDebugScreen(
                     onBack = { destination = MobileDestination.Home }
                 )
             }
@@ -111,6 +117,7 @@ fun PointToSkyMobileApp(
 fun MobileHome(
     onOpenCard: () -> Unit,
     onLocationSetup: () -> Unit,
+    onTimeDebug: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -133,10 +140,16 @@ fun MobileHome(
         ) {
             Text(text = stringResource(id = R.string.location_settings))
         }
+        Button(
+            onClick = onTimeDebug,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.time_debug))
+        }
     }
 }
 
-private enum class MobileDestination { Home, LocationSetup }
+private enum class MobileDestination { Home, LocationSetup, TimeDebug }
 
 private class PreviewLocationPrefs : LocationPrefs {
     override val manualPointFlow: Flow<GeoPoint?> = flowOf(null)

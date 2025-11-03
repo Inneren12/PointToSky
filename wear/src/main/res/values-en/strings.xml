@@ -56,4 +56,7 @@
     <string name="location_setup_save">Save coordinates</string>
     <string name="location_setup_saved_toast">Coordinates saved</string>
     <string name="location_setup_use_phone_fallback">Use phone location</string>
+    <string name="time_debug_label">Time</string>
+    <string name="time_debug_toggle">1 Hz / 0.2 Hz</string>
+    <string name="time_debug_back">Back</string>
 </resources>
