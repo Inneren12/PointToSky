@@ -15,6 +15,12 @@ interface OrientationRepository {
 
     fun updateZero(orientationZero: OrientationZero)
 
+    fun setZeroAzimuthOffset(offsetDeg: Float) {
+        updateZero(OrientationZero(azimuthOffsetDeg = offsetDeg))
+    }
+
+    fun setRemap(screenRotation: ScreenRotation) = Unit
+
     fun resetZero() {
         updateZero(OrientationZero())
     }

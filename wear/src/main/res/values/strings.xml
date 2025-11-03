@@ -2,4 +2,24 @@
     <string name="app_name">Point-to-Sky Wear</string>
     <string name="find_label">Найти</string>
     <string name="identify_label">Что там?</string>
+    <string name="sensors_debug_label">Датчики</string>
+    <string name="sensors_debug_title">Датчики</string>
+    <string name="sensors_calibrate_label">Калибровка</string>
+    <string name="sensors_calibrate_title">Калибровка</string>
+    <string name="set_zero_label">Установить ноль</string>
+    <string name="reset_zero_label">Сбросить</string>
+    <string name="current_azimuth_label">Азимут: %1$.1f°</string>
+    <string name="current_azimuth_unknown_label">Азимут: —</string>
+    <string name="current_pitch_label">Тангаж: %1$.1f°</string>
+    <string name="current_roll_label">Крен: %1$.1f°</string>
+    <string name="current_accuracy_label">Точность: %1$s</string>
+    <string name="zero_offset_label">Смещение нуля: %1$.1f°</string>
+    <string name="screen_rotation_label">Поворот экрана</string>
+    <string name="screen_rotation_option">Поворот %1$d°</string>
+    <string name="sensors_calibrate_hint">Держите часы в нужном направлении и нажмите «Установить ноль».</string>
+    <string name="value_not_available">—</string>
+    <string name="orientation_accuracy_unreliable">Ненадёжно</string>
+    <string name="orientation_accuracy_low">Низкая</string>
+    <string name="orientation_accuracy_medium">Средняя</string>
+    <string name="orientation_accuracy_high">Высокая</string>
 </resources>
