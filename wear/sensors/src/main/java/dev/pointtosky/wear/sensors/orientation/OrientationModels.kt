@@ -12,6 +12,23 @@ data class OrientationFrame(
     val rotationMatrix: FloatArray,
 )
 
+object OrientationFrameDefaults {
+    val EMPTY = OrientationFrame(
+        timestampNanos = 0L,
+        azimuthDeg = 0f,
+        pitchDeg = 0f,
+        rollDeg = 0f,
+        forward = floatArrayOf(0f, 0f, 1f),
+        accuracy = OrientationAccuracy.UNRELIABLE,
+        rotationMatrix = FloatArray(9) { index ->
+            when (index) {
+                0, 4, 8 -> 1f
+                else -> 0f
+            }
+        },
+    )
+}
+
 data class OrientationZero(
     val azimuthOffsetDeg: Float = 0f,
 )
