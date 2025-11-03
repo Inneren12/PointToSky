@@ -13,9 +13,15 @@ object LoggerInitializer {
             logsDirectory.mkdirs()
         }
         val diagnosticsEnabled = isDebug || deviceInfo.diagnosticsEnabled
+        val defaultFrameTraceMode = if (isDebug) {
+            FrameTraceMode.SUMMARY_1HZ
+        } else {
+            FrameTraceMode.OFF
+        }
         val config = LoggerConfig(
             logsDirectory = logsDirectory,
-            diagnosticsEnabled = diagnosticsEnabled
+            diagnosticsEnabled = diagnosticsEnabled,
+            frameTraceMode = defaultFrameTraceMode,
         )
         val ringBuffer = RingBufferSink(config.ringBufferCapacity)
         val sinks = mutableListOf<LogSink>(ringBuffer)
