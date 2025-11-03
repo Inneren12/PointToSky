@@ -6,6 +6,11 @@
 - `wear` — приложение для Wear OS с Compose и навигацией.
 - `mobile` — Android-приложение с Compose Material 3.
 - `core/common` — общий мультиплатформенный модуль (KMP) под доменную логику.
+- `core/location` — контракты источников локации, модели и форматирование DMS. Предоставляет заглушки
+  `FakeLocationRepository` и `StubLocationOrchestrator` для превью и тестов. Подключение:
+  `implementation(project(":core:location"))`.
+- `core/time` — источник времени и репозиторий часовых поясов (`ZoneRepo`), общий для wear/mobile.
+  Подключение: `implementation(project(":core:time"))`.
 
 ## Требования
 - Java 17
