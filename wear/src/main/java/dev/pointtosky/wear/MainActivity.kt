@@ -128,7 +128,7 @@ fun PointToSkyWearApp(
                 SensorsCalibrateScreen(
                     azimuthDeg = frame?.azimuthDeg,
                     accuracy = frame?.accuracy,
-                    onSetZero = sensorsViewModel::setZeroAzimuthOffset,
+                    onSetZero = { deg: Float -> sensorsViewModel.setZeroAzimuthOffset(deg) },
                     onResetZero = sensorsViewModel::resetZero,
                 )
             }
