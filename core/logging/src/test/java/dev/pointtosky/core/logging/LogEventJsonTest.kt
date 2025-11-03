@@ -1,6 +1,7 @@
 package dev.pointtosky.core.logging
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
@@ -19,6 +20,12 @@ class LogEventJsonTest {
             appVersionName = "1.0.0",
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
+            flavor = "demo",
+            supportedAbis = listOf("arm64-v8a", "armeabi-v7a"),
+            sensors = mapOf(
+                "accelerometer" to true,
+                "gyroscope" to false
+            ),
             isDebug = true,
             diagnosticsEnabled = true
         )
@@ -58,6 +65,11 @@ class LogEventJsonTest {
         assertEquals("TestThread", threadJson?.get("name")?.jsonPrimitive?.content)
         val deviceJson = json["device"]?.jsonObject
         assertEquals("Pixel", deviceJson?.get("model")?.jsonPrimitive?.content)
+        assertEquals("demo", deviceJson?.get("flavor")?.jsonPrimitive?.content)
+        val supportedAbis = deviceJson?.get("supportedAbis")?.jsonArray
+        assertEquals("arm64-v8a", supportedAbis?.firstOrNull()?.jsonPrimitive?.content)
+        val sensors = deviceJson?.get("sensors")?.jsonObject
+        assertEquals(true, sensors?.get("accelerometer")?.jsonPrimitive?.boolean)
         assertEquals(true, deviceJson?.get("diagnosticsEnabled")?.jsonPrimitive?.boolean)
         val errorJson = json["error"]?.jsonObject
         assertEquals("boom", errorJson?.get("message")?.jsonPrimitive?.content)

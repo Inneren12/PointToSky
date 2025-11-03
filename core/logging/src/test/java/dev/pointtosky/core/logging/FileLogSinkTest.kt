@@ -87,6 +87,9 @@ class FileLogSinkTest {
             appVersionName = "1.0.0",
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
+            flavor = "demo",
+            supportedAbis = listOf("arm64-v8a"),
+            sensors = mapOf("accelerometer" to true),
             isDebug = true,
             diagnosticsEnabled = true
         )

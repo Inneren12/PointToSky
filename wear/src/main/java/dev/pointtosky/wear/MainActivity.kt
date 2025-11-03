@@ -22,6 +22,7 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.BuildConfig
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,6 +84,15 @@ fun HomeScreen(
             colors = ButtonDefaults.primaryButtonColors()
         ) {
             Text(text = stringResource(id = R.string.identify_label))
+        }
+        if (BuildConfig.DEBUG) {
+            Button(
+                onClick = { throw RuntimeException("Crash Test") },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.primaryButtonColors()
+            ) {
+                Text(text = stringResource(id = R.string.crash_test))
+            }
         }
     }
 }

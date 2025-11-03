@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import dev.pointtosky.mobile.BuildConfig
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,6 +61,14 @@ fun MobileHome(onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
             modifier = Modifier.padding(top = 24.dp)
         ) {
             Text(text = stringResource(id = R.string.open_card))
+        }
+        if (BuildConfig.DEBUG) {
+            Button(
+                onClick = { throw RuntimeException("Crash Test") },
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.crash_test))
+            }
         }
     }
 }
