@@ -40,21 +40,31 @@ import dev.pointtosky.wear.sensors.SensorsViewModelFactory
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), AmbientModeSupport.AmbientCallbackProvider {
     private val orientationRepository: OrientationRepository by lazy {
         OrientationRepository.create(applicationContext)
     }
 
+    private lateinit var ambientController: AmbientModeSupport.AmbientController
+
     private val ambientCallback = object : AmbientModeSupport.AmbientCallback() {
-        override fun onEnterAmbient(ambientDetails: AmbientModeSupport.AmbientDetails?) {
+        override fun onEnterAmbient(ambientDetails: AmbientModeSupport.AmbientDetails) {
             // TODO: reduce rate in ambient
+        }
+
+        override fun onUpdateAmbient() {
+            // No-op for now
+        }
+
+        override fun onExitAmbient() {
+            // No-op for now
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        AmbientModeSupport.attach(this, ambientCallback)
+        ambientController = AmbientModeSupport.attach(this)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -71,6 +81,8 @@ class MainActivity : ComponentActivity() {
             PointToSkyWearApp(orientationRepository = orientationRepository)
         }
     }
+
+    override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback = ambientCallback
 }
 
 private const val ROUTE_HOME = "home"
