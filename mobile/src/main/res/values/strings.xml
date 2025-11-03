@@ -1,4 +1,21 @@
 <resources>
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Открыть карточку</string>
+    <string name="logs_title">Журналы</string>
+    <string name="logs_retention_summary">Хранение: до %1$d файлов или %2$d МиБ</string>
+    <string name="logs_section_phone">Файлы на телефоне</string>
+    <string name="logs_section_watch_downloaded">Получено с часов</string>
+    <string name="logs_section_watch_remote">Доступно на часах</string>
+    <string name="logs_empty">Журналы отсутствуют</string>
+    <string name="logs_compressed_indicator">gz</string>
+    <string name="logs_action_view_tail">Просмотреть хвост</string>
+    <string name="logs_action_share">Поделиться</string>
+    <string name="logs_action_delete">Удалить</string>
+    <string name="logs_action_request">Запросить</string>
+    <string name="logs_request_failed_title">Не удалось запросить лог</string>
+    <string name="logs_tail_title">Последние строки: %1$s</string>
+    <string name="logs_error_too_large">Файл слишком большой для передачи</string>
+    <string name="logs_error_missing">Файл на часах не найден</string>
+    <string name="logs_error_generic">Ошибка передачи с часов</string>
+    <string name="logs_error_no_nodes">Нет соединённых часов</string>
 </resources>

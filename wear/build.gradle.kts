@@ -55,6 +55,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.wear)
 
     implementation(libs.wear.compose.foundation)
@@ -66,6 +67,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.runtime:runtime")
     implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)

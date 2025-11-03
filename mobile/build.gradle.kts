@@ -52,6 +52,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.compose.material3)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.runtime:runtime")
@@ -60,6 +61,10 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
 
     implementation(project(":core:common"))
+
+    implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)

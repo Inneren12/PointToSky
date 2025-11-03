@@ -27,6 +27,8 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.logs.LogsScreen
+import dev.pointtosky.wear.logs.LogsViewModel
 import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
 import dev.pointtosky.wear.sensors.SensorsDebugScreen
 import dev.pointtosky.wear.sensors.SensorsViewModel
@@ -46,6 +48,7 @@ private const val ROUTE_AIM = "aim"
 private const val ROUTE_IDENTIFY = "identify"
 private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
+private const val ROUTE_LOGS = "logs"
 
 @Composable
 fun PointToSkyWearApp() {
@@ -64,7 +67,12 @@ fun PointToSkyWearApp() {
                     onAimClick = { navController.navigate(ROUTE_AIM) },
                     onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
                     onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
+                    onLogsClick = { navController.navigate(ROUTE_LOGS) },
                 )
+            }
+            composable(ROUTE_LOGS) {
+                val logsViewModel: LogsViewModel = viewModel()
+                LogsScreen(viewModel = logsViewModel)
             }
             composable(ROUTE_AIM) { AimScreen() }
             composable(ROUTE_IDENTIFY) { IdentifyScreen() }
@@ -98,6 +106,7 @@ fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
     onSensorsDebugClick: () -> Unit,
+    onLogsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -127,6 +136,13 @@ fun HomeScreen(
             colors = ButtonDefaults.secondaryButtonColors(),
         ) {
             Text(text = stringResource(id = R.string.sensors_debug_label))
+        }
+        Button(
+            onClick = onLogsClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.secondaryButtonColors(),
+        ) {
+            Text(text = stringResource(id = R.string.logs_title))
         }
     }
 }
@@ -161,7 +177,7 @@ fun IdentifyScreen(modifier: Modifier = Modifier) {
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen(onAimClick = {}, onIdentifyClick = {}, onSensorsDebugClick = {})
+        HomeScreen(onAimClick = {}, onIdentifyClick = {}, onSensorsDebugClick = {}, onLogsClick = {})
     }
 }
 

@@ -22,4 +22,10 @@
     <string name="orientation_accuracy_low">Низкая</string>
     <string name="orientation_accuracy_medium">Средняя</string>
     <string name="orientation_accuracy_high">Высокая</string>
+    <string name="logs_title">Журналы</string>
+    <string name="logs_retention_summary">Хранение: до %1$d файлов или %2$d МиБ</string>
+    <string name="logs_empty">Журналы отсутствуют</string>
+    <string name="logs_tail_title">Последние строки: %1$s</string>
+    <string name="logs_send_to_phone">Отправить на телефон</string>
+    <string name="logs_action_delete">Удалить</string>
 </resources>
