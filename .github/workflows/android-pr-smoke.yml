@@ -1,0 +1,69 @@
+name: Android PR Smoke
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (exact ref)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          clean: true
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses
+
+      - name: Setup Gradle (cache read-only for PRs)
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-home-cache-cleanup: true
+          cache-read-only: true
+
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x ./gradlew
+
+      - name: Detect touched modules
+        id: touch
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            wear:
+              - 'wear/**'
+            mobile:
+              - 'mobile/**'
+            core:
+              - 'core/**'
+              - 'gradle/**'
+              - 'settings.gradle.kts'
+              - 'build.gradle.kts'
+              - 'gradle.properties'
+
+      - name: Build PR (fast compile only)
+        run: |
+          set -e
+          MODS=""
+          if [ "${{ steps.touch.outputs.wear }}" = "true" ];  then MODS="$MODS :wear:compileDebugKotlin"; fi
+          if [ "${{ steps.touch.outputs.mobile }}" = "true" ]; then MODS="$MODS :mobile:compileDebugKotlin"; fi
+          if [ -z "$MODS" ] || [ "${{ steps.touch.outputs.core }}" = "true" ]; then
+            MODS=":wear:compileDebugKotlin"
+            # uncomment next when :mobile exists
+            # MODS="$MODS :mobile:compileDebugKotlin"
+          fi
+          ./gradlew $MODS --stacktrace --info --no-daemon --no-parallel \
+            -Dkotlin.compiler.execution.strategy=in-process --console=plain
