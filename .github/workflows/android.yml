@@ -30,5 +30,17 @@ jobs:
                   gradle-home-cache-cleanup: true
                   cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-            - name: Build (verbose + scan)
-              run: ./gradlew clean build --stacktrace --info --scan --no-parallel
+            - name: Build Wear (debug) with verbose compiler logs
+              run: >-
+                  ./gradlew :wear:sensors:compileDebugKotlin :wear:assembleDebug --stacktrace --info --no-parallel --no-daemon --rerun-tasks --console=plain
+
+            - name: Build (verbose, module-by-module)
+              run: |
+                set -e
+                ./gradlew :core:logging:compileDebugKotlin --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
+                ./gradlew :wear:assembleDebug         --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
+                ./gradlew :mobile:assembleDebug       --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
+
+
+            - name: Build Mobile debug
+              run: ./gradlew :mobile:assembleDebug --stacktrace --no-daemon --console=plain
