@@ -25,12 +25,15 @@ private const val LOW_PASS_ALPHA = 0.15f // TODO: tune
 
 class AccelMagOrientationRepository(
     private val sensorManager: SensorManager,
-    private val config: OrientationRepositoryConfig = OrientationRepositoryConfig(),
+    initialConfig: OrientationRepositoryConfig = OrientationRepositoryConfig(),
     private val externalScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : OrientationRepository {
 
     @Volatile
-    private var screenRotation: ScreenRotation = config.screenRotation
+    private var screenRotation: ScreenRotation = initialConfig.screenRotation
+
+    @Volatile
+    private var config: OrientationRepositoryConfig = initialConfig
 
     private val _zero = MutableStateFlow(OrientationZero())
     override val zero: StateFlow<OrientationZero> = _zero.asStateFlow()
@@ -45,6 +48,9 @@ class AccelMagOrientationRepository(
     private val _activeSource = MutableStateFlow(source)
     override val activeSource: StateFlow<OrientationSource> = _activeSource.asStateFlow()
 
+    private val _isRunning = MutableStateFlow(false)
+    override val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+
     private val frameLogger = OrientationFrameLogger(
         source = source,
         scope = externalScope,
@@ -55,10 +61,17 @@ class AccelMagOrientationRepository(
     private var collectionJob: Job? = null
     private var lastAccuracy: OrientationAccuracy? = null
 
-    override fun start() {
-        if (collectionJob?.isActive == true) {
+    override fun start(config: OrientationRepositoryConfig) {
+        if (collectionJob?.isActive == true && this.config == config) {
             return
         }
+
+        if (collectionJob?.isActive == true) {
+            stop()
+        }
+
+        this.config = config
+        screenRotation = config.screenRotation
 
         LogBus.i(
             tag = "Sensors",
@@ -71,16 +84,22 @@ class AccelMagOrientationRepository(
         )
 
         collectionJob = externalScope.launch {
-            accelMagFrames().collect { frame ->
+            accelMagFrames(config).collect { frame ->
                 framesSharedFlow.emit(frame)
             }
         }.also { job ->
-            job.invokeOnCompletion { collectionJob = null }
+            job.invokeOnCompletion {
+                collectionJob = null
+                _isRunning.value = false
+            }
         }
+        _isRunning.value = true
     }
 
     override fun stop() {
         collectionJob?.cancel()
+        frameLogger.reset()
+        _isRunning.value = false
         LogBus.i(
             tag = "Sensors",
             msg = "stop",
@@ -121,7 +140,7 @@ class AccelMagOrientationRepository(
         )
     }
 
-    private fun accelMagFrames(): Flow<OrientationFrame> = callbackFlow {
+    private fun accelMagFrames(activeConfig: OrientationRepositoryConfig): Flow<OrientationFrame> = callbackFlow {
         val accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         val magnet = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
         if (accel == null || magnet == null) {
@@ -136,7 +155,7 @@ class AccelMagOrientationRepository(
         val rotationMatrix = FloatArray(9)
         val remappedMatrix = FloatArray(9)
         val orientation = FloatArray(3)
-        val frameThrottleNanos = config.frameThrottleMs * NANOS_IN_MILLI
+        val frameThrottleNanos = activeConfig.frameThrottleMs * NANOS_IN_MILLI
         var lastEmitTimestampNs = 0L
         var accelSet = false
         var magnetSet = false
@@ -214,8 +233,19 @@ class AccelMagOrientationRepository(
         }
 
         val registered = runCatching {
-            sensorManager.registerListener(listener, accel, config.samplingPeriodUs, 0) &&
-                sensorManager.registerListener(listener, magnet, config.samplingPeriodUs, 0)
+            val accelRegistered = sensorManager.registerListener(
+                listener,
+                accel,
+                activeConfig.samplingPeriodUs,
+                0,
+            )
+            val magnetRegistered = sensorManager.registerListener(
+                listener,
+                magnet,
+                activeConfig.samplingPeriodUs,
+                0,
+            )
+            accelRegistered && magnetRegistered
         }.onFailure { throwable ->
             LogBus.e(
                 tag = "Sensors",

@@ -24,11 +24,14 @@ import kotlin.math.sqrt
 
 class RotationVectorOrientationRepository(
     private val sensorManager: SensorManager,
-    private val config: OrientationRepositoryConfig = OrientationRepositoryConfig(),
+    initialConfig: OrientationRepositoryConfig = OrientationRepositoryConfig(),
     private val externalScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : OrientationRepository {
     @Volatile
-    private var screenRotation: ScreenRotation = config.screenRotation
+    private var screenRotation: ScreenRotation = initialConfig.screenRotation
+
+    @Volatile
+    private var config: OrientationRepositoryConfig = initialConfig
 
     private val _zero = MutableStateFlow(OrientationZero())
     override val zero: StateFlow<OrientationZero> = _zero.asStateFlow()
@@ -43,6 +46,9 @@ class RotationVectorOrientationRepository(
     private val _activeSource = MutableStateFlow(source)
     override val activeSource: StateFlow<OrientationSource> = _activeSource.asStateFlow()
 
+    private val _isRunning = MutableStateFlow(false)
+    override val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+
     private val frameLogger = OrientationFrameLogger(
         source = source,
         scope = externalScope,
@@ -54,10 +60,17 @@ class RotationVectorOrientationRepository(
 
     private var collectionJob: Job? = null
 
-    override fun start() {
-        if (collectionJob?.isActive == true) {
+    override fun start(config: OrientationRepositoryConfig) {
+        if (collectionJob?.isActive == true && this.config == config) {
             return
         }
+
+        if (collectionJob?.isActive == true) {
+            stop()
+        }
+
+        this.config = config
+        screenRotation = config.screenRotation
 
         LogBus.i(
             tag = "Sensors",
@@ -70,18 +83,22 @@ class RotationVectorOrientationRepository(
         )
 
         collectionJob = externalScope.launch {
-            rotationVectorFrames().collect { frame ->
+            rotationVectorFrames(config).collect { frame ->
                 framesSharedFlow.emit(frame)
             }
         }.also { job ->
             job.invokeOnCompletion {
                 collectionJob = null
+                _isRunning.value = false
             }
         }
+        _isRunning.value = true
     }
 
     override fun stop() {
         collectionJob?.cancel()
+        frameLogger.reset()
+        _isRunning.value = false
         LogBus.i(
             tag = "Sensors",
             msg = "stop",
@@ -121,7 +138,7 @@ class RotationVectorOrientationRepository(
         )
     }
 
-    private fun rotationVectorFrames(): Flow<OrientationFrame> = callbackFlow {
+    private fun rotationVectorFrames(activeConfig: OrientationRepositoryConfig): Flow<OrientationFrame> = callbackFlow {
         val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         if (sensor == null) {
             close(IllegalStateException("Rotation vector sensor not available"))
@@ -131,7 +148,7 @@ class RotationVectorOrientationRepository(
         val rotationMatrix = FloatArray(9)
         val remappedMatrix = FloatArray(9)
         val orientation = FloatArray(3)
-        val frameThrottleNanos = config.frameThrottleMs * NANOS_IN_MILLI
+        val frameThrottleNanos = activeConfig.frameThrottleMs * NANOS_IN_MILLI
         var lastEmitTimestampNs = 0L
 
         val listener = object : SensorEventListener {
@@ -190,7 +207,7 @@ class RotationVectorOrientationRepository(
             sensorManager.registerListener(
                 listener,
                 sensor,
-                config.samplingPeriodUs,
+                activeConfig.samplingPeriodUs,
                 0,
             )
         }.onFailure { throwable ->

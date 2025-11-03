@@ -12,8 +12,9 @@ interface OrientationRepository {
     val fps: StateFlow<Float?>
     val source: OrientationSource
     val activeSource: StateFlow<OrientationSource>
+    val isRunning: StateFlow<Boolean>
 
-    fun start()
+    fun start(config: OrientationRepositoryConfig = OrientationRepositoryConfig())
 
     fun stop()
 
