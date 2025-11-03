@@ -10,7 +10,8 @@ data class LoggerConfig(
     val maxFiles: Int = DEFAULT_MAX_FILES,
     val flushIntervalMs: Long = DEFAULT_FLUSH_INTERVAL_MS,
     val forceFsyncOnRotate: Boolean = true,
-    val redactor: Redactor = Redactor.Passthrough
+    val redactor: Redactor = Redactor.Passthrough,
+    val frameTraceMode: FrameTraceMode = FrameTraceMode.OFF,
 ) {
     init {
         require(maxFileSizeBytes > 0) { "maxFileSizeBytes must be > 0" }
@@ -25,4 +26,10 @@ data class LoggerConfig(
         private const val DEFAULT_FLUSH_INTERVAL_MS = 500L
         private const val DEFAULT_MAX_FILE_SIZE_BYTES = 5L * 1024L * 1024L
     }
+}
+
+enum class FrameTraceMode {
+    OFF,
+    SUMMARY_1HZ,
+    FULL_15HZ,
 }

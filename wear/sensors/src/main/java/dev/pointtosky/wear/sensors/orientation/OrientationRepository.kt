@@ -1,6 +1,7 @@
 package dev.pointtosky.wear.sensors.orientation
 
 import android.content.Context
+import android.hardware.Sensor
 import android.hardware.SensorManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 interface OrientationRepository {
     val frames: Flow<OrientationFrame>
     val zero: StateFlow<OrientationZero>
+    val fps: StateFlow<Float?>
+    val source: OrientationSource
 
     fun start()
 
@@ -29,7 +32,12 @@ interface OrientationRepository {
         fun create(context: Context): OrientationRepository {
             val appContext = context.applicationContext
             val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-            return RotationVectorOrientationRepository(sensorManager = sensorManager)
+            val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+            return if (rotationSensor != null) {
+                RotationVectorOrientationRepository(sensorManager = sensorManager)
+            } else {
+                AccelMagOrientationRepository(sensorManager = sensorManager)
+            }
         }
     }
 }

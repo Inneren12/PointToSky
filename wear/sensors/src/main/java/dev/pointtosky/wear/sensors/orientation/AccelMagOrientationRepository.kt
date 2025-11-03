@@ -20,13 +20,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlin.jvm.Volatile
-import kotlin.math.sqrt
 
-class RotationVectorOrientationRepository(
+class AccelMagOrientationRepository(
     private val sensorManager: SensorManager,
     private val config: OrientationRepositoryConfig = OrientationRepositoryConfig(),
     private val externalScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : OrientationRepository {
+
     @Volatile
     private var screenRotation: ScreenRotation = config.screenRotation
 
@@ -39,7 +39,7 @@ class RotationVectorOrientationRepository(
     private val _fps = MutableStateFlow<Float?>(null)
     override val fps: StateFlow<Float?> = _fps.asStateFlow()
 
-    override val source: OrientationSource = OrientationSource.ROTATION_VECTOR
+    override val source: OrientationSource = OrientationSource.ACCEL_MAG
 
     private val frameLogger = OrientationFrameLogger(
         source = source,
@@ -48,9 +48,8 @@ class RotationVectorOrientationRepository(
         onFpsChanged = { value -> _fps.value = value },
     )
 
-    private var lastAccuracy: OrientationAccuracy? = null
-
     private var collectionJob: Job? = null
+    private var lastAccuracy: OrientationAccuracy? = null
 
     override fun start() {
         if (collectionJob?.isActive == true) {
@@ -68,13 +67,11 @@ class RotationVectorOrientationRepository(
         )
 
         collectionJob = externalScope.launch {
-            rotationVectorFrames().collect { frame ->
+            accelMagFrames().collect { frame ->
                 framesSharedFlow.emit(frame)
             }
         }.also { job ->
-            job.invokeOnCompletion {
-                collectionJob = null
-            }
+            job.invokeOnCompletion { collectionJob = null }
         }
     }
 
@@ -105,6 +102,7 @@ class RotationVectorOrientationRepository(
     }
 
     override fun setRemap(screenRotation: ScreenRotation) {
+        if (this.screenRotation == screenRotation) return
         this.screenRotation = screenRotation
         LogBus.i(
             tag = "Sensors",
@@ -119,27 +117,49 @@ class RotationVectorOrientationRepository(
         )
     }
 
-    private fun rotationVectorFrames(): Flow<OrientationFrame> = callbackFlow {
-        val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        if (sensor == null) {
-            close(IllegalStateException("Rotation vector sensor not available"))
+    private fun accelMagFrames(): Flow<OrientationFrame> = callbackFlow {
+        val accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val magnet = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        if (accel == null || magnet == null) {
+            close(IllegalStateException("Accelerometer or magnetometer not available"))
             return@callbackFlow
         }
 
+        val gravity = FloatArray(3)
+        val geomagnetic = FloatArray(3)
         val rotationMatrix = FloatArray(9)
         val remappedMatrix = FloatArray(9)
         val orientation = FloatArray(3)
         val frameThrottleNanos = config.frameThrottleMs * NANOS_IN_MILLI
         var lastEmitTimestampNs = 0L
+        var accelSet = false
+        var magnetSet = false
+        var accelAccuracyStatus = SensorManager.SENSOR_STATUS_NO_CONTACT
+        var magnetAccuracyStatus = SensorManager.SENSOR_STATUS_NO_CONTACT
 
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                if (!shouldEmit(event.timestamp, lastEmitTimestampNs, frameThrottleNanos)) {
-                    return
+                when (event.sensor?.type) {
+                    Sensor.TYPE_ACCELEROMETER -> {
+                        System.arraycopy(event.values, 0, gravity, 0, gravity.size)
+                        accelSet = true
+                        accelAccuracyStatus = event.accuracy
+                    }
+                    Sensor.TYPE_MAGNETIC_FIELD -> {
+                        System.arraycopy(event.values, 0, geomagnetic, 0, geomagnetic.size)
+                        magnetSet = true
+                        magnetAccuracyStatus = event.accuracy
+                    }
+                    else -> return
                 }
+
+                if (!accelSet || !magnetSet) return
+                if (!shouldEmit(event.timestamp, lastEmitTimestampNs, frameThrottleNanos)) return
                 lastEmitTimestampNs = event.timestamp
 
-                SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                val success = SensorManager.getRotationMatrix(rotationMatrix, null, gravity, geomagnetic)
+                if (!success) return
+
                 val activeMatrix = applyRemap(rotationMatrix, remappedMatrix, screenRotation)
                 SensorManager.getOrientation(activeMatrix, orientation)
 
@@ -154,14 +174,15 @@ class RotationVectorOrientationRepository(
 
                 val forward = extractForwardVector(activeMatrix)
                 val normalizedForward = normalizeVector(forward)
-                val accuracy = mapAccuracy(event.accuracy)
+                val combinedAccuracy = mapAccuracy(minOf(accelAccuracyStatus, magnetAccuracyStatus))
+
                 val frame = OrientationFrame(
                     timestampNanos = event.timestamp,
                     azimuthDeg = azimuth,
                     pitchDeg = pitch,
                     rollDeg = roll,
                     forward = normalizedForward,
-                    accuracy = accuracy,
+                    accuracy = combinedAccuracy,
                     rotationMatrix = activeMatrix.copyOf(),
                 )
                 frameLogger.submit(frame)
@@ -169,14 +190,18 @@ class RotationVectorOrientationRepository(
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-                val mapped = mapAccuracy(accuracy)
-                if (mapped != lastAccuracy) {
-                    lastAccuracy = mapped
+                when (sensor?.type) {
+                    Sensor.TYPE_ACCELEROMETER -> accelAccuracyStatus = accuracy
+                    Sensor.TYPE_MAGNETIC_FIELD -> magnetAccuracyStatus = accuracy
+                }
+                val combinedAccuracy = mapAccuracy(minOf(accelAccuracyStatus, magnetAccuracyStatus))
+                if (combinedAccuracy != lastAccuracy) {
+                    lastAccuracy = combinedAccuracy
                     LogBus.d(
                         tag = "Sensors",
                         msg = "accuracy",
                         payload = mapOf(
-                            "level" to mapped,
+                            "level" to combinedAccuracy,
                             "source" to source.name,
                         ),
                     )
@@ -185,12 +210,8 @@ class RotationVectorOrientationRepository(
         }
 
         val registered = runCatching {
-            sensorManager.registerListener(
-                listener,
-                sensor,
-                config.samplingPeriodUs,
-                0,
-            )
+            sensorManager.registerListener(listener, accel, config.samplingPeriodUs, 0) &&
+                sensorManager.registerListener(listener, magnet, config.samplingPeriodUs, 0)
         }.onFailure { throwable ->
             LogBus.e(
                 tag = "Sensors",
@@ -199,7 +220,7 @@ class RotationVectorOrientationRepository(
                 payload = mapOf(
                     "operation" to "register",
                     "source" to source.name,
-                    "sensor" to "ROTATION_VECTOR",
+                    "sensor" to "ACCEL_MAG",
                 ),
             )
         }.getOrDefault(false)
@@ -211,15 +232,15 @@ class RotationVectorOrientationRepository(
                 payload = mapOf(
                     "operation" to "register",
                     "source" to source.name,
-                    "sensor" to "ROTATION_VECTOR",
+                    "sensor" to "ACCEL_MAG",
                 ),
             )
-            close(IllegalStateException("Failed to register rotation vector listener"))
+            close(IllegalStateException("Failed to register accel/mag listeners"))
             return@callbackFlow
         }
 
         awaitClose {
-            runCatching { sensorManager.unregisterListener(listener) }
+            runCatching { sensorManager.unregisterListener(listener, accel) }
                 .onFailure { throwable ->
                     LogBus.e(
                         tag = "Sensors",
@@ -228,7 +249,20 @@ class RotationVectorOrientationRepository(
                         payload = mapOf(
                             "operation" to "unregister",
                             "source" to source.name,
-                            "sensor" to "ROTATION_VECTOR",
+                            "sensor" to "ACCEL",
+                        ),
+                    )
+                }
+            runCatching { sensorManager.unregisterListener(listener, magnet) }
+                .onFailure { throwable ->
+                    LogBus.e(
+                        tag = "Sensors",
+                        msg = "error",
+                        err = throwable,
+                        payload = mapOf(
+                            "operation" to "unregister",
+                            "source" to source.name,
+                            "sensor" to "MAG",
                         ),
                     )
                 }
@@ -240,52 +274,4 @@ class RotationVectorOrientationRepository(
         if (previous == 0L) return true
         return current - previous >= throttleNs
     }
-}
-
-internal fun applyZeroOffset(azimuthDeg: Float, zero: OrientationZero): Float {
-    return normalizeAzimuthDeg(azimuthDeg + zero.azimuthOffsetDeg)
-}
-
-internal fun normalizeAzimuthDeg(value: Float): Float {
-    var result = value % 360f
-    if (result < 0f) {
-        result += 360f
-    }
-    if (result >= 360f) {
-        result -= 360f
-    }
-    return result
-}
-
-internal fun normalizePitchDeg(value: Float): Float = value.coerceIn(-90f, 90f)
-
-internal fun normalizeRollDeg(value: Float): Float {
-    var result = value % 360f
-    if (result < -180f) {
-        result += 360f
-    }
-    if (result >= 180f) {
-        result -= 360f
-    }
-    return result
-}
-
-internal fun extractForwardVector(rotationMatrix: FloatArray): FloatArray {
-    return floatArrayOf(rotationMatrix[2], rotationMatrix[5], rotationMatrix[8])
-}
-
-internal fun normalizeVector(vector: FloatArray): FloatArray {
-    val length = sqrt(vector.fold(0f) { acc, value -> acc + value * value })
-    if (length == 0f) {
-        return floatArrayOf(0f, 0f, 0f)
-    }
-    return floatArrayOf(vector[0] / length, vector[1] / length, vector[2] / length)
-}
-
-internal fun mapAccuracy(accuracy: Int): OrientationAccuracy = when (accuracy) {
-    SensorManager.SENSOR_STATUS_UNRELIABLE -> OrientationAccuracy.UNRELIABLE
-    SensorManager.SENSOR_STATUS_ACCURACY_LOW -> OrientationAccuracy.LOW
-    SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM -> OrientationAccuracy.MEDIUM
-    SensorManager.SENSOR_STATUS_ACCURACY_HIGH -> OrientationAccuracy.HIGH
-    else -> OrientationAccuracy.MEDIUM
 }

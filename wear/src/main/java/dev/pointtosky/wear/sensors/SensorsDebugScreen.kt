@@ -15,8 +15,11 @@ import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import dev.pointtosky.core.logging.FrameTraceMode
+import dev.pointtosky.core.logging.LogWriterStats
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
+import dev.pointtosky.wear.sensors.orientation.OrientationSource
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
 import dev.pointtosky.wear.sensors.orientation.ScreenRotation
 
@@ -25,6 +28,11 @@ fun SensorsDebugScreen(
     frame: OrientationFrame?,
     zero: OrientationZero,
     screenRotation: ScreenRotation,
+    frameTraceMode: FrameTraceMode,
+    fps: Float?,
+    source: OrientationSource,
+    writerStats: LogWriterStats,
+    onFrameTraceModeSelected: (FrameTraceMode) -> Unit,
     onScreenRotationSelected: (ScreenRotation) -> Unit,
     onNavigateToCalibrate: () -> Unit,
     modifier: Modifier = Modifier,
@@ -65,11 +73,39 @@ fun SensorsDebugScreen(
             )
         }
         item {
+            val fpsText = fps?.let { value -> stringResource(id = R.string.current_fps_label, value) }
+                ?: stringResource(id = R.string.value_not_available)
+            Text(
+                text = stringResource(id = R.string.current_fps_prefix, fpsText),
+                style = MaterialTheme.typography.body2,
+            )
+        }
+        item {
             val accuracyText = frame?.accuracy?.let { accuracy ->
                 stringResource(id = orientationAccuracyStringRes(accuracy))
             } ?: stringResource(id = R.string.value_not_available)
             Text(
                 text = stringResource(R.string.current_accuracy_label, accuracyText),
+                style = MaterialTheme.typography.body2,
+            )
+        }
+        item {
+            val sourceText = when (source) {
+                OrientationSource.ROTATION_VECTOR -> stringResource(id = R.string.source_rotation_vector)
+                OrientationSource.ACCEL_MAG -> stringResource(id = R.string.source_accel_mag)
+            }
+            Text(
+                text = stringResource(id = R.string.current_source_label, sourceText),
+                style = MaterialTheme.typography.body2,
+            )
+        }
+        item {
+            Text(
+                text = stringResource(
+                    id = R.string.writer_stats_label,
+                    writerStats.queuedEvents,
+                    writerStats.droppedEvents,
+                ),
                 style = MaterialTheme.typography.body2,
             )
         }
@@ -97,6 +133,34 @@ fun SensorsDebugScreen(
                 label = {
                     Text(
                         text = stringResource(R.string.screen_rotation_option, rotation.degrees),
+                        style = MaterialTheme.typography.body2,
+                    )
+                },
+                colors = colors,
+            )
+        }
+        item {
+            Text(
+                text = stringResource(id = R.string.frame_trace_label),
+                style = MaterialTheme.typography.caption1,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        items(FrameTraceMode.entries) { mode ->
+            val colors = if (mode == frameTraceMode) {
+                ChipDefaults.primaryChipColors()
+            } else {
+                ChipDefaults.secondaryChipColors()
+            }
+            Chip(
+                onClick = { onFrameTraceModeSelected(mode) },
+                label = {
+                    Text(
+                        text = when (mode) {
+                            FrameTraceMode.OFF -> stringResource(id = R.string.frame_trace_off)
+                            FrameTraceMode.SUMMARY_1HZ -> stringResource(id = R.string.frame_trace_summary)
+                            FrameTraceMode.FULL_15HZ -> stringResource(id = R.string.frame_trace_full)
+                        },
                         style = MaterialTheme.typography.body2,
                     )
                 },

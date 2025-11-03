@@ -72,10 +72,19 @@ fun PointToSkyWearApp() {
                 val frame by sensorsViewModel.frame.collectAsState()
                 val zero by sensorsViewModel.zero.collectAsState()
                 val screenRotation by sensorsViewModel.screenRotation.collectAsState()
+                val fps by sensorsViewModel.fps.collectAsState()
+                val frameTraceMode by sensorsViewModel.frameTraceMode.collectAsState()
+                val writerStats by sensorsViewModel.writerStats.collectAsState()
+                val source = sensorsViewModel.source
                 SensorsDebugScreen(
                     frame = frame,
                     zero = zero,
                     screenRotation = screenRotation,
+                    frameTraceMode = frameTraceMode,
+                    fps = fps,
+                    source = source,
+                    writerStats = writerStats,
+                    onFrameTraceModeSelected = sensorsViewModel::selectFrameTraceMode,
                     onScreenRotationSelected = sensorsViewModel::selectScreenRotation,
                     onNavigateToCalibrate = { navController.navigate(ROUTE_SENSORS_CALIBRATE) },
                 )

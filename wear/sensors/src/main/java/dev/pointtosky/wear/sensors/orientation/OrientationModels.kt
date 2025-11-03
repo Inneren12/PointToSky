@@ -9,6 +9,7 @@ data class OrientationFrame(
     val rollDeg: Float,
     val forward: FloatArray,
     val accuracy: OrientationAccuracy,
+    val rotationMatrix: FloatArray,
 )
 
 data class OrientationZero(
@@ -20,6 +21,11 @@ enum class OrientationAccuracy {
     LOW,
     MEDIUM,
     HIGH,
+}
+
+enum class OrientationSource {
+    ROTATION_VECTOR,
+    ACCEL_MAG,
 }
 
 enum class ScreenRotation(

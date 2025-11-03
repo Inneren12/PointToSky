@@ -2,6 +2,9 @@ package dev.pointtosky.core.logging
 
 import android.os.Looper
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.runBlocking
 
 interface Logger {
@@ -19,6 +22,7 @@ object LogBus : Logger {
     private val deviceInfoRef = AtomicReference<DeviceInfo?>()
     private val processRef = AtomicReference<ProcessSnapshot?>()
     private val ringBufferRef = AtomicReference<RingBufferSink?>()
+    private val frameTraceModeState = MutableStateFlow(FrameTraceMode.OFF)
 
     fun install(
         writer: LogWriter,
@@ -32,6 +36,7 @@ object LogBus : Logger {
         deviceInfoRef.set(deviceInfo)
         processRef.set(process)
         ringBufferRef.set(ringBufferSink)
+        frameTraceModeState.value = config.frameTraceMode
     }
 
     fun reset() {
@@ -40,7 +45,10 @@ object LogBus : Logger {
         deviceInfoRef.set(null)
         processRef.set(null)
         ringBufferRef.set(null)
+        frameTraceModeState.value = FrameTraceMode.OFF
     }
+
+    fun config(): LoggerConfig? = configRef.get()
 
     override fun v(tag: String, msg: String, payload: Map<String, Any?>) {
         log(LogLevel.VERBOSE, tag, msg, null, payload, null)
@@ -67,6 +75,21 @@ object LogBus : Logger {
     }
 
     fun snapshot(): List<LogEvent> = ringBufferRef.get()?.snapshot().orEmpty()
+
+    fun frameTraceMode(): StateFlow<FrameTraceMode> = frameTraceModeState.asStateFlow()
+
+    fun setFrameTraceMode(mode: FrameTraceMode) {
+        frameTraceModeState.value = mode
+        while (true) {
+            val current = configRef.get() ?: break
+            val updated = current.copy(frameTraceMode = mode)
+            if (configRef.compareAndSet(current, updated)) {
+                break
+            }
+        }
+    }
+
+    fun writerStats(): LogWriterStats = writerRef.get()?.stats() ?: LogWriterStats()
 
     suspend fun flush() {
         writerRef.get()?.flush()
