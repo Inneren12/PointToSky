@@ -18,16 +18,18 @@ class SiderealTimeTest {
 
     @Test
     fun `lst matches fixed reference for New York`() {
+        val toleranceDeg = 0.5
         val instant = Instant.parse("2023-09-23T12:00:00Z")
         val lst = lstAt(instant, -73.9857)
-        assertEquals(108.0950164767757, lst.lstDeg, 0.5)
+        assertEquals(108.0950164767757, lst.lstDeg, toleranceDeg)
     }
 
     @Test
     fun `lst matches fixed reference for Sydney`() {
+        val toleranceDeg = 0.5
         val instant = Instant.parse("2023-03-21T00:00:00Z")
         val lst = lstAt(instant, 151.2093)
-        assertEquals(329.4667817338027, lst.lstDeg, 0.5)
+        assertEquals(329.4667817338027, lst.lstDeg, toleranceDeg)
     }
 
     @Test
