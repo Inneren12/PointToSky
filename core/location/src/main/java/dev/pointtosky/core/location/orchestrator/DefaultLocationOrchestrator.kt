@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import java.util.concurrent.atomic.AtomicReference
 
 class DefaultLocationOrchestrator(
     private val fused: LocationRepository?,
@@ -33,6 +34,8 @@ class DefaultLocationOrchestrator(
     // Не считаем fused "доступным" по факту наличия инстанса.
     // Включаем только после первого реального эмита; ошибки/завершение — выключаем.
     private val fusedAvailable = MutableStateFlow(false)
+
+    private val latestFix = AtomicReference<LocationFix?>(null)
 
     private val fusedFixes: Flow<LocationFix> = (fused?.fixes ?: emptyFlow())
         .onEach {
@@ -67,6 +70,7 @@ class DefaultLocationOrchestrator(
                 merge(fusedFixes, remoteFallback)
             }
         }
+        .onEach { fix -> latestFix.set(fix) }
 
     override suspend fun start(config: LocationConfig) {
         // Не поднимаем доступность оптимистически
@@ -87,19 +91,36 @@ class DefaultLocationOrchestrator(
     override suspend fun getLastKnown(): LocationFix? {
         val manualPoint = manualPrefs.manualPointFlow.firstOrNull()
         if (manualPoint != null) {
-            return manualPoint.toManualFix()
-        }
-        val fusedLast = fused?.getLastKnown()
-        if (fusedLast != null) {
-            return fusedLast
+            return manualPoint.toManualFix().also { latestFix.set(it) }
         }
         val useFallback = manualPrefs.usePhoneFallbackFlow.first()
+        latestFix.get()?.let { cached ->
+            if (cached.provider != ProviderType.MANUAL &&
+                (cached.provider != ProviderType.REMOTE_PHONE || useFallback)
+            ) {
+                return cached
+            }
+        }
+        fused?.getLastKnown()?.let { fix ->
+            latestFix.set(fix)
+            return fix
+        }
         if (!useFallback) return null
-        return remotePhone?.getLastKnown()
+        val remoteLast = remotePhone?.getLastKnown()
+        if (remoteLast != null) {
+            latestFix.set(remoteLast)
+        }
+        return remoteLast
     }
 
     override suspend fun setManual(point: GeoPoint?) {
         manualPrefs.setManual(point)
+        if (point == null) {
+            val cached = latestFix.get()
+            if (cached?.provider == ProviderType.MANUAL) {
+                latestFix.set(null)
+            }
+        }
     }
 
     override suspend fun preferPhoneFallback(enabled: Boolean) {
