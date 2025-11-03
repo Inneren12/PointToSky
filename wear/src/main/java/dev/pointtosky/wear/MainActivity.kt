@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,18 +29,39 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import androidx.wear.ambient.AmbientModeSupport
 import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
 import dev.pointtosky.wear.sensors.SensorsDebugScreen
 import dev.pointtosky.wear.sensors.SensorsViewModel
 import dev.pointtosky.wear.sensors.SensorsViewModelFactory
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), AmbientModeSupport.AmbientCallbackProvider {
+
+    private lateinit var ambientController: AmbientModeSupport.AmbientController
+    private val isAmbientMode = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ambientController = AmbientModeSupport.attach(this)
+        isAmbientMode.value = ambientController.isAmbient
         setContent {
-            PointToSkyWearApp()
+            val isAmbient by isAmbientMode
+            PointToSkyWearApp(isAmbient = isAmbient)
         }
     }
+
+    override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback =
+        object : AmbientModeSupport.AmbientCallback() {
+            override fun onEnterAmbient(ambientDetails: AmbientModeSupport.AmbientDetails) {
+                isAmbientMode.value = true
+            }
+
+            override fun onUpdateAmbient() = Unit
+
+            override fun onExitAmbient() {
+                isAmbientMode.value = false
+            }
+        }
 }
 
 private const val ROUTE_HOME = "home"
@@ -48,7 +71,10 @@ private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
 
 @Composable
-fun PointToSkyWearApp() {
+fun PointToSkyWearApp(isAmbient: Boolean = false) {
+    LaunchedEffect(isAmbient) {
+        // Hook for ambient mode specific behavior.
+    }
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
     val viewModelFactory = remember { SensorsViewModelFactory(context.applicationContext) }
@@ -85,7 +111,7 @@ fun PointToSkyWearApp() {
                 SensorsCalibrateScreen(
                     azimuthDeg = frame?.azimuthDeg,
                     accuracy = frame?.accuracy,
-                    onSetZero = sensorsViewModel::setZeroAzimuthOffset,
+                    onSetZero = { deg -> sensorsViewModel.setZeroAzimuthOffset(deg) },
                     onResetZero = sensorsViewModel::resetZero,
                 )
             }
