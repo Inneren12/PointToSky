@@ -171,6 +171,9 @@ class PhoneLocationRepository(
 
         val fix = withTimeoutOrNull(REQUEST_TIMEOUT_MS) { deferred.await() }
         pendingRequest.compareAndSet(deferred, null)
+        if (fix == null) {
+            deferred.complete(null)
+        }
         return fix
     }
 
