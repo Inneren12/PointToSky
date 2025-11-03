@@ -61,3 +61,36 @@ jobs:
 
       - name: Build Mobile debug
         run: ./gradlew :mobile:assembleDebug --stacktrace --no-daemon --console=plain
+
+  assembleReleaseWithLogsCheck:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout (exact ref)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          clean: true
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-home-cache-cleanup: true
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x ./gradlew
+
+      - name: Assemble release artifacts with minification
+        run: ./gradlew :wear:assembleRelease :mobile:assembleRelease --stacktrace --no-daemon --console=plain
+
+      - name: Verify logging code is retained in release artifacts
+        run: ./scripts/check-logging-presence.sh

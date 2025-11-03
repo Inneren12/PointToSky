@@ -17,8 +17,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "DIAGNOSTICS_LOGS_ENABLED", "true")
+        }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            buildConfigField("boolean", "DIAGNOSTICS_LOGS_ENABLED", "false")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

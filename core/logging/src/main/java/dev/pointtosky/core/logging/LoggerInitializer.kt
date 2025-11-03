@@ -7,12 +7,19 @@ import android.os.Process
 import java.io.File
 
 object LoggerInitializer {
-    fun init(context: Context, isDebug: Boolean, deviceInfo: DeviceInfo): Logger {
+    fun init(
+        context: Context,
+        isDebug: Boolean,
+        deviceInfo: DeviceInfo,
+        diagnosticsLogsEnabled: Boolean = isDebug
+    ): Logger {
         val logsDirectory = File(context.filesDir, "logs")
         if (!logsDirectory.exists()) {
             logsDirectory.mkdirs()
         }
-        val diagnosticsEnabled = isDebug || deviceInfo.diagnosticsEnabled
+        val runtimeDiagnosticsRequested = deviceInfo.diagnosticsEnabled
+        val diagnosticsAllowed = isDebug || diagnosticsLogsEnabled
+        val diagnosticsEnabled = diagnosticsAllowed && runtimeDiagnosticsRequested
         val defaultFrameTraceMode = if (isDebug) {
             FrameTraceMode.SUMMARY_1HZ
         } else {
