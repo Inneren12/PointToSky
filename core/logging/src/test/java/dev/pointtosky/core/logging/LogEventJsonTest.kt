@@ -20,7 +20,12 @@ class LogEventJsonTest {
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
             isDebug = true,
-            diagnosticsEnabled = true
+            diagnosticsEnabled = true,
+            extras = mapOf(
+                "flavor" to "internal",
+                "supportedAbis" to listOf("arm64-v8a"),
+                "hasSensors" to true
+            )
         )
         val thread = ThreadSnapshot(name = "TestThread", id = 1L, isMainThread = false)
         val process = ProcessSnapshot(pid = 42, processName = "test")
@@ -59,6 +64,8 @@ class LogEventJsonTest {
         val deviceJson = json["device"]?.jsonObject
         assertEquals("Pixel", deviceJson?.get("model")?.jsonPrimitive?.content)
         assertEquals(true, deviceJson?.get("diagnosticsEnabled")?.jsonPrimitive?.boolean)
+        val extrasJson = deviceJson?.get("extras")?.jsonObject
+        assertEquals("internal", extrasJson?.get("flavor")?.jsonPrimitive?.content)
         val errorJson = json["error"]?.jsonObject
         assertEquals("boom", errorJson?.get("message")?.jsonPrimitive?.content)
     }

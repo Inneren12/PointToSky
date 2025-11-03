@@ -60,6 +60,8 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
 
     implementation(project(":core:common"))
+    implementation(project(":core:logging"))
+    implementation(libs.kotlinx.coroutines.android)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
