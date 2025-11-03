@@ -53,6 +53,7 @@ dependencies {
     implementation(project(":wear:sensors"))
     implementation(project(":core:logging"))
     implementation(project(":core:location"))
+    implementation(project(":core:astro"))
     implementation(project(":core:time"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

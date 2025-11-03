@@ -61,6 +61,7 @@ dependencies {
 
     implementation(project(":core:common"))
     implementation(project(":core:location"))
+    implementation(project(":core:astro"))
     implementation(project(":core:time"))
 
     implementation(libs.play.services.wearable)
