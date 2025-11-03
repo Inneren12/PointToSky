@@ -19,9 +19,18 @@ android {
     kotlinOptions {
         jvmTarget = libs.versions.jvmTarget.get()
     }
+
+    testOptions {
+        unitTests.all {
+            it.useJUnitPlatform()
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core:time"))
     testImplementation(kotlin("test"))
+    testImplementation(libs.junit.jupiter.api)
+    testImplementation(libs.junit.jupiter.params)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 }
