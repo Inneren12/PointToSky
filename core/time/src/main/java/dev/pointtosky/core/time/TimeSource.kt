@@ -2,6 +2,7 @@ package dev.pointtosky.core.time
 
 import java.time.Instant
 import kotlinx.coroutines.ObsoleteCoroutinesApi
+import kotlinx.coroutines.channels.TickerMode
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.ticker
 import kotlinx.coroutines.flow.Flow
@@ -45,7 +46,11 @@ class SystemTimeSource(
         .flatMapLatest { period ->
             callbackFlow {
                 trySend(now())
-                val ticker = ticker(delayMillis = period, initialDelayMillis = period)
+                val ticker = ticker(
+                    delayMillis = period,
+                    initialDelayMillis = period,
+                    mode = TickerMode.FIXED_PERIOD
+                )
                 val job = launch {
                     for (ignored in ticker) {
                         trySend(now())
