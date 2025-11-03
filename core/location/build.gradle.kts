@@ -23,4 +23,8 @@ android {
 
 dependencies {
     api(libs.kotlinx.coroutines.core)
+    implementation(libs.play.services.location)
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlinx.coroutines.test)
 }
