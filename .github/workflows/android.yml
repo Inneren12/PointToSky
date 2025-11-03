@@ -1,43 +1,49 @@
 name: Android CI
 
 on:
-    push:
-        branches:
-            - main
-            - "feat/**"
-    pull_request:
+  push:
+    branches:
+      - main
+      - "feat/**"
+  pull_request:
 
 jobs:
-    build:
-        runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
 
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Ensure Gradle wrapper is executable
-              run: chmod +x ./gradlew
+      # 1) Сначала JDK
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
 
-            - name: Set up JDK
-              uses: actions/setup-java@v4
-              with:
-                  distribution: temurin
-                  java-version: 17
+      # 2) Затем Gradle + кеш (только один раз)
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-home-cache-cleanup: true
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-            - name: Setup Gradle
-              uses: gradle/actions/setup-gradle@v3
+      # 3) Убедиться, что gradlew исполняемый
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x ./gradlew
 
-            - name: Build Wear (debug) with verbose compiler logs
-              run: >-
-                  ./gradlew :wear:sensors:compileDebugKotlin :wear:assembleDebug --stacktrace --info --no-parallel --no-daemon --rerun-tasks --console=plain
+      # 4) Сборка по модулям с подробными логами (без build scan)
+      - name: Build (verbose, module-by-module)
+        run: |
+          set -e
+          ./gradlew :core:logging:compileDebugKotlin --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
+          ./gradlew :wear:assembleDebug                 --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
+          ./gradlew :mobile:assembleDebug               --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
 
-            - name: Build (verbose, module-by-module)
-              run: |
-                set -e
-                ./gradlew :core:logging:compileDebugKotlin --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
-                ./gradlew :wear:assembleDebug         --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
-                ./gradlew :mobile:assembleDebug       --stacktrace --info --no-parallel -Dkotlin.compiler.execution.strategy=in-process
+      # 5) (Опционально) отдельные целевые шаги, если нужно
+      - name: Build Wear (debug) with verbose compiler logs
+        run: ./gradlew :wear:sensors:compileDebugKotlin :wear:assembleDebug --stacktrace --info --no-parallel --no-daemon --rerun-tasks --console=plain -Dkotlin.compiler.execution.strategy=in-process
 
-
-            - name: Build Mobile debug
-              run: ./gradlew :mobile:assembleDebug --stacktrace --no-daemon --console=plain
+      - name: Build Mobile debug
+        run: ./gradlew :mobile:assembleDebug --stacktrace --no-daemon --console=plain
