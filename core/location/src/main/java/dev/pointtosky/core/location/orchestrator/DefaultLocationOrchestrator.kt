@@ -89,11 +89,21 @@ class DefaultLocationOrchestrator(
     }
 
     override suspend fun getLastKnown(): LocationFix? {
-        val manualPoint = manualPrefs.manualPointFlow.firstOrNull()
-        if (manualPoint != null) {
-            return manualPoint.toManualFix().also { latestFix.set(it) }
+        // 1) Manual has the highest priority when enabled
+        manualPrefs.manualPointFlow.firstOrNull()?.let { manualPoint ->
+            return createManualFix(manualPoint)
         }
+
+        // 2) Prefer fused repository if it has any last-known value
+        fused?.getLastKnown()?.let { fix ->
+            latestFix.set(fix)
+            return fix
+        }
+
+        // 3) Otherwise decide between cached and remote fallback
         val useFallback = manualPrefs.usePhoneFallbackFlow.first()
+
+        // Do not return stale MANUAL cache when manual mode is OFF.
         latestFix.get()?.let { cached ->
             if (cached.provider != ProviderType.MANUAL &&
                 (cached.provider != ProviderType.REMOTE_PHONE || useFallback)
@@ -101,16 +111,18 @@ class DefaultLocationOrchestrator(
                 return cached
             }
         }
-        fused?.getLastKnown()?.let { fix ->
-            latestFix.set(fix)
-            return fix
+
+        if (useFallback) {
+            remotePhone?.getLastKnown()?.let { remote ->
+                latestFix.set(remote)
+                return remote
+            }
         }
-        if (!useFallback) return null
-        val remoteLast = remotePhone?.getLastKnown()
-        if (remoteLast != null) {
-            latestFix.set(remoteLast)
-        }
-        return remoteLast
+        return null
+    }
+
+    private fun createManualFix(point: GeoPoint): LocationFix = point.toManualFix().also {
+        latestFix.set(it)
     }
 
     override suspend fun setManual(point: GeoPoint?) {
