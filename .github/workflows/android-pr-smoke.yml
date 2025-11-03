@@ -62,8 +62,20 @@ jobs:
           if [ "${{ steps.touch.outputs.mobile }}" = "true" ]; then MODS="$MODS :mobile:compileDebugKotlin"; fi
           if [ -z "$MODS" ] || [ "${{ steps.touch.outputs.core }}" = "true" ]; then
             MODS=":wear:compileDebugKotlin"
-            # uncomment next when :mobile exists
+            # uncomment when :mobile exists
             # MODS="$MODS :mobile:compileDebugKotlin"
           fi
-          ./gradlew $MODS --stacktrace --info --no-daemon --no-parallel \
-            -Dkotlin.compiler.execution.strategy=in-process --console=plain
+
+          COMMON_FLAGS="--stacktrace --info --no-daemon --no-parallel --console=plain -Dkotlin.compiler.execution.strategy=in-process -Pkotlin.incremental=false"
+
+          for T in $MODS; do
+            echo ">>> Running $T"
+            ./gradlew $T $COMMON_FLAGS 2>&1 | tee -a smoke.log || exit $?
+          done
+
+      - name: Upload smoke logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          path: smoke.log
+          if-no-files-found: ignore
