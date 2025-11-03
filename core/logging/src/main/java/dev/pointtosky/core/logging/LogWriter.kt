@@ -1,5 +1,7 @@
 package dev.pointtosky.core.logging
 
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -15,12 +17,15 @@ import kotlinx.coroutines.runBlocking
 class LogWriter(
     private val sink: LogSink,
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val flushIntervalMs: Long = 500L
+    private val flushIntervalMs: Long = 500L,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val channel = Channel<LogCommand>(capacity = CHANNEL_CAPACITY)
+    private val pendingCommands = AtomicInteger(0)
+    private val droppedEvents = AtomicLong(0)
     private val processor = scope.launch {
         for (command in channel) {
+            pendingCommands.updateAndGet { current -> if (current > 0) current - 1 else 0 }
             when (command) {
                 is LogCommand.Event -> sink.write(command.event)
                 is LogCommand.Flush -> {
@@ -42,26 +47,27 @@ class LogWriter(
         scope.launch {
             while (isActive) {
                 delay(flushIntervalMs)
-                channel.trySend(LogCommand.Flush(null, sync = false))
+                enqueue(LogCommand.Flush(null, sync = false), dropIfFull = true)
             }
         }
     } else null
 
     fun publish(event: LogEvent) {
-        if (!channel.trySend(LogCommand.Event(event)).isSuccess) {
-            runBlocking { channel.send(LogCommand.Event(event)) }
+        val enqueued = enqueue(LogCommand.Event(event), dropIfFull = true)
+        if (!enqueued) {
+            droppedEvents.incrementAndGet()
         }
     }
 
     suspend fun flush() {
         val completion = CompletableDeferred<Unit>()
-        channel.send(LogCommand.Flush(completion, sync = false))
+        enqueueBlocking(LogCommand.Flush(completion, sync = false))
         completion.await()
     }
 
     suspend fun flushAndSync() {
         val completion = CompletableDeferred<Unit>()
-        channel.send(LogCommand.Flush(completion, sync = true))
+        enqueueBlocking(LogCommand.Flush(completion, sync = true))
         completion.await()
     }
 
@@ -73,6 +79,33 @@ class LogWriter(
         scope.cancel()
     }
 
+    fun stats(): LogWriterStats = LogWriterStats(
+        queuedEvents = pendingCommands.get(),
+        droppedEvents = droppedEvents.get(),
+    )
+
+    private fun enqueue(command: LogCommand, dropIfFull: Boolean): Boolean {
+        val result = channel.trySend(command)
+        if (result.isSuccess) {
+            pendingCommands.incrementAndGet()
+            return true
+        }
+        if (!dropIfFull) {
+            runBlocking {
+                channel.send(command)
+                pendingCommands.incrementAndGet()
+            }
+            return true
+        }
+        return false
+    }
+
+    private fun enqueueBlocking(command: LogCommand) {
+        if (!enqueue(command, dropIfFull = false)) {
+            throw IllegalStateException("Failed to enqueue log command")
+        }
+    }
+
     private sealed interface LogCommand {
         data class Event(val event: LogEvent) : LogCommand
         data class Flush(val completion: CompletableDeferred<Unit>?, val sync: Boolean) : LogCommand
@@ -82,3 +115,8 @@ class LogWriter(
         private const val CHANNEL_CAPACITY = 256
     }
 }
+
+data class LogWriterStats(
+    val queuedEvents: Int = 0,
+    val droppedEvents: Long = 0,
+)
