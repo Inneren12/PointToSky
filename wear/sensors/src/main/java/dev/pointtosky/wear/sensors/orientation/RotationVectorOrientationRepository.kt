@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
+import kotlin.jvm.Volatile
 import kotlin.math.sqrt
 
 class RotationVectorOrientationRepository(
@@ -25,6 +26,9 @@ class RotationVectorOrientationRepository(
     private val config: OrientationRepositoryConfig = OrientationRepositoryConfig(),
     private val externalScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : OrientationRepository {
+    @Volatile
+    private var screenRotation: ScreenRotation = config.screenRotation
+
     private val _zero = MutableStateFlow(OrientationZero())
     override val zero: StateFlow<OrientationZero> = _zero.asStateFlow()
 
@@ -57,6 +61,10 @@ class RotationVectorOrientationRepository(
         _zero.value = orientationZero
     }
 
+    override fun setRemap(screenRotation: ScreenRotation) {
+        this.screenRotation = screenRotation
+    }
+
     private fun rotationVectorFrames(): Flow<OrientationFrame> = callbackFlow {
         val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         if (sensor == null) {
@@ -78,7 +86,7 @@ class RotationVectorOrientationRepository(
                 lastEmitTimestampNs = event.timestamp
 
                 SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-                val activeMatrix = applyRemap(rotationMatrix, remappedMatrix, config.screenRotation)
+                val activeMatrix = applyRemap(rotationMatrix, remappedMatrix, screenRotation)
                 SensorManager.getOrientation(activeMatrix, orientation)
 
                 val rawAzimuth = orientation[0].toDegrees()

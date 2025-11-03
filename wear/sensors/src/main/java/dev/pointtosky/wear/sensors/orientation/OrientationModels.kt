@@ -23,10 +23,38 @@ enum class OrientationAccuracy {
 }
 
 enum class ScreenRotation(
+    val degrees: Int,
     val remapAxisX: Int,
     val remapAxisY: Int,
 ) {
-    ROT_0(SensorManager.AXIS_X, SensorManager.AXIS_Y),
+    ROT_0(
+        degrees = 0,
+        remapAxisX = SensorManager.AXIS_X,
+        remapAxisY = SensorManager.AXIS_Y,
+    ),
+    ROT_90(
+        degrees = 90,
+        remapAxisX = SensorManager.AXIS_Y,
+        remapAxisY = SensorManager.AXIS_MINUS_X,
+    ),
+    ROT_180(
+        degrees = 180,
+        remapAxisX = SensorManager.AXIS_MINUS_X,
+        remapAxisY = SensorManager.AXIS_MINUS_Y,
+    ),
+    ROT_270(
+        degrees = 270,
+        remapAxisX = SensorManager.AXIS_MINUS_Y,
+        remapAxisY = SensorManager.AXIS_X,
+    ),
+    ;
+
+    companion object {
+        fun fromDegrees(degrees: Int): ScreenRotation {
+            val normalized = ((degrees % 360) + 360) % 360
+            return entries.firstOrNull { it.degrees == normalized } ?: ROT_0
+        }
+    }
 }
 
 data class OrientationRepositoryConfig(
