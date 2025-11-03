@@ -53,7 +53,7 @@ fun SensorsCalibrateScreen(
             style = MaterialTheme.typography.caption2,
         )
         Button(
-            onClick = { azimuthDeg?.let(onSetZero) },
+            onClick = { azimuthDeg?.let { onSetZero(-it) } },
             enabled = azimuthDeg != null,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.primaryButtonColors(),

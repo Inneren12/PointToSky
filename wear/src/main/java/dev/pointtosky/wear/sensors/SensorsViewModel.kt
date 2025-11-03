@@ -54,7 +54,8 @@ class SensorsViewModel(
     }
 
     fun setZeroAzimuthOffset(offsetDeg: Float) {
-        orientationRepository.setZeroAzimuthOffset(offsetDeg)
+        if (offsetDeg.isNaN() || offsetDeg.isInfinite()) return
+        orientationRepository.setZeroAzimuthOffset(normalizeDeg(offsetDeg))
     }
 
     fun resetZero() {
@@ -65,4 +66,8 @@ class SensorsViewModel(
         orientationRepository.stop()
         super.onCleared()
     }
+}
+
+private fun normalizeDeg(d: Float): Float {
+    return ((d % 360f) + 360f) % 360f
 }
