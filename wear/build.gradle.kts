@@ -51,6 +51,7 @@ dependencies {
     implementation(platform(libs.compose.bom))
 
     implementation(project(":wear:sensors"))
+    implementation(project(":core:logging"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)

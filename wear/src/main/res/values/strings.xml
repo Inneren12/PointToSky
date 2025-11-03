@@ -3,6 +3,7 @@
     <string name="find_label">Найти</string>
     <string name="identify_label">Что там?</string>
     <string name="sensors_debug_label">Датчики</string>
+    <string name="crash_test">Crash Test</string>
     <string name="sensors_debug_title">Датчики</string>
     <string name="sensors_calibrate_label">Калибровка</string>
     <string name="sensors_calibrate_title">Калибровка</string>

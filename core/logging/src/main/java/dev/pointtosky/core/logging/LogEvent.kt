@@ -2,6 +2,8 @@ package dev.pointtosky.core.logging
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Build
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -97,6 +99,9 @@ data class DeviceInfo(
     val appVersionName: String,
     val appVersionCode: Long,
     val packageName: String,
+    val flavor: String,
+    val supportedAbis: List<String>,
+    val sensors: Map<String, Boolean>,
     val isDebug: Boolean,
     val diagnosticsEnabled: Boolean
 ) {
@@ -108,6 +113,19 @@ data class DeviceInfo(
         put("appVersionName", appVersionName)
         put("appVersionCode", appVersionCode)
         put("packageName", packageName)
+        put("flavor", flavor)
+        put("supportedAbis", buildJsonArray {
+            supportedAbis.forEach { abi ->
+                add(JsonPrimitive(abi))
+            }
+        })
+        if (sensors.isNotEmpty()) {
+            put("sensors", buildJsonObject {
+                sensors.forEach { (key, available) ->
+                    put(key, available)
+                }
+            })
+        }
         put("isDebug", isDebug)
         put("diagnosticsEnabled", diagnosticsEnabled)
     }
@@ -116,7 +134,10 @@ data class DeviceInfo(
         fun from(
             context: Context,
             isDebug: Boolean,
-            diagnosticsEnabled: Boolean = isDebug
+            diagnosticsEnabled: Boolean = isDebug,
+            flavor: String = "",
+            supportedAbis: List<String> = Build.SUPPORTED_ABIS.toList(),
+            sensors: Map<String, Boolean> = collectSensorAvailability(context)
         ): DeviceInfo {
             val packageManager = context.packageManager
             val packageName = context.packageName
@@ -137,9 +158,26 @@ data class DeviceInfo(
                 appVersionName = versionName,
                 appVersionCode = versionCode,
                 packageName = packageName,
+                flavor = flavor,
+                supportedAbis = supportedAbis,
+                sensors = sensors,
                 isDebug = isDebug,
                 diagnosticsEnabled = diagnosticsEnabled
             )
+        }
+
+        private fun collectSensorAvailability(context: Context): Map<String, Boolean> {
+            val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+                ?: return emptyMap()
+            val trackedSensors = listOf(
+                Sensor.TYPE_ROTATION_VECTOR to "rotationVector",
+                Sensor.TYPE_ACCELEROMETER to "accelerometer",
+                Sensor.TYPE_GYROSCOPE to "gyroscope",
+                Sensor.TYPE_MAGNETIC_FIELD to "magnetometer"
+            )
+            return trackedSensors.associate { (type, key) ->
+                key to (sensorManager.getDefaultSensor(type) != null)
+            }
         }
 
         private fun PackageManager.getPackageInfoCompat(packageName: String) =

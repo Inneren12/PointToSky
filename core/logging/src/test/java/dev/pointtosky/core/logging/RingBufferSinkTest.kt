@@ -16,6 +16,9 @@ class RingBufferSinkTest {
             appVersionName = "1.0.0",
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
+            flavor = "test",
+            supportedAbis = listOf("arm64-v8a"),
+            sensors = emptyMap(),
             isDebug = true,
             diagnosticsEnabled = true
         )

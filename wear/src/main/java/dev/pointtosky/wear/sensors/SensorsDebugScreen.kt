@@ -16,6 +16,7 @@ import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import dev.pointtosky.wear.R
+import dev.pointtosky.wear.BuildConfig
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
 import dev.pointtosky.wear.sensors.orientation.ScreenRotation
@@ -102,6 +103,15 @@ fun SensorsDebugScreen(
                 },
                 colors = colors,
             )
+        }
+        if (BuildConfig.DEBUG) {
+            item {
+                Chip(
+                    onClick = { throw RuntimeException("Crash test triggered from wear debug screen") },
+                    label = { Text(text = stringResource(id = R.string.crash_test)) },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
         }
         item {
             Chip(

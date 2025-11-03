@@ -19,6 +19,9 @@ class LogEventJsonTest {
             appVersionName = "1.0.0",
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
+            flavor = "test",
+            supportedAbis = listOf("arm64-v8a", "x86_64"),
+            sensors = mapOf("accelerometer" to true, "gyroscope" to false),
             isDebug = true,
             diagnosticsEnabled = true
         )
