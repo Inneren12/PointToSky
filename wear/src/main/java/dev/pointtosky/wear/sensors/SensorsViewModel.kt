@@ -11,6 +11,7 @@ import dev.pointtosky.wear.sensors.orientation.OrientationSource
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
 import dev.pointtosky.wear.sensors.orientation.ScreenRotation
 import dev.pointtosky.wear.settings.SensorsSettingsDataStore
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,17 +24,9 @@ class SensorsViewModel(
     private val settingsDataStore: SensorsSettingsDataStore,
 ) : ViewModel() {
 
-    private val _frame = MutableStateFlow<OrientationFrame?>(null)
-    val frame: StateFlow<OrientationFrame?> = _frame.asStateFlow()
-
-    private val _zero = MutableStateFlow(OrientationZero())
-    val zero: StateFlow<OrientationZero> = _zero.asStateFlow()
-
-    private val _screenRotation = MutableStateFlow(ScreenRotation.ROT_0)
-    val screenRotation: StateFlow<ScreenRotation> = _screenRotation.asStateFlow()
-
-    private val _fps = MutableStateFlow<Float?>(null)
-    val fps: StateFlow<Float?> = _fps.asStateFlow()
+    val frames: Flow<OrientationFrame> = orientationRepository.frames
+    val zero: StateFlow<OrientationZero> = orientationRepository.zero
+    val fps: StateFlow<Float?> = orientationRepository.fps
 
     private val _frameTraceMode = MutableStateFlow(LogBus.frameTraceMode().value)
     val frameTraceMode: StateFlow<FrameTraceMode> = _frameTraceMode.asStateFlow()
@@ -43,24 +36,12 @@ class SensorsViewModel(
 
     val source: StateFlow<OrientationSource> = orientationRepository.activeSource
 
-    init {
-        orientationRepository.start()
+    val isSensorActive: StateFlow<Boolean> = orientationRepository.isRunning
 
-        viewModelScope.launch {
-            orientationRepository.frames.collect { frame ->
-                _frame.value = frame
-            }
-        }
-        viewModelScope.launch {
-            orientationRepository.zero.collect { zero ->
-                _zero.value = zero
-            }
-        }
-        viewModelScope.launch {
-            orientationRepository.fps.collect { value ->
-                _fps.value = value
-            }
-        }
+    private val _screenRotation = MutableStateFlow(ScreenRotation.ROT_0)
+    val screenRotation: StateFlow<ScreenRotation> = _screenRotation.asStateFlow()
+
+    init {
         viewModelScope.launch {
             settingsDataStore.screenRotation.collect { rotation ->
                 _screenRotation.value = rotation
@@ -96,18 +77,13 @@ class SensorsViewModel(
 
     fun setZeroAzimuthOffset(calibratedDeg: Float) {
         if (calibratedDeg.isNaN() || calibratedDeg.isInfinite()) return
-        val currentOffset = _zero.value.azimuthOffsetDeg
+        val currentOffset = zero.value.azimuthOffsetDeg
         val newOffset = normalizeDeg(currentOffset - calibratedDeg)
         orientationRepository.setZeroAzimuthOffset(newOffset)
     }
 
     fun resetZero() {
         orientationRepository.resetZero()
-    }
-
-    override fun onCleared() {
-        orientationRepository.stop()
-        super.onCleared()
     }
 }
 

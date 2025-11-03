@@ -46,6 +46,12 @@ internal class OrientationFrameLogger(
         channel.trySend(frame)
     }
 
+    fun reset() {
+        scope.launch {
+            resetState()
+        }
+    }
+
     private fun handleFrame(frame: OrientationFrame) {
         updateFps(frame)
         when (mode) {

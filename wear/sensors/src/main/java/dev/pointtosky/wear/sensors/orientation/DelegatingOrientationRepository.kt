@@ -47,17 +47,22 @@ internal class DelegatingOrientationRepository(
 
     override val activeSource: StateFlow<OrientationSource> = _activeSource
 
+    override val isRunning: StateFlow<Boolean> = activeRepository
+        .filterNotNull()
+        .flatMapLatest { repository -> repository.isRunning }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     override val source: OrientationSource
         get() = activeSource.value
 
-    override fun start() {
+    override fun start(config: OrientationRepositoryConfig) {
         val target = primary ?: fallback
             ?: throw IllegalStateException("No orientation sources available")
         if (activeRepository.value != target) {
             activeRepository.value?.stop()
             activeRepository.value = target
         }
-        target.start()
+        target.start(config)
     }
 
     override fun stop() {

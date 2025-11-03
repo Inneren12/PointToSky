@@ -8,11 +8,12 @@ import dev.pointtosky.wear.settings.SensorsSettingsDataStore
 
 class SensorsViewModelFactory(
     private val appContext: Context,
+    private val orientationRepository: OrientationRepository? = null,
 ) : ViewModelProvider.Factory {
 
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SensorsViewModel::class.java)) {
-            val orientationRepository = OrientationRepository.create(appContext)
+            val orientationRepository = orientationRepository ?: OrientationRepository.create(appContext)
             val settingsDataStore = SensorsSettingsDataStore(appContext)
             @Suppress("UNCHECKED_CAST")
             return SensorsViewModel(orientationRepository, settingsDataStore) as T

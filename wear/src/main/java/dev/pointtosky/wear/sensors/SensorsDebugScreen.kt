@@ -4,9 +4,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Sensors
+import androidx.compose.material.icons.rounded.SensorsOff
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -16,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
@@ -28,6 +41,7 @@ import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationSource
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
 import dev.pointtosky.wear.sensors.orientation.ScreenRotation
+import dev.pointtosky.wear.sensors.util.FrameRateAverager
 
 @Composable
 fun SensorsDebugScreen(
@@ -35,15 +49,31 @@ fun SensorsDebugScreen(
     zero: OrientationZero,
     screenRotation: ScreenRotation,
     frameTraceMode: FrameTraceMode,
-    fps: Float?,
     source: OrientationSource,
     writerStats: LogWriterStats,
+    isSensorActive: Boolean,
     onFrameTraceModeSelected: (FrameTraceMode) -> Unit,
     onScreenRotationSelected: (ScreenRotation) -> Unit,
     onNavigateToCalibrate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberScalingLazyListState()
+    val frameRateAverager = remember { FrameRateAverager(windowDurationMillis = 3_000L) }
+    var averagedFps by remember { mutableStateOf<Float?>(null) }
+
+    LaunchedEffect(isSensorActive) {
+        if (!isSensorActive) {
+            frameRateAverager.reset()
+            averagedFps = null
+        }
+    }
+
+    LaunchedEffect(frame?.timestampNanos) {
+        val timestamp = frame?.timestampNanos
+        if (timestamp != null) {
+            averagedFps = frameRateAverager.add(timestamp)
+        }
+    }
 
     ScalingLazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -55,6 +85,13 @@ fun SensorsDebugScreen(
             Text(
                 text = stringResource(id = R.string.sensors_debug_title),
                 style = MaterialTheme.typography.title3,
+            )
+        }
+        item {
+            SensorStatusRow(
+                isSensorActive = isSensorActive,
+                fps = averagedFps,
+                accuracy = frame?.accuracy,
             )
         }
         item {
@@ -75,14 +112,6 @@ fun SensorsDebugScreen(
             Text(
                 text = frame?.rollDeg?.let { stringResource(R.string.current_roll_label, it) }
                     ?: stringResource(R.string.value_not_available),
-                style = MaterialTheme.typography.body2,
-            )
-        }
-        item {
-            val fpsText = fps?.let { value -> stringResource(id = R.string.current_fps_label, value) }
-                ?: stringResource(id = R.string.value_not_available)
-            Text(
-                text = stringResource(id = R.string.current_fps_prefix, fpsText),
                 style = MaterialTheme.typography.body2,
             )
         }
@@ -197,6 +226,54 @@ fun SensorsDebugScreen(
                 onClick = onNavigateToCalibrate,
                 label = { Text(text = stringResource(id = R.string.sensors_calibrate_label)) },
                 colors = ChipDefaults.primaryChipColors(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SensorStatusRow(
+    isSensorActive: Boolean,
+    fps: Float?,
+    accuracy: OrientationAccuracy?,
+) {
+    val statusText = if (isSensorActive) {
+        stringResource(id = R.string.sensor_status_active)
+    } else {
+        stringResource(id = R.string.sensor_status_inactive)
+    }
+    val icon = if (isSensorActive) {
+        Icons.Rounded.Sensors
+    } else {
+        Icons.Rounded.SensorsOff
+    }
+    val contentDescription = if (isSensorActive) {
+        stringResource(id = R.string.sensor_status_icon_active)
+    } else {
+        stringResource(id = R.string.sensor_status_icon_inactive)
+    }
+    val fpsText = fps?.let { value -> stringResource(id = R.string.current_fps_label, value) }
+        ?: stringResource(id = R.string.value_not_available)
+    val accuracyLabel = accuracy?.let { level ->
+        stringResource(id = orientationAccuracyStringRes(level))
+    } ?: stringResource(id = R.string.value_not_available)
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (isSensorActive) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(text = statusText, style = MaterialTheme.typography.body2)
+            Text(
+                text = stringResource(id = R.string.current_fps_prefix, fpsText),
+                style = MaterialTheme.typography.caption1,
+            )
+            Text(
+                text = stringResource(id = R.string.current_accuracy_label, accuracyLabel),
+                style = MaterialTheme.typography.caption1,
             )
         }
     }

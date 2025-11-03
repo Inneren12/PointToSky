@@ -21,7 +21,7 @@ class DelegatingOrientationRepositoryTest {
         val fallback = FakeOrientationRepository(OrientationSource.ACCEL_MAG)
         val proxy = DelegatingOrientationRepository(primary, fallback, scope = this)
 
-        proxy.start()
+        proxy.start(OrientationRepositoryConfig())
 
         val frame = OrientationFrame(
             timestampNanos = 1L,
@@ -46,7 +46,7 @@ class DelegatingOrientationRepositoryTest {
         val fallback = FakeOrientationRepository(OrientationSource.ACCEL_MAG)
         val proxy = DelegatingOrientationRepository(primary = null, fallback = fallback, scope = this)
 
-        proxy.start()
+        proxy.start(OrientationRepositoryConfig())
 
         val frame = OrientationFrame(
             timestampNanos = 2L,
@@ -73,6 +73,7 @@ private class FakeOrientationRepository(
     private val zeroFlow = MutableStateFlow(OrientationZero())
     private val fpsFlow = MutableStateFlow<Float?>(null)
     private val activeSourceFlow = MutableStateFlow(source)
+    private val runningFlow = MutableStateFlow(false)
 
     var started: Boolean = false
 
@@ -80,13 +81,16 @@ private class FakeOrientationRepository(
     override val zero: StateFlow<OrientationZero> = zeroFlow.asStateFlow()
     override val fps: StateFlow<Float?> = fpsFlow.asStateFlow()
     override val activeSource: StateFlow<OrientationSource> = activeSourceFlow.asStateFlow()
+    override val isRunning: StateFlow<Boolean> = runningFlow.asStateFlow()
 
-    override fun start() {
+    override fun start(config: OrientationRepositoryConfig) {
         started = true
+        runningFlow.value = true
     }
 
     override fun stop() {
         started = false
+        runningFlow.value = false
     }
 
     override fun updateZero(orientationZero: OrientationZero) {
