@@ -31,6 +31,9 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.core.location.prefs.LocationPrefs
+import dev.pointtosky.core.location.prefs.fromContext
+import dev.pointtosky.wear.location.LocationSetupScreen
 import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
 import dev.pointtosky.wear.sensors.SensorsDebugScreen
 import dev.pointtosky.wear.sensors.SensorsViewModel
@@ -44,6 +47,10 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val orientationRepository: OrientationRepository by lazy {
         OrientationRepository.create(applicationContext)
+    }
+
+    private val locationPrefs: LocationPrefs by lazy {
+        LocationPrefs.fromContext(applicationContext)
     }
 
     @Suppress("UnusedPrivateMember")
@@ -68,7 +75,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            PointToSkyWearApp(orientationRepository = orientationRepository)
+            PointToSkyWearApp(
+                orientationRepository = orientationRepository,
+                locationPrefs = locationPrefs
+            )
         }
     }
 }
@@ -78,10 +88,12 @@ private const val ROUTE_AIM = "aim"
 private const val ROUTE_IDENTIFY = "identify"
 private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
+private const val ROUTE_LOCATION = "location"
 
 @Composable
 fun PointToSkyWearApp(
     orientationRepository: OrientationRepository,
+    locationPrefs: LocationPrefs,
 ) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
@@ -104,6 +116,7 @@ fun PointToSkyWearApp(
                     onAimClick = { navController.navigate(ROUTE_AIM) },
                     onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
                     onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
+                    onLocationClick = { navController.navigate(ROUTE_LOCATION) },
                 )
             }
             composable(ROUTE_AIM) { AimScreen() }
@@ -144,6 +157,12 @@ fun PointToSkyWearApp(
                     onResetZero = sensorsViewModel::resetZero,
                 )
             }
+            composable(ROUTE_LOCATION) {
+                LocationSetupScreen(
+                    locationPrefs = locationPrefs,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
@@ -153,6 +172,7 @@ fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
     onSensorsDebugClick: () -> Unit,
+    onLocationClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -175,6 +195,13 @@ fun HomeScreen(
             colors = ButtonDefaults.primaryButtonColors()
         ) {
             Text(text = stringResource(id = R.string.identify_label))
+        }
+        Button(
+            onClick = onLocationClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.primaryButtonColors(),
+        ) {
+            Text(text = stringResource(id = R.string.location_settings))
         }
         Button(
             onClick = onSensorsDebugClick,
@@ -216,7 +243,12 @@ fun IdentifyScreen(modifier: Modifier = Modifier) {
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen(onAimClick = {}, onIdentifyClick = {}, onSensorsDebugClick = {})
+        HomeScreen(
+            onAimClick = {},
+            onIdentifyClick = {},
+            onSensorsDebugClick = {},
+            onLocationClick = {}
+        )
     }
 }
 

@@ -24,6 +24,7 @@ android {
 dependencies {
     api(libs.kotlinx.coroutines.core)
     implementation(libs.play.services.location)
+    implementation(libs.androidx.datastore.preferences)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)

@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">Point-to-Sky Mobile</string>
+    <string name="open_card">Open card</string>
+    <string name="location_settings">Location</string>
+    <string name="location_setup_title">Location setup</string>
+    <string name="location_setup_description">We use your position to calculate the visible sky and suggest objects.</string>
+    <string name="location_setup_request_permission">Allow location</string>
+    <string name="location_setup_open_settings">Open settings</string>
+    <string name="location_setup_permission_granted">Location permission is already granted.</string>
+    <string name="location_setup_manual_toggle">Use manual coordinates</string>
+    <string name="location_setup_manual_hint">Enter coordinates in decimal degrees, e.g. 40.7128 / -74.0060</string>
+    <string name="location_setup_lat_label">Latitude</string>
+    <string name="location_setup_lat_hint">Example: 40.7128</string>
+    <string name="location_setup_lat_error_format">Enter latitude in decimal degrees.</string>
+    <string name="location_setup_lat_error_range">Latitude must be between -90 and 90.</string>
+    <string name="location_setup_lon_label">Longitude</string>
+    <string name="location_setup_lon_hint">Example: -74.0060</string>
+    <string name="location_setup_lon_error_format">Enter longitude in decimal degrees.</string>
+    <string name="location_setup_lon_error_range">Longitude must be between -180 and 180.</string>
+    <string name="location_setup_save">Save coordinates</string>
+    <string name="location_setup_saved_toast">Coordinates saved</string>
+</resources>
