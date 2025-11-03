@@ -13,6 +13,6 @@ This module hosts basic astronomical math utilities and data types.
     - `GeoPoint`: latitude in degrees (`-90°..+90°`, positive north), longitude in degrees (`-180°..+180°`, positive east).
     - `Sidereal`: local sidereal time in degrees (`0°..360°`).
 - `dev.pointtosky.core.astro.math`
-  - Lightweight immutable 3D vector utilities with double precision, including normalization, dot and cross products, scaling, and conversion to unit vectors.
+  - Lightweight immutable 3D vector utilities with double precision, including normalization, dot and cross products, scaling, addition/subtraction, and a minimal 3 × 3 matrix implementation with identity, transpose, and multiplication helpers.
 
 All angles are expressed in decimal degrees unless explicitly stated otherwise in the KDoc of each API.
