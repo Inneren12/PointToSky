@@ -35,6 +35,7 @@ import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
 import dev.pointtosky.wear.sensors.SensorsDebugScreen
 import dev.pointtosky.wear.sensors.SensorsViewModel
 import dev.pointtosky.wear.sensors.SensorsViewModelFactory
+import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationRepositoryConfig
 import kotlinx.coroutines.awaitCancellation
@@ -108,18 +109,22 @@ fun PointToSkyWearApp(
             composable(ROUTE_AIM) { AimScreen() }
             composable(ROUTE_IDENTIFY) { IdentifyScreen() }
             composable(ROUTE_SENSORS_DEBUG) {
-                val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(initialValue = null)
+                val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(
+                    initialValue = OrientationFrameDefaults.EMPTY
+                )
                 val zero by sensorsViewModel.zero.collectAsStateWithLifecycle()
                 val screenRotation by sensorsViewModel.screenRotation.collectAsStateWithLifecycle()
                 val frameTraceMode by sensorsViewModel.frameTraceMode.collectAsStateWithLifecycle()
                 val writerStats by sensorsViewModel.writerStats.collectAsStateWithLifecycle()
                 val source by sensorsViewModel.source.collectAsStateWithLifecycle()
+                val fps by sensorsViewModel.fps.collectAsStateWithLifecycle()
                 val isSensorActive by sensorsViewModel.isSensorActive.collectAsStateWithLifecycle()
                 SensorsDebugScreen(
                     frame = frame,
                     zero = zero,
                     screenRotation = screenRotation,
                     frameTraceMode = frameTraceMode,
+                    fps = fps,
                     source = source,
                     writerStats = writerStats,
                     isSensorActive = isSensorActive,
@@ -129,10 +134,12 @@ fun PointToSkyWearApp(
                 )
             }
             composable(ROUTE_SENSORS_CALIBRATE) {
-                val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(initialValue = null)
+                val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(
+                    initialValue = OrientationFrameDefaults.EMPTY
+                )
                 SensorsCalibrateScreen(
-                    azimuthDeg = frame?.azimuthDeg,
-                    accuracy = frame?.accuracy,
+                    azimuthDeg = frame.azimuthDeg,
+                    accuracy = frame.accuracy,
                     onSetZero = sensorsViewModel::setZeroAzimuthOffset,
                     onResetZero = sensorsViewModel::resetZero,
                 )

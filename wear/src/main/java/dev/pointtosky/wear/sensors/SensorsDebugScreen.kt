@@ -13,11 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.rounded.SensorsOff
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,7 +36,6 @@ import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationSource
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
 import dev.pointtosky.wear.sensors.orientation.ScreenRotation
-import dev.pointtosky.wear.sensors.util.FrameRateAverager
 
 @Composable
 fun SensorsDebugScreen(
@@ -49,6 +43,7 @@ fun SensorsDebugScreen(
     zero: OrientationZero,
     screenRotation: ScreenRotation,
     frameTraceMode: FrameTraceMode,
+    fps: Float?,
     source: OrientationSource,
     writerStats: LogWriterStats,
     isSensorActive: Boolean,
@@ -58,22 +53,6 @@ fun SensorsDebugScreen(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberScalingLazyListState()
-    val frameRateAverager = remember { FrameRateAverager(windowDurationMillis = 3_000L) }
-    var averagedFps by remember { mutableStateOf<Float?>(null) }
-
-    LaunchedEffect(isSensorActive) {
-        if (!isSensorActive) {
-            frameRateAverager.reset()
-            averagedFps = null
-        }
-    }
-
-    LaunchedEffect(frame?.timestampNanos) {
-        val timestamp = frame?.timestampNanos
-        if (timestamp != null) {
-            averagedFps = frameRateAverager.add(timestamp)
-        }
-    }
 
     ScalingLazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -90,7 +69,7 @@ fun SensorsDebugScreen(
         item {
             SensorStatusRow(
                 isSensorActive = isSensorActive,
-                fps = averagedFps,
+                fps = fps,
                 accuracy = frame?.accuracy,
             )
         }
