@@ -9,3 +9,11 @@ plugins {
 tasks.register("clean", Delete::class) {
     delete(rootProject.layout.buildDirectory)
 }
+
+tasks.register("astroTest") {
+    dependsOn(":core:astro:test")
+}
+
+tasks.register("ephemCli") {
+    dependsOn(":tools:ephem-cli:installDist")
+}
