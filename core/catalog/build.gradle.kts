@@ -46,4 +46,5 @@ dependencies {
   // Пока ничего больше — модуль пустой (bootstrap)
   testImplementation("junit:junit:4.13.2")
   implementation(project(":core:astro"))
+  implementation(project(":core:logging"))
 }
