@@ -59,4 +59,24 @@
     <string name="time_debug_label">Time</string>
     <string name="time_debug_toggle">1 Hz / 0.2 Hz</string>
     <string name="time_debug_back">Back</string>
+    <string name="astro_debug_label">Astro Debug</string>
+    <string name="astro_debug_title">Astro Debug</string>
+    <string name="astro_debug_lst_degrees">LST: %1$.2f°</string>
+    <string name="astro_debug_lst_unknown">LST: —</string>
+    <string name="astro_debug_lst_time">LST (HH:MM:SS): %1$s</string>
+    <string name="astro_debug_value_unknown">—</string>
+    <string name="astro_debug_horizontal">Az/Alt: %1$.1f° / %2$.1f°</string>
+    <string name="astro_debug_equatorial">RA/Dec: %1$.1f° / %2$.1f°</string>
+    <string name="astro_debug_best_match_object">Best match: %1$s (m=%2$s, constellation=%3$s)</string>
+    <string name="astro_debug_best_match_constellation">Constellation: %1$s</string>
+    <string name="astro_debug_best_match_unknown">Best match: —</string>
+    <string name="astro_debug_best_match_unknown_label">Unnamed</string>
+    <string name="astro_debug_constellation_unknown">—</string>
+    <string name="astro_debug_target_summary">Target: %1$s</string>
+    <string name="astro_debug_target_sun">Sun</string>
+    <string name="astro_debug_target_moon">Moon</string>
+    <string name="astro_debug_target_jupiter">Jupiter</string>
+    <string name="astro_debug_target_saturn">Saturn</string>
+    <string name="astro_debug_aim_error">Δaz=%1$.1f° Δalt=%2$.1f°</string>
+    <string name="astro_debug_aim_error_unknown">Δaz/Δalt: —</string>
 </resources>
