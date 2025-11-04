@@ -16,6 +16,9 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class BinaryConstellationBoundariesTest {
+    private companion object {
+        private const val HEADER_SIZE_BYTES: Int = 20
+    }
     @Test
     fun `load constellation boundaries from valid binary`() {
         val region = RegionRecord(
@@ -38,7 +41,7 @@ class BinaryConstellationBoundariesTest {
     fun `fallback is used when CRC mismatches`() {
         val region = RegionRecord("ORI", 0.0, 10.0, -5.0, 5.0)
         val binary = buildConstellationBinary(listOf(region)).clone()
-        binary[BinaryCatalogHeader.HEADER_SIZE_BYTES] = binary[BinaryCatalogHeader.HEADER_SIZE_BYTES].xor(0xFF.toByte())
+        binary[HEADER_SIZE_BYTES] = binary[HEADER_SIZE_BYTES].xor(0xFF.toByte())
         val provider = InMemoryAssetProvider(mapOf(BinaryConstellationBoundaries.DEFAULT_PATH to binary))
 
         val boundaries = BinaryConstellationBoundaries.load(provider)

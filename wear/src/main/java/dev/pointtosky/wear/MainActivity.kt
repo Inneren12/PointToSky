@@ -49,6 +49,9 @@ import dev.pointtosky.wear.sensors.orientation.OrientationRepositoryConfig
 import dev.pointtosky.wear.time.TimeDebugScreen
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import dev.pointtosky.wear.catalog.CatalogRepositoryProvider
+import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
+import dev.pointtosky.wear.catalogdebug.CatalogDebugViewModelFactory
 
 class MainActivity : ComponentActivity() {
     private val orientationRepository: OrientationRepository by lazy {
@@ -122,6 +125,7 @@ private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
 private const val ROUTE_LOCATION = "location"
 private const val ROUTE_TIME_DEBUG = "time_debug"
+private const val ROUTE_CATALOG_DEBUG = "catalog_debug"
 
 @Composable
 fun PointToSkyWearApp(
@@ -133,6 +137,7 @@ fun PointToSkyWearApp(
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
     val appContext = context.applicationContext
+    val catalogRepository = remember(appContext) { CatalogRepositoryProvider.get(appContext) }
     val viewModelFactory = remember(orientationRepository, appContext) {
         SensorsViewModelFactory(
             appContext = appContext,
@@ -151,6 +156,7 @@ fun PointToSkyWearApp(
                     onAimClick = { navController.navigate(ROUTE_AIM) },
                     onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
                     onAstroDebugClick = { navController.navigate(ROUTE_ASTRO_DEBUG) },
+                    onCatalogDebugClick = { navController.navigate(ROUTE_CATALOG_DEBUG) },
                     onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
                     onLocationClick = { navController.navigate(ROUTE_LOCATION) },
                     onTimeDebugClick = { navController.navigate(ROUTE_TIME_DEBUG) },
@@ -159,16 +165,27 @@ fun PointToSkyWearApp(
             composable(ROUTE_AIM) { AimScreen() }
             composable(ROUTE_IDENTIFY) { IdentifyScreen() }
             composable(ROUTE_ASTRO_DEBUG) {
-                val factory = remember(orientationRepository, locationRepository) {
+                val factory = remember(orientationRepository, locationRepository, catalogRepository) {
                     AstroDebugViewModelFactory(
                         orientationRepository = orientationRepository,
                         locationRepository = locationRepository,
-                    )
+                        catalogRepository = catalogRepository,
+                        )
                 }
                 AstroDebugRoute(
                     factory = factory,
                 )
             }
+            composable(ROUTE_CATALOG_DEBUG) {
+                val factory = remember(catalogRepository) {
+                    CatalogDebugViewModelFactory(catalogRepository)
+                }
+                CatalogDebugRoute(
+                    factory = factory,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
             composable(ROUTE_SENSORS_DEBUG) {
                 val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(
                     initialValue = OrientationFrameDefaults.EMPTY
@@ -227,6 +244,7 @@ fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
     onAstroDebugClick: () -> Unit,
+    onCatalogDebugClick: () -> Unit,
     onSensorsDebugClick: () -> Unit,
     onLocationClick: () -> Unit,
     onTimeDebugClick: () -> Unit,
@@ -259,6 +277,13 @@ fun HomeScreen(
             colors = ButtonDefaults.secondaryButtonColors(),
         ) {
             Text(text = stringResource(id = R.string.astro_debug_label))
+        }
+        Button(
+            onClick = onCatalogDebugClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.secondaryButtonColors(),
+        ) {
+            Text(text = stringResource(id = R.string.catalog_debug_label))
         }
         Button(
             onClick = onLocationClick,
@@ -318,6 +343,7 @@ fun HomeScreenPreview() {
             onAimClick = {},
             onIdentifyClick = {},
             onAstroDebugClick = {},
+            onCatalogDebugClick = {},
             onSensorsDebugClick = {},
             onLocationClick = {},
             onTimeDebugClick = {}

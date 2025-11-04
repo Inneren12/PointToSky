@@ -24,6 +24,7 @@ import kotlin.math.sin
 
 public class BinaryStarCatalog private constructor(
     private val data: CatalogData,
+    public val metadata: Metadata,
 ) : StarCatalog {
 
     private val stringCache = ConcurrentHashMap<Int, String>()
@@ -284,7 +285,27 @@ public class BinaryStarCatalog private constructor(
                 return fallback
             }
 
-            return BinaryStarCatalog(data)
+            val metadata = Metadata(
+                sizeBytes = bytes.size,
+                starCount = header.starCount,
+                stringPoolBytes = header.stringPoolSize,
+                indexOffsetBytes = header.indexOffset,
+                indexSizeBytes = header.indexSize,
+                payloadCrc32 = header.payloadCrc32,
+                bandEntryCount = data.bandCounts.sum(),
+            )
+            logger.i(
+                TAG,
+                "Star catalog loaded",
+                payload = mapOf(
+                    "path" to path,
+                    "sizeBytes" to metadata.sizeBytes,
+                    "crc32" to metadata.payloadCrc32,
+                    "count" to metadata.starCount,
+                    "bandEntries" to metadata.bandEntryCount,
+                ),
+            )
+            return BinaryStarCatalog(data, metadata)
         }
 
         private fun parseCatalog(bytes: ByteArray, header: BinaryCatalogHeader): CatalogData {
@@ -497,6 +518,15 @@ public class BinaryStarCatalog private constructor(
             )
         }
     }
+    public data class Metadata(
+        val sizeBytes: Int,
+        val starCount: Int,
+        val stringPoolBytes: Int,
+        val indexOffsetBytes: Int,
+        val indexSizeBytes: Int,
+        val payloadCrc32: Long,
+        val bandEntryCount: Int,
+    )
 }
 
 internal object BinaryStarCatalogMetrics {

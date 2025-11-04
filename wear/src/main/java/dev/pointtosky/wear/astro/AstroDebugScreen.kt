@@ -25,10 +25,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
-import dev.pointtosky.core.astro.identify.IdentifySolver
-import dev.pointtosky.core.catalog.CatalogAdapter
-import dev.pointtosky.core.catalog.constellation.FakeConstellationBoundaries
-import dev.pointtosky.core.catalog.star.FakeStarCatalog
+import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
@@ -196,21 +193,18 @@ private fun Body.toLabelRes(): Int = when (this) {
 class AstroDebugViewModelFactory(
     private val orientationRepository: OrientationRepository,
     private val locationRepository: LocationRepository,
+    private val catalogRepository: CatalogRepository,
     private val ephemerisComputer: SimpleEphemerisComputer = SimpleEphemerisComputer(),
-    private val starCatalog: FakeStarCatalog = FakeStarCatalog(),
-    private val constellationBoundaries: FakeConstellationBoundaries = FakeConstellationBoundaries(),
 ) : androidx.lifecycle.ViewModelProvider.Factory {
     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(AstroDebugViewModel::class.java)) {
-            val adapter = CatalogAdapter(starCatalog, constellationBoundaries)
-            val solver = IdentifySolver(adapter, adapter)
             @Suppress("UNCHECKED_CAST")
             return AstroDebugViewModel(
                 orientationRepository = orientationRepository,
                 locationRepository = locationRepository,
                 ephemerisComputer = ephemerisComputer,
-                identifySolver = solver,
-                constellations = adapter,
+                identifySolver = catalogRepository.identifySolver,
+                constellations = catalogRepository.constellationBoundaries,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class ${'$'}modelClass")

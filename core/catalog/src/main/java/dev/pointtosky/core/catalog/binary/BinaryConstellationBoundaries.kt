@@ -15,6 +15,7 @@ import java.util.zip.CRC32
 
 public class BinaryConstellationBoundaries private constructor(
     private val regions: List<Region>,
+    public val metadata: Metadata,
 ) : ConstellationBoundaries {
     override fun findByEq(eq: Equatorial): String? {
         val normalizedRa = normalizeRa(eq.raDeg)
@@ -41,7 +42,9 @@ public class BinaryConstellationBoundaries private constructor(
 
     public companion object {
         private const val TAG: String = "BinaryConstellation"
+        private const val MAGIC_PREFIX: String = "PTSK"
         private const val EXPECTED_TYPE: String = "CONS"
+        private const val HEADER_SIZE_BYTES: Int = 20
         private const val SUPPORTED_VERSION: Int = 1
         public const val DEFAULT_PATH: String = "catalog/const_v1.bin"
 
@@ -61,7 +64,7 @@ public class BinaryConstellationBoundaries private constructor(
                 return fallback
             }
 
-            val (header, buffer) = BinaryCatalogHeader.read(bytes) ?: run {
+            val header = CatalogHeader.read(bytes) ?: run {
                 logger.e(TAG, "Invalid header", payload = mapOf("path" to path))
                 return fallback
             }
@@ -82,7 +85,12 @@ public class BinaryConstellationBoundaries private constructor(
                 return fallback
             }
 
-            val payload = bytes.copyOfRange(BinaryCatalogHeader.HEADER_SIZE_BYTES, bytes.size)
+            val payloadOffset = HEADER_SIZE_BYTES
+            if (payloadOffset > bytes.size) {
+                logger.e(TAG, "Header larger than file", payload = mapOf("path" to path))
+                return fallback
+            }
+            val payload = bytes.copyOfRange(payloadOffset, bytes.size)
             val computedCrc = CRC32().apply { update(payload) }.value and 0xFFFF_FFFFL
             if (computedCrc != header.payloadCrc32) {
                 logger.e(
@@ -98,7 +106,7 @@ public class BinaryConstellationBoundaries private constructor(
             }
 
             val regions = try {
-                buffer.position(BinaryCatalogHeader.HEADER_SIZE_BYTES)
+                val buffer = ByteBuffer.wrap(bytes, payloadOffset, bytes.size - payloadOffset).order(ByteOrder.LITTLE_ENDIAN)
                 parseRegions(buffer, header.recordCount)
             } catch (buf: BufferUnderflowException) {
                 logger.e(TAG, "Unexpected EOF while parsing constellation boundaries", buf, mapOf("path" to path))
@@ -108,7 +116,23 @@ public class BinaryConstellationBoundaries private constructor(
                 return fallback
             }
 
-            return BinaryConstellationBoundaries(regions)
+            val metadata = Metadata(
+                sizeBytes = bytes.size,
+                recordCount = header.recordCount,
+                payloadCrc32 = header.payloadCrc32,
+            )
+            logger.i(
+                TAG,
+                "Constellation catalog loaded",
+                payload = mapOf(
+                    "path" to path,
+                    "sizeBytes" to metadata.sizeBytes,
+                    "crc32" to metadata.payloadCrc32,
+                    "count" to metadata.recordCount,
+                ),
+            )
+
+            return BinaryConstellationBoundaries(regions, metadata)
         }
 
         private fun parseRegions(buffer: ByteBuffer, recordCount: Int): List<Region> {
@@ -151,5 +175,38 @@ public class BinaryConstellationBoundaries private constructor(
             }
             return result
         }
+        private data class CatalogHeader(
+            val magic: String,
+            val type: String,
+            val version: Int,
+            val recordCount: Int,
+            val payloadCrc32: Long,
+        ) {
+            companion object {
+                fun read(bytes: ByteArray): CatalogHeader? {
+                    if (bytes.size < HEADER_SIZE_BYTES) return null
+                    val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                    val magic = buffer.readAscii(4) ?: return null
+                    if (magic != MAGIC_PREFIX) return null
+                    val type = buffer.readAscii(4) ?: return null
+                    val version = buffer.int
+                    val recordCount = buffer.int
+                    val crc = buffer.int.toLong() and 0xFFFF_FFFFL
+                    return CatalogHeader(magic, type, version, recordCount, crc)
+                }
+
+                private fun ByteBuffer.readAscii(length: Int): String? {
+                    if (remaining() < length) return null
+                    val array = ByteArray(length)
+                    get(array)
+                    return String(array, StandardCharsets.US_ASCII)
+                }
+            }
+        }
     }
+    public data class Metadata(
+        val sizeBytes: Int,
+        val recordCount: Int,
+        val payloadCrc32: Long,
+    )
 }

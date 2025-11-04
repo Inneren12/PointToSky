@@ -14,6 +14,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
+import dev.pointtosky.core.catalog.runtime.CatalogRepository
+import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
+import dev.pointtosky.mobile.catalog.CatalogDebugRoute
+import dev.pointtosky.mobile.catalog.CatalogRepositoryProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +51,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val catalogRepository: CatalogRepository by lazy {
+        CatalogRepositoryProvider.get(applicationContext)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -65,7 +74,8 @@ class MainActivity : ComponentActivity() {
                     coroutineScope.launch {
                         phoneLocationBridge.setShareEnabled(enabled)
                     }
-                }
+                },
+                catalogRepository = catalogRepository,
             )
         }
     }
@@ -87,6 +97,7 @@ fun PointToSkyMobileApp(
     locationPrefs: LocationPrefs,
     shareState: PhoneLocationBridge.PhoneLocationBridgeState,
     onShareToggle: (Boolean) -> Unit,
+    catalogRepository: CatalogRepository,
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -96,7 +107,8 @@ fun PointToSkyMobileApp(
                     onOpenCard = onOpenCard,
                     onLocationSetup = { destination = MobileDestination.LocationSetup },
                     onTimeDebug = { destination = MobileDestination.TimeDebug },
-                )
+                    onCatalogDebug = { destination = MobileDestination.CatalogDebug },
+                    )
 
                 MobileDestination.LocationSetup -> LocationSetupScreen(
                     locationPrefs = locationPrefs,
@@ -108,6 +120,12 @@ fun PointToSkyMobileApp(
                 MobileDestination.TimeDebug -> TimeDebugScreen(
                     onBack = { destination = MobileDestination.Home }
                 )
+
+                MobileDestination.CatalogDebug -> CatalogDebugRoute(
+                    factory = CatalogDebugViewModelFactory(catalogRepository),
+                    modifier = Modifier.fillMaxSize(),
+                    onBack = { destination = MobileDestination.Home },
+                )
             }
         }
     }
@@ -118,6 +136,7 @@ fun MobileHome(
     onOpenCard: () -> Unit,
     onLocationSetup: () -> Unit,
     onTimeDebug: () -> Unit,
+    onCatalogDebug: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -146,10 +165,16 @@ fun MobileHome(
         ) {
             Text(text = stringResource(id = R.string.time_debug))
         }
+        Button(
+            onClick = onCatalogDebug,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.catalog_debug))
+        }
     }
 }
 
-private enum class MobileDestination { Home, LocationSetup, TimeDebug }
+private enum class MobileDestination { Home, LocationSetup, TimeDebug, CatalogDebug }
 
 private class PreviewLocationPrefs : LocationPrefs {
     override val manualPointFlow: Flow<GeoPoint?> = flowOf(null)
@@ -163,10 +188,12 @@ private class PreviewLocationPrefs : LocationPrefs {
 @Preview(showSystemUi = true)
 @Composable
 fun MobileHomePreview() {
+    val context = LocalContext.current
     PointToSkyMobileApp(
         onOpenCard = {},
         locationPrefs = PreviewLocationPrefs(),
         shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
-        onShareToggle = {}
+        onShareToggle = {},
+        catalogRepository = CatalogRepository.create(context),
     )
 }
