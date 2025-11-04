@@ -35,5 +35,5 @@ android {
 dependencies {
   // Явные зависимости, без Version Catalog
   implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.20")
-  // Пока ничего больше — модуль пустой (bootstrap)
+  implementation(project(":core:astro"))
 }
