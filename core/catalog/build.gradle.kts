@@ -43,8 +43,10 @@ android {
 dependencies {
   // Явные зависимости, без Version Catalog
   implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.20")
-  // Пока ничего больше — модуль пустой (bootstrap)
+  // tests
   testImplementation("junit:junit:4.13.2")
+  // runtime deps
   implementation(project(":core:astro"))
-  implementation(project(":core:logging"))
+  // logging types are exposed in public API → must be api
+  api(project(":core:logging"))
 }
