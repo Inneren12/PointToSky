@@ -1,6 +1,5 @@
 package dev.pointtosky.core.astro.ephem
 
-import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.testkit.Angles.angularSeparationDeg
 import dev.pointtosky.core.astro.testkit.Tolerance.EPHEM_MAX_ERR_DEG
 import java.time.Instant
@@ -105,11 +104,4 @@ class SimpleEphemerisComputerGoldenTest {
         fun goldenSamples(): java.util.stream.Stream<GoldenSample> = GOLDEN_DATA.toSamples().stream()
     }
 
-    data class GoldenSample(
-        val body: Body,
-        val instant: Instant,
-        val expected: Equatorial,
-        val expectedDistanceAu: Double?,
-        val expectedPhase: Double?,
-    )
 }

@@ -41,7 +41,7 @@ private fun goldenOutputPath(): Path =
     Paths.get("src", "test", "resources", GOLDEN_RESOURCE)
 
 internal data class EphemGolden(val dates: List<GoldenDate>) {
-    fun toSamples(): List<GoldenSample> = dates.flatMap { date ->
+    fun toSamples(): List<GoldenSample> = dates.flatMap { date: GoldenDate ->
         listOf(
             GoldenSample(
                 body = Body.SUN,
@@ -75,7 +75,7 @@ internal data class EphemGolden(val dates: List<GoldenDate>) {
     }
 
     fun recompute(computer: SimpleEphemerisComputer): EphemGolden = EphemGolden(
-        dates = dates.map { date ->
+        dates = dates.map { date: GoldenDate ->
             val sun = computer.compute(Body.SUN, date.instant)
             val moon = computer.compute(Body.MOON, date.instant)
             val jupiter = computer.compute(Body.JUPITER, date.instant)
@@ -130,7 +130,7 @@ internal data class GoldenMoon(
 )
 
 private fun EphemGoldenFileDto.toDomain(): EphemGolden = EphemGolden(
-    dates = dates.map { date ->
+    dates = dates.map { date: GoldenDateDto ->
         GoldenDate(
             instant = Instant.parse(date.instant),
             sun = date.sun.toDomain(),
@@ -155,7 +155,7 @@ private fun GoldenMoonDto.toDomain(): GoldenMoon = GoldenMoon(
 )
 
 private fun EphemGolden.toDto(): EphemGoldenFileDto = EphemGoldenFileDto(
-    dates = dates.map { date ->
+    dates = dates.map { date: GoldenDate ->
         GoldenDateDto(
             instant = date.instant.toString(),
             sun = date.sun.toDto(),
