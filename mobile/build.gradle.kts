@@ -60,6 +60,7 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
 
     implementation(project(":core:common"))
+    implementation(project(":core:catalog"))
     implementation(project(":core:location"))
     implementation(project(":core:astro"))
     implementation(project(":core:time"))

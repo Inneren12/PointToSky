@@ -1,14 +1,18 @@
 package dev.pointtosky.core.astro.identify
 
 import dev.pointtosky.core.astro.coord.Equatorial
+import dev.pointtosky.core.catalog.CatalogAdapter
+import dev.pointtosky.core.catalog.constellation.FakeConstellationBoundaries
+import dev.pointtosky.core.catalog.star.FakeStarCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class IdentifySolverTest {
-    private val catalog = FakeSkyCatalog()
-    private val constellations = FakeConstellations()
-    private val solver = IdentifySolver(catalog, constellations)
+    private val starCatalog = FakeStarCatalog()
+    private val constellationBoundaries = FakeConstellationBoundaries()
+    private val adapter = CatalogAdapter(starCatalog, constellationBoundaries)
+    private val solver = IdentifySolver(adapter, adapter)
 
     @Test
     fun `returns closest bright star`() {
@@ -17,7 +21,7 @@ class IdentifySolverTest {
         val result = solver.findBest(center)
 
         val objResult = assertIs<SkyObjectOrConstellation.Object>(result)
-        assertEquals("vega", objResult.obj.id)
+        assertEquals("Vega", objResult.obj.name)
     }
 
     @Test

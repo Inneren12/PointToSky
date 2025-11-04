@@ -26,6 +26,9 @@ import androidx.wear.compose.material.Text
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.identify.IdentifySolver
+import dev.pointtosky.core.catalog.CatalogAdapter
+import dev.pointtosky.core.catalog.constellation.FakeConstellationBoundaries
+import dev.pointtosky.core.catalog.star.FakeStarCatalog
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
@@ -194,19 +197,20 @@ class AstroDebugViewModelFactory(
     private val orientationRepository: OrientationRepository,
     private val locationRepository: LocationRepository,
     private val ephemerisComputer: SimpleEphemerisComputer = SimpleEphemerisComputer(),
-    private val catalog: FakeSkyCatalog = FakeSkyCatalog(),
-    private val constellations: FakeConstellations = FakeConstellations(),
+    private val starCatalog: FakeStarCatalog = FakeStarCatalog(),
+    private val constellationBoundaries: FakeConstellationBoundaries = FakeConstellationBoundaries(),
 ) : androidx.lifecycle.ViewModelProvider.Factory {
     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(AstroDebugViewModel::class.java)) {
-            val solver = IdentifySolver(catalog, constellations)
+            val adapter = CatalogAdapter(starCatalog, constellationBoundaries)
+            val solver = IdentifySolver(adapter, adapter)
             @Suppress("UNCHECKED_CAST")
             return AstroDebugViewModel(
                 orientationRepository = orientationRepository,
                 locationRepository = locationRepository,
                 ephemerisComputer = ephemerisComputer,
                 identifySolver = solver,
-                constellations = constellations,
+                constellations = adapter,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class ${'$'}modelClass")
