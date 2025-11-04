@@ -11,6 +11,14 @@ android {
     minSdk = 26
     consumerProguardFiles("consumer-rules.pro")
   }
+  testOptions {
+    unitTests.all {
+      it.systemProperty(
+        "catalog.bin.dir",
+        project.findProperty("catalog.bin.dir")?.toString() ?: ""
+      )
+    }
+  }
   buildTypes {
     release {
       isMinifyEnabled = false
@@ -35,5 +43,8 @@ android {
 dependencies {
   // Явные зависимости, без Version Catalog
   implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.20")
-  // Пока ничего больше — модуль пустой (bootstrap)
+  implementation(project(":core:astro"))
+  implementation(project(":core:logging"))
+
+  testImplementation("junit:junit:4.13.2")
 }

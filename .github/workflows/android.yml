@@ -1,0 +1,46 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build-catalog-artifacts:
+    name: Build catalog artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Generate sample binaries
+        run: ./gradlew :tools:catalog-packer:run --args="--stars samples/stars_sample.csv --constellations samples/constellations_sample.csv --out-dir build/catalog-sample"
+
+      - name: Run catalog unit tests on generated binaries
+        run: ./gradlew :core:catalog:test -Pcatalog.bin.dir=$PWD/build/catalog-sample
+
+      - name: Upload catalog artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-sample-binaries
+          path: |
+            build/catalog-sample/stars_v1.bin
+            build/catalog-sample/const_v1.bin
+          if-no-files-found: error
