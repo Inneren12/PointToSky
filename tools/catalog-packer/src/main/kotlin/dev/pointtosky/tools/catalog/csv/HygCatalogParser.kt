@@ -14,8 +14,12 @@ class HygCatalogParser : CatalogCsvParser {
             val mag = accessor.double("mag", "vmag") ?: return@mapNotNull null
             if (mag > magLimit) return@mapNotNull null
 
-            val ra = accessor.double("ra", "ra_deg") ?: return@mapNotNull null
-            val dec = accessor.double("dec", "dec_deg") ?: return@mapNotNull null
+            val ra = accessor.double("ra_deg")
+                ?: accessor.double("ra")?.let { it * 15.0 }
+                ?: return@mapNotNull null
+            val dec = accessor.double("dec_deg")
+                ?: accessor.double("dec")
+                ?: return@mapNotNull null
 
             val hip = accessor.int("hip") ?: accessor.int("HIP") ?: -1
             val name = accessor.string("proper", "Name")
