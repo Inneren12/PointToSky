@@ -1,0 +1,4 @@
+# iau_code,min_ra_deg,max_ra_deg,min_dec_deg,max_dec_deg
+ORI,80.0,110.0,-30.0,10.0
+CAR,90.0,120.0,-70.0,-40.0
+UMA,200.0,220.0,10.0,60.0

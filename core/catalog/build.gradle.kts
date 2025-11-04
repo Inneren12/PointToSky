@@ -11,6 +11,14 @@ android {
     minSdk = 26
     consumerProguardFiles("consumer-rules.pro")
   }
+  testOptions {
+    unitTests.all {
+      it.systemProperty(
+        "catalog.bin.dir",
+        project.findProperty("catalog.bin.dir")?.toString() ?: ""
+      )
+    }
+  }
   buildTypes {
     release {
       isMinifyEnabled = false
