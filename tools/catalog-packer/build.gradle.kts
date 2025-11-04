@@ -1,12 +1,8 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
 plugins {
   id("org.jetbrains.kotlin.jvm") version "2.0.20"
   application
-}
-
-java {
-  toolchain {
-    languageVersion.set(JavaLanguageVersion.of(21))
-  }
 }
 
 application {
@@ -15,7 +11,11 @@ application {
 
 dependencies {
   implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.20")
-  testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
+  implementation(libs.kotlin.csv)
+
+  testImplementation(libs.junit.jupiter.api)
+  testImplementation(libs.junit.jupiter.params)
+  testRuntimeOnly(libs.junit.jupiter.engine)
 }
 
 tasks.test {
@@ -23,5 +23,12 @@ tasks.test {
 }
 
 kotlin {
-  jvmToolchain(21)
+  compilerOptions {
+    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+  }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+  sourceCompatibility = "17"
+  targetCompatibility = "17"
 }
