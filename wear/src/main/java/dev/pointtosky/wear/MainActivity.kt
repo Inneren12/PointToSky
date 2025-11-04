@@ -31,6 +31,8 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.astro.AstroDebugRoute
+import dev.pointtosky.wear.astro.AstroDebugViewModelFactory
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
 import dev.pointtosky.core.location.prefs.LocationPrefs
@@ -106,6 +108,7 @@ class MainActivity : ComponentActivity() {
                 orientationRepository = orientationRepository,
                 locationPrefs = locationPrefs,
                 phoneLocationRepository = phoneLocationRepository,
+                locationRepository = locationOrchestrator,
             )
         }
     }
@@ -114,6 +117,7 @@ class MainActivity : ComponentActivity() {
 private const val ROUTE_HOME = "home"
 private const val ROUTE_AIM = "aim"
 private const val ROUTE_IDENTIFY = "identify"
+private const val ROUTE_ASTRO_DEBUG = "astro_debug"
 private const val ROUTE_SENSORS_DEBUG = "sensors_debug"
 private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
 private const val ROUTE_LOCATION = "location"
@@ -124,6 +128,7 @@ fun PointToSkyWearApp(
     orientationRepository: OrientationRepository,
     locationPrefs: LocationPrefs,
     phoneLocationRepository: PhoneLocationRepository,
+    locationRepository: DefaultLocationOrchestrator,
 ) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
@@ -145,6 +150,7 @@ fun PointToSkyWearApp(
                 HomeScreen(
                     onAimClick = { navController.navigate(ROUTE_AIM) },
                     onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
+                    onAstroDebugClick = { navController.navigate(ROUTE_ASTRO_DEBUG) },
                     onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
                     onLocationClick = { navController.navigate(ROUTE_LOCATION) },
                     onTimeDebugClick = { navController.navigate(ROUTE_TIME_DEBUG) },
@@ -152,6 +158,17 @@ fun PointToSkyWearApp(
             }
             composable(ROUTE_AIM) { AimScreen() }
             composable(ROUTE_IDENTIFY) { IdentifyScreen() }
+            composable(ROUTE_ASTRO_DEBUG) {
+                val factory = remember(orientationRepository, locationRepository) {
+                    AstroDebugViewModelFactory(
+                        orientationRepository = orientationRepository,
+                        locationRepository = locationRepository,
+                    )
+                }
+                AstroDebugRoute(
+                    factory = factory,
+                )
+            }
             composable(ROUTE_SENSORS_DEBUG) {
                 val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(
                     initialValue = OrientationFrameDefaults.EMPTY
@@ -209,6 +226,7 @@ fun PointToSkyWearApp(
 fun HomeScreen(
     onAimClick: () -> Unit,
     onIdentifyClick: () -> Unit,
+    onAstroDebugClick: () -> Unit,
     onSensorsDebugClick: () -> Unit,
     onLocationClick: () -> Unit,
     onTimeDebugClick: () -> Unit,
@@ -234,6 +252,13 @@ fun HomeScreen(
             colors = ButtonDefaults.primaryButtonColors()
         ) {
             Text(text = stringResource(id = R.string.identify_label))
+        }
+        Button(
+            onClick = onAstroDebugClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.secondaryButtonColors(),
+        ) {
+            Text(text = stringResource(id = R.string.astro_debug_label))
         }
         Button(
             onClick = onLocationClick,
@@ -292,6 +317,7 @@ fun HomeScreenPreview() {
         HomeScreen(
             onAimClick = {},
             onIdentifyClick = {},
+            onAstroDebugClick = {},
             onSensorsDebugClick = {},
             onLocationClick = {},
             onTimeDebugClick = {}
