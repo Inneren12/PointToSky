@@ -44,6 +44,47 @@ build/install/ephem-cli/bin/ephem-cli \
 или [In-The-Sky.org](https://in-the-sky.org/ephemeris.php)): достаточно указать тот же момент времени и
 координаты тела, после чего сравнить прав ascension/declination, расстояние и фазу.
 
+## CLI для каталога звёзд
+Модуль `:tools:catalog-packer` превращает CSV (Bright Star Catalog v5 или HYG Database) в компактный
+бинарь `stars_v1.bin` для рантайма. Сборка и запуск:
+
+```bash
+./gradlew :tools:catalog-packer:installDist
+
+build/install/catalog-packer/bin/catalog-packer \
+  --source=hyg \
+  --input=~/Downloads/hyg_v35.csv \
+  --out=build/catalog/stars_v1.bin \
+  --mag-limit=6.5 \
+  --with-con-codes
+```
+
+Результат — файл `stars_v1.bin` (~0.6–1.2 МБ для предела видимой величины 6.5m) и метаданные
+`stars_v1.meta.json` с агрегированными статистиками.
+
+### Формат `stars_v1.bin`
+
+* Заголовок (32 байта, Little Endian):
+  * `magic[8]` — ASCII `PTSKSTAR`.
+  * `version u16` — 1.
+  * `reserved u16` — 0.
+  * `countStars u32` — число записей.
+  * `stringPoolSize u32` — размер пула строк.
+  * `indexOffset u32` — смещение блока индекса от начала data-секции (после заголовка).
+  * `indexSize u32` — размер блока индекса.
+  * `crc32 u32` — контрольная сумма CRC32 от всей data-секции.
+* Пул строк — UTF-8 строки, разделённые нуль-терминатором. Смещения используются в записях.
+* Записи звёзд (`countStars` × 32 байта):
+  * `ra f32`, `dec f32`, `mag f32`, `bv f32` (пока 0), `hip i32`.
+  * `nameOffset u32`, `designationOffset u32` (Bayer/Flamsteed+созвездие).
+  * `flags u16` (наличие HIP/имени/обозначения и источник), `conCode u16` (код созвездия или 0xFFFF).
+* Блок индекса:
+  * Таблица из 180 деклинационных поясов (−90…+89): `bandId i16`, `start u32`, `count u32` — диапазон
+    звёзд в массивах ниже.
+  * `starIdsByBand[]` — конкатенированные ID звёзд (u32) по поясам, внутри каждого отсортированы по RA.
+  * `raByBand[]` — значения RA (f32) в том же порядке для быстрого двоичного поиска.
+  * Сводка (8 × f32): число поясов, число записей в индексе, min/max mag, min/max RA, min/max Dec.
+
 ## Структурированное логирование
 Модуль `:core:logging` предоставляет фасад `LogBus` для структурированного логирования в формате JSONL.
 

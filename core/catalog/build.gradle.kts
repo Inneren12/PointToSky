@@ -43,8 +43,7 @@ android {
 dependencies {
   // Явные зависимости, без Version Catalog
   implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.20")
-  implementation(project(":core:astro"))
-  implementation(project(":core:logging"))
-
+  // Пока ничего больше — модуль пустой (bootstrap)
   testImplementation("junit:junit:4.13.2")
+  implementation(project(":core:astro"))
 }

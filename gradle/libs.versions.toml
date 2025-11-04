@@ -19,6 +19,7 @@ kotlinxCoroutines = "1.9.0"
 kotlinxSerialization = "1.7.1"
 datastore = "1.1.1"
 junitJupiter = "5.10.2"
+kotlinCsv = "1.10.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -51,6 +52,7 @@ junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.re
 junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "junitJupiter" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junitJupiter" }
 junit-vintage-engine = { module = "org.junit.vintage:junit-vintage-engine", version.ref = "junitJupiter" }
+kotlin-csv = { module = "com.github.doyaaaaaken:kotlin-csv-jvm", version.ref = "kotlinCsv" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
