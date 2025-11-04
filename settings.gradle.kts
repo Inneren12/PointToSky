@@ -1,26 +1,32 @@
 pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+  }
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
+  repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+  repositories {
+    google()
+    mavenCentral()
+  }
 }
 
 rootProject.name = "PointToSky"
-include(":wear")
-include(":wear:sensors")
-include(":mobile")
-include(":core:common")
-include(":core:logging")
-include(":core:location")
-include(":core:astro")
-include(":core:time")
-include(":tools:ephem-cli")
+
+// Bootstrap S5
+include(
+  ":wear",
+  ":wear:sensors",
+  ":mobile",
+  ":core:common",
+  ":core:logging",
+  ":core:location",
+  ":core:astro",
+  ":core:time",
+  ":tools:ephem-cli",
+  ":core:catalog",
+  ":tools:catalog-packer"
+)
