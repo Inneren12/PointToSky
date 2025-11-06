@@ -21,7 +21,8 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.BufferOverflow
+import kotlinx.coroutines.channels.BufferOverflow
+import com.google.android.gms.location.Granularity
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.throttleLatest
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -65,7 +66,7 @@ class AndroidFusedLocationRepository(
         when {
             interval == null -> emptyFlow()
             interval <= 0L -> rawFixes
-            else -> rawFixes.throttleLatest(interval)
+            else -> rawFixes.sample(interval)
         }
     }
 
@@ -78,10 +79,14 @@ class AndroidFusedLocationRepository(
             if (started) return
             started = true
 
-            val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+            // Явно используем GMS Builder с приоритетом и базовым интервалом
+            val request = com.google.android.gms.location.LocationRequest.Builder(
+                Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                config.minUpdateIntervalMs.coerceAtLeast(0L)
+            )
                 .setMinUpdateIntervalMillis(config.minUpdateIntervalMs.coerceAtLeast(0L))
-                .setMinUpdateDistanceMeters(config.minDistanceM)
-                .setGranularity(LocationRequest.GRANULARITY_PERMISSION_LEVEL)
+                .setMinUpdateDistanceMeters(config.minDistanceM.toFloat())
+                .setGranularity(Granularity.GRANULARITY_PERMISSION_LEVEL)
                 .build()
 
             updatesJob = scope.launch {

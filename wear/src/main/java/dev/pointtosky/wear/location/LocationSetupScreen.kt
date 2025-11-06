@@ -31,7 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,8 +45,9 @@ import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.ScalingLazyColumn
 import androidx.wear.compose.material.Text
-import androidx.wear.compose.material.TextField
+import androidx.compose.material3.TextField
 import androidx.wear.compose.material.ToggleChip
+import androidx.wear.compose.material.ToggleChipDefaults
 import androidx.wear.compose.material.rememberScalingLazyListState
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.model.GeoPoint
@@ -86,7 +87,7 @@ fun LocationSetupScreen(
         }
     }
 
-    BackHandler(onBack)
+    BackHandler(onBack = onBack)
 
     val listState = rememberScalingLazyListState()
 
@@ -151,12 +152,12 @@ fun LocationSetupScreen(
                     if (!enabled) {
                         coroutineScope.launch { locationPrefs.setManual(null) }
                     }
-                },
+                                                   },
                 label = { Text(text = stringResource(id = R.string.location_setup_manual_toggle)) },
+                toggleControl = {},
                 modifier = Modifier.fillMaxWidth(),
-            )
+                )
         }
-
         if (manualEnabled) {
             val latitudeValidation = validateLatitude(latitudeInput)
             val longitudeValidation = validateLongitude(longitudeInput)
@@ -273,10 +274,11 @@ fun LocationSetupScreen(
                 checked = usePhoneFallback,
                 onCheckedChange = { enabled ->
                     coroutineScope.launch { locationPrefs.setUsePhoneFallback(enabled) }
-                },
+                                                   },
                 label = { Text(text = stringResource(id = R.string.location_setup_use_phone_fallback)) },
+                toggleControl = {},
                 modifier = Modifier.fillMaxWidth(),
-            )
+                )
         }
     }
 }

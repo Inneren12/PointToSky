@@ -7,6 +7,10 @@ android {
   namespace = "dev.pointtosky.core.catalog"
   compileSdk = 35
 
+    buildFeatures {
+        buildConfig = true
+    }
+
   defaultConfig {
     minSdk = 26
     consumerProguardFiles("consumer-rules.pro")
@@ -41,12 +45,16 @@ android {
 }
 
 dependencies {
-  // Явные зависимости, без Version Catalog
-  implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.20")
-  // tests
-  testImplementation("junit:junit:4.13.2")
-  // runtime deps
-  implementation(project(":core:astro"))
+    testImplementation("junit:junit:4.13.2")
+
+    // runtime
+    implementation(project(":core:astro"))
+    // Logger участвует в публичных сигнатурах → нужен как api, чтобы тип был виден потребителям
+    api(project(":core:logging"))
+
+    // для CatalogDebugViewModel: ViewModel + Flow.update
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
   // logging types are exposed in public API → must be api
   api(project(":core:logging"))
 }

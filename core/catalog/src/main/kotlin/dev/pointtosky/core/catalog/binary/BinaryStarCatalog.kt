@@ -84,7 +84,7 @@ public class BinaryStarCatalog private constructor(
             }
         }
 
-        candidates.sortWith(compareBy({ it.separationDeg }, { it.magnitude }))
+        candidates.sortWith(compareBy<Candidate>({ it.separationDeg }, { it.magnitude }))
         val result = candidates.map { candidate ->
             data.toStar(candidate.starIndex, ::decodeString, ::splitDesignation)
         }
@@ -109,7 +109,7 @@ public class BinaryStarCatalog private constructor(
         val starIndex = data.starIdsByBand[cursor]
         if (starIndex !in 0 until data.count) return 1
 
-        val magnitude = data.magnitudes[starIndex]
+        val magnitude = data.mag[starIndex]
         if (limit != null) {
             if (magnitude.isNaN() || magnitude.toDouble() > limit) {
                 return 1

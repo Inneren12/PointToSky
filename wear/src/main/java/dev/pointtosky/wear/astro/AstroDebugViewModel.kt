@@ -32,7 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.FlowPreview
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -52,7 +52,7 @@ class AstroDebugViewModel(
     private val locationState = MutableStateFlow<LocationFix?>(null)
     private val targetState = MutableStateFlow(Body.SUN)
 
-    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    @OptIn(FlowPreview::class)
     private val orientationState: StateFlow<OrientationFrame> = orientationRepository.frames
         .sample(ORIENTATION_SAMPLE_MS)
         .stateIn(

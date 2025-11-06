@@ -49,6 +49,20 @@ android {
 dependencies {
     implementation(platform(libs.compose.bom))
 
+    // Если используете BOM в других модулях — подключите и здесь:
+    implementation(platform(libs.compose.bom))
+
+    // KeyboardOptions / KeyboardType
+    implementation("androidx.compose.ui:ui-text")
+    // Material3 виджеты (OutlinedTextField, Button, Card и т.д.)
+    implementation("androidx.compose.material3:material3")
+    // Compose интеграция Activity
+    implementation("androidx.activity:activity-compose")
+    // collectAsStateWithLifecycle
+    implementation("androidx.lifecycle:lifecycle-runtime-compose")
+    // viewModel(...) из androidx.lifecycle.viewmodel.compose
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)

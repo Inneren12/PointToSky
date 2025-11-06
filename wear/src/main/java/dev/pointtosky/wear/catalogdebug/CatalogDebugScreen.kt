@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -24,7 +24,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.ScalingLazyColumn
 import androidx.wear.compose.material.ScalingLazyListState
 import androidx.wear.compose.material.Text
-import androidx.wear.compose.material.TextField
+import androidx.compose.material3.TextField
 import androidx.wear.compose.material.rememberScalingLazyListState
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugUiState
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModel
@@ -138,10 +138,11 @@ fun CatalogDebugScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (!state.probeError.isNullOrBlank()) {
+                val err = state.probeError
+                if (!err.isNullOrBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = state.probeError,
+                        text = err,
                         color = Color.Red,
                         style = MaterialTheme.typography.caption2,
                     )

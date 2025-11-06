@@ -49,7 +49,8 @@ android {
 
 dependencies {
     implementation(platform(libs.compose.bom))
-
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.ui:ui-text")
     implementation(project(":wear:sensors"))
     implementation(project(":core:logging"))
     implementation(project(":core:location"))

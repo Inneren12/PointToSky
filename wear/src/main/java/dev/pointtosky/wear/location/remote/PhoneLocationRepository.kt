@@ -104,7 +104,7 @@ class PhoneLocationRepository(
                 val item = event.dataItem
                 val path = item.uri.path
                 if (path != DATA_ITEM_LAST_FIX) continue
-                val data = item.data
+                val data = item.data ?: continue
                 val payload = LocationResponsePayload.fromBytes(data) ?: continue
                 handleIncomingFix(payload.fix)
             }
@@ -122,7 +122,7 @@ class PhoneLocationRepository(
     }
 
     private suspend fun maintainFreshFixes() {
-        while (isActive) {
+        while (scope.isActive) {
             val ttlMs = configRef.get().freshTtlMs
             val fix = latestFix.get()
             val now = clock()

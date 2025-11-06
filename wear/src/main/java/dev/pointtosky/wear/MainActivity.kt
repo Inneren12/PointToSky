@@ -51,7 +51,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import dev.pointtosky.wear.catalog.CatalogRepositoryProvider
 import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
-import dev.pointtosky.wear.catalogdebug.CatalogDebugViewModelFactory
+import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
 
 class MainActivity : ComponentActivity() {
     private val orientationRepository: OrientationRepository by lazy {
@@ -177,7 +177,7 @@ fun PointToSkyWearApp(
                 )
             }
             composable(ROUTE_CATALOG_DEBUG) {
-                val factory = remember(catalogRepository) {
+                val factory: CatalogDebugViewModelFactory = remember(catalogRepository) {
                     CatalogDebugViewModelFactory(catalogRepository)
                 }
                 CatalogDebugRoute(

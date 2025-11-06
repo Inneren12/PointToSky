@@ -1,13 +1,12 @@
 package dev.pointtosky.core.catalog.constellation
 
-import dev.pointtosky.core.astro.coord.Equatorial
-
 /**
- * Maps positions on the celestial sphere to constellation codes.
+ * Backward‑compatibility alias: старое имя теперь указывает на новый интерфейс
+ * из core.astro.identify. В рантайме больше не будет двух разных типов.
  */
-public interface ConstellationBoundaries {
-    /**
-     * @return Three-letter IAU constellation code if found, otherwise `null`.
-     */
-    public fun findByEq(eq: Equatorial): String?
-}
+@Deprecated(
+        message = "Use dev.pointtosky.core.astro.identify.ConstellationBoundaries directly",
+    replaceWith = ReplaceWith("dev.pointtosky.core.astro.identify.ConstellationBoundaries"),
+    )
+public typealias ConstellationBoundaries =
+    dev.pointtosky.core.astro.identify.ConstellationBoundaries

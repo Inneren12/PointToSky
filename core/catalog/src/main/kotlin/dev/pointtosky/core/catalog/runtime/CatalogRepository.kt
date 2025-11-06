@@ -5,16 +5,15 @@ import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
 import dev.pointtosky.core.catalog.CatalogAdapter
-import dev.pointtosky.core.catalog.binary.BinaryConstellationBoundaries
-import dev.pointtosky.core.catalog.binary.BinaryStarCatalog
-import dev.pointtosky.core.catalog.constellation.ConstellationBoundaries
 import dev.pointtosky.core.catalog.io.AndroidAssetProvider
 import dev.pointtosky.core.catalog.io.AssetProvider
 import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.catalog.star.StarCatalog
 import kotlin.math.roundToInt
 import kotlin.system.measureNanoTime
-
+import dev.pointtosky.core.catalog.binary.BinaryConstellationBoundaries
+import dev.pointtosky.core.catalog.binary.BinaryStarCatalog
+import dev.pointtosky.core.astro.identify.ConstellationBoundaries
 public class CatalogRepository private constructor(
     private val assetProvider: AssetProvider,
     public val starCatalog: StarCatalog,
@@ -133,14 +132,17 @@ public class CatalogRepository private constructor(
             val provider = AndroidAssetProvider(context.applicationContext)
             val starHolder = loadStars(provider)
             val boundariesHolder = loadBoundaries(provider)
-            val adapter = CatalogAdapter(starHolder.catalog, boundariesHolder.boundaries)
+            val adapter = CatalogAdapter(
+                starHolder.catalog,
+                boundariesHolder.catalog  // тип уже ConstellationBoundaries из astro.identify
+            )
             val solver = IdentifySolver(adapter, adapter)
             return CatalogRepository(
                 assetProvider = provider,
                 starCatalog = starHolder.catalog,
                 starMetadata = starHolder.metadata,
                 starLoadDurationMs = starHolder.loadDurationMs,
-                constellationBoundaries = boundariesHolder.boundaries,
+                constellationBoundaries = boundariesHolder.catalog,
                 boundaryMetadata = boundariesHolder.metadata,
                 boundaryLoadDurationMs = boundariesHolder.loadDurationMs,
                 skyCatalog = adapter,

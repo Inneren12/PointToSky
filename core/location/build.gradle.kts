@@ -25,7 +25,7 @@ dependencies {
     api(libs.kotlinx.coroutines.core)
     implementation(libs.play.services.location)
     implementation(libs.androidx.datastore.preferences)
-
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
 }
