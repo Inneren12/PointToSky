@@ -31,6 +31,7 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.aim.ui.AimRoute
 import dev.pointtosky.wear.astro.AstroDebugRoute
 import dev.pointtosky.wear.astro.AstroDebugViewModelFactory
 import dev.pointtosky.core.location.api.LocationConfig
@@ -162,7 +163,13 @@ fun PointToSkyWearApp(
                     onTimeDebugClick = { navController.navigate(ROUTE_TIME_DEBUG) },
                 )
             }
-            composable(ROUTE_AIM) { AimScreen() }
+            composable(ROUTE_AIM) {
+                // Экран Aim с реальным контроллером (S6.B)
+                AimRoute(
+                    orientationRepository = orientationRepository,
+                    locationRepository = locationRepository,
+                )
+            }
             composable(ROUTE_IDENTIFY) { IdentifyScreen() }
             composable(ROUTE_ASTRO_DEBUG) {
                 val factory = remember(orientationRepository, locationRepository, catalogRepository) {
