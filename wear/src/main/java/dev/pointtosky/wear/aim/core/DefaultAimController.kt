@@ -67,7 +67,7 @@ class DefaultAimController(
     @Volatile
     private var lastLocation: GeoPoint? = null
 
-    @Volatile
+    // AtomicBoolean сам обеспечивает корректную видимость/атомарность; @Volatile не требуется
     private val running = AtomicBoolean(false)
 
     private var orientationJob: Job? = null
@@ -128,11 +128,20 @@ class DefaultAimController(
             return
         }
 
+        // Захватываем ссылки на текущие задачи и сразу очищаем поля
+        val oldOrientation = orientationJob
+        val oldLocation = locationJob
+        orientationJob = null
+        locationJob = null
+
+        // Отменяем старые задачи немедленно
+        oldOrientation?.cancel()
+        oldLocation?.cancel()
+
+        // Дожидаемся завершения именно старых задач — без гонок с новым start()
         scope.launch {
-            orientationJob?.cancelAndJoin()
-            locationJob?.cancelAndJoin()
-            orientationJob = null
-            locationJob = null
+            oldOrientation?.join()
+            oldLocation?.join()
         }
 
         resetState()

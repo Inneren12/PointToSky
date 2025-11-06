@@ -1,0 +1,46 @@
+diff --git a/wear/src/main/java/dev/pointtosky/wear/aim/core/DefaultAimController.kt b/wear/src/main/java/dev/pointtosky/wear/aim/core/DefaultAimController.kt
+--- a/wear/src/main/java/dev/pointtosky/wear/aim/core/DefaultAimController.kt
++++ b/wear/src/main/java/dev/pointtosky/wear/aim/core/DefaultAimController.kt
+@@
+ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.Job
+-import kotlinx.coroutines.cancelAndJoin
+@@
+     @Volatile
+     private var lastLocation: GeoPoint? = null
+ 
+-    @Volatile
+-    private val running = AtomicBoolean(false)
++    // AtomicBoolean сам обеспечивает корректную видимость/атомарность; @Volatile не требуется
++    private val running = AtomicBoolean(false)
+@@
+     override fun stop() {
+         if (!running.compareAndSet(true, false)) {
+             return
+         }
+ 
+-        scope.launch {
+-            orientationJob?.cancelAndJoin()
+-            locationJob?.cancelAndJoin()
+-            orientationJob = null
+-            locationJob = null
+-        }
++        // Захватываем ссылки на текущие задачи и сразу очищаем поля
++        val oldOrientation = orientationJob
++        val oldLocation = locationJob
++        orientationJob = null
++        locationJob = null
++
++        // Отменяем старые задачи немедленно
++        oldOrientation?.cancel()
++        oldLocation?.cancel()
++
++        // Дожидаемся завершения именно старых задач — без гонок с новым start()
++        scope.launch {
++            oldOrientation?.join()
++            oldLocation?.join()
++        }
+ 
+         resetState()
+     }
