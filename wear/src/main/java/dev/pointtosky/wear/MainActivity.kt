@@ -31,6 +31,12 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import dev.pointtosky.wear.identify.IdentifyViewModelFactory
+import dev.pointtosky.wear.identify.IdentifyRoute
+import dev.pointtosky.wear.identify.buildCardRouteFrom
+import dev.pointtosky.wear.identify.cardDestination
+import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
+import dev.pointtosky.wear.settings.SettingsRoute
 import dev.pointtosky.wear.aim.ui.AimRoute
 import dev.pointtosky.wear.astro.AstroDebugRoute
 import dev.pointtosky.wear.astro.AstroDebugViewModelFactory
@@ -127,6 +133,8 @@ private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
 private const val ROUTE_LOCATION = "location"
 private const val ROUTE_TIME_DEBUG = "time_debug"
 private const val ROUTE_CATALOG_DEBUG = "catalog_debug"
+private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_CARD = "card"
 
 @Composable
 fun PointToSkyWearApp(
@@ -139,6 +147,8 @@ fun PointToSkyWearApp(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val catalogRepository = remember(appContext) { CatalogRepositoryProvider.get(appContext) }
+    val settings = remember(appContext) { AimIdentifySettingsDataStore(appContext) }
+
     val viewModelFactory = remember(orientationRepository, appContext) {
         SensorsViewModelFactory(
             appContext = appContext,
@@ -161,6 +171,7 @@ fun PointToSkyWearApp(
                     onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
                     onLocationClick = { navController.navigate(ROUTE_LOCATION) },
                     onTimeDebugClick = { navController.navigate(ROUTE_TIME_DEBUG) },
+                    onSettingsClick = { navController.navigate(ROUTE_SETTINGS) },
                 )
             }
             composable(ROUTE_AIM) {
@@ -170,7 +181,29 @@ fun PointToSkyWearApp(
                     locationRepository = locationRepository,
                 )
             }
-            composable(ROUTE_IDENTIFY) { IdentifyScreen() }
+            composable(ROUTE_IDENTIFY) {
+                // Экран Identify (S6.C) с реальным каталогом и ориентацией
+                val factory = remember(orientationRepository, locationRepository, catalogRepository, settings) {
+                    IdentifyViewModelFactory(
+                        orientationRepository = orientationRepository,
+                        locationRepository = locationRepository,
+                        catalogRepository = catalogRepository,
+                        settings = settings,
+                    )
+                }
+                IdentifyRoute(
+                    factory = factory,
+                    onOpenCard = { state -> navController.navigate(buildCardRouteFrom(state)) },
+                )
+            }
+            composable(ROUTE_SETTINGS) {
+                SettingsRoute(
+                    settings = settings,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            // Параметризованный экран карточки (S6.D)
+            cardDestination(locationRepository = locationRepository)
             composable(ROUTE_ASTRO_DEBUG) {
                 val factory = remember(orientationRepository, locationRepository, catalogRepository) {
                     AstroDebugViewModelFactory(
@@ -255,6 +288,7 @@ fun HomeScreen(
     onSensorsDebugClick: () -> Unit,
     onLocationClick: () -> Unit,
     onTimeDebugClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -312,6 +346,13 @@ fun HomeScreen(
             colors = ButtonDefaults.secondaryButtonColors(),
         ) {
             Text(text = stringResource(id = R.string.time_debug_label))
+        }
+        Button(
+            onClick = onSettingsClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.primaryButtonColors(),
+        ) {
+            Text(text = stringResource(id = R.string.settings_label))
         }
     }
 }

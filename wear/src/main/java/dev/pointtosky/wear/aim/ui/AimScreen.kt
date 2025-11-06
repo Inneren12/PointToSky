@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,7 +25,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material.*
-import androidx.wear.tooling.preview.Devices
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
@@ -39,11 +39,12 @@ import dev.pointtosky.wear.aim.core.AimTarget.EquatorialTarget
 import dev.pointtosky.wear.aim.core.DefaultAimController
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.snapshotFlow
 import kotlin.math.abs
 import kotlin.math.sign
+
+
+// Сделаем тип элементов пикера top-level, чтобы он был виден внизу файла
+private data class UiTarget(val label: String, val toAim: AimTarget)
 
 /**
  * Route-компоновка: создаёт контроллер и рендерит AimScreen.
@@ -166,16 +167,13 @@ fun AimScreen(
     }
 
     Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("AimRoot"),
+        modifier = Modifier.fillMaxSize().testTag("AimRoot"),
         timeText = { TimeText() },
         vignette = { Vignette(vignettePosition = VignettePosition.TopAndBottom) }
-    ) { inset ->
-        Column(
+    ) {
+    Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(inset)
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
@@ -341,15 +339,11 @@ private fun AltScale(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp) {
 private fun TurnArrow(right: Boolean, emphasized: Boolean, size: Dp) {
     val color = if (emphasized) MaterialTheme.colors.primary else MaterialTheme.colors.onBackground.copy(alpha = 0.6f)
     Canvas(modifier = Modifier.size(size)) {
-        val w = size.width
-        val h = size.height
-        val cw = kotlin.math.min(w.value, h.value)
-        val arrowLength = (cw * 0.8f)
-        val arrowHeight = (cw * 0.35f)
-
-        // drawScope size.* — пиксели:
         val W = this.size.width
         val H = this.size.height
+        val cw = kotlin.math.min(W, H)
+        val arrowLength = (cw * 0.8f)
+        val arrowHeight = (cw * 0.35f)
         val centerY = H / 2f
         val startX = (W - arrowLength) / 2f
         val endX = startX + arrowLength
@@ -375,7 +369,7 @@ private fun formatDeg(value: Float): String {
     return s.replace(".0°", "°")
 }
 
-private fun targetIndexFor(initial: AimTarget?, options: List<UiTarget>): Int {
+private fun targetIndexFor(initial: AimTarget?, options: List<Any>): Int {
     if (initial == null) return 0
     return when (initial) {
         is BodyTarget -> when (initial.body) {
@@ -389,32 +383,4 @@ private fun targetIndexFor(initial: AimTarget?, options: List<UiTarget>): Int {
     }
 }
 
-// ------- Preview с фейковым контроллером -------
-@androidx.compose.ui.tooling.preview.Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
-@androidx.compose.ui.tooling.preview.Preview(device = Devices.WEAR_OS_SQUARE, showSystemUi = true)
-@Composable
-private fun Preview_Aim() {
-    val fake = remember { FakeAimController() }
-    MaterialTheme {
-        AimScreen(aimController = fake, initialTarget = BodyTarget(Body.JUPITER))
-    }
-}
-
-private class FakeAimController : AimController {
-    private val _state = MutableStateFlow(
-        dev.pointtosky.wear.aim.core.AimState(
-            current = dev.pointtosky.core.astro.coord.Horizontal(0.0, 0.0),
-            target = dev.pointtosky.core.astro.coord.Horizontal(0.0, 0.0),
-            dAzDeg = -23.4,
-            dAltDeg = 15.8,
-            phase = AimPhase.SEARCHING,
-            confidence = 0.42f,
-        )
-    )
-    override val state: StateFlow<dev.pointtosky.wear.aim.core.AimState> = _state
-    override fun setTarget(target: AimTarget) {}
-    override fun setTolerance(t: dev.pointtosky.wear.aim.core.AimTolerance) {}
-    override fun setHoldToLockMs(ms: Long) {}
-    override fun start() {}
-    override fun stop() {}
-}
+// Превью убраны, чтобы не тянуть ui-tooling/wear-tooling в :wear

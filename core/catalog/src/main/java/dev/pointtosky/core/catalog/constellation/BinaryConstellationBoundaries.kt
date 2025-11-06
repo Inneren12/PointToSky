@@ -191,46 +191,32 @@ class BinaryConstellationBoundaries(
         val rangeMin: Double,
         val rangeMax: Double,
     ) {
-        fun contains(ra: Double, dec: Double): Boolean {
+        fun contains(ra: Double, decValue: Double): Boolean {
             if (unwrappedRa.isEmpty()) return false
-            val aligned = alignRa(ra) ?: return false
-            return rayCast(aligned, dec)
-        }
-
-        private fun alignRa(ra: Double): Double? {
-            var candidate = ra
-            if (candidate < rangeMin) {
-                val shift = ceil((rangeMin - candidate) / 360.0)
-                candidate += shift * 360.0
-            } else if (candidate > rangeMax) {
-                val shift = ceil((candidate - rangeMax) / 360.0)
-                candidate -= shift * 360.0
-            }
-            if (candidate < rangeMin - RA_TOLERANCE || candidate > rangeMax + RA_TOLERANCE) {
-                return null
-            }
-            return candidate
-        }
-
-        private fun rayCast(ra: Double, decValue: Double): Boolean {
-            var inside = false
-            var j = unwrappedRa.lastIndex
+            // Угловой тест: суммируем углы между векторами (vertex - point).
+            // ΔRA берём как минимальную знаковую разность ([-180; +180)), чтобы не "ломаться" на 0°/360°.
+            var sum = 0.0
+            var prevX = angleDelta(unwrappedRa.last(), ra)
+            var prevY = dec.last() - decValue
             for (i in unwrappedRa.indices) {
-                val yi = dec[i]
-                val yj = dec[j]
-                val xi = unwrappedRa[i]
-                val xj = unwrappedRa[j]
-                val denominator = yj - yi
-                if (abs(denominator) < 1e-9) {
-                    j = i
-                    continue
-                }
-                val intersects = ((yi > decValue) != (yj > decValue)) &&
-                    (ra < (xj - xi) * (decValue - yi) / denominator + xi)
-                if (intersects) inside = !inside
-                j = i
+                val x = angleDelta(unwrappedRa[i], ra)
+                val y = dec[i] - decValue
+                val cross = prevX * y - x * prevY    // псевдоскаляр (2D cross)
+                val dot = prevX * x + prevY * y      // скалярное произведение
+                sum += kotlin.math.atan2(cross, dot)
+                prevX = x
+                prevY = y
             }
-            return inside
+            // |sum| ≈ 2π — внутри; ≈ 0 — снаружи.
+            return kotlin.math.abs(sum) > Math.PI
+        }
+
+        /** Минимальная знаковая разность (vertexRa - refRa) по кругу, диапазон [-180; +180). */
+        private fun angleDelta(vertexRa: Double, refRa: Double): Double {
+            var d = (vertexRa - refRa) % 360.0
+            if (d < -180.0) d += 360.0
+            if (d >= 180.0) d -= 360.0
+            return d
         }
     }
 

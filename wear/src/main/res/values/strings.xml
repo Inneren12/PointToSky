@@ -2,6 +2,7 @@
     <string name="app_name">Point-to-Sky Wear</string>
     <string name="find_label">Найти</string>
     <string name="identify_label">Что там?</string>
+    <string name="identify_low_accuracy">Low accuracy</string>
     <string name="sensors_debug_label">Датчики</string>
     <string name="sensors_debug_title">Датчики</string>
     <string name="sensors_calibrate_label">Калибровка</string>
@@ -95,4 +96,14 @@
     <string name="astro_debug_target_saturn">Сатурн</string>
     <string name="astro_debug_aim_error">Δaz=%1$.1f° Δalt=%2$.1f°</string>
     <string name="astro_debug_aim_error_unknown">Δaz/Δalt: —</string>
+    <!-- Settings (S6.E) -->
+    <string name="settings_label">Settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
+    <string name="aim_az_tol_label">Az tolerance: %1$.1f°</string>
+    <string name="aim_alt_tol_label">Alt tolerance: %1$.1f°</string>
+    <string name="aim_hold_ms_label">Hold to lock: %1$d ms</string>
+    <string name="aim_haptic_label">Haptic</string>
+    <string name="identify_radius_label">Identify radius: %1$.1f°</string>
+    <string name="identify_mag_limit_label">Mag limit: %1$.1f</string>
 </resources>
