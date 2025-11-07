@@ -32,14 +32,15 @@ import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
-import dev.pointtosky.mobile.card.CardRepository
 import dev.pointtosky.mobile.card.CardRoute
 import dev.pointtosky.mobile.card.parseCardIdFromIntent
+import dev.pointtosky.mobile.card.CardRepository
 import dev.pointtosky.mobile.catalog.CatalogDebugRoute
 import dev.pointtosky.mobile.catalog.CatalogRepositoryProvider
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.datalayer.DemoAimTargets
 import dev.pointtosky.mobile.datalayer.MobileBridge
+import dev.pointtosky.mobile.ar.ArRoute
 import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
 import dev.pointtosky.mobile.skymap.SkyMapRoute
@@ -93,6 +94,7 @@ class MainActivity : ComponentActivity() {
                 onNavigate = { navigationState.value = it },
                 latestCardAvailable = latestCardId != null,
                 onOpenLatestCard = openLatestCard,
+                onOpenAr = { navigationState.value = MobileDestination.Ar },
                 locationPrefs = locationPrefs,
                 shareState = bridgeState,
                 onShareToggle = { enabled ->
@@ -177,6 +179,7 @@ fun PointToSkyMobileApp(
     onNavigate: (MobileDestination) -> Unit,
     latestCardAvailable: Boolean,
     onOpenLatestCard: () -> Unit,
+    onOpenAr: () -> Unit,
     locationPrefs: LocationPrefs,
     shareState: PhoneLocationBridge.PhoneLocationBridgeState,
     onShareToggle: (Boolean) -> Unit,
@@ -191,6 +194,7 @@ fun PointToSkyMobileApp(
                 MobileDestination.Home -> MobileHome(
                     onOpenCard = onOpenLatestCard,
                     onSkyMap = { onNavigate(MobileDestination.SkyMap) },
+                    onAr = onOpenAr,
                     onLocationSetup = { onNavigate(MobileDestination.LocationSetup) },
                     onTimeDebug = { onNavigate(MobileDestination.TimeDebug) },
                     onCatalogDebug = { onNavigate(MobileDestination.CatalogDebug) },
@@ -214,6 +218,14 @@ fun PointToSkyMobileApp(
                     factory = CatalogDebugViewModelFactory(catalogRepository),
                     modifier = Modifier.fillMaxSize(),
                     onBack = { onNavigate(MobileDestination.Home) },
+                )
+
+                MobileDestination.Ar -> ArRoute(
+                    catalogRepository = catalogRepository,
+                    locationPrefs = locationPrefs,
+                    onBack = { onNavigate(MobileDestination.Home) },
+                    onSendAimTarget = onSendAimTarget,
+                    modifier = Modifier.fillMaxSize(),
                 )
 
                 MobileDestination.SkyMap -> SkyMapRoute(
@@ -241,6 +253,7 @@ fun PointToSkyMobileApp(
 fun MobileHome(
     onOpenCard: () -> Unit,
     onSkyMap: () -> Unit,
+    onAr: () -> Unit,
     onLocationSetup: () -> Unit,
     onTimeDebug: () -> Unit,
     onCatalogDebug: () -> Unit,
@@ -279,6 +292,12 @@ fun MobileHome(
             Text(text = stringResource(id = R.string.sky_map))
         }
         Button(
+            onClick = onAr,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.ar_mode))
+        }
+        Button(
             onClick = onLocationSetup,
             modifier = Modifier.padding(top = 16.dp)
         ) {
@@ -305,6 +324,7 @@ private sealed interface MobileDestination {
     object LocationSetup : MobileDestination
     object TimeDebug : MobileDestination
     object CatalogDebug : MobileDestination
+    object Ar : MobileDestination
     data class Card(val cardId: String) : MobileDestination
 }
 
@@ -326,6 +346,7 @@ fun MobileHomePreview() {
         onNavigate = {},
         latestCardAvailable = true,
         onOpenLatestCard = {},
+        onOpenAr = {},
         locationPrefs = PreviewLocationPrefs(),
         shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
         onShareToggle = {},
