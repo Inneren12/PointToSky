@@ -78,6 +78,7 @@ dependencies {
     implementation(project(":core:location"))
     implementation(project(":core:astro"))
     implementation(project(":core:time"))
+    implementation(project(":core:logging"))
 
     // Приём сообщений от часов
     implementation("com.google.android.gms:play-services-wearable:18.1.0")

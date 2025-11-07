@@ -1,5 +1,6 @@
 package dev.pointtosky.wear
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,8 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,8 +57,15 @@ import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationRepositoryConfig
 import dev.pointtosky.wear.time.TimeDebugScreen
+import dev.pointtosky.core.astro.coord.Equatorial
+import dev.pointtosky.core.astro.ephem.Body
+import dev.pointtosky.wear.aim.core.AimTarget
+import dev.pointtosky.wear.datalayer.AimLaunchRequest
+import dev.pointtosky.wear.datalayer.WearBridge
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import dev.pointtosky.wear.catalog.CatalogRepositoryProvider
 import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
@@ -91,6 +101,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        WearBridge.get(applicationContext)
+        handleAimIntent(intent)
+
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 orientationRepository.start(OrientationRepositoryConfig())
@@ -119,8 +132,34 @@ class MainActivity : ComponentActivity() {
                 locationPrefs = locationPrefs,
                 phoneLocationRepository = phoneLocationRepository,
                 locationRepository = locationOrchestrator,
+                aimLaunches = WearBridge.aimLaunches(),
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleAimIntent(intent)
+    }
+
+    private fun handleAimIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action != ACTION_OPEN_AIM) return
+        val target = when (intent.getStringExtra(EXTRA_AIM_TARGET_KIND)) {
+            "equatorial" -> {
+                val ra = intent.getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN)
+                val dec = intent.getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN)
+                if (ra.isNaN() || dec.isNaN()) return
+                AimTarget.EquatorialTarget(Equatorial(raDeg = ra, decDeg = dec))
+            }
+            "body" -> {
+                val bodyName = intent.getStringExtra(EXTRA_AIM_BODY) ?: return
+                val body = runCatching { Body.valueOf(bodyName) }.getOrNull() ?: return
+                AimTarget.BodyTarget(body)
+            }
+            else -> return
+        }
+        WearBridge.emitAimTarget(target)
     }
 }
 
@@ -135,6 +174,11 @@ private const val ROUTE_TIME_DEBUG = "time_debug"
 private const val ROUTE_CATALOG_DEBUG = "catalog_debug"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_CARD = "card"
+const val ACTION_OPEN_AIM = "dev.pointtosky.action.OPEN_AIM"
+const val EXTRA_AIM_TARGET_KIND = "extra_aim_target_kind"
+const val EXTRA_AIM_RA_DEG = "extra_aim_ra_deg"
+const val EXTRA_AIM_DEC_DEG = "extra_aim_dec_deg"
+const val EXTRA_AIM_BODY = "extra_aim_body"
 
 @Composable
 fun PointToSkyWearApp(
@@ -142,6 +186,7 @@ fun PointToSkyWearApp(
     locationPrefs: LocationPrefs,
     phoneLocationRepository: PhoneLocationRepository,
     locationRepository: DefaultLocationOrchestrator,
+    aimLaunches: Flow<AimLaunchRequest>,
 ) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
@@ -156,6 +201,13 @@ fun PointToSkyWearApp(
         )
     }
     val sensorsViewModel: SensorsViewModel = viewModel(factory = viewModelFactory)
+
+    val latestAim = remember { mutableStateOf<AimLaunchRequest?>(null) }
+    LaunchedEffect(aimLaunches) {
+        aimLaunches.collect { latestAim.value = it }
+    }
+
+    val aimRequest = latestAim.value
 
     MaterialTheme {
         SwipeDismissableNavHost(
@@ -179,6 +231,7 @@ fun PointToSkyWearApp(
                 AimRoute(
                     orientationRepository = orientationRepository,
                     locationRepository = locationRepository,
+                    externalAim = aimRequest,
                 )
             }
             composable(ROUTE_IDENTIFY) {
@@ -275,6 +328,13 @@ fun PointToSkyWearApp(
                     onBack = { navController.popBackStack() }
                 )
             }
+        }
+    }
+
+    LaunchedEffect(aimRequest?.seq) {
+        val request = aimRequest ?: return@LaunchedEffect
+        navController.navigate(ROUTE_AIM) {
+            launchSingleTop = true
         }
     }
 }

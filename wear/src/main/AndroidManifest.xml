@@ -39,6 +39,14 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name="dev.pointtosky.wear.datalayer.WearBridgeListenerService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.BIND_LISTENER" />
+            </intent-filter>
+        </service>
+
         <!-- Tile entry Activity (opens the app; can route by action later) -->
         <activity
             android:name="dev.pointtosky.wear.tile.tonight.TileEntryActivity"

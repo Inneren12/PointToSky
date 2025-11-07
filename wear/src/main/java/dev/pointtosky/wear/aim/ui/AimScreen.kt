@@ -52,6 +52,7 @@ import dev.pointtosky.wear.haptics.HapticEvent
 import dev.pointtosky.wear.haptics.HapticPolicy
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
+import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -63,6 +64,7 @@ private data class UiTarget(val label: String, val toAim: AimTarget)
 fun AimRoute(
     orientationRepository: OrientationRepository,
     locationRepository: DefaultLocationOrchestrator,
+    externalAim: AimLaunchRequest? = null,
     initialTarget: AimTarget? = null,
 ) {
     val controller = remember(orientationRepository, locationRepository) {
@@ -75,6 +77,9 @@ fun AimRoute(
                 raDecToAltAz(eq, lstDeg, latDeg, applyRefraction = false)
             },
         )
+    }
+    LaunchedEffect(externalAim?.seq) {
+        externalAim?.let { controller.setTarget(it.target) }
     }
     AimScreen(aimController = controller, initialTarget = initialTarget)
 }
