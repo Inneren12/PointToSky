@@ -34,6 +34,7 @@ import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
 import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
+import dev.pointtosky.mobile.skymap.SkyMapRoute
 import dev.pointtosky.mobile.time.TimeDebugScreen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -105,6 +106,7 @@ fun PointToSkyMobileApp(
             when (destination) {
                 MobileDestination.Home -> MobileHome(
                     onOpenCard = onOpenCard,
+                    onSkyMap = { destination = MobileDestination.SkyMap },
                     onLocationSetup = { destination = MobileDestination.LocationSetup },
                     onTimeDebug = { destination = MobileDestination.TimeDebug },
                     onCatalogDebug = { destination = MobileDestination.CatalogDebug },
@@ -126,6 +128,14 @@ fun PointToSkyMobileApp(
                     modifier = Modifier.fillMaxSize(),
                     onBack = { destination = MobileDestination.Home },
                 )
+
+                MobileDestination.SkyMap -> SkyMapRoute(
+                    catalogRepository = catalogRepository,
+                    locationPrefs = locationPrefs,
+                    onBack = { destination = MobileDestination.Home },
+                    onOpenCard = onOpenCard,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
     }
@@ -134,6 +144,7 @@ fun PointToSkyMobileApp(
 @Composable
 fun MobileHome(
     onOpenCard: () -> Unit,
+    onSkyMap: () -> Unit,
     onLocationSetup: () -> Unit,
     onTimeDebug: () -> Unit,
     onCatalogDebug: () -> Unit,
@@ -152,6 +163,12 @@ fun MobileHome(
             modifier = Modifier.padding(top = 24.dp)
         ) {
             Text(text = stringResource(id = R.string.open_card))
+        }
+        Button(
+            onClick = onSkyMap,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.sky_map))
         }
         Button(
             onClick = onLocationSetup,
@@ -174,7 +191,7 @@ fun MobileHome(
     }
 }
 
-private enum class MobileDestination { Home, LocationSetup, TimeDebug, CatalogDebug }
+private enum class MobileDestination { Home, SkyMap, LocationSetup, TimeDebug, CatalogDebug }
 
 private class PreviewLocationPrefs : LocationPrefs {
     override val manualPointFlow: Flow<GeoPoint?> = flowOf(null)

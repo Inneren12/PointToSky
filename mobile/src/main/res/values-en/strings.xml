@@ -2,6 +2,16 @@
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Open card</string>
     <string name="location_settings">Location</string>
+    <string name="sky_map">Sky map</string>
+    <string name="sky_map_title">Sky map</string>
+    <string name="sky_map_timestamp">Time: %1$s</string>
+    <string name="sky_map_location_label">Coords: %1$s • %2$s</string>
+    <string name="sky_map_location_manual">Manual override</string>
+    <string name="sky_map_location_default">Location unavailable</string>
+    <string name="sky_map_unnamed_star">Unnamed star</string>
+    <string name="sky_map_constellation">Constellation: %1$s</string>
+    <string name="sky_map_magnitude">Magnitude: %1$.1f</string>
+    <string name="sky_map_alt_az">Alt: %1$s°, Az: %2$s°</string>
     <string name="location_setup_title">Location setup</string>
     <string name="location_setup_description">We use your position to calculate the visible sky and suggest objects.</string>
     <string name="location_setup_request_permission">Allow location</string>

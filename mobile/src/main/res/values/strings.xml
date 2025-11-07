@@ -2,6 +2,16 @@
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Открыть карточку</string>
     <string name="location_settings">Локация</string>
+    <string name="sky_map">Карта неба</string>
+    <string name="sky_map_title">Карта неба</string>
+    <string name="sky_map_timestamp">Время: %1$s</string>
+    <string name="sky_map_location_label">Координаты: %1$s • %2$s</string>
+    <string name="sky_map_location_manual">Ручной ввод</string>
+    <string name="sky_map_location_default">Локация не задана</string>
+    <string name="sky_map_unnamed_star">Безымянная звезда</string>
+    <string name="sky_map_constellation">Созвездие: %1$s</string>
+    <string name="sky_map_magnitude">Звёздн. величина: %1$.1f</string>
+    <string name="sky_map_alt_az">Высота: %1$s°, азимут: %2$s°</string>
     <string name="location_setup_title">Настройка локации</string>
     <string name="location_setup_description">Локация помогает рассчитать видимую часть неба и подобрать объекты.</string>
     <string name="location_setup_request_permission">Разрешить локацию</string>
