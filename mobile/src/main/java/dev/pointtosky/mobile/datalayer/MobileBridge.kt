@@ -13,6 +13,8 @@ import dev.pointtosky.mobile.logging.MobileLog
 object MobileBridge {
     @Volatile
     private var instance: Sender? = null
+    @Volatile
+    private var transportOverride: Sender.Transport? = null
 
     fun get(context: Context): Sender {
         val cached = instance
@@ -22,8 +24,32 @@ object MobileBridge {
         }
     }
 
+    @androidx.annotation.VisibleForTesting
+    fun overrideTransportForTests(transport: Sender.Transport?) {
+        transportOverride = transport
+    }
+
+    @androidx.annotation.VisibleForTesting
+    fun resetForTests() {
+        instance = null
+    }
+
     class Sender(private val context: Context) {
         data class Ack(val ok: Boolean, val err: String? = null)
+
+        interface Transport {
+            data class Node(val id: String)
+
+            @Throws(Exception::class)
+            fun connectedNodes(): List<Node>
+
+            @Throws(Exception::class)
+            fun sendMessage(nodeId: String, path: String, payload: ByteArray)
+        }
+
+        private val wearTransport by lazy { WearTransport(context) }
+
+        private fun transport(): Transport = transportOverride ?: wearTransport
 
         /**
          * Отправляем всем подключённым нодам. Возвращаем примитивный Ack (без настоящего подтверждения).
@@ -34,16 +60,14 @@ object MobileBridge {
                 MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = t.message)
                 return Ack(ok = false, err = t.message)
             }
-            val nodes = runCatching { Tasks.await(Wearable.getNodeClient(context).connectedNodes) }
-                .getOrElse { error ->
-                    MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = error.message)
-                    return Ack(ok = false, err = error.message)
-                }
+            val nodes = runCatching { transport().connectedNodes() }.getOrElse { error ->
+                MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = error.message)
+                return Ack(ok = false, err = error.message)
+            }
             if (nodes.isEmpty()) {
                 MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = "no_nodes")
                 return Ack(ok = false, err = "no_nodes")
             }
-            val messageClient = Wearable.getMessageClient(context)
             nodes.forEach { node ->
                 var attempt = 1
                 while (attempt <= MAX_SEND_ATTEMPTS) {
@@ -53,7 +77,7 @@ object MobileBridge {
                         MobileLog.bridgeRetry(path, cid, node.id, attempt, payload.size)
                     }
                     val result = runCatching {
-                        Tasks.await(messageClient.sendMessage(node.id, path, payload))
+                        transport().sendMessage(node.id, path, payload)
                     }
                     if (result.isSuccess) {
                         break
@@ -71,6 +95,17 @@ object MobileBridge {
 
         private companion object {
             private const val MAX_SEND_ATTEMPTS = 2
+        }
+
+        private class WearTransport(private val context: Context) : Transport {
+            override fun connectedNodes(): List<Transport.Node> {
+                val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+                return nodes.map { node -> Transport.Node(node.id) }
+            }
+
+            override fun sendMessage(nodeId: String, path: String, payload: ByteArray) {
+                Tasks.await(Wearable.getMessageClient(context).sendMessage(nodeId, path, payload))
+            }
         }
     }
 }
