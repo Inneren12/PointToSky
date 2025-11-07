@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Тестовый сервис-харнесс; не экспортируем -->
+        <service
+            android:name="dev.pointtosky.wear.tile.tonight.TonightTileServiceTestHarness"
+            android:exported="false"
+            android:enabled="true" />
+    </application>
+</manifest>

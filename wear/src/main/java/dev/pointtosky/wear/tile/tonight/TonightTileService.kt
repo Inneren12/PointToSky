@@ -29,7 +29,7 @@ import java.time.ZoneId
 import org.json.JSONArray
 import org.json.JSONObject
 
-class TonightTileService : TileService() {
+open class TonightTileService : TileService() {
 
     companion object {
         // Инкремент при изменении набора ресурсов (иконки, имена id и т.п.)
