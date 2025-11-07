@@ -1,6 +1,14 @@
 <resources>
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Открыть карточку</string>
+    <string name="search_button">Поиск</string>
+    <string name="search_title">Поиск</string>
+    <string name="search_hint">Имя звезды или планеты</string>
+    <string name="search_empty">Ничего не найдено</string>
+    <string name="search_planet_sun">Солнце</string>
+    <string name="search_planet_moon">Луна</string>
+    <string name="search_planet_jupiter">Юпитер</string>
+    <string name="search_planet_saturn">Сатурн</string>
     <string name="card_title">Карточка</string>
     <string name="card_error_not_enough_data">Недостаточно данных</string>
     <string name="card_constellation_label">Созвездие</string>

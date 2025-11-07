@@ -43,6 +43,7 @@ import dev.pointtosky.mobile.ar.ArRoute
 import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
 import dev.pointtosky.mobile.skymap.SkyMapRoute
+import dev.pointtosky.mobile.search.SearchRoute
 import dev.pointtosky.mobile.time.TimeDebugScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -94,6 +95,7 @@ class MainActivity : ComponentActivity() {
                 onNavigate = { navigationState.value = it },
                 latestCardAvailable = latestCardId != null,
                 onOpenLatestCard = openLatestCard,
+                onOpenSearch = { navigationState.value = MobileDestination.Search },
                 onOpenAr = { navigationState.value = MobileDestination.Ar },
                 locationPrefs = locationPrefs,
                 shareState = bridgeState,
@@ -181,6 +183,7 @@ fun PointToSkyMobileApp(
     onNavigate: (MobileDestination) -> Unit,
     latestCardAvailable: Boolean,
     onOpenLatestCard: () -> Unit,
+    onOpenSearch: () -> Unit,
     onOpenAr: () -> Unit,
     locationPrefs: LocationPrefs,
     shareState: PhoneLocationBridge.PhoneLocationBridgeState,
@@ -196,6 +199,7 @@ fun PointToSkyMobileApp(
                 MobileDestination.Home -> MobileHome(
                     onOpenCard = onOpenLatestCard,
                     onSkyMap = { onNavigate(MobileDestination.SkyMap) },
+                    onSearch = onOpenSearch,
                     onAr = onOpenAr,
                     onLocationSetup = { onNavigate(MobileDestination.LocationSetup) },
                     onTimeDebug = { onNavigate(MobileDestination.TimeDebug) },
@@ -238,6 +242,13 @@ fun PointToSkyMobileApp(
                     modifier = Modifier.fillMaxSize(),
                 )
 
+                MobileDestination.Search -> SearchRoute(
+                    catalogRepository = catalogRepository,
+                    onBack = { onNavigate(MobileDestination.Home) },
+                    onOpenCard = { cardId -> onNavigate(MobileDestination.Card(cardId)) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+
                 is MobileDestination.Card -> CardRoute(
                     cardId = current.cardId,
                     locationPrefs = locationPrefs,
@@ -255,6 +266,7 @@ fun PointToSkyMobileApp(
 fun MobileHome(
     onOpenCard: () -> Unit,
     onSkyMap: () -> Unit,
+    onSearch: () -> Unit,
     onAr: () -> Unit,
     onLocationSetup: () -> Unit,
     onTimeDebug: () -> Unit,
@@ -278,6 +290,12 @@ fun MobileHome(
             modifier = Modifier.padding(top = 24.dp)
         ) {
             Text(text = stringResource(id = R.string.open_card))
+        }
+        Button(
+            onClick = onSearch,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.search_button))
         }
         aimTargets.forEach { target ->
             Button(
@@ -323,6 +341,7 @@ fun MobileHome(
 sealed interface MobileDestination {
     object Home : MobileDestination
     object SkyMap : MobileDestination
+    object Search : MobileDestination
     object LocationSetup : MobileDestination
     object TimeDebug : MobileDestination
     object CatalogDebug : MobileDestination
@@ -348,6 +367,7 @@ fun MobileHomePreview() {
         onNavigate = {},
         latestCardAvailable = true,
         onOpenLatestCard = {},
+        onOpenSearch = {},
         onOpenAr = {},
         locationPrefs = PreviewLocationPrefs(),
         shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
