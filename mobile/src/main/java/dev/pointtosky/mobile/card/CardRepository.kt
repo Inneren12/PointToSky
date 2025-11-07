@@ -36,6 +36,12 @@ object CardRepository {
         }
         latestIdState.value = id
     }
+
+    @androidx.annotation.VisibleForTesting
+    fun resetForTests() {
+        entries.value = emptyMap()
+        latestIdState.value = null
+    }
 }
 
 data class CardObjectModel(

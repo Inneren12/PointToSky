@@ -1,7 +1,6 @@
 package dev.pointtosky.mobile.datalayer.v1
 
 import com.google.android.gms.wearable.MessageEvent
-import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import dev.pointtosky.core.datalayer.CardOpenMessage
 import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
@@ -42,16 +41,19 @@ class DlReceiverService : WearableListenerService() {
                 attempt = 1,
                 payloadBytes = ack.size,
             )
-            Wearable.getMessageClient(this)
-                .sendMessage(event.sourceNodeId, DlPaths.ACK, ack)
-                .addOnFailureListener { error ->
-                    MobileLog.bridgeError(
-                        path = DlPaths.ACK,
-                        cid = cid,
-                        nodeId = event.sourceNodeId,
-                        error = error.message,
-                    )
-                }
+            DlMessageSender.sendMessage(
+                context = this,
+                nodeId = event.sourceNodeId,
+                path = DlPaths.ACK,
+                payload = ack,
+            ) { error ->
+                MobileLog.bridgeError(
+                    path = DlPaths.ACK,
+                    cid = cid,
+                    nodeId = event.sourceNodeId,
+                    error = error.message,
+                )
+            }
         }
         LogBus.event("dl_recv", mapOf("path" to path))
         when (path) {

@@ -9,12 +9,25 @@ private const val CARD_HOST = "pointtosky"
 private const val CARD_PATH = "/card"
 
 internal object CardDeepLinkLauncher {
+    @Volatile
+    private var overrideLauncher: ((Context, String) -> Unit)? = null
+
+    @androidx.annotation.VisibleForTesting
+    fun overrideForTests(block: ((Context, String) -> Unit)?) {
+        overrideLauncher = block
+    }
+
     fun buildUri(id: String): Uri {
         val encodedId = Uri.encode(id)
         return Uri.parse("$CARD_SCHEME://$CARD_HOST$CARD_PATH?id=$encodedId")
     }
 
     fun launch(context: Context, id: String) {
+        val override = overrideLauncher
+        if (override != null) {
+            override(context, id)
+            return
+        }
         val uri = buildUri(id)
         val intent = Intent(Intent.ACTION_VIEW, uri).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
