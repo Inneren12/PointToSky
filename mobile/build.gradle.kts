@@ -81,6 +81,8 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
 
+    implementation(libs.androidx.datastore.preferences)
+
     implementation(project(":core:common"))
     implementation(project(":core:catalog"))
     implementation(project(":core:location"))
