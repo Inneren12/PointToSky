@@ -29,6 +29,11 @@
     <string name="aim_send_failed">Failed to send %1$s (%2$s)</string>
     <string name="aim_send_failed_no_reason">unknown error</string>
     <string name="aim_send_queued">%1$s queued for retry</string>
+    <string name="open_aim_on_watch">Open Aim on watch</string>
+    <string name="open_identify_on_watch">Open Identify on watch</string>
+    <string name="use_phone_compass_on">Use phone compass (on)</string>
+    <string name="use_phone_compass_off">Use phone compass (off)</string>
+    <string name="phone_compass_not_available">Phone compass sensor is not available</string>
     <string name="location_settings">Локация</string>
     <string name="sky_map">Карта неба</string>
     <string name="sky_map_title">Карта неба</string>

@@ -28,6 +28,7 @@
     <string name="current_source_label">Источник: %1$s</string>
     <string name="source_rotation_vector">Rotation Vector</string>
     <string name="source_accel_mag">Accel+Mag</string>
+    <string name="source_phone">Phone</string>
     <string name="accuracy_hint_figure_eight">Сделайте восьмёрку для калибровки магнитометра.</string>
     <string name="frame_trace_label">Frame trace</string>
     <string name="frame_trace_off">OFF</string>

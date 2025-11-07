@@ -16,6 +16,11 @@
     <string name="card_type_constellation">Constellation</string>
     <string name="card_share_chooser_title">Share object</string>
     <string name="card_share_error">No compatible apps found</string>
+    <string name="open_aim_on_watch">Open Aim on watch</string>
+    <string name="open_identify_on_watch">Open Identify on watch</string>
+    <string name="use_phone_compass_on">Use phone compass (on)</string>
+    <string name="use_phone_compass_off">Use phone compass (off)</string>
+    <string name="phone_compass_not_available">Phone compass sensor is not available</string>
     <string name="location_settings">Location</string>
     <string name="sky_map">Sky map</string>
     <string name="sky_map_title">Sky map</string>

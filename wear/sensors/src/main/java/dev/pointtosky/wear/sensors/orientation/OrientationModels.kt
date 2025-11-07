@@ -43,6 +43,7 @@ enum class OrientationAccuracy {
 enum class OrientationSource {
     ROTATION_VECTOR,
     ACCEL_MAG,
+    PHONE,
 }
 
 enum class ScreenRotation(
