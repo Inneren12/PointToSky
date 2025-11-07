@@ -1,6 +1,11 @@
 <resources>
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Открыть карточку</string>
+    <string name="aim_send_button">Send %1$s to watch</string>
+    <string name="aim_send_success">%1$s sent to the watch</string>
+    <string name="aim_send_failed">Failed to send %1$s (%2$s)</string>
+    <string name="aim_send_failed_no_reason">unknown error</string>
+    <string name="aim_send_queued">%1$s queued for retry</string>
     <string name="location_settings">Локация</string>
     <string name="sky_map">Карта неба</string>
     <string name="sky_map_title">Карта неба</string>

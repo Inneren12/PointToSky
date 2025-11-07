@@ -32,6 +32,11 @@ import androidx.compose.ui.unit.dp
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
+import dev.pointtosky.core.datalayer.JsonCodec
+import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
+import dev.pointtosky.mobile.datalayer.AimTargetOption
+import dev.pointtosky.mobile.datalayer.DemoAimTargets
+import dev.pointtosky.mobile.datalayer.MobileBridge
 import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
 import dev.pointtosky.mobile.skymap.SkyMapRoute
@@ -39,6 +44,8 @@ import dev.pointtosky.mobile.time.TimeDebugScreen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val locationPrefs: LocationPrefs by lazy {
@@ -61,6 +68,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val bridgeState by phoneLocationBridge.state.collectAsState()
             val coroutineScope = rememberCoroutineScope()
+            val aimTargets = remember { DemoAimTargets.list() }
+            val appContext = this@MainActivity.applicationContext
+            val dataLayerBridge = remember { MobileBridge.get(appContext) }
             PointToSkyMobileApp(
                 onOpenCard = {
                     Toast.makeText(
@@ -77,6 +87,26 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 catalogRepository = catalogRepository,
+                aimTargets = aimTargets,
+                onSendAimTarget = { target ->
+                    coroutineScope.launch {
+                        val ack = dataLayerBridge.send(PATH_AIM_SET_TARGET) { cid ->
+                            val message = target.buildMessage(cid)
+                            JsonCodec.encode(message)
+                        }
+                        val toastText = when {
+                            ack == null -> getString(R.string.aim_send_queued, target.label)
+                            ack.ok -> getString(R.string.aim_send_success, target.label)
+                            else -> {
+                                val reason = ack.err ?: getString(R.string.aim_send_failed_no_reason)
+                                getString(R.string.aim_send_failed, target.label, reason)
+                            }
+                        }
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, toastText, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
             )
         }
     }
@@ -99,6 +129,8 @@ fun PointToSkyMobileApp(
     shareState: PhoneLocationBridge.PhoneLocationBridgeState,
     onShareToggle: (Boolean) -> Unit,
     catalogRepository: CatalogRepository,
+    aimTargets: List<AimTargetOption>,
+    onSendAimTarget: (AimTargetOption) -> Unit,
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -110,6 +142,8 @@ fun PointToSkyMobileApp(
                     onLocationSetup = { destination = MobileDestination.LocationSetup },
                     onTimeDebug = { destination = MobileDestination.TimeDebug },
                     onCatalogDebug = { destination = MobileDestination.CatalogDebug },
+                    aimTargets = aimTargets,
+                    onSendAimTarget = onSendAimTarget,
                     )
 
                 MobileDestination.LocationSetup -> LocationSetupScreen(
@@ -148,6 +182,8 @@ fun MobileHome(
     onLocationSetup: () -> Unit,
     onTimeDebug: () -> Unit,
     onCatalogDebug: () -> Unit,
+    aimTargets: List<AimTargetOption>,
+    onSendAimTarget: (AimTargetOption) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -163,6 +199,14 @@ fun MobileHome(
             modifier = Modifier.padding(top = 24.dp)
         ) {
             Text(text = stringResource(id = R.string.open_card))
+        }
+        aimTargets.forEach { target ->
+            Button(
+                onClick = { onSendAimTarget(target) },
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.aim_send_button, target.label))
+            }
         }
         Button(
             onClick = onSkyMap,
@@ -212,5 +256,7 @@ fun MobileHomePreview() {
         shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
         onShareToggle = {},
         catalogRepository = CatalogRepository.create(context),
+        aimTargets = emptyList(),
+        onSendAimTarget = {},
     )
 }
