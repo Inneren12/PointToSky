@@ -1,8 +1,10 @@
 package dev.pointtosky.wear.tile.tonight
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import java.time.Instant
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.core.time.ZoneRepo
 import androidx.wear.tiles.TileService
@@ -25,7 +27,6 @@ import dev.pointtosky.wear.datalayer.WearMessageBridge
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import java.time.ZoneId
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -69,36 +70,72 @@ open class TonightTileService : TileService() {
     }
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
-        val model = runBlocking { provider.getModel(Instant.now()) }
-        // S7.E: Mirroring — отправка короткой модели на телефон
-        runBlocking {
-            val settings = AimIdentifySettingsDataStore(applicationContext)
-            val mirroring = settings.tileMirroringEnabledFlow.first()
-            if (mirroring) {
-                val json = buildPushModelJson(model)
-                runCatching {
-                    WearMessageBridge.sendToPhone(applicationContext, PATH_PUSH, json.toByteArray(Charsets.UTF_8))
-                }.onFailure { e -> Log.w("TonightTile", "push_model failed", e) }
-            }
-        }
+        val startRealtime = SystemClock.elapsedRealtime()
+        LogBus.event("tile_get_tile_start")
+        return try {
+            val model = runBlocking { provider.getModel(Instant.now()) }
+            TonightTileDebug.update(model)
 
-        // S7.B: используем Material PrimaryLayout с учётом форм-фактора
-        val root = buildPrimaryLayoutRoot(
-            context = this,
-            model = model,
-            deviceParams = requestParams.deviceParameters
-        )
-        val layout = LayoutElementBuilders.Layout.Builder().setRoot(root).build()
-        val entry = TimelineBuilders.TimelineEntry.Builder().setLayout(layout).build()
-        val timeline = TimelineBuilders.Timeline.Builder().addTimelineEntry(entry).build()
-        return Futures.immediateFuture(
-            TileBuilders.Tile.Builder()
-                .setResourcesVersion(RES_VER)
-                // Резервный периодический апдейт от платформы (на случай промаха воркера)
-                .setFreshnessIntervalMillis(45L * 60_000L)
-                .setTimeline(timeline)
-                .build()
-        )
+            // S7.E: Mirroring — отправка короткой модели на телефон
+            runBlocking {
+                val settings = AimIdentifySettingsDataStore(applicationContext)
+                val mirroring = settings.tileMirroringEnabledFlow.first()
+                if (mirroring) {
+                    val json = buildPushModelJson(model)
+                    runCatching {
+                        WearMessageBridge.sendToPhone(
+                            applicationContext,
+                            PATH_PUSH,
+                            json.toByteArray(Charsets.UTF_8)
+                        )
+                    }.onSuccess {
+                        LogBus.event(
+                            name = "tile_push_model",
+                            payload = mapOf("targetsCount" to model.items.size)
+                        )
+                    }.onFailure { e ->
+                        Log.w("TonightTile", "push_model failed", e)
+                        LogBus.event(
+                            name = "tile_error",
+                            payload = mapOf(
+                                "err" to e.toLogMessage(),
+                                "stage" to "push_model"
+                            )
+                        )
+                    }
+                }
+            }
+
+            // S7.B: используем Material PrimaryLayout с учётом форм-фактора
+            val root = buildPrimaryLayoutRoot(
+                context = this,
+                model = model,
+                deviceParams = requestParams.deviceParameters
+            )
+            val layout = LayoutElementBuilders.Layout.Builder().setRoot(root).build()
+            val entry = TimelineBuilders.TimelineEntry.Builder().setLayout(layout).build()
+            val timeline = TimelineBuilders.Timeline.Builder().addTimelineEntry(entry).build()
+            Futures.immediateFuture(
+                TileBuilders.Tile.Builder()
+                    .setResourcesVersion(RES_VER)
+                    // Резервный периодический апдейт от платформы (на случай промаха воркера)
+                    .setFreshnessIntervalMillis(45L * 60_000L)
+                    .setTimeline(timeline)
+                    .build()
+            )
+        } catch (e: Throwable) {
+            LogBus.event(
+                name = "tile_error",
+                payload = mapOf(
+                    "err" to e.toLogMessage(),
+                    "stage" to "on_tile_request"
+                )
+            )
+            throw e
+        } finally {
+            val durationMs = SystemClock.elapsedRealtime() - startRealtime
+            LogBus.event("tile_get_tile_end", mapOf("durationMs" to durationMs))
+        }
     }
 
     override fun onResourcesRequest(requestParams: RequestBuilders.ResourcesRequest): ListenableFuture<ResourceBuilders.Resources> {
@@ -276,4 +313,6 @@ open class TonightTileService : TileService() {
         root.put("items", arr)
         return root.toString()
     }
+
+    private fun Throwable.toLogMessage(): String = message ?: javaClass.simpleName
 }

@@ -4,4 +4,7 @@
     <string name="tile_tonight_label">Сегодня ночью</string>
     <string name="tile_more">Ещё</string>
     <string name="tonight_targets_label">Список целей</string>
+    <string name="tile_debug_last_generation">Последняя генерация: %1$s, %2$s</string>
+    <string name="tile_debug_last_generation_unknown">Последняя генерация: —</string>
+    <string name="tile_debug_target_unknown">—</string>
 </resources>
