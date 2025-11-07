@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import dev.pointtosky.mobile.logging.MobileLog
 
 class PhoneLocationBridge(
     context: Context,
@@ -87,6 +88,7 @@ class PhoneLocationBridge(
     override fun onMessageReceived(event: MessageEvent) {
         if (event.path != PATH_LOCATION_REQUEST_ONE) return
         val payload = LocationRequestPayload.fromBytes(event.data) ?: return
+        MobileLog.bridgeRecv(path = event.path, cid = null, nodeId = event.sourceNodeId)
         scope.launch {
             handleLocationRequest(event.sourceNodeId, payload)
         }
@@ -126,11 +128,19 @@ class PhoneLocationBridge(
                     fix = locationResult.fix,
                     rawProvider = locationResult.rawProvider,
                 )
+                val responseBytes = responsePayload.toByteArray()
+                MobileLog.bridgeSend(
+                    path = PATH_LOCATION_RESPONSE_ONE,
+                    cid = null,
+                    nodeId = nodeId,
+                    attempt = 1,
+                    payloadBytes = responseBytes.size,
+                )
                 val sendResult = runCatching {
                     messageClient.sendMessage(
                         nodeId,
                         PATH_LOCATION_RESPONSE_ONE,
-                        responsePayload.toByteArray(),
+                        responseBytes,
                     ).await()
                 }
                 latestResponse.value = if (sendResult.isSuccess) {
@@ -141,6 +151,13 @@ class PhoneLocationBridge(
                         accuracyM = locationResult.fix.accuracyM,
                     )
                 } else {
+                    val error = sendResult.exceptionOrNull()
+                    MobileLog.bridgeError(
+                        path = PATH_LOCATION_RESPONSE_ONE,
+                        cid = null,
+                        nodeId = nodeId,
+                        error = error?.message,
+                    )
                     ResponseSnapshot(
                         timestampMs = clock(),
                         status = ResponseStatus.SEND_FAILED,

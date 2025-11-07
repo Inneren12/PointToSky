@@ -7,6 +7,7 @@ import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.datalayer.PATH_TILE_TONIGHT_PUSH_MODEL
 import dev.pointtosky.core.datalayer.TileTonightPushModelMessage
+import dev.pointtosky.mobile.logging.MobileLog
 import dev.pointtosky.mobile.tile.tonight.TonightMirrorStore
 
 /**
@@ -15,6 +16,7 @@ import dev.pointtosky.mobile.tile.tonight.TonightMirrorStore
  */
 class MobileBridgeListenerService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
+        MobileLog.bridgeRecv(path = event.path, cid = null, nodeId = event.sourceNodeId)
         when (event.path) {
             PATH_TILE_TONIGHT_PUSH_MODEL -> {
                 runCatching {
@@ -22,6 +24,13 @@ class MobileBridgeListenerService : WearableListenerService() {
                     if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
                         TonightMirrorStore.applyJson(msg.payload.toString())
                     }
+                }.onFailure { error ->
+                    MobileLog.bridgeError(
+                        path = PATH_TILE_TONIGHT_PUSH_MODEL,
+                        cid = null,
+                        nodeId = event.sourceNodeId,
+                        error = error.message ?: error::class.java.simpleName,
+                    )
                 }
             }
             // TODO: /ack и остальные пути можно добавить позже

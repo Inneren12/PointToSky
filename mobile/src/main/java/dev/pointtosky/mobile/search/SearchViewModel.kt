@@ -11,6 +11,7 @@ import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.card.CardObjectModel
 import dev.pointtosky.mobile.card.CardObjectType
 import dev.pointtosky.mobile.card.CardRepository
+import dev.pointtosky.mobile.logging.MobileLog
 import java.text.Normalizer
 import java.time.Instant
 import java.util.Locale
@@ -83,6 +84,9 @@ class SearchViewModel(
         } else {
             emptyList()
         }
+        if (trimmed.isNotEmpty()) {
+            MobileLog.searchQuery(trimmed, matches.size)
+        }
         _state.update { current ->
             current.copy(
                 query = query,
@@ -115,6 +119,7 @@ class SearchViewModel(
                     bestWindow = null,
                 )
                 cardRepository.update(model.id, CardRepository.Entry.Ready(model))
+                MobileLog.cardOpen(source = "search", id = model.id, type = model.type.name)
                 model.id
             }
 
@@ -137,6 +142,7 @@ class SearchViewModel(
                     bestWindow = null,
                 )
                 cardRepository.update(model.id, CardRepository.Entry.Ready(model))
+                MobileLog.cardOpen(source = "search", id = model.id, type = model.type.name)
                 model.id
             }
         }
