@@ -135,7 +135,7 @@ class TonightTileService : TileService() {
             .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
             .setHeight(DimensionBuilders.WrappedDimensionProp.Builder().build())
 
-        model.items.take(3).forEachIndexed { idx, item ->
+        model.items.forEachIndexed { idx, item ->
             if (idx > 0) {
                 listColumn.addContent(
                     LayoutElementBuilders.Spacer.Builder()
@@ -265,7 +265,7 @@ class TonightTileService : TileService() {
         val root = JSONObject()
         root.put("updatedAt", model.updatedAt.epochSecond)
         val arr = JSONArray()
-        model.items.take(3).forEach { t ->
+        model.items.forEach { t ->
             val o = JSONObject()
             o.put("id", t.id)
             o.put("title", t.title)

@@ -124,4 +124,11 @@
     <!-- S7.E -->
     <string name="settings_tile_mirroring_title">Mirroring to phone</string>
     <string name="settings_tile_mirroring_desc">Send Tonight tile preview to phone</string>
+    <!-- Tile (S7.F) -->
+    <string name="tile_section_title">Tile</string>
+    <string name="tile_mag_limit_label">Stars: mag ≤ %1$.1f</string>
+    <string name="tile_min_alt_label">Min altitude: %1$.0f°</string>
+    <string name="tile_max_items_label">Max items: %1$d</string>
+    <string name="tile_prefer_planets_label">Prefer planets</string>
+    <string name="tile_force_refresh">Force refresh</string>
 </resources>
