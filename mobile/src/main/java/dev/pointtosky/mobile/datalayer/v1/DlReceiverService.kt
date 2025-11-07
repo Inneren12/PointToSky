@@ -12,6 +12,7 @@ import dev.pointtosky.mobile.card.CardDeepLinkLauncher
 import dev.pointtosky.mobile.card.CardObjectPayload
 import dev.pointtosky.mobile.card.CardRepository
 import dev.pointtosky.mobile.card.toEntry
+import dev.pointtosky.mobile.logging.MobileLog
 
 /**
  * Приём на телефоне: шлём ACK обратно на часы и логируем полезную нагрузку.
@@ -24,23 +25,41 @@ class DlReceiverService : WearableListenerService() {
         if (path == DlPaths.ACK) {
             // Телефон тоже может ждать ACK для своих исходящих сообщений — на будущее.
             val (refCid, ok) = DlJson.parseAck(data)
+            MobileLog.bridgeRecv(path = path, cid = refCid, nodeId = event.sourceNodeId)
             if (!refCid.isNullOrBlank()) {
                 LogBus.event("dl_ack", mapOf("refCid" to refCid, "ok" to (ok ?: true)))
             }
             return
         }
         val cid = DlJson.parseCid(data)
+        MobileLog.bridgeRecv(path = path, cid = cid, nodeId = event.sourceNodeId)
         if (!cid.isNullOrBlank()) {
             val ack = DlJson.buildAck(cid, ok = true)
-            Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, DlPaths.ACK, ack)
+            MobileLog.bridgeSend(
+                path = DlPaths.ACK,
+                cid = cid,
+                nodeId = event.sourceNodeId,
+                attempt = 1,
+                payloadBytes = ack.size,
+            )
+            Wearable.getMessageClient(this)
+                .sendMessage(event.sourceNodeId, DlPaths.ACK, ack)
+                .addOnFailureListener { error ->
+                    MobileLog.bridgeError(
+                        path = DlPaths.ACK,
+                        cid = cid,
+                        nodeId = event.sourceNodeId,
+                        error = error.message,
+                    )
+                }
         }
         LogBus.event("dl_recv", mapOf("path" to path))
         when (path) {
-            PATH_CARD_OPEN -> handleCardOpen(data, cid)
+            PATH_CARD_OPEN -> handleCardOpen(data, cid, event.sourceNodeId)
         }
     }
 
-    private fun handleCardOpen(data: ByteArray, fallbackCid: String?) {
+    private fun handleCardOpen(data: ByteArray, fallbackCid: String?, nodeId: String) {
         runCatching {
             val message = JsonCodec.decode<CardOpenMessage>(data)
             if (message.v != DATA_LAYER_PROTOCOL_VERSION) return
@@ -54,12 +73,20 @@ class DlReceiverService : WearableListenerService() {
             }
             if (resolvedId != null) {
                 CardRepository.update(resolvedId, entry)
+                val type = (entry as? CardRepository.Entry.Ready)?.model?.type?.name
+                MobileLog.cardOpen(source = "watch", id = resolvedId, type = type)
                 CardDeepLinkLauncher.launch(applicationContext, resolvedId)
             } else {
                 LogBus.event("dl_error", mapOf("err" to "card_no_id"))
             }
         }.onFailure { error ->
             LogBus.event("dl_error", mapOf("err" to (error.message ?: error::class.java.simpleName)))
+            MobileLog.bridgeError(
+                path = PATH_CARD_OPEN,
+                cid = fallbackCid,
+                nodeId = nodeId,
+                error = error.message ?: error::class.java.simpleName,
+            )
         }
     }
 }

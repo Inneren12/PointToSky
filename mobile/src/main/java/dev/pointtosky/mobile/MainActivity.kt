@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -48,6 +49,7 @@ import dev.pointtosky.mobile.datalayer.MobileBridge
 import dev.pointtosky.mobile.ar.ArRoute
 import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
+import dev.pointtosky.mobile.logging.MobileLog
 import dev.pointtosky.mobile.sensors.PhoneCompassBridge
 import dev.pointtosky.mobile.settings.LocationMode
 import dev.pointtosky.mobile.settings.MobileSettings
@@ -140,6 +142,8 @@ class MainActivity : ComponentActivity() {
                             Toast.LENGTH_SHORT,
                         ).show()
                     }
+                    MobileLog.arOpen()
+                    navigationState.value = MobileDestination.Ar
                 },
                 locationPrefs = locationPrefs,
                 shareState = bridgeState,
@@ -162,10 +166,14 @@ class MainActivity : ComponentActivity() {
                             }
                             return@launch
                         }
+                        MobileLog.setTargetRequest(target.id)
+                        val startElapsed = SystemClock.elapsedRealtime()
                         val ack = dataLayerBridge.send(PATH_AIM_SET_TARGET) { cid ->
                             val message = target.buildMessage(cid)
                             JsonCodec.encode(message)
                         }
+                        val duration = SystemClock.elapsedRealtime() - startElapsed
+                        MobileLog.setTargetAck(ack?.ok == true, duration)
                         val openTarget = target.buildMessage("app-open")
                         sendAppOpen(
                             AppOpenScreen.AIM,
@@ -480,7 +488,10 @@ fun MobileHome(
             Text(text = label)
         }
         Button(
-            onClick = onSkyMap,
+            onClick = {
+                MobileLog.mapOpen()
+                onSkyMap()
+            },
             modifier = Modifier.padding(top = 16.dp)
         ) {
             Text(text = stringResource(id = R.string.sky_map))

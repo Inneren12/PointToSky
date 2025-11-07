@@ -8,6 +8,7 @@ import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.datalayer.PATH_TILE_TONIGHT_PUSH_MODEL
 import dev.pointtosky.core.datalayer.TileTonightPushModelMessage
 import dev.pointtosky.mobile.settings.MobileSettings
+import dev.pointtosky.mobile.logging.MobileLog
 import dev.pointtosky.mobile.tile.tonight.TonightMirrorStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -20,6 +21,7 @@ class MobileBridgeListenerService : WearableListenerService() {
     private val settings: MobileSettings by lazy { MobileSettings.from(applicationContext) }
 
     override fun onMessageReceived(event: MessageEvent) {
+        MobileLog.bridgeRecv(path = event.path, cid = null, nodeId = event.sourceNodeId)
         when (event.path) {
             PATH_TILE_TONIGHT_PUSH_MODEL -> {
                 runCatching {
@@ -32,6 +34,13 @@ class MobileBridgeListenerService : WearableListenerService() {
                             redacted = currentSettings.redactPayloads,
                         )
                     }
+                }.onFailure { error ->
+                    MobileLog.bridgeError(
+                        path = PATH_TILE_TONIGHT_PUSH_MODEL,
+                        cid = null,
+                        nodeId = event.sourceNodeId,
+                        error = error.message ?: error::class.java.simpleName,
+                    )
                 }
             }
             // TODO: /ack и остальные пути можно добавить позже
