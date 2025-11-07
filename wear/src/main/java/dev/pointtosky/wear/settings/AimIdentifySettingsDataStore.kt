@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey as boolKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -33,6 +34,7 @@ class AimIdentifySettingsDataStore(
     private val DEF_HAPTIC = true
     private val DEF_MAG_LIMIT = 5.5
     private val DEF_RADIUS = 5.0
+    private val DEF_TILE_MIRROR = false
 
     // Flows
     val aimAzTolFlow: Flow<Double> =
@@ -48,6 +50,11 @@ class AimIdentifySettingsDataStore(
     val identifyRadiusDegFlow: Flow<Double> =
         context.aimIdentifyPrefsDataStore.data.map { it[KEY_RADIUS] ?: DEF_RADIUS }
 
+    // S7.E: Mirroring toggle
+    private val KEY_TILE_MIRROR = boolKey("tile.mirroringEnabled")
+    val tileMirroringEnabledFlow: Flow<Boolean> =
+        context.aimIdentifyPrefsDataStore.data.map { it[KEY_TILE_MIRROR] ?: DEF_TILE_MIRROR }
+
     // Setters
     suspend fun setAimAzTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[KEY_AZ_TOL] = value }
     suspend fun setAimAltTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[KEY_ALT_TOL] = value }
@@ -55,4 +62,7 @@ class AimIdentifySettingsDataStore(
     suspend fun setAimHapticEnabled(value: Boolean) = context.aimIdentifyPrefsDataStore.edit { it[KEY_HAPTIC] = value }
     suspend fun setIdentifyMagLimit(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[KEY_MAG_LIMIT] = value }
     suspend fun setIdentifyRadiusDeg(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[KEY_RADIUS] = value }
+    // S7.E
+    suspend fun setTileMirroringEnabled(value: Boolean) =
+        context.aimIdentifyPrefsDataStore.edit { it[KEY_TILE_MIRROR] = value }
 }

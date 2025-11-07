@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tonight Tile (RU) -->
+    <string name="tile_tonight_label">Сегодня ночью</string>
+    <string name="tile_more">Ещё</string>
+    <string name="tonight_targets_label">Список целей</string>
+</resources>

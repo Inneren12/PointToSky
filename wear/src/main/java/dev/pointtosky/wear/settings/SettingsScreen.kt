@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
+import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.ScalingLazyColumn
 import androidx.wear.compose.material.Text
@@ -43,7 +44,8 @@ data class SettingsState(
     val holdMs: Long,
     val hapticEnabled: Boolean,
     val magLimit: Double,
-    val radiusDeg: Double, )
+    val radiusDeg: Double,
+    val tileMirror: Boolean, )
 
 @Composable
 private fun rememberSettingsState(settings: AimIdentifySettingsDataStore): SettingsState {
@@ -53,7 +55,9 @@ private fun rememberSettingsState(settings: AimIdentifySettingsDataStore): Setti
     val hap by settings.aimHapticEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val mag by settings.identifyMagLimitFlow.collectAsStateWithLifecycle(initialValue = 5.5)
     val rad by settings.identifyRadiusDegFlow.collectAsStateWithLifecycle(initialValue = 5.0)
-    return SettingsState(az, alt, hold, hap, mag, rad)
+    val mir by settings.tileMirroringEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    val mirror by settings.tileMirroringEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    return SettingsState(az, alt, hold, hap, mag, rad, mirror)
 }
 
 @Composable
@@ -176,6 +180,28 @@ fun SettingsScreen(
                     Text(text = "+")
                 }
             }
+        }
+        // Tiles: Mirroring toggle
+        item {
+            val scope = rememberCoroutineScope()
+            ToggleChip(
+                checked = state.tileMirror,
+                onCheckedChange = { enabled -> scope.launch { settings.setTileMirroringEnabled(enabled) } },
+                label = { Text(text = "Mirroring to phone") },
+                toggleControl = {},
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // Tiles: Mirroring toggle
+        item {
+            ToggleChip(
+                checked = state.tileMirror,
+                onCheckedChange = { enabled -> scope.launch { settings.setTileMirroringEnabled(enabled) } },
+                label = { Text(text = stringResource(id = R.string.settings_tile_mirroring_title)) },
+                toggleControl = {},
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         // Back

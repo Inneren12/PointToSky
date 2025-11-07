@@ -17,7 +17,6 @@
 
     <application
         android:allowBackup="true"
-        tools:replace="android:allowBackup"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -61,5 +60,11 @@
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
             </intent-filter>
         </service>
+
+        <!-- Экран списка целей для кнопки "Ещё" -->
+        <activity
+            android:name="dev.pointtosky.wear.tile.tonight.TonightTargetsActivity"
+            android:exported="true"
+            android:label="@string/tonight_targets_label" />
     </application>
 </manifest>

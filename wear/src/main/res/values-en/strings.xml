@@ -79,4 +79,8 @@
     <string name="astro_debug_target_saturn">Saturn</string>
     <string name="astro_debug_aim_error">Δaz=%1$.1f° Δalt=%2$.1f°</string>
     <string name="astro_debug_aim_error_unknown">Δaz/Δalt: —</string>
+    <!-- Tonight tile -->
+    <string name="tile_tonight_label">Tonight</string>
+    <string name="tile_more">More</string>
+    <string name="tonight_targets_label">Tonight targets</string>
 </resources>

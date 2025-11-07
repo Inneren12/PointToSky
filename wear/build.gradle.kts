@@ -63,10 +63,13 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.wear)
-
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation(libs.wear.compose.foundation)
     implementation(libs.wear.compose.material)
     implementation(libs.wear.compose.navigation)
+    // Data Layer (MessageClient)
+    implementation("com.google.android.gms:play-services-wearable:18.1.0")
+
 
     implementation(libs.compose.material.icons.extended)
 
@@ -80,6 +83,16 @@ dependencies {
     implementation("androidx.wear.tiles:tiles-material:1.3.0")
     implementation("androidx.wear.protolayout:protolayout-expression:1.1.0")
     implementation("com.google.guava:guava:32.1.2-android")
+
+    // DataStore для кэша
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Тесты
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.24")
+    testImplementation("androidx.test:core:1.5.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
