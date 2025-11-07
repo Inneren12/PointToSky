@@ -131,4 +131,7 @@
     <string name="tile_max_items_label">Max items: %1$d</string>
     <string name="tile_prefer_planets_label">Prefer planets</string>
     <string name="tile_force_refresh">Force refresh</string>
+    <string name="tile_debug_last_generation">Last generation: %1$s, %2$s</string>
+    <string name="tile_debug_last_generation_unknown">Last generation: —</string>
+    <string name="tile_debug_target_unknown">—</string>
 </resources>

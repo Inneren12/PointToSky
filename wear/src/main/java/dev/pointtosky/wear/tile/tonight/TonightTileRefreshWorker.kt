@@ -9,6 +9,7 @@ import androidx.work.WorkerParameters
 import androidx.wear.tiles.TileService
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import dev.pointtosky.core.logging.LogBus
 
 /**
  * WorkManager-воркер: дергает обновление тайла и всё.
@@ -34,6 +35,10 @@ class TonightTileRefreshWorker(
                 .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
                 .addTag(UNIQUE_WORK)
                 .build()
+            LogBus.event(
+                name = "tile_request_update_scheduled",
+                payload = mapOf("atEpochMs" to at.toEpochMilli())
+            )
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(UNIQUE_WORK, ExistingWorkPolicy.REPLACE, req)
         }

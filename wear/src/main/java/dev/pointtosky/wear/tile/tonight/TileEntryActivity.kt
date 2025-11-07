@@ -3,6 +3,7 @@ package dev.pointtosky.wear.tile.tonight
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.wear.MainActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -24,6 +25,7 @@ class TileEntryActivity : Activity() {
             ?: intent?.action
         val targetId = clickId?.substringAfter(':', missingDelimiterValue = "")?.takeIf { it.isNotBlank() }
         if (targetId != null) {
+            LogBus.event("tile_tap_target", mapOf("id" to targetId))
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching {
                     WearMessageBridge.sendToPhone(
@@ -31,8 +33,18 @@ class TileEntryActivity : Activity() {
                         "/tile/tonight/open",
                         """{"id":"$targetId"}""".toByteArray(Charsets.UTF_8)
                     )
+                }.onFailure { e ->
+                    LogBus.event(
+                        name = "tile_error",
+                        payload = mapOf(
+                            "err" to e.toLogMessage(),
+                            "stage" to "tap_forward"
+                        )
+                    )
                 }
             }
+        } else if (clickId == "open_tonight_list") {
+            LogBus.event("tile_tap_more")
         }
 
         val forward = Intent(this, MainActivity::class.java).apply {
@@ -44,4 +56,6 @@ class TileEntryActivity : Activity() {
         startActivity(forward)
         finish()
     }
+
+    private fun Throwable.toLogMessage(): String = message ?: javaClass.simpleName
 }

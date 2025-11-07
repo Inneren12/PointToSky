@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.MaterialTheme
@@ -21,6 +22,7 @@ import androidx.wear.compose.material.ScalingLazyColumn
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.core.time.ZoneRepo
 import dev.pointtosky.wear.R
+import dev.pointtosky.wear.tile.tonight.TonightTileDebug
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -53,6 +55,7 @@ private fun TimeDebugContent(
     val zoneId by zoneRepo.zoneFlow.collectAsState(initial = zoneRepo.current())
     val periodMs by timeSource.periodMsFlow.collectAsState()
     val tickMetrics by rememberTickMetrics(timeSource)
+    val tileDebugInfo by TonightTileDebug.state.collectAsState(initial = null)
 
     val utcFormatter = remember { DateTimeFormatter.ISO_INSTANT }
     val localFormatter = remember { DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US) }
@@ -66,6 +69,12 @@ private fun TimeDebugContent(
     val avgPeriodText = tickMetrics.avgPeriodMs?.let { String.format(Locale.US, "%.1f мс", it) } ?: "—"
     val frequencyText = tickMetrics.frequencyHz?.let { String.format(Locale.US, "%.3f Гц", it) } ?: "—"
     val currentPeriodText = String.format(Locale.US, "%d мс", periodMs)
+
+    val tileDebugText = tileDebugInfo?.let { info ->
+        val localInstant = info.generatedAt.atZone(zoneId).format(localFormatter)
+        val topTarget = info.topTargetTitle ?: stringResource(id = R.string.tile_debug_target_unknown)
+        stringResource(id = R.string.tile_debug_last_generation, localInstant, topTarget)
+    } ?: stringResource(id = R.string.tile_debug_last_generation_unknown)
 
     ScalingLazyColumn(
         modifier = modifier,
@@ -82,6 +91,7 @@ private fun TimeDebugContent(
         item { Text(text = "Avg Δt: $avgPeriodText") }
         item { Text(text = "Avg Hz: $frequencyText") }
         item { Text(text = "Period: $currentPeriodText") }
+        item { Text(text = tileDebugText, style = MaterialTheme.typography.caption1, textAlign = TextAlign.Center) }
         item {
             Button(
                 onClick = {

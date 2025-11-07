@@ -1,6 +1,7 @@
 package dev.pointtosky.wear.tile.tonight
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Base64
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.catalog.star.StarCatalog
 import dev.pointtosky.core.location.model.GeoPoint
+import dev.pointtosky.core.logging.LogBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.InputStream
@@ -75,7 +77,27 @@ class RealTonightProvider(
         }
 
         // Вычисление
-        val model = pickTargets(now, start, end, gp, zone)
+        val buildStartedAt = SystemClock.elapsedRealtime()
+        val model = try {
+            pickTargets(now, start, end, gp, zone)
+        } catch (e: Throwable) {
+            LogBus.event(
+                name = "tile_error",
+                payload = mapOf(
+                    "err" to e.toLogMessage(),
+                    "stage" to "build_model"
+                )
+            )
+            throw e
+        }
+        val tookMs = SystemClock.elapsedRealtime() - buildStartedAt
+        LogBus.event(
+            name = "tile_build_model",
+            payload = mapOf(
+                "targetsCount" to model.items.size,
+                "tookMs" to tookMs
+            )
+        )
 
         // TTL: до конца ночи + 5 минут
         val ttlMs = max(System.currentTimeMillis() + 5 * 60_000L, end.toEpochMilli())
@@ -449,6 +471,8 @@ class RealTonightProvider(
         return BinaryStarCatalog.load(assetProvider)
     }
 }
+
+private fun Throwable.toLogMessage(): String = message ?: javaClass.simpleName
 
 // --- Кандидаты и приоритеты ---
 private enum class Kind(val priority: Int) { PLANET(2), STAR(1) }
