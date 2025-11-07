@@ -75,4 +75,15 @@
     <string name="catalog_debug_self_test_action">Self-test</string>
     <string name="catalog_debug_self_test_title">Диагностика</string>
     <string name="catalog_debug_back">Назад</string>
+    <string name="ar_mode">AR режим</string>
+    <string name="ar_permission_title">Нужно разрешение на камеру</string>
+    <string name="ar_permission_message">Чтобы отобразить камеру и подсказки объектов, приложению нужно разрешение на использование камеры.</string>
+    <string name="ar_permission_request">Выдать разрешение</string>
+    <string name="ar_target_fallback_label">AR target</string>
+    <string name="ar_reticle_alt_az">Высота: %1$s° • Азимут: %2$s°</string>
+    <string name="ar_reticle_ra_dec">RA: %1$s° • Dec: %2$s°</string>
+    <string name="ar_nearest_object">Ближе всего: %1$s (Δ%2$s°)</string>
+    <string name="ar_set_target_button">Выбрать %1$s целью на часах</string>
+    <string name="ar_label_meta">mag %1$.1f • Δ%2$.1f°</string>
+    <string name="ar_unknown_object">Неизвестный объект</string>
 </resources>
