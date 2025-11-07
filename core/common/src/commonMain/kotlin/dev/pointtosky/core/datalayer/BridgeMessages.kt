@@ -7,6 +7,8 @@ import kotlinx.serialization.json.JsonElement
 const val DATA_LAYER_PROTOCOL_VERSION: Int = 1
 
 const val PATH_AIM_SET_TARGET: String = "/aim/set_target"
+const val PATH_APP_OPEN: String = "/app/open"
+const val PATH_SENSOR_HEADING: String = "/sensor/heading"
 const val PATH_AIM_LOCK_EVENT: String = "/aim/lock_event"
 const val PATH_IDENTIFY_RESULT: String = "/identify/result"
 const val PATH_CARD_OPEN: String = "/card/open"
@@ -31,6 +33,32 @@ data class AimSetTargetMessage(
     val cid: String,
     val kind: AimTargetKind,
     val payload: JsonElement,
+)
+
+@Serializable
+enum class AppOpenScreen {
+    @SerialName("aim")
+    AIM,
+
+    @SerialName("identify")
+    IDENTIFY,
+
+    @SerialName("tile")
+    TILE,
+}
+
+@Serializable
+data class AppOpenAimTarget(
+    val kind: AimTargetKind,
+    val payload: JsonElement,
+)
+
+@Serializable
+data class AppOpenMessage(
+    val v: Int = DATA_LAYER_PROTOCOL_VERSION,
+    val cid: String,
+    val screen: AppOpenScreen,
+    val target: AppOpenAimTarget? = null,
 )
 
 @Serializable
@@ -91,6 +119,14 @@ data class TileTonightPushModelMessage(
     val v: Int = DATA_LAYER_PROTOCOL_VERSION,
     val cid: String? = null,
     val payload: JsonElement,
+)
+
+@Serializable
+data class SensorHeadingMessage(
+    val v: Int = DATA_LAYER_PROTOCOL_VERSION,
+    val cid: String,
+    val azDeg: Double,
+    val ts: Long,
 )
 
 @Serializable

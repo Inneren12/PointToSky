@@ -126,6 +126,7 @@ fun SensorsDebugScreen(
             val sourceText = when (source) {
                 OrientationSource.ROTATION_VECTOR -> stringResource(id = R.string.source_rotation_vector)
                 OrientationSource.ACCEL_MAG -> stringResource(id = R.string.source_accel_mag)
+                OrientationSource.PHONE -> stringResource(id = R.string.source_phone)
             }
             Text(
                 text = stringResource(id = R.string.current_source_label, sourceText),

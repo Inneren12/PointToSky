@@ -26,8 +26,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
+import dev.pointtosky.core.datalayer.AppOpenAimTarget
+import dev.pointtosky.core.datalayer.AppOpenMessage
+import dev.pointtosky.core.datalayer.AppOpenScreen
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
+import dev.pointtosky.core.datalayer.PATH_APP_OPEN
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
@@ -42,6 +46,7 @@ import dev.pointtosky.mobile.datalayer.MobileBridge
 import dev.pointtosky.mobile.ar.ArRoute
 import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
+import dev.pointtosky.mobile.sensors.PhoneCompassBridge
 import dev.pointtosky.mobile.skymap.SkyMapRoute
 import dev.pointtosky.mobile.search.SearchRoute
 import dev.pointtosky.mobile.time.TimeDebugScreen
@@ -65,6 +70,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val phoneCompassBridge: PhoneCompassBridge by lazy {
+        PhoneCompassBridge(this)
+    }
+
     private val catalogRepository: CatalogRepository by lazy {
         CatalogRepositoryProvider.get(applicationContext)
     }
@@ -78,6 +87,7 @@ class MainActivity : ComponentActivity() {
             val bridgeState by phoneLocationBridge.state.collectAsStateWithLifecycle()
             val destination by navigationState.collectAsStateWithLifecycle()
             val latestCardId by CardRepository.latestCardIdFlow().collectAsStateWithLifecycle(initialValue = null)
+            val phoneCompassEnabled by phoneCompassBridge.enabled.collectAsStateWithLifecycle()
             val coroutineScope = rememberCoroutineScope()
             val aimTargets = remember { DemoAimTargets.list() }
             val appContext = this@MainActivity.applicationContext
@@ -88,6 +98,18 @@ class MainActivity : ComponentActivity() {
                     navigationState.value = MobileDestination.Card(id)
                 } else {
                     showNotEnoughDataToast()
+                }
+            }
+            val sendAppOpen: (AppOpenScreen, AppOpenAimTarget?) -> Unit = { screen, target ->
+                coroutineScope.launch {
+                    dataLayerBridge.send(PATH_APP_OPEN) { cid ->
+                        val message = AppOpenMessage(
+                            cid = cid,
+                            screen = screen,
+                            target = target,
+                        )
+                        JsonCodec.encode(message)
+                    }
                 }
             }
             PointToSkyMobileApp(
@@ -112,6 +134,14 @@ class MainActivity : ComponentActivity() {
                             val message = target.buildMessage(cid)
                             JsonCodec.encode(message)
                         }
+                        val openTarget = target.buildMessage("app-open")
+                        sendAppOpen(
+                            AppOpenScreen.AIM,
+                            AppOpenAimTarget(
+                                kind = openTarget.kind,
+                                payload = openTarget.payload,
+                            ),
+                        )
                         val toastText = when {
                             ack == null -> getString(R.string.aim_send_queued, target.label)
                             ack.ok -> getString(R.string.aim_send_success, target.label)
@@ -125,6 +155,20 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
+                onOpenAimOnWatch = { sendAppOpen(AppOpenScreen.AIM, null) },
+                onOpenIdentifyOnWatch = { sendAppOpen(AppOpenScreen.IDENTIFY, null) },
+                phoneCompassEnabled = phoneCompassEnabled,
+                onTogglePhoneCompass = {
+                    val desired = !phoneCompassEnabled
+                    val actual = phoneCompassBridge.setEnabled(desired)
+                    if (desired && !actual) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.phone_compass_not_available),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
                 onShareCard = { shareText -> shareCard(shareText) },
             )
         }
@@ -133,11 +177,13 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         phoneLocationBridge.start()
+        phoneCompassBridge.start()
     }
 
     override fun onStop() {
         super.onStop()
         phoneLocationBridge.stop()
+        phoneCompassBridge.stop()
     }
 
     // onNewIntent принимает non-null Intent в базовом Activity
@@ -191,6 +237,10 @@ fun PointToSkyMobileApp(
     catalogRepository: CatalogRepository,
     aimTargets: List<AimTargetOption>,
     onSendAimTarget: (AimTargetOption) -> Unit,
+    onOpenAimOnWatch: () -> Unit,
+    onOpenIdentifyOnWatch: () -> Unit,
+    phoneCompassEnabled: Boolean,
+    onTogglePhoneCompass: () -> Unit,
     onShareCard: (String) -> Unit,
 ) {
     MaterialTheme {
@@ -206,6 +256,10 @@ fun PointToSkyMobileApp(
                     onCatalogDebug = { onNavigate(MobileDestination.CatalogDebug) },
                     aimTargets = aimTargets,
                     onSendAimTarget = onSendAimTarget,
+                    onOpenAimOnWatch = onOpenAimOnWatch,
+                    onOpenIdentifyOnWatch = onOpenIdentifyOnWatch,
+                    phoneCompassEnabled = phoneCompassEnabled,
+                    onTogglePhoneCompass = onTogglePhoneCompass,
                     cardAvailable = latestCardAvailable,
                 )
 
@@ -273,6 +327,10 @@ fun MobileHome(
     onCatalogDebug: () -> Unit,
     aimTargets: List<AimTargetOption>,
     onSendAimTarget: (AimTargetOption) -> Unit,
+    onOpenAimOnWatch: () -> Unit,
+    onOpenIdentifyOnWatch: () -> Unit,
+    phoneCompassEnabled: Boolean,
+    onTogglePhoneCompass: () -> Unit,
     cardAvailable: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -304,6 +362,29 @@ fun MobileHome(
             ) {
                 Text(text = stringResource(id = R.string.aim_send_button, target.label))
             }
+        }
+        Button(
+            onClick = onOpenAimOnWatch,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.open_aim_on_watch))
+        }
+        Button(
+            onClick = onOpenIdentifyOnWatch,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.open_identify_on_watch))
+        }
+        Button(
+            onClick = onTogglePhoneCompass,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            val label = if (phoneCompassEnabled) {
+                stringResource(id = R.string.use_phone_compass_on)
+            } else {
+                stringResource(id = R.string.use_phone_compass_off)
+            }
+            Text(text = label)
         }
         Button(
             onClick = onSkyMap,
@@ -375,6 +456,10 @@ fun MobileHomePreview() {
         catalogRepository = CatalogRepository.create(context),
         aimTargets = emptyList(),
         onSendAimTarget = {},
+        onOpenAimOnWatch = {},
+        onOpenIdentifyOnWatch = {},
+        phoneCompassEnabled = false,
+        onTogglePhoneCompass = {},
         onShareCard = {},
     )
 }

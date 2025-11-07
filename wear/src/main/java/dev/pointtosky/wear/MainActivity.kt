@@ -1,6 +1,9 @@
 package dev.pointtosky.wear
 
+import android.content.Context
 import android.content.Intent
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,8 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,13 +43,17 @@ import dev.pointtosky.wear.identify.buildCardRouteFrom
 import dev.pointtosky.wear.identify.cardDestination
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
 import dev.pointtosky.wear.settings.SettingsRoute
-import dev.pointtosky.wear.aim.ui.AimRoute
-import dev.pointtosky.wear.astro.AstroDebugRoute
-import dev.pointtosky.wear.astro.AstroDebugViewModelFactory
+import dev.pointtosky.core.datalayer.AppOpenScreen
+import dev.pointtosky.core.astro.coord.Equatorial
+import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
+import dev.pointtosky.wear.aim.core.AimTarget
+import dev.pointtosky.wear.aim.ui.AimRoute
+import dev.pointtosky.wear.astro.AstroDebugRoute
+import dev.pointtosky.wear.astro.AstroDebugViewModelFactory
 import dev.pointtosky.wear.location.LocationSetupScreen
 import dev.pointtosky.wear.location.remote.PhoneLocationRepository
 import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
@@ -56,11 +63,10 @@ import dev.pointtosky.wear.sensors.SensorsViewModelFactory
 import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationRepositoryConfig
+import dev.pointtosky.wear.sensors.orientation.PhoneHeadingOverrideRepository
 import dev.pointtosky.wear.time.TimeDebugScreen
-import dev.pointtosky.core.astro.coord.Equatorial
-import dev.pointtosky.core.astro.ephem.Body
-import dev.pointtosky.wear.aim.core.AimTarget
 import dev.pointtosky.wear.datalayer.AimLaunchRequest
+import dev.pointtosky.wear.datalayer.AppOpenRequest
 import dev.pointtosky.wear.datalayer.WearBridge
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
@@ -71,8 +77,14 @@ import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
 
 class MainActivity : ComponentActivity() {
+    private val hasMagnetometer: Boolean by lazy {
+        val manager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        manager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) != null
+    }
+
     private val orientationRepository: OrientationRepository by lazy {
-        OrientationRepository.create(applicationContext)
+        val base = OrientationRepository.create(applicationContext)
+        if (hasMagnetometer) base else PhoneHeadingOverrideRepository(base)
     }
 
     private val locationPrefs: LocationPrefs by lazy {
@@ -101,7 +113,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        handleAimIntent(intent)
+        handleBridgeIntent(intent)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -132,31 +144,57 @@ class MainActivity : ComponentActivity() {
                 phoneLocationRepository = phoneLocationRepository,
                 locationRepository = locationOrchestrator,
                 aimLaunches = WearBridge.aimLaunches(),
+                appOpens = WearBridge.appOpens(),
             )
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handleAimIntent(intent)
+        handleBridgeIntent(intent)
     }
 
-    private fun handleAimIntent(intent: Intent?) {
+    private fun handleBridgeIntent(intent: Intent?) {
         if (intent == null) return
-        if (intent.action != ACTION_OPEN_AIM) return
+        when (intent.action) {
+            ACTION_OPEN_AIM -> handleAimIntent(intent)
+            ACTION_OPEN_IDENTIFY, ACTION_OPEN_IDENTIFY_LEGACY ->
+                WearBridge.emitAppOpen(AppOpenScreen.IDENTIFY, null)
+        }
+    }
+
+    private fun handleAimIntent(intent: Intent) {
         val target = when (intent.getStringExtra(EXTRA_AIM_TARGET_KIND)) {
             "equatorial" -> {
                 val ra = intent.getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN)
                 val dec = intent.getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN)
-                if (ra.isNaN() || dec.isNaN()) return
+                if (ra.isNaN() || dec.isNaN()) {
+                    WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
+                    return
+                }
                 AimTarget.EquatorialTarget(Equatorial(raDeg = ra, decDeg = dec))
             }
             "body" -> {
-                val bodyName = intent.getStringExtra(EXTRA_AIM_BODY) ?: return
-                val body = runCatching { Body.valueOf(bodyName) }.getOrNull() ?: return
+                val bodyName = intent.getStringExtra(EXTRA_AIM_BODY)
+                if (bodyName.isNullOrBlank()) {
+                    WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
+                    return
+                }
+                val body = runCatching { Body.valueOf(bodyName) }.getOrNull()
+                if (body == null) {
+                    WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
+                    return
+                }
                 AimTarget.BodyTarget(body)
             }
-            else -> return
+            null -> {
+                WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
+                return
+            }
+            else -> {
+                WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
+                return
+            }
         }
         WearBridge.emitAimTarget(target)
     }
@@ -174,6 +212,8 @@ private const val ROUTE_CATALOG_DEBUG = "catalog_debug"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_CARD = "card"
 const val ACTION_OPEN_AIM = "dev.pointtosky.action.OPEN_AIM"
+const val ACTION_OPEN_IDENTIFY = "dev.pointtosky.ACTION_OPEN_IDENTIFY"
+const val ACTION_OPEN_IDENTIFY_LEGACY = "dev.pointtosky.action.OPEN_IDENTIFY"
 const val EXTRA_AIM_TARGET_KIND = "extra_aim_target_kind"
 const val EXTRA_AIM_RA_DEG = "extra_aim_ra_deg"
 const val EXTRA_AIM_DEC_DEG = "extra_aim_dec_deg"
@@ -186,6 +226,7 @@ fun PointToSkyWearApp(
     phoneLocationRepository: PhoneLocationRepository,
     locationRepository: DefaultLocationOrchestrator,
     aimLaunches: Flow<AimLaunchRequest>,
+    appOpens: Flow<AppOpenRequest>,
 ) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
@@ -202,11 +243,16 @@ fun PointToSkyWearApp(
     val sensorsViewModel: SensorsViewModel = viewModel(factory = viewModelFactory)
 
     val latestAim = remember { mutableStateOf<AimLaunchRequest?>(null) }
+    val latestAppOpen = remember { mutableStateOf<AppOpenRequest?>(null) }
     LaunchedEffect(aimLaunches) {
         aimLaunches.collect { latestAim.value = it }
     }
+    LaunchedEffect(appOpens) {
+        appOpens.collect { latestAppOpen.value = it }
+    }
 
     val aimRequest = latestAim.value
+    val appOpenRequest = latestAppOpen.value
 
     MaterialTheme {
         SwipeDismissableNavHost(
@@ -334,6 +380,15 @@ fun PointToSkyWearApp(
         val request = aimRequest ?: return@LaunchedEffect
         navController.navigate(ROUTE_AIM) {
             launchSingleTop = true
+        }
+    }
+
+    LaunchedEffect(appOpenRequest?.seq) {
+        val request = appOpenRequest ?: return@LaunchedEffect
+        when (request.screen) {
+            AppOpenScreen.AIM -> navController.navigate(ROUTE_AIM) { launchSingleTop = true }
+            AppOpenScreen.IDENTIFY -> navController.navigate(ROUTE_IDENTIFY) { launchSingleTop = true }
+            AppOpenScreen.TILE -> navController.navigate(ROUTE_HOME)
         }
     }
 }
