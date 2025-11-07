@@ -1,39 +1,45 @@
 package dev.pointtosky.mobile.datalayer
 
 import android.content.Context
-import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
-import dev.pointtosky.core.datalayer.JsonCodec
-import dev.pointtosky.core.datalayer.PATH_TILE_TONIGHT_PUSH_MODEL
-import dev.pointtosky.core.datalayer.ReliableDataLayerBridge
-import dev.pointtosky.core.datalayer.TileTonightPushModelMessage
-import dev.pointtosky.core.logging.LogBus
-import dev.pointtosky.mobile.tile.tonight.TonightMirrorStore
+import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.Wearable
+import java.util.UUID
 
+/**
+ * Простой отправитель сообщений на часы через MessageClient (без ACK/Retry).
+ * Сохраняем внешний API: MobileBridge.get(context).send(path) { cid -> bytes }.
+ */
 object MobileBridge {
     @Volatile
-    private var instance: ReliableDataLayerBridge? = null
+    private var instance: Sender? = null
 
-    fun get(context: Context): ReliableDataLayerBridge {
-        val existing = instance
-        if (existing != null) return existing
+    fun get(context: Context): Sender {
+        val cached = instance
+        if (cached != null) return cached
         return synchronized(this) {
-            instance ?: create(context.applicationContext).also { instance = it }
+            instance ?: Sender(context.applicationContext).also { instance = it }
         }
     }
 
-    private fun create(context: Context): ReliableDataLayerBridge {
-        val bridge = ReliableDataLayerBridge(
-            context = context,
-            logger = { name, payload -> LogBus.event(name, payload) },
-        )
-        bridge.registerHandler(PATH_TILE_TONIGHT_PUSH_MODEL) { envelope ->
-            val message = runCatching {
-                JsonCodec.decode<TileTonightPushModelMessage>(envelope.bytes)
-            }.getOrNull() ?: return@registerHandler false
-            if (message.v != DATA_LAYER_PROTOCOL_VERSION) return@registerHandler false
-            val payloadJson = message.payload.toString()
-            runCatching { TonightMirrorStore.applyJson(payloadJson) }.isSuccess
+    class Sender(private val context: Context) {
+        data class Ack(val ok: Boolean, val err: String? = null)
+
+        /**
+         * Отправляем всем подключённым нодам. Возвращаем примитивный Ack (без настоящего подтверждения).
+         */
+        fun send(path: String, build: (cid: String) -> ByteArray): Ack? {
+            val cid = UUID.randomUUID().toString()
+            val payload = runCatching { build(cid) }.getOrElse { t ->
+                return Ack(ok = false, err = t.message)
+            }
+            return runCatching {
+                val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+                val msg = Wearable.getMessageClient(context)
+                nodes.forEach { node ->
+                    Tasks.await(msg.sendMessage(node.id, path, payload))
+                }
+                Ack(ok = true)
+            }.getOrElse { t -> Ack(ok = false, err = t.message) }
         }
-        return bridge
     }
 }

@@ -1,42 +1,51 @@
 package dev.pointtosky.core.datalayer
 
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 
 /**
  * Shared JSON codec for the watch ↔ phone bridge.
  */
 object JsonCodec {
-    private val json = Json {
+    /**
+     * Вынесено как @PublishedApi, чтобы public inline-функции могли ссылаться
+     * на него без ошибки "Public-API inline function cannot access non-public-API property".
+     */
+    @PublishedApi
+    internal val JSON: Json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
         explicitNulls = false
     }
 
     fun <T> encode(value: T, serializer: KSerializer<T>): ByteArray {
-        val jsonString = json.encodeToString(serializer, value)
+        val jsonString = JSON.encodeToString(serializer, value)
         return jsonString.encodeToByteArray()
     }
 
     inline fun <reified T> encode(value: T): ByteArray =
-        json.encodeToString(value).encodeToByteArray()
+        JSON.encodeToString(value).encodeToByteArray()
 
     fun <T> decode(bytes: ByteArray, serializer: KSerializer<T>): T =
-        json.decodeFromString(serializer, bytes.decodeToString())
+        JSON.decodeFromString(serializer, bytes.decodeToString())
 
     inline fun <reified T> decode(bytes: ByteArray): T =
-        json.decodeFromString(bytes.decodeToString())
+        JSON.decodeFromString(bytes.decodeToString())
 
     fun <T> encodeToElement(value: T, serializer: KSerializer<T>): JsonElement =
-        json.encodeToJsonElement(serializer, value)
+        JSON.encodeToJsonElement(serializer, value)
 
     inline fun <reified T> encodeToElement(value: T): JsonElement =
-        json.encodeToJsonElement(value)
+        JSON.encodeToJsonElement(value)
 
     fun <T> decodeFromElement(element: JsonElement, serializer: KSerializer<T>): T =
-        json.decodeFromJsonElement(serializer, element)
+        JSON.decodeFromJsonElement(serializer, element)
 
     inline fun <reified T> decodeFromElement(element: JsonElement): T =
-        json.decodeFromJsonElement(element)
+        JSON.decodeFromJsonElement(element)
 }

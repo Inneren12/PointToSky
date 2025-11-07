@@ -52,6 +52,9 @@ dependencies {
     // Если используете BOM в других модулях — подключите и здесь:
     implementation(platform(libs.compose.bom))
 
+    // S8A/S8C: JsonElement и кодек (используем в DemoAimTargets)
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
     // KeyboardOptions / KeyboardType
     implementation("androidx.compose.ui:ui-text")
     // Material3 виджеты (OutlinedTextField, Button, Card и т.д.)

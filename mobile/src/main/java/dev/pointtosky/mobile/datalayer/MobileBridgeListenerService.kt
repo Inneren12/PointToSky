@@ -3,16 +3,33 @@ package dev.pointtosky.mobile.datalayer
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
-import dev.pointtosky.core.datalayer.ReliableDataLayerBridge
+import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
+import dev.pointtosky.core.datalayer.JsonCodec
+import dev.pointtosky.core.datalayer.PATH_TILE_TONIGHT_PUSH_MODEL
+import dev.pointtosky.core.datalayer.TileTonightPushModelMessage
+import dev.pointtosky.mobile.tile.tonight.TonightMirrorStore
 
+/**
+ * Минималистичный приёмник Data Layer: обрабатываем push модели тайла.
+ * (Без общего ReliableDataLayerBridge — упрощённый путь до завершения S8A.)
+ */
 class MobileBridgeListenerService : WearableListenerService() {
-    private val bridge: ReliableDataLayerBridge by lazy { MobileBridge.get(this) }
-
     override fun onMessageReceived(event: MessageEvent) {
-        bridge.onMessageReceived(event)
+        when (event.path) {
+            PATH_TILE_TONIGHT_PUSH_MODEL -> {
+                runCatching {
+                    val msg = JsonCodec.decode<TileTonightPushModelMessage>(event.data)
+                    if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                        TonightMirrorStore.applyJson(msg.payload.toString())
+                    }
+                }
+            }
+            // TODO: /ack и остальные пути можно добавить позже
+        }
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
-        bridge.onDataChanged(dataEvents)
+        // Fallback DataClient пока не используется для этой ветки.
+        super.onDataChanged(dataEvents)
     }
 }

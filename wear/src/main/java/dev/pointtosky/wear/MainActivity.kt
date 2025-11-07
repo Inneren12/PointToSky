@@ -101,7 +101,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        WearBridge.get(applicationContext)
         handleAimIntent(intent)
 
         lifecycleScope.launch {

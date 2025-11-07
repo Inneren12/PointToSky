@@ -20,6 +20,20 @@
             </intent-filter>
         </activity>
 
+        <!-- S8.A: Data Layer v1 receiver (phone side) -->
+        <service
+        android:name="dev.pointtosky.mobile.datalayer.v1.DlReceiverService"
+        android:exported="true">
+        <intent-filter>
+        <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+        <data android:scheme="wear" android:host="*" android:pathPrefix="/" />
+    </intent-filter>
+        <intent-filter>
+        <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+        <data android:scheme="wear" android:host="*" android:pathPrefix="/" />
+    </intent-filter>
+    </service>
+
         <service
             android:name="dev.pointtosky.mobile.datalayer.MobileBridgeListenerService"
             android:exported="false">

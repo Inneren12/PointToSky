@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
             val coroutineScope = rememberCoroutineScope()
             val aimTargets = remember { DemoAimTargets.list() }
             val appContext = this@MainActivity.applicationContext
-            val dataLayerBridge = remember { MobileBridge.get(appContext) }
+            val dataLayerBridge: dev.pointtosky.mobile.datalayer.MobileBridge.Sender = remember { MobileBridge.get(appContext) }
             PointToSkyMobileApp(
                 onOpenCard = {
                     Toast.makeText(
