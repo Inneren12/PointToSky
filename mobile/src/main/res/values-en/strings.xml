@@ -1,6 +1,21 @@
 <resources>
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Open card</string>
+    <string name="card_title">Card</string>
+    <string name="card_error_not_enough_data">Not enough data</string>
+    <string name="card_constellation_label">Constellation</string>
+    <string name="card_magnitude_label">Magnitude</string>
+    <string name="card_alt_az_label">Alt / Az</string>
+    <string name="card_ra_dec_label">RA / Dec</string>
+    <string name="card_best_window_label">Best window</string>
+    <string name="card_set_target_button">Set as target on watch</string>
+    <string name="card_share_button">Share</string>
+    <string name="card_type_star">Star</string>
+    <string name="card_type_planet">Planet</string>
+    <string name="card_type_moon">Moon</string>
+    <string name="card_type_constellation">Constellation</string>
+    <string name="card_share_chooser_title">Share object</string>
+    <string name="card_share_error">No compatible apps found</string>
     <string name="location_settings">Location</string>
     <string name="sky_map">Sky map</string>
     <string name="sky_map_title">Sky map</string>

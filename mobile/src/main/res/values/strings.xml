@@ -1,6 +1,21 @@
 <resources>
     <string name="app_name">Point-to-Sky Mobile</string>
     <string name="open_card">Открыть карточку</string>
+    <string name="card_title">Карточка</string>
+    <string name="card_error_not_enough_data">Недостаточно данных</string>
+    <string name="card_constellation_label">Созвездие</string>
+    <string name="card_magnitude_label">Звёздная величина</string>
+    <string name="card_alt_az_label">Высота / Азимут</string>
+    <string name="card_ra_dec_label">RA / Dec</string>
+    <string name="card_best_window_label">Лучшее окно</string>
+    <string name="card_set_target_button">Выбрать целью на часах</string>
+    <string name="card_share_button">Поделиться</string>
+    <string name="card_type_star">Звезда</string>
+    <string name="card_type_planet">Планета</string>
+    <string name="card_type_moon">Луна</string>
+    <string name="card_type_constellation">Созвездие</string>
+    <string name="card_share_chooser_title">Поделиться объектом</string>
+    <string name="card_share_error">Нет подходящих приложений</string>
     <string name="aim_send_button">Send %1$s to watch</string>
     <string name="aim_send_success">%1$s sent to the watch</string>
     <string name="aim_send_failed">Failed to send %1$s (%2$s)</string>

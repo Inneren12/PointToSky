@@ -1,5 +1,7 @@
 package dev.pointtosky.mobile
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -13,27 +15,28 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.platform.LocalContext
-import dev.pointtosky.core.catalog.runtime.CatalogRepository
-import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
-import dev.pointtosky.mobile.catalog.CatalogDebugRoute
-import dev.pointtosky.mobile.catalog.CatalogRepositoryProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.pointtosky.core.catalog.runtime.CatalogRepository
+import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
+import dev.pointtosky.core.datalayer.JsonCodec
+import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
-import dev.pointtosky.core.datalayer.JsonCodec
-import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
+import dev.pointtosky.mobile.card.CardRepository
+import dev.pointtosky.mobile.card.CardRoute
+import dev.pointtosky.mobile.card.parseCardIdFromIntent
+import dev.pointtosky.mobile.catalog.CatalogDebugRoute
+import dev.pointtosky.mobile.catalog.CatalogRepositoryProvider
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.datalayer.DemoAimTargets
 import dev.pointtosky.mobile.datalayer.MobileBridge
@@ -41,10 +44,11 @@ import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
 import dev.pointtosky.mobile.skymap.SkyMapRoute
 import dev.pointtosky.mobile.time.TimeDebugScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -63,22 +67,32 @@ class MainActivity : ComponentActivity() {
         CatalogRepositoryProvider.get(applicationContext)
     }
 
+    private val navigationState = MutableStateFlow<MobileDestination>(MobileDestination.Home)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
         setContent {
-            val bridgeState by phoneLocationBridge.state.collectAsState()
+            val bridgeState by phoneLocationBridge.state.collectAsStateWithLifecycle()
+            val destination by navigationState.collectAsStateWithLifecycle()
+            val latestCardId by CardRepository.latestCardIdFlow().collectAsStateWithLifecycle(initialValue = null)
             val coroutineScope = rememberCoroutineScope()
             val aimTargets = remember { DemoAimTargets.list() }
             val appContext = this@MainActivity.applicationContext
             val dataLayerBridge: dev.pointtosky.mobile.datalayer.MobileBridge.Sender = remember { MobileBridge.get(appContext) }
+            val openLatestCard: () -> Unit = {
+                val id = latestCardId
+                if (id != null) {
+                    navigationState.value = MobileDestination.Card(id)
+                } else {
+                    showNotEnoughDataToast()
+                }
+            }
             PointToSkyMobileApp(
-                onOpenCard = {
-                    Toast.makeText(
-                        this,
-                        getString(R.string.open_card),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                },
+                destination = destination,
+                onNavigate = { navigationState.value = it },
+                latestCardAvailable = latestCardId != null,
+                onOpenLatestCard = openLatestCard,
                 locationPrefs = locationPrefs,
                 shareState = bridgeState,
                 onShareToggle = { enabled ->
@@ -107,6 +121,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
+                onShareCard = { shareText -> shareCard(shareText) },
             )
         }
     }
@@ -120,54 +135,101 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         phoneLocationBridge.stop()
     }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val cardId = parseCardIdFromIntent(intent)
+        if (cardId != null) {
+            navigationState.value = MobileDestination.Card(cardId)
+        }
+    }
+
+    private fun shareCard(text: String) {
+        if (text.isBlank()) {
+            showNotEnoughDataToast()
+            return
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        val chooser = Intent.createChooser(intent, getString(R.string.card_share_chooser_title))
+        try {
+            startActivity(chooser)
+        } catch (error: ActivityNotFoundException) {
+            Toast.makeText(this, getString(R.string.card_share_error), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showNotEnoughDataToast() {
+        Toast.makeText(this, getString(R.string.card_error_not_enough_data), Toast.LENGTH_SHORT).show()
+    }
 }
 
 @Composable
 fun PointToSkyMobileApp(
-    onOpenCard: () -> Unit,
+    destination: MobileDestination,
+    onNavigate: (MobileDestination) -> Unit,
+    latestCardAvailable: Boolean,
+    onOpenLatestCard: () -> Unit,
     locationPrefs: LocationPrefs,
     shareState: PhoneLocationBridge.PhoneLocationBridgeState,
     onShareToggle: (Boolean) -> Unit,
     catalogRepository: CatalogRepository,
     aimTargets: List<AimTargetOption>,
     onSendAimTarget: (AimTargetOption) -> Unit,
+    onShareCard: (String) -> Unit,
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            var destination by remember { mutableStateOf(MobileDestination.Home) }
-            when (destination) {
+            when (val current = destination) {
                 MobileDestination.Home -> MobileHome(
-                    onOpenCard = onOpenCard,
-                    onSkyMap = { destination = MobileDestination.SkyMap },
-                    onLocationSetup = { destination = MobileDestination.LocationSetup },
-                    onTimeDebug = { destination = MobileDestination.TimeDebug },
-                    onCatalogDebug = { destination = MobileDestination.CatalogDebug },
+                    onOpenCard = onOpenLatestCard,
+                    onSkyMap = { onNavigate(MobileDestination.SkyMap) },
+                    onLocationSetup = { onNavigate(MobileDestination.LocationSetup) },
+                    onTimeDebug = { onNavigate(MobileDestination.TimeDebug) },
+                    onCatalogDebug = { onNavigate(MobileDestination.CatalogDebug) },
                     aimTargets = aimTargets,
                     onSendAimTarget = onSendAimTarget,
-                    )
+                    cardAvailable = latestCardAvailable,
+                )
 
                 MobileDestination.LocationSetup -> LocationSetupScreen(
                     locationPrefs = locationPrefs,
                     shareState = shareState,
                     onShareToggle = onShareToggle,
-                    onBack = { destination = MobileDestination.Home }
+                    onBack = { onNavigate(MobileDestination.Home) }
                 )
 
                 MobileDestination.TimeDebug -> TimeDebugScreen(
-                    onBack = { destination = MobileDestination.Home }
+                    onBack = { onNavigate(MobileDestination.Home) }
                 )
 
                 MobileDestination.CatalogDebug -> CatalogDebugRoute(
                     factory = CatalogDebugViewModelFactory(catalogRepository),
                     modifier = Modifier.fillMaxSize(),
-                    onBack = { destination = MobileDestination.Home },
+                    onBack = { onNavigate(MobileDestination.Home) },
                 )
 
                 MobileDestination.SkyMap -> SkyMapRoute(
                     catalogRepository = catalogRepository,
                     locationPrefs = locationPrefs,
-                    onBack = { destination = MobileDestination.Home },
-                    onOpenCard = onOpenCard,
+                    onBack = { onNavigate(MobileDestination.Home) },
+                    onOpenCard = onOpenLatestCard,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                is MobileDestination.Card -> CardRoute(
+                    cardId = current.cardId,
+                    locationPrefs = locationPrefs,
+                    onBack = { onNavigate(MobileDestination.Home) },
+                    onSendAimTarget = onSendAimTarget,
+                    onShare = onShareCard,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -184,6 +246,7 @@ fun MobileHome(
     onCatalogDebug: () -> Unit,
     aimTargets: List<AimTargetOption>,
     onSendAimTarget: (AimTargetOption) -> Unit,
+    cardAvailable: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -196,6 +259,7 @@ fun MobileHome(
         Text(text = "Point-to-Sky Mobile", style = MaterialTheme.typography.headlineMedium)
         Button(
             onClick = onOpenCard,
+            enabled = cardAvailable,
             modifier = Modifier.padding(top = 24.dp)
         ) {
             Text(text = stringResource(id = R.string.open_card))
@@ -235,7 +299,14 @@ fun MobileHome(
     }
 }
 
-private enum class MobileDestination { Home, SkyMap, LocationSetup, TimeDebug, CatalogDebug }
+private sealed interface MobileDestination {
+    object Home : MobileDestination
+    object SkyMap : MobileDestination
+    object LocationSetup : MobileDestination
+    object TimeDebug : MobileDestination
+    object CatalogDebug : MobileDestination
+    data class Card(val cardId: String) : MobileDestination
+}
 
 private class PreviewLocationPrefs : LocationPrefs {
     override val manualPointFlow: Flow<GeoPoint?> = flowOf(null)
@@ -251,12 +322,16 @@ private class PreviewLocationPrefs : LocationPrefs {
 fun MobileHomePreview() {
     val context = LocalContext.current
     PointToSkyMobileApp(
-        onOpenCard = {},
+        destination = MobileDestination.Home,
+        onNavigate = {},
+        latestCardAvailable = true,
+        onOpenLatestCard = {},
         locationPrefs = PreviewLocationPrefs(),
         shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
         onShareToggle = {},
         catalogRepository = CatalogRepository.create(context),
         aimTargets = emptyList(),
         onSendAimTarget = {},
+        onShareCard = {},
     )
 }
