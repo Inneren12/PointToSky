@@ -1,7 +1,6 @@
 package dev.pointtosky.mobile
 
 import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -51,6 +50,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.content.Intent
 
 class MainActivity : ComponentActivity() {
     private val locationPrefs: LocationPrefs by lazy {
@@ -138,9 +138,9 @@ class MainActivity : ComponentActivity() {
         phoneLocationBridge.stop()
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    // onNewIntent принимает non-null Intent в базовом Activity
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
         handleIntent(intent)
     }
 
@@ -171,6 +171,8 @@ class MainActivity : ComponentActivity() {
     private fun showNotEnoughDataToast() {
         Toast.makeText(this, getString(R.string.card_error_not_enough_data), Toast.LENGTH_SHORT).show()
     }
+
+
 }
 
 @Composable
@@ -318,7 +320,7 @@ fun MobileHome(
     }
 }
 
-private sealed interface MobileDestination {
+sealed interface MobileDestination {
     object Home : MobileDestination
     object SkyMap : MobileDestination
     object LocationSetup : MobileDestination

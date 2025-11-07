@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-internal object CardRepository {
+object CardRepository {
     sealed class Entry {
         data class Ready(val model: CardObjectModel) : Entry()
         data class Invalid(val reason: String? = null) : Entry()

@@ -69,7 +69,7 @@ internal fun CardObjectPayload.toEntry(fallbackId: String?): CardRepository.Entr
     return CardRepository.Entry.Ready(model)
 }
 
-internal enum class CardObjectType {
+enum class CardObjectType {
     STAR,
     PLANET,
     MOON,
