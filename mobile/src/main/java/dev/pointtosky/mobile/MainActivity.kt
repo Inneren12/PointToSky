@@ -1,6 +1,8 @@
 package dev.pointtosky.mobile
 
 import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
@@ -49,8 +51,13 @@ import dev.pointtosky.mobile.location.LocationSetupScreen
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
 import dev.pointtosky.mobile.logging.MobileLog
 import dev.pointtosky.mobile.sensors.PhoneCompassBridge
+import dev.pointtosky.mobile.settings.LocationMode
+import dev.pointtosky.mobile.settings.MobileSettings
+import dev.pointtosky.mobile.settings.MobileSettingsState
+import dev.pointtosky.mobile.settings.SettingsScreen
 import dev.pointtosky.mobile.skymap.SkyMapRoute
 import dev.pointtosky.mobile.search.SearchRoute
+import dev.pointtosky.mobile.tile.tonight.TonightPreviewActivity
 import dev.pointtosky.mobile.time.TimeDebugScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -58,7 +65,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.content.Intent
 
 class MainActivity : ComponentActivity() {
     private val locationPrefs: LocationPrefs by lazy {
@@ -80,6 +86,10 @@ class MainActivity : ComponentActivity() {
         CatalogRepositoryProvider.get(applicationContext)
     }
 
+    private val mobileSettings: MobileSettings by lazy {
+        MobileSettings.from(applicationContext)
+    }
+
     private val navigationState = MutableStateFlow<MobileDestination>(MobileDestination.Home)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,6 +100,7 @@ class MainActivity : ComponentActivity() {
             val destination by navigationState.collectAsStateWithLifecycle()
             val latestCardId by CardRepository.latestCardIdFlow().collectAsStateWithLifecycle(initialValue = null)
             val phoneCompassEnabled by phoneCompassBridge.enabled.collectAsStateWithLifecycle()
+            val settingsState by mobileSettings.state.collectAsStateWithLifecycle(initialValue = MobileSettingsState())
             val coroutineScope = rememberCoroutineScope()
             val aimTargets = remember { DemoAimTargets.list() }
             val appContext = this@MainActivity.applicationContext
@@ -105,10 +116,11 @@ class MainActivity : ComponentActivity() {
             val sendAppOpen: (AppOpenScreen, AppOpenAimTarget?) -> Unit = { screen, target ->
                 coroutineScope.launch {
                     dataLayerBridge.send(PATH_APP_OPEN) { cid ->
+                        val sanitizedTarget = if (settingsState.redactPayloads) null else target
                         val message = AppOpenMessage(
                             cid = cid,
                             screen = screen,
-                            target = target,
+                            target = sanitizedTarget,
                         )
                         JsonCodec.encode(message)
                     }
@@ -121,6 +133,15 @@ class MainActivity : ComponentActivity() {
                 onOpenLatestCard = openLatestCard,
                 onOpenSearch = { navigationState.value = MobileDestination.Search },
                 onOpenAr = {
+                    if (settingsState.arEnabled) {
+                        navigationState.value = MobileDestination.Ar
+                    } else {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.settings_ar_disabled_toast),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
                     MobileLog.arOpen()
                     navigationState.value = MobileDestination.Ar
                 },
@@ -135,6 +156,16 @@ class MainActivity : ComponentActivity() {
                 aimTargets = aimTargets,
                 onSendAimTarget = { target ->
                     coroutineScope.launch {
+                        if (settingsState.redactPayloads) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.settings_redact_payloads_blocked),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                            return@launch
+                        }
                         MobileLog.setTargetRequest(target.id)
                         val startElapsed = SystemClock.elapsedRealtime()
                         val ack = dataLayerBridge.send(PATH_AIM_SET_TARGET) { cid ->
@@ -179,6 +210,22 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onShareCard = { shareText -> shareCard(shareText) },
+                settingsState = settingsState,
+                onOpenSettings = { navigationState.value = MobileDestination.Settings },
+                onToggleMirror = { enabled ->
+                    coroutineScope.launch { mobileSettings.setMirrorEnabled(enabled) }
+                },
+                onToggleArSetting = { enabled ->
+                    coroutineScope.launch { mobileSettings.setArEnabled(enabled) }
+                },
+                onChangeLocationMode = { mode ->
+                    coroutineScope.launch { mobileSettings.setLocationMode(mode) }
+                },
+                onToggleRedactPayloads = { enabled ->
+                    coroutineScope.launch { mobileSettings.setRedactPayloads(enabled) }
+                },
+                onOpenPolicy = { openPolicy() },
+                onOpenMirrorPreview = { openMirrorPreview() },
             )
         }
     }
@@ -225,6 +272,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openMirrorPreview() {
+        val intent = Intent(this, TonightPreviewActivity::class.java)
+        try {
+            startActivity(intent)
+        } catch (error: ActivityNotFoundException) {
+            Toast.makeText(this, getString(R.string.settings_mirror_preview_error), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openPolicy() {
+        val url = getString(R.string.settings_policy_url)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        try {
+            startActivity(intent)
+        } catch (error: ActivityNotFoundException) {
+            Toast.makeText(this, getString(R.string.settings_policy_open_error), Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun showNotEnoughDataToast() {
         Toast.makeText(this, getString(R.string.card_error_not_enough_data), Toast.LENGTH_SHORT).show()
     }
@@ -251,6 +317,14 @@ fun PointToSkyMobileApp(
     phoneCompassEnabled: Boolean,
     onTogglePhoneCompass: () -> Unit,
     onShareCard: (String) -> Unit,
+    settingsState: MobileSettingsState,
+    onOpenSettings: () -> Unit,
+    onToggleMirror: (Boolean) -> Unit,
+    onToggleArSetting: (Boolean) -> Unit,
+    onChangeLocationMode: (LocationMode) -> Unit,
+    onToggleRedactPayloads: (Boolean) -> Unit,
+    onOpenPolicy: () -> Unit,
+    onOpenMirrorPreview: () -> Unit,
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -270,6 +344,10 @@ fun PointToSkyMobileApp(
                     phoneCompassEnabled = phoneCompassEnabled,
                     onTogglePhoneCompass = onTogglePhoneCompass,
                     cardAvailable = latestCardAvailable,
+                    arEnabled = settingsState.arEnabled,
+                    mirrorEnabled = settingsState.mirrorEnabled,
+                    onOpenSettings = onOpenSettings,
+                    onOpenMirrorPreview = onOpenMirrorPreview,
                 )
 
                 MobileDestination.LocationSetup -> LocationSetupScreen(
@@ -312,6 +390,16 @@ fun PointToSkyMobileApp(
                     modifier = Modifier.fillMaxSize(),
                 )
 
+                MobileDestination.Settings -> SettingsScreen(
+                    state = settingsState,
+                    onMirrorChanged = onToggleMirror,
+                    onArChanged = onToggleArSetting,
+                    onLocationModeChanged = onChangeLocationMode,
+                    onRedactPayloadsChanged = onToggleRedactPayloads,
+                    onOpenPolicy = onOpenPolicy,
+                    onBack = { onNavigate(MobileDestination.Home) },
+                )
+
                 is MobileDestination.Card -> CardRoute(
                     cardId = current.cardId,
                     locationPrefs = locationPrefs,
@@ -341,6 +429,10 @@ fun MobileHome(
     phoneCompassEnabled: Boolean,
     onTogglePhoneCompass: () -> Unit,
     cardAvailable: Boolean,
+    arEnabled: Boolean,
+    mirrorEnabled: Boolean,
+    onOpenSettings: () -> Unit,
+    onOpenMirrorPreview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -404,11 +496,13 @@ fun MobileHome(
         ) {
             Text(text = stringResource(id = R.string.sky_map))
         }
-        Button(
-            onClick = onAr,
-            modifier = Modifier.padding(top = 16.dp)
-        ) {
-            Text(text = stringResource(id = R.string.ar_mode))
+        if (arEnabled) {
+            Button(
+                onClick = onAr,
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.ar_mode))
+            }
         }
         Button(
             onClick = onLocationSetup,
@@ -428,6 +522,20 @@ fun MobileHome(
         ) {
             Text(text = stringResource(id = R.string.catalog_debug))
         }
+        if (mirrorEnabled) {
+            Button(
+                onClick = onOpenMirrorPreview,
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text(text = stringResource(id = R.string.settings_mirror_preview))
+            }
+        }
+        Button(
+            onClick = onOpenSettings,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.settings_button))
+        }
     }
 }
 
@@ -439,6 +547,7 @@ sealed interface MobileDestination {
     object TimeDebug : MobileDestination
     object CatalogDebug : MobileDestination
     object Ar : MobileDestination
+    object Settings : MobileDestination
     data class Card(val cardId: String) : MobileDestination
 }
 
@@ -473,5 +582,13 @@ fun MobileHomePreview() {
         phoneCompassEnabled = false,
         onTogglePhoneCompass = {},
         onShareCard = {},
+        settingsState = MobileSettingsState(),
+        onOpenSettings = {},
+        onToggleMirror = {},
+        onToggleArSetting = {},
+        onChangeLocationMode = {},
+        onToggleRedactPayloads = {},
+        onOpenPolicy = {},
+        onOpenMirrorPreview = {},
     )
 }
