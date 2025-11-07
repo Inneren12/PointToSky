@@ -60,6 +60,9 @@
     <string name="location_phone_source_label">Источник: %1$s</string>
     <string name="location_phone_source_phone">PHONE</string>
     <string name="location_phone_source_unknown">—</string>
+    <!-- Tiles (S7.A) -->
+    <string name="tile_tonight_label">Сегодня ночью</string>
+    <string name="tile_more">Ещё</string>
     <string name="time_debug_label">Время</string>
     <string name="time_debug_toggle">1 Гц / 0.2 Гц</string>
     <string name="catalog_debug_label">Catalog Debug</string>
@@ -96,6 +99,16 @@
     <string name="astro_debug_target_saturn">Сатурн</string>
     <string name="astro_debug_aim_error">Δaz=%1$.1f° Δalt=%2$.1f°</string>
     <string name="astro_debug_aim_error_unknown">Δaz/Δalt: —</string>
+    <!-- A11y & Haptics (S6.F) -->
+    <string name="a11y_lock_captured">Target locked</string>
+    <string name="a11y_confidence">Confidence %1$d%%</string>
+    <string name="a11y_right">right</string>
+    <string name="a11y_left">left</string>
+    <string name="a11y_up">up</string>
+    <string name="a11y_down">down</string>
+    <string name="a11y_aim_arrow">Turn %1$s. ΔAz %2$.1f°</string>
+    <string name="a11y_alt_scale">Move %1$s. ΔAlt %2$.1f°</string>
+    <string name="a11y_open_card">Open card</string>
     <!-- Settings (S6.E) -->
     <string name="settings_label">Settings</string>
     <string name="settings_title">Settings</string>

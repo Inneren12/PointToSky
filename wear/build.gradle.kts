@@ -76,6 +76,11 @@ dependencies {
     implementation("androidx.compose.runtime:runtime")
     implementation(libs.play.services.wearable)
 
+    implementation("androidx.wear.tiles:tiles:1.3.0")
+    implementation("androidx.wear.tiles:tiles-material:1.3.0")
+    implementation("androidx.wear.protolayout:protolayout-expression:1.1.0")
+    implementation("com.google.guava:guava:32.1.2-android")
+
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.compose.ui.tooling.preview)

@@ -11,10 +11,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -24,32 +25,40 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.wear.compose.material.*
+import androidx.wear.compose.material.CircularProgressIndicator
+import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.material.Picker
+import androidx.wear.compose.material.Scaffold
+import androidx.wear.compose.material.Text
+import androidx.wear.compose.material.TimeText
+import androidx.wear.compose.material.Vignette
+import androidx.wear.compose.material.VignettePosition
+import androidx.wear.compose.material.rememberPickerState
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.transform.raDecToAltAz
-import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
+import dev.pointtosky.core.time.SystemTimeSource
+import dev.pointtosky.wear.R
 import dev.pointtosky.wear.aim.core.AimController
 import dev.pointtosky.wear.aim.core.AimPhase
 import dev.pointtosky.wear.aim.core.AimTarget
 import dev.pointtosky.wear.aim.core.AimTarget.BodyTarget
 import dev.pointtosky.wear.aim.core.AimTarget.EquatorialTarget
 import dev.pointtosky.wear.aim.core.DefaultAimController
+import dev.pointtosky.core.logging.LogBus
+import dev.pointtosky.wear.haptics.HapticEvent
+import dev.pointtosky.wear.haptics.HapticPolicy
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
-import kotlinx.coroutines.delay
+import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
 import kotlin.math.abs
 import kotlin.math.sign
 
-
-// Сделаем тип элементов пикера top-level, чтобы он был виден внизу файла
+// Элементы пикера делаем top-level
 private data class UiTarget(val label: String, val toAim: AimTarget)
 
-/**
- * Route-компоновка: создаёт контроллер и рендерит AimScreen.
- * Без новых зависимостей: используем SystemTimeSource + SimpleEphemerisComputer.
- */
+/** Route: создаёт контроллер и рендерит AimScreen. */
 @Composable
 fun AimRoute(
     orientationRepository: OrientationRepository,
@@ -62,27 +71,21 @@ fun AimRoute(
             location = locationRepository,
             time = SystemTimeSource(),
             ephem = SimpleEphemerisComputer(),
-            raDecToAltAz = { eq, lstDeg, latDeg -> raDecToAltAz(eq, lstDeg, latDeg, applyRefraction = false) }
+            raDecToAltAz = { eq, lstDeg, latDeg ->
+                raDecToAltAz(eq, lstDeg, latDeg, applyRefraction = false)
+            },
         )
     }
     AimScreen(aimController = controller, initialTarget = initialTarget)
 }
 
-/**
- * Экран «Найти» (S6.B):
- *  - Большая стрелка (знак dAz показывает направление, текстом показываем │ΔAz│)
- *  - Вертикальная шкала │ΔAlt│ (стрелка ↑/↓ по знаку)
- *  - Бейдж фазы (SEARCHING / IN / LOCKED)
- *  - Индикатор confidence (0..1)
- *  - Нижний Picker целей: SUN / MOON / JUPITER / SATURN / POLARIS
- *  - Хаптик: ENTER→короткий, LOCK→тройной, LOST→средний (выключаемый toggle)
- */
+/** Экран «Найти»: стрелка/шкала, фазы, confidence, picker целей, haptics+a11y. */
 @Composable
 fun AimScreen(
     aimController: AimController,
-    initialTarget: AimTarget?
+    initialTarget: AimTarget?,
 ) {
-    // start()/stop() по onResume/onPause
+    // lifecycle: start/stop
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(aimController, lifecycleOwner) {
         val obs = LifecycleEventObserver { _, e ->
@@ -96,10 +99,10 @@ fun AimScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
-    // Cостояние контроллера
+    // state
     val state by aimController.state.collectAsStateWithLifecycle()
 
-    // Разовая установка initialTarget (если задан)
+    // set initial target once
     var appliedInitial by remember { mutableStateOf(false) }
     LaunchedEffect(initialTarget) {
         if (!appliedInitial && initialTarget != null) {
@@ -108,41 +111,50 @@ fun AimScreen(
         }
     }
 
-    // Хаптик с отключаемым флагом
-    var hapticEnabled by remember { mutableStateOf(true) }
-    val haptic = LocalHapticFeedback.current
+    // Haptics & settings
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val settings = remember(appContext) { AimIdentifySettingsDataStore(appContext) }
+    val hapticEnabled by settings.aimHapticEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    val haptics = remember(appContext) { HapticPolicy(appContext) }
+    val lockText = remember { context.getString(R.string.a11y_lock_captured) } // ← НЕ @Composable
+    val view = LocalView.current
+
     var prevPhase by remember { mutableStateOf(state.phase) }
     LaunchedEffect(state.phase, hapticEnabled) {
-        if (!hapticEnabled) {
-            prevPhase = state.phase
-            return@LaunchedEffect
-        }
         when {
             prevPhase != state.phase && state.phase == AimPhase.IN_TOLERANCE -> {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) // ENTER
+                haptics.play(HapticEvent.ENTER, hapticEnabled)
             }
             prevPhase != state.phase && state.phase == AimPhase.LOCKED -> {
-                repeat(3) {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) // LOCK (тройной)
-                    delay(70)
-                }
+                haptics.play(HapticEvent.LOCK, hapticEnabled)
+                view.announceForAccessibility(lockText)
             }
             prevPhase != state.phase && state.phase == AimPhase.SEARCHING -> {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress) // LOST
+                haptics.play(HapticEvent.LOST, hapticEnabled)
             }
         }
         prevPhase = state.phase
     }
 
-    // Читаемые величины
+    // visuals + a11y strings
     val azAbs = abs(state.dAzDeg).toFloat()
     val altAbs = abs(state.dAltDeg).toFloat()
     val azRight = sign(state.dAzDeg).toFloat() >= 0f
     val altUp = sign(state.dAltDeg).toFloat() >= 0f
+    val arrowCd = stringResource(
+        id = R.string.a11y_aim_arrow,
+        if (azRight) stringResource(R.string.a11y_right) else stringResource(R.string.a11y_left),
+        azAbs
+    )
+    val altCd = stringResource(
+        id = R.string.a11y_alt_scale,
+        if (altUp) stringResource(R.string.a11y_up) else stringResource(R.string.a11y_down),
+        altAbs
+    )
 
-    // Меню целей
-    data class UiTarget(val label: String, val toAim: AimTarget)
-    val polarisEq = Equatorial(raDeg = 37.95456067, decDeg = 89.26410897) // Polaris (J2000)
+    // targets
+    val polarisEq = Equatorial(raDeg = 37.95456067, decDeg = 89.26410897)
     val options = remember {
         listOf(
             UiTarget("SUN", BodyTarget(Body.SUN)),
@@ -156,76 +168,81 @@ fun AimScreen(
     val pickerState = rememberPickerState(
         initialNumberOfOptions = options.size,
         initiallySelectedOption = initialIndex,
-        repeatItems = true
+        repeatItems = true,
     )
-    // Прокрутка коронкой -> setTarget
     LaunchedEffect(pickerState, options) {
         snapshotFlow { pickerState.selectedOption }.collect { idx ->
             val opt = options[idx % options.size]
             aimController.setTarget(opt.toAim)
+            // aim_target_changed {target} (UI-originated)
+            LogBus.d(
+                tag = "Aim",
+                msg = "aim_target_changed",
+                payload = mapOf("target" to opt.label),
+            )
         }
     }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize().testTag("AimRoot"),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("AimRoot"),
         timeText = { TimeText() },
-        vignette = { Vignette(vignettePosition = VignettePosition.TopAndBottom) }
+        vignette = { Vignette(vignettePosition = VignettePosition.TopAndBottom) },
     ) {
-    Column(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Верхняя полоса: фаза, confidence, toggle хаптика
             TopBar(
                 phase = state.phase,
                 confidence = state.confidence.coerceIn(0f, 1f),
-                hapticEnabled = hapticEnabled,
-                onToggleHaptic = { hapticEnabled = it }
             )
 
-            // Центр: шкала |ΔAlt| и большая стрелка |ΔAz|
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                AltScale(
+                AltScaleWithA11y(
                     absAltDeg = altAbs,
                     dirUp = altUp,
                     height = 110.dp,
                     width = 14.dp,
+                    contentDesc = altCd,
                 )
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { contentDescription = arrowCd },
                 ) {
                     TurnArrow(
                         right = azRight,
                         emphasized = state.phase != AimPhase.SEARCHING,
-                        size = 150.dp
+                        size = 150.dp,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "│ΔAz│ " + formatDeg(azAbs),
                         style = MaterialTheme.typography.title3,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                 }
-                Spacer(Modifier.width(14.dp)) // баланс с шириной шкалы
+                Spacer(Modifier.width(14.dp))
             }
 
-            // Низ: Picker целей
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = "Target",
                     color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
-                    style = MaterialTheme.typography.caption2
+                    style = MaterialTheme.typography.caption2,
                 )
                 Picker(
                     state = pickerState,
@@ -238,7 +255,7 @@ fun AimScreen(
                         modifier = Modifier
                             .width(180.dp)
                             .semantics { contentDescription = "Target ${item.label}" },
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -246,28 +263,22 @@ fun AimScreen(
     }
 }
 
-// --------- составные элементы ----------
+// -------- pieces --------
 
 @Composable
 private fun TopBar(
     phase: AimPhase,
     confidence: Float,
-    hapticEnabled: Boolean,
-    onToggleHaptic: (Boolean) -> Unit
 ) {
+    val confPct = (confidence.coerceIn(0f, 1f) * 100).toInt()
+    val confCd = stringResource(id = R.string.a11y_confidence, confPct)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         PhaseBadge(phase)
-        ConfidenceIndicator(confidence)
-        ToggleChip(
-            checked = hapticEnabled,
-            onCheckedChange = onToggleHaptic,
-            label = { Text("Haptic") },
-            toggleControl = {}, // без иконок, чтобы не тянуть доп. пакеты
-        )
+        ConfidenceIndicator(confidence = confidence, contentDesc = confCd)
     }
 }
 
@@ -283,26 +294,40 @@ private fun PhaseBadge(phase: AimPhase) {
             .clip(RoundedCornerShape(12.dp))
             .background(bg)
             .padding(horizontal = 10.dp, vertical = 4.dp)
-            .semantics { contentDescription = "Phase $text" }
+            .semantics { contentDescription = "Phase $text" },
     ) {
-        Text(text = text, color = fg, style = MaterialTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold))
+        Text(
+            text = text,
+            color = fg,
+            style = MaterialTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
+        )
     }
 }
 
 @Composable
-private fun ConfidenceIndicator(confidence: Float) {
+private fun ConfidenceIndicator(confidence: Float, contentDesc: String) {
     val clamped = confidence.coerceIn(0f, 1f)
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.semantics { contentDescription = contentDesc },
+    ) {
         Box(contentAlignment = Alignment.Center) {
             CircularProgressIndicator(
                 progress = clamped,
                 modifier = Modifier.size(28.dp),
-                strokeWidth = 3.dp
+                strokeWidth = 3.dp,
             )
-            Text(text = "${(clamped * 100).toInt()}", style = MaterialTheme.typography.caption3)
+            Text(
+                text = "${(clamped * 100).toInt()}",
+                style = MaterialTheme.typography.caption3,
+            )
         }
         Spacer(Modifier.height(2.dp))
-        Text("conf", style = MaterialTheme.typography.caption3, color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f))
+        Text(
+            "conf",
+            style = MaterialTheme.typography.caption3,
+            color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
+        )
     }
 }
 
@@ -312,32 +337,49 @@ private fun AltScale(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp) {
     val track = MaterialTheme.colors.onBackground.copy(alpha = 0.12f)
     val fill = if (dirUp) MaterialTheme.colors.secondary else MaterialTheme.colors.error
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.semantics { /* contentDescription задаётся снаружи */ },
+    ) {
         Text(
             text = (if (dirUp) "↑" else "↓") + " │ΔAlt│ " + formatDeg(absAltDeg),
-            style = MaterialTheme.typography.caption2
+            style = MaterialTheme.typography.caption2,
         )
         Spacer(Modifier.height(4.dp))
         Box(
             modifier = Modifier
                 .size(width = width, height = height)
                 .clip(RoundedCornerShape(6.dp))
-                .background(track)
+                .background(track),
         ) {
             Box(
                 modifier = Modifier
                     .align(if (dirUp) Alignment.TopCenter else Alignment.BottomCenter)
                     .fillMaxWidth()
                     .fillMaxHeight(frac)
-                    .background(fill)
+                    .background(fill),
             )
         }
     }
 }
 
 @Composable
+private fun AltScaleWithA11y(
+    absAltDeg: Float,
+    dirUp: Boolean,
+    height: Dp,
+    width: Dp,
+    contentDesc: String,
+) {
+    Box(Modifier.semantics { contentDescription = contentDesc }) {
+        AltScale(absAltDeg, dirUp, height, width)
+    }
+}
+
+@Composable
 private fun TurnArrow(right: Boolean, emphasized: Boolean, size: Dp) {
-    val color = if (emphasized) MaterialTheme.colors.primary else MaterialTheme.colors.onBackground.copy(alpha = 0.6f)
+    val color = if (emphasized) MaterialTheme.colors.primary
+    else MaterialTheme.colors.onBackground.copy(alpha = 0.6f)
     Canvas(modifier = Modifier.size(size)) {
         val W = this.size.width
         val H = this.size.height
@@ -369,7 +411,7 @@ private fun formatDeg(value: Float): String {
     return s.replace(".0°", "°")
 }
 
-private fun targetIndexFor(initial: AimTarget?, options: List<Any>): Int {
+private fun targetIndexFor(initial: AimTarget?, options: List<UiTarget>): Int {
     if (initial == null) return 0
     return when (initial) {
         is BodyTarget -> when (initial.body) {
@@ -382,5 +424,3 @@ private fun targetIndexFor(initial: AimTarget?, options: List<Any>): Int {
         is EquatorialTarget -> 4 // Polaris
     }
 }
-
-// Превью убраны, чтобы не тянуть ui-tooling/wear-tooling в :wear

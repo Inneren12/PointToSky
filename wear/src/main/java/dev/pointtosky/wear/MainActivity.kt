@@ -288,7 +288,7 @@ fun HomeScreen(
     onSensorsDebugClick: () -> Unit,
     onLocationClick: () -> Unit,
     onTimeDebugClick: () -> Unit,
-    onSettingsClick: () -> Unit,
+    onSettingsClick: () -> Unit = {},   // ← дефолт для старых вызовов
     modifier: Modifier = Modifier
 ) {
     Column(

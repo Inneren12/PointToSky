@@ -28,8 +28,7 @@ class IdentifyViewModelFactory(
                 constellations = catalogRepository.constellationBoundaries,
                 ephemeris = SimpleEphemerisComputer(),
                 timeSource = dev.pointtosky.core.time.SystemTimeSource(periodMs = 200L),
-                magLimitFlow = settings.identifyMagLimitFlow,
-                radiusDegFlow = settings.identifyRadiusDegFlow,
+                settings = settings,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class ${'$'}modelClass")

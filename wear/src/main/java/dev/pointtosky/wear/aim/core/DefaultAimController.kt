@@ -2,20 +2,25 @@ package dev.pointtosky.wear.aim.core
 
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
-import dev.pointtosky.core.astro.time.lstAt
-import dev.pointtosky.core.astro.units.degToRad
-import dev.pointtosky.core.astro.units.radToDeg
-import dev.pointtosky.core.astro.units.wrapDeg0_360
-import dev.pointtosky.core.location.model.GeoPoint
-import dev.pointtosky.core.location.model.LocationFix
 import dev.pointtosky.core.time.TimeSource
-import dev.pointtosky.wear.sensors.orientation.OrientationAccuracy
-import dev.pointtosky.wear.sensors.orientation.OrientationFrame
+import dev.pointtosky.core.location.api.LocationOrchestrator
+import dev.pointtosky.core.location.model.LocationFix
+import dev.pointtosky.core.astro.ephem.Body
+import dev.pointtosky.core.astro.ephem.EphemerisComputer
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
+import dev.pointtosky.wear.sensors.orientation.OrientationFrame
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import dev.pointtosky.core.logging.LogBus
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import java.lang.Math.toRadians
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
-import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.ln
@@ -23,328 +28,285 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 
+/**
+ * Минимально жизнеспособная реализация Aim-ядра.
+ * Без внешних зависимостей на UI/DI, только вычисления.
+ */
 class DefaultAimController(
     private val orientation: OrientationRepository,
-    private val location: dev.pointtosky.core.location.api.LocationOrchestrator,
+    private val location: LocationOrchestrator,
     private val time: TimeSource,
-    private val ephem: dev.pointtosky.core.astro.ephem.EphemerisComputer,
-    private val raDecToAltAz: (Equatorial, lstDeg: Double, latDeg: Double) -> Horizontal,
-) : AimController {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    private val _state = MutableStateFlow(
-        AimState(
-            current = Horizontal(0.0, 0.0),
-            target = Horizontal(0.0, 0.0),
-            dAzDeg = 0.0,
-            dAltDeg = 0.0,
-            phase = AimPhase.SEARCHING,
-            confidence = 0f,
-        ),
-    )
-
+    private val ephem: EphemerisComputer,
+    /**
+     * Преобразование экваториальных координат в горизонтальные.
+     * Ожидает lstDeg (0..360) и широту места.
+     */
+    private val raDecToAltAz: (Equatorial, Double, Double) -> Horizontal,
+    ) : AimController {
+        private val _state = MutableStateFlow(
+            AimState(
+                current = Horizontal(0.0, 0.0),
+                target = Horizontal(0.0, 0.0),
+                dAzDeg = 0.0,
+                dAltDeg = 0.0,
+                phase = AimPhase.SEARCHING,
+                confidence = 0f
+            )
+        )
     override val state: StateFlow<AimState> = _state
 
-    @Volatile
-    private var target: AimTarget? = null
+    private var scope: CoroutineScope? = null
+    private var target: AimTarget = AimTarget.EquatorialTarget(POLARIS_EQ)
+    private var tol: AimTolerance = AimTolerance()
+    private var holdMs: Long = DEFAULT_HOLD_TO_LOCK_MS
+    private var lastFix: LocationFix? = null
 
-    @Volatile
-    private var tolerance: AimTolerance = AimTolerance()
+    // удержание для LOCK
+    private var inTolSinceMs: Long? = null
+    private var lastTickMs: Long = 0
 
-    @Volatile
-    private var holdToLockMs: Long = DEFAULT_HOLD_TO_LOCK_MS
+    // для определения переходов фаз
+    private var lastPhase: AimPhase = AimPhase.SEARCHING
 
-    @Volatile
-    private var lastLocation: GeoPoint? = null
-
-    // AtomicBoolean сам обеспечивает корректную видимость/атомарность; @Volatile не требуется
-    private val running = AtomicBoolean(false)
-
-    private var orientationJob: Job? = null
-    private var locationJob: Job? = null
-
-    private var lastUpdateTimeMs: Long = Long.MIN_VALUE
-
-    private var currentPhase: AimPhase = AimPhase.SEARCHING
-    private var inToleranceSinceMs: Long = Long.MIN_VALUE
-
-    private var lastTarget: Horizontal? = null
-
-    private val azWindowTimesMs = LongArray(CONFIDENCE_WINDOW_CAPACITY)
-    private val azWindowSin = DoubleArray(CONFIDENCE_WINDOW_CAPACITY)
-    private val azWindowCos = DoubleArray(CONFIDENCE_WINDOW_CAPACITY)
-    private var azWindowSize = 0
-    private var azWindowStart = 0
-    private var sumSin = 0.0
-    private var sumCos = 0.0
+    // окно для оценки confidence
+    private data class AzSample(val ts: Long, val azDeg: Double)
+    private val azWindow: ArrayDeque<AzSample> = ArrayDeque(CONFIDENCE_WINDOW_CAPACITY)
 
     override fun setTarget(target: AimTarget) {
         this.target = target
+        // сбрасываем удержание
+        inTolSinceMs = null
+        // aim_target_changed {target}
+        when (target) {
+            is AimTarget.BodyTarget -> {
+                LogBus.d(
+                    tag = "Aim",
+                    msg = "aim_target_changed",
+                    payload = mapOf("target" to target.body.name)
+                )
+            }
+            is AimTarget.EquatorialTarget -> {
+                LogBus.d(tag = "Aim", msg = "aim_target_changed",
+                    payload = mapOf("target" to "EQUATORIAL", "raDeg" to target.eq.raDeg, "decDeg" to target.eq.decDeg))
+            }
+        }
     }
 
     override fun setTolerance(t: AimTolerance) {
-        tolerance = t
+        this.tol = t
     }
 
     override fun setHoldToLockMs(ms: Long) {
-        require(ms >= 0) { "hold to lock must be non-negative" }
-        holdToLockMs = ms
+        this.holdMs = max(0L, ms)
     }
 
     override fun start() {
-        if (!running.compareAndSet(false, true)) {
-            return
-        }
+        if (scope != null) return
+        // aim_start
+        LogBus.d(tag = "Aim", msg = "aim_start", payload = emptyMap())
 
-        locationJob = scope.launch {
-            val known = location.getLastKnown()
-            if (known != null) {
-                updateLocation(known)
+        scope = CoroutineScope(Dispatchers.Default + Job()).also { sc ->
+            // поток локации (редко)
+            sc.launch {
+                lastFix = location.getLastKnown()
+                // допускаем, что где-то ещё у тебя есть полноценная подписка на Fixes,
+                // здесь нам достаточно lastKnown, чтобы ядро работало.
             }
-            location.fixes.collect { fix ->
-                updateLocation(fix)
-            }
-        }
-
-        orientationJob = scope.launch {
-            orientation.frames.collect { frame ->
-                handleFrame(frame)
+            // поток ориентации
+            sc.launch {
+                orientation.frames.collectLatest { frame ->
+                    tick(frame)
+                }
             }
         }
     }
 
     override fun stop() {
-        if (!running.compareAndSet(true, false)) {
-            return
-        }
+        // aim_stop
+        LogBus.d(tag = "Aim", msg = "aim_stop", payload = emptyMap())
 
-        // Захватываем ссылки на текущие задачи и сразу очищаем поля
-        val oldOrientation = orientationJob
-        val oldLocation = locationJob
-        orientationJob = null
-        locationJob = null
-
-        // Отменяем старые задачи немедленно
-        oldOrientation?.cancel()
-        oldLocation?.cancel()
-
-        // Дожидаемся завершения именно старых задач — без гонок с новым start()
-        scope.launch {
-            oldOrientation?.join()
-            oldLocation?.join()
-        }
-
-        resetState()
+        scope?.cancel()
+        scope = null
+        inTolSinceMs = null
+        azWindow.clear()
     }
 
-    private fun handleFrame(frame: OrientationFrame) {
-        val timestampMs = frame.timestampNanos / 1_000_000L
-        if (lastUpdateTimeMs != Long.MIN_VALUE) {
-            val deltaMs = timestampMs - lastUpdateTimeMs
-            if (deltaMs in 0 until MIN_UPDATE_INTERVAL_MS) {
-                return
+    private fun tick(frame: OrientationFrame) {
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - lastTickMs < MIN_UPDATE_INTERVAL_MS) return
+        lastTickMs = nowMs
+
+        val current = toHorizontal(frame)
+        addAzSample(nowMs, current.azDeg)
+
+        val fix = lastFix
+        val instant = time.now()
+        val targetHor = computeTargetHorizontal(instant, fix)
+
+        if (targetHor != null) {
+            val dAz = normalizeAzimuthDelta(targetHor.azDeg - current.azDeg)
+            val dAlt = targetHor.altDeg - current.altDeg
+
+            val inTolerance = (abs(dAz) <= tol.azDeg) && (abs(dAlt) <= tol.altDeg)
+            val newPhase = computePhase(nowMs, inTolerance)
+            val conf = computeConfidence()
+
+            // лог переходов фаз
+            if (newPhase != lastPhase) {
+                when (newPhase) {
+                    AimPhase.IN_TOLERANCE -> {
+                        LogBus.d(
+                            tag = "Aim",
+                            msg = "aim_enter_tolerance",
+                            payload = mapOf("dAz" to dAz, "dAlt" to dAlt)
+                        )
+                    }
+                    AimPhase.LOCKED -> {
+                        LogBus.d(
+                            tag = "Aim",
+                            msg = "aim_lock",
+                            payload = mapOf("holdMs" to holdMs)
+                        )
+                    }
+                    AimPhase.SEARCHING -> {
+                        LogBus.d(tag = "Aim", msg = "aim_lost", payload = emptyMap())
+                    }
+                }
             }
-        }
-        lastUpdateTimeMs = timestampMs
 
-        val currentHorizontal = frame.toHorizontal()
-        addAzSample(currentHorizontal.azDeg, timestampMs)
-
-        val locationPoint = lastLocation
-        val targetHorizontal = computeTargetHorizontal(locationPoint)
-        if (targetHorizontal != null) {
-            lastTarget = targetHorizontal
-        }
-
-        val targetForState = targetHorizontal ?: lastTarget ?: currentHorizontal
-        val diffAz = normalizeAzimuthDelta(targetForState.azDeg - currentHorizontal.azDeg)
-        val diffAlt = targetForState.altDeg - currentHorizontal.altDeg
-
-        val tol = tolerance
-        val hasTarget = targetHorizontal != null
-        val withinTolerance = hasTarget &&
-            abs(diffAz) <= tol.azDeg &&
-            abs(diffAlt) <= tol.altDeg
-
-        val newPhase = computePhase(withinTolerance, timestampMs)
-        val confidence = computeConfidence(frame.accuracy)
-
-        _state.value = AimState(
-            current = currentHorizontal,
-            target = targetForState,
-            dAzDeg = diffAz,
-            dAltDeg = diffAlt,
-            phase = newPhase,
-            confidence = confidence,
-        )
-    }
-
-    private fun computePhase(withinTolerance: Boolean, timestampMs: Long): AimPhase {
-        if (!withinTolerance) {
-            inToleranceSinceMs = Long.MIN_VALUE
-            currentPhase = AimPhase.SEARCHING
-            return currentPhase
-        }
-
-        if (inToleranceSinceMs == Long.MIN_VALUE) {
-            inToleranceSinceMs = timestampMs
-        }
-
-        val elapsed = timestampMs - inToleranceSinceMs
-        currentPhase = if (elapsed >= holdToLockMs) {
-            AimPhase.LOCKED
+            _state.value = AimState(
+                current = current,
+                target = targetHor,
+                dAzDeg = dAz,
+                dAltDeg = dAlt,
+                phase = newPhase,
+                confidence = conf
+            )
         } else {
-            AimPhase.IN_TOLERANCE
-        }
-        return currentPhase
-    }
-
-    private fun computeConfidence(accuracy: OrientationAccuracy): Float {
-        val base = when (accuracy) {
-            OrientationAccuracy.UNRELIABLE -> 0.1f
-            OrientationAccuracy.LOW -> 0.4f
-            OrientationAccuracy.MEDIUM -> 0.7f
-            OrientationAccuracy.HIGH -> 1.0f
-        }
-
-        val stdDevDeg = currentAzimuthStdDevDeg()
-        val stability = 1.0 - min(stdDevDeg / MAX_STD_DEV_DEG, 1.0)
-        val confidence = base * stability.toFloat()
-        return confidence.coerceIn(0f, 1f)
-    }
-
-    private fun currentAzimuthStdDevDeg(): Double {
-        val count = azWindowSize
-        if (count <= 1) {
-            return 0.0
-        }
-        val meanSin = sumSin / count
-        val meanCos = sumCos / count
-        val r = sqrt(meanSin * meanSin + meanCos * meanCos)
-        val safeR = r.coerceIn(MIN_RESULTANT_LENGTH, 1.0)
-        val stdRad = sqrt(max(0.0, -2.0 * ln(safeR)))
-        return radToDeg(stdRad)
-    }
-
-    private fun OrientationFrame.toHorizontal(): Horizontal {
-        val forwardVec = forward
-        val east = forwardVec.getOrNull(0)?.toDouble() ?: 0.0
-        val north = forwardVec.getOrNull(1)?.toDouble() ?: 0.0
-        val up = forwardVec.getOrNull(2)?.toDouble() ?: 1.0
-        val upClamped = up.coerceIn(-1.0, 1.0)
-        val altitudeDeg = radToDeg(asin(upClamped))
-        val azimuthRad = atan2(east, north)
-        val azimuthDeg = wrapDeg0_360(radToDeg(azimuthRad))
-        return Horizontal(azDeg = azimuthDeg, altDeg = altitudeDeg)
-    }
-
-    private fun computeTargetHorizontal(locationPoint: GeoPoint?): Horizontal? {
-        val currentTarget = target
-        val loc = locationPoint ?: return null
-        val instant: Instant = time.now()
-        val lstDeg = lstAt(instant, loc.lonDeg).lstDeg
-        val latDeg = loc.latDeg
-
-        val eq = when (currentTarget) {
-            is AimTarget.EquatorialTarget -> currentTarget.eq
-            is AimTarget.BodyTarget -> ephem.compute(currentTarget.body, instant).eq
-            null -> return null
-        }
-
-        return raDecToAltAz(eq, lstDeg, latDeg)
-    }
-
-    private fun addAzSample(azDeg: Double, timestampMs: Long) {
-        pruneOldSamples(timestampMs)
-
-        if (azWindowSize == CONFIDENCE_WINDOW_CAPACITY) {
-            removeOldestSample()
-        }
-
-        val azRad = degToRad(wrapDeg0_360(azDeg))
-        val sinVal = sin(azRad)
-        val cosVal = cos(azRad)
-
-        val insertIndex = (azWindowStart + azWindowSize) % CONFIDENCE_WINDOW_CAPACITY
-        azWindowTimesMs[insertIndex] = timestampMs
-        azWindowSin[insertIndex] = sinVal
-        azWindowCos[insertIndex] = cosVal
-        azWindowSize += 1
-        sumSin += sinVal
-        sumCos += cosVal
-    }
-
-    private fun pruneOldSamples(currentTimeMs: Long) {
-        while (azWindowSize > 0) {
-            val index = azWindowStart
-            val age = currentTimeMs - azWindowTimesMs[index]
-            if (age <= CONFIDENCE_WINDOW_MS) {
-                break
-            }
-            removeOldestSample()
+            // Цель пока не посчитана — публикуем только текущий луч.
+            _state.value = _state.value.copy(current = current, phase = AimPhase.SEARCHING, confidence = computeConfidence())
         }
     }
 
-    private fun removeOldestSample() {
-        if (azWindowSize == 0) {
-            return
+    /** Текущий луч из кадра ориентации (простая модель: azimuth/pitch). */
+    private fun toHorizontal(frame: OrientationFrame): Horizontal {
+        val az = wrapDeg0_360(frame.azimuthDeg.toDouble())
+        val alt = clamp(frame.pitchDeg.toDouble(), -90.0, 90.0)
+        return Horizontal(az, alt)
+    }
+
+    /** Вычисление цели в горизонтальных координатах. */
+    private fun computeTargetHorizontal(now: Instant, fix: LocationFix?): Horizontal? {
+        val lat = fix?.point?.latDeg ?: 0.0
+        val lon = fix?.point?.lonDeg ?: 0.0
+        val lst = lstDeg(now, lon)
+
+        val eq: Equatorial = when (val t = target) {
+            is AimTarget.EquatorialTarget -> t.eq
+            is AimTarget.BodyTarget -> ephem.compute(t.body, now).eq
+            // StarTarget появится позже
         }
-        val index = azWindowStart
-        sumSin -= azWindowSin[index]
-        sumCos -= azWindowCos[index]
-        azWindowStart = (azWindowStart + 1) % CONFIDENCE_WINDOW_CAPACITY
-        azWindowSize -= 1
+        return raDecToAltAz(eq, lst, lat)
     }
 
-    private fun normalizeAzimuthDelta(deltaDeg: Double): Double {
-        var normalized = deltaDeg % 360.0
-        if (normalized < -180.0) {
-            normalized += 360.0
-        } else if (normalized > 180.0) {
-            normalized -= 360.0
+    /** Фаза наведения с удержанием. */
+    private fun computePhase(nowMs: Long, inTolerance: Boolean): AimPhase {
+        if (!inTolerance) {
+            inTolSinceMs = null
+            return AimPhase.SEARCHING
         }
-        return normalized
+        val start = inTolSinceMs
+        if (start == null) {
+            inTolSinceMs = nowMs
+            return AimPhase.IN_TOLERANCE
+        }
+        val dt = nowMs - start
+        return if (dt >= holdMs) AimPhase.LOCKED else AimPhase.IN_TOLERANCE
     }
 
-    private fun updateLocation(fix: LocationFix) {
-        lastLocation = GeoPoint(fix.point.latDeg, fix.point.lonDeg)
+    /** Добавить измерение азимута в окно. */
+    private fun addAzSample(tsMs: Long, azDeg: Double) {
+        pruneOldSamples(tsMs)
+        if (azWindow.size >= CONFIDENCE_WINDOW_CAPACITY) {
+            azWindow.removeFirst()
+        }
+        azWindow.addLast(AzSample(tsMs, azDeg))
     }
 
-    private fun resetState() {
-        lastUpdateTimeMs = Long.MIN_VALUE
-        currentPhase = AimPhase.SEARCHING
-        inToleranceSinceMs = Long.MIN_VALUE
-        azWindowSize = 0
-        azWindowStart = 0
-        sumSin = 0.0
-        sumCos = 0.0
-        val resetTarget = lastTarget ?: Horizontal(0.0, 0.0)
-        _state.value = AimState(
-            current = Horizontal(0.0, 0.0),
-            target = resetTarget,
-            dAzDeg = 0.0,
-            dAltDeg = 0.0,
-            phase = AimPhase.SEARCHING,
-            confidence = 0f,
-        )
+    private fun pruneOldSamples(nowMs: Long) {
+        val threshold = nowMs - CONFIDENCE_WINDOW_MS
+        while (azWindow.isNotEmpty() && azWindow.first().ts < threshold) {
+            azWindow.removeFirst()
+        }
+    }
+
+    /** Оценка уверенности (0..1) по круговой дисперсии азимута. */
+    private fun computeConfidence(): Float {
+        val n = azWindow.size
+        if (n < 3) return 0.3f
+
+        // круговая статистика
+        var sumX = 0.0
+        var sumY = 0.0
+        for (s in azWindow) {
+            val a = toRadians(s.azDeg)
+            sumX += cos(a); sumY += sin(a)
+        }
+        val r = sqrt(sumX * sumX + sumY * sumY) / n
+        // circular std (рад): sqrt(-2 ln R), защитимся от R≈0
+        val R = max(r, MIN_RESULTANT_LENGTH)
+        val stdRad = sqrt(max(0.0, -2.0 * ln(R)))
+        val stdDeg = stdRad * 180.0 / Math.PI
+
+        // Маппинг std→confidence: <=2° → ~1.0; >=MAX_STD_DEV_DEG → ~0.1
+        val clamped = min(MAX_STD_DEV_DEG, stdDeg)
+        val c = 1.0 - (clamped / MAX_STD_DEV_DEG)
+        return c.toFloat().coerceIn(0f, 1f)
+    }
+
+    // ---------------- Angle/Time helpers ----------------
+    private fun clamp(v: Double, mn: Double, mx: Double) = max(mn, min(mx, v))
+
+    private fun wrapDeg0_360(d: Double): Double {
+        var x = d % 360.0
+        if (x < 0) x += 360.0
+        return x
+    }
+
+    private fun normalizeAzimuthDelta(delta: Double): Double {
+        var d = delta
+        while (d > 180.0) d -= 360.0
+        while (d <= -180.0) d += 360.0
+        return d
+    }
+
+    private fun julianDay(instant: Instant): Double {
+        // JD from Unix time: JD = (ms/86400000) + 2440587.5
+        val ms = instant.toEpochMilli()
+        return ms / 86_400_000.0 + 2440587.5
+    }
+
+    private fun gmstDeg(jd: Double): Double {
+        val T = (jd - 2451545.0) / 36525.0
+        val theta = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - (T * T * T) / 38710000.0
+        return wrapDeg0_360(theta)
+    }
+
+    private fun lstDeg(instant: Instant, lonDeg: Double): Double {
+        val jd = julianDay(instant)
+        return wrapDeg0_360(gmstDeg(jd) + lonDeg)
     }
 
     companion object {
-        private const val MIN_UPDATE_INTERVAL_MS = 66L
-        private const val CONFIDENCE_WINDOW_MS = 1_500L
-        private const val CONFIDENCE_WINDOW_CAPACITY = 32
-        private const val MAX_STD_DEV_DEG = 10.0
-        private const val MIN_RESULTANT_LENGTH = 1e-6
-        private const val DEFAULT_HOLD_TO_LOCK_MS = 1_200L
+        private const val DEFAULT_HOLD_TO_LOCK_MS: Long = 1200L
+        private const val MIN_UPDATE_INTERVAL_MS: Long = 66L        // ~15 Гц
+        private const val CONFIDENCE_WINDOW_MS: Long = 2000L
+        private const val CONFIDENCE_WINDOW_CAPACITY: Int = 64
+        private const val MAX_STD_DEV_DEG: Double = 12.0
+        private const val MIN_RESULTANT_LENGTH: Double = 1e-3
+
+        // Polaris ~ J2000 (приближенно)
+        private val POLARIS_EQ = Equatorial(raDeg = 37.95456067, decDeg = 89.26410897)
     }
-}
+    }

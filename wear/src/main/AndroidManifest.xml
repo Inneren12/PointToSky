@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="com.google.android.wearable.permission.BIND_TILE_PROVIDER"/>
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <uses-feature android:name="android.hardware.type.watch" />
@@ -19,6 +22,9 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.PointToSky.Wear">
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
         <uses-library
             android:name="com.google.android.wearable"
             android:required="false" />
@@ -33,5 +39,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Tile entry Activity (opens the app; can route by action later) -->
+        <activity
+            android:name="dev.pointtosky.wear.tile.tonight.TileEntryActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="dev.pointtosky.ACTION_OPEN_AIM"/>
+                <action android:name="dev.pointtosky.ACTION_OPEN_IDENTIFY"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+
+        <!-- Tonight tile service -->
+        <service
+            android:name="dev.pointtosky.wear.tile.tonight.TonightTileService"
+            android:exported="true"
+            android:label="@string/tile_tonight_label">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

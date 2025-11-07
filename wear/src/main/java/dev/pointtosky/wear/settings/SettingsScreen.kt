@@ -2,13 +2,12 @@ package dev.pointtosky.wear.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -20,9 +19,7 @@ import androidx.wear.compose.material.ScalingLazyColumn
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.rememberScalingLazyListState
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.res.stringResource
 import dev.pointtosky.wear.R
 
@@ -31,7 +28,7 @@ fun SettingsRoute(
     settings: AimIdentifySettingsDataStore,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-) {
+    ) {
     SettingsScreen(
         state = rememberSettingsState(settings),
         settings = settings,
@@ -46,8 +43,7 @@ data class SettingsState(
     val holdMs: Long,
     val hapticEnabled: Boolean,
     val magLimit: Double,
-    val radiusDeg: Double,
-)
+    val radiusDeg: Double, )
 
 @Composable
 private fun rememberSettingsState(settings: AimIdentifySettingsDataStore): SettingsState {
@@ -128,10 +124,10 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Button(onClick = { scope.launch { settings.setAimHoldMs((state.holdMs - 100).coerceAtLeast(200)) } }) {
+                Button(onClick = { scope.launch { settings.setAimHoldMs((state.holdMs - 100L).coerceIn(200L, 3000L)) } }) {
                     Text(text = "−")
                 }
-                Button(onClick = { scope.launch { settings.setAimHoldMs((state.holdMs + 100).coerceAtMost(3000)) } }) {
+                Button(onClick = { scope.launch { settings.setAimHoldMs((state.holdMs + 100L).coerceIn(200L, 3000L)) } }) {
                     Text(text = "+")
                 }
             }
@@ -144,7 +140,7 @@ fun SettingsScreen(
                 label = { Text(text = stringResource(id = R.string.aim_haptic_label)) },
                 toggleControl = {},
                 modifier = Modifier.fillMaxWidth(),
-            )
+                )
         }
 
         // Identify: radius (±0.5°)
@@ -152,16 +148,34 @@ fun SettingsScreen(
             Text(
                 text = stringResource(id = R.string.identify_radius_label, state.radiusDeg),
                 style = MaterialTheme.typography.body2,
-        }
-        // Identify: mag limit
-        item {
-            LabeledSlider(
-                label = stringResource(id = R.string.identify_mag_limit_label, state.magLimit),
-                value = state.magLimit.toFloat(),
-                valueRange = -1f..9f,
-                steps = 20,
-                onChange = { scope.launch { settings.setIdentifyMagLimit(it.toDouble()) } }
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Button(onClick = { scope.launch { settings.setIdentifyRadiusDeg((state.radiusDeg - 0.5).coerceIn(0.5, 10.0)) } }) {
+                    Text(text = "−")
+                }
+                Button(onClick = { scope.launch { settings.setIdentifyRadiusDeg((state.radiusDeg + 0.5).coerceIn(0.5, 10.0)) } }) {
+                    Text(text = "+")
+                }
+            }
+        }
+        // Identify: mag limit (±0.5)
+        item {
+            Text(
+                text = stringResource(id = R.string.identify_mag_limit_label, state.magLimit),
+                style = MaterialTheme.typography.body2,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Button(onClick = { scope.launch { settings.setIdentifyMagLimit((state.magLimit - 0.5).coerceIn(-1.0, 9.0)) } }) {
+                    Text(text = "−")
+                }
+                Button(onClick = { scope.launch { settings.setIdentifyMagLimit((state.magLimit + 0.5).coerceIn(-1.0, 9.0)) } }) {
+                    Text(text = "+")
+                }
+            }
         }
 
         // Back
@@ -170,7 +184,7 @@ fun SettingsScreen(
                 onClick = onBack,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.secondaryButtonColors(),
-            ) { Text(text = stringResource(id = R.string.settings_back)) }
+                ) { Text(text = stringResource(id = R.string.settings_back)) }
         }
     }
 }

@@ -2,6 +2,7 @@ package dev.pointtosky.wear.identify
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.ephem.Body
@@ -34,6 +35,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -115,6 +118,21 @@ class IdentifyViewModel(
         IdentifyUiState.Empty,
     )
 
+    // Лог результатов распознавания с антиспамом (distinct по сигнатуре)
+    private val _logJob = viewModelScope.launch {
+        uiState
+            .map { it.toLogPayloadOrNull() }
+            .distinctUntilChanged() // сигнатура результата изменилась
+            .collect { payload ->
+                if (payload != null) {
+                    LogBus.d(
+                        tag = "Identify",
+                        msg = "identify_result",
+                        payload = payload,
+                    )
+                }
+            }
+    }
     private fun computeState(
         frame: OrientationFrame,
         locationFix: LocationFix?,
@@ -238,6 +256,26 @@ class IdentifyViewModel(
             separationDeg = null,
             lowAccuracy = lowAccuracy,
         )
+    }
+
+    // --- helpers for logging ---
+    private fun IdentifyUiState.toLogPayloadOrNull(): Map<String, Any?>? {
+        val typeStr = when (type) {
+            IdentifyType.STAR -> "STAR"
+            IdentifyType.PLANET -> "PLANET"
+            IdentifyType.MOON -> "MOON"
+            IdentifyType.CONST -> "CONST"
+        }
+        val idOrName = objectId ?: body?.name ?: constellationIau ?: title
+        if (idOrName == null || title == "—") return null
+        val payload = mutableMapOf<String, Any?>(
+            "id" to idOrName,
+            "type" to typeStr,
+            "name" to title,
+            "sepDeg" to separationDeg,
+        )
+        if (magnitude != null) payload["mag"] = magnitude
+        return payload
     }
 }
 
