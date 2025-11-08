@@ -1,0 +1,15 @@
+# Release versioning (keep versionCode as YYYYMMDD*10 + N)
+P2S_VERSION_CODE=202410280
+P2S_VERSION_NAME=0.1.0
+
+# Mobile signing configuration
+P2S_MOBILE_KEYSTORE_PATH=/absolute/path/to/mobile.keystore
+P2S_MOBILE_KEYSTORE_PASSWORD=changeit
+P2S_MOBILE_KEY_ALIAS=pointtoskyMobile
+P2S_MOBILE_KEY_PASSWORD=changeit
+
+# Wear signing configuration
+P2S_WEAR_KEYSTORE_PATH=/absolute/path/to/wear.keystore
+P2S_WEAR_KEYSTORE_PASSWORD=changeit
+P2S_WEAR_KEY_ALIAS=pointtoskyWear
+P2S_WEAR_KEY_PASSWORD=changeit
