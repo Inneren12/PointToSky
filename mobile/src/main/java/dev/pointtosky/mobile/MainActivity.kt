@@ -42,6 +42,7 @@ import dev.pointtosky.mobile.card.CardRoute
 import dev.pointtosky.mobile.card.parseCardIdFromIntent
 import dev.pointtosky.mobile.card.CardRepository
 import dev.pointtosky.mobile.catalog.CatalogDebugRoute
+import dev.pointtosky.mobile.crash.CrashLogRoute
 import dev.pointtosky.mobile.catalog.CatalogRepositoryProvider
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.datalayer.DemoAimTargets
@@ -359,6 +360,7 @@ fun PointToSkyMobileApp(
                     onLocationSetup = { onNavigate(MobileDestination.LocationSetup) },
                     onTimeDebug = { onNavigate(MobileDestination.TimeDebug) },
                     onCatalogDebug = { onNavigate(MobileDestination.CatalogDebug) },
+                    onCrashLogs = { onNavigate(MobileDestination.CrashLogs) },
                     aimTargets = aimTargets,
                     onSendAimTarget = onSendAimTarget,
                     onOpenAimOnWatch = onOpenAimOnWatch,
@@ -387,6 +389,10 @@ fun PointToSkyMobileApp(
                     factory = CatalogDebugViewModelFactory(catalogRepository),
                     modifier = Modifier.fillMaxSize(),
                     onBack = { onNavigate(MobileDestination.Home) },
+                )
+
+                MobileDestination.CrashLogs -> CrashLogRoute(
+                    onBack = { onNavigate(MobileDestination.Home) }
                 )
 
                 MobileDestination.Ar -> ArRoute(
@@ -454,6 +460,7 @@ fun MobileHome(
     onLocationSetup: () -> Unit,
     onTimeDebug: () -> Unit,
     onCatalogDebug: () -> Unit,
+    onCrashLogs: () -> Unit,
     aimTargets: List<AimTargetOption>,
     onSendAimTarget: (AimTargetOption) -> Unit,
     onOpenAimOnWatch: () -> Unit,
@@ -554,6 +561,12 @@ fun MobileHome(
         ) {
             Text(text = stringResource(id = R.string.catalog_debug))
         }
+        Button(
+            onClick = onCrashLogs,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text(text = stringResource(id = R.string.crash_logs_button))
+        }
         if (mirrorEnabled) {
             Button(
                 onClick = onOpenMirrorPreview,
@@ -579,6 +592,7 @@ sealed interface MobileDestination {
     object LocationSetup : MobileDestination
     object TimeDebug : MobileDestination
     object CatalogDebug : MobileDestination
+    object CrashLogs : MobileDestination
     object Ar : MobileDestination
     object Settings : MobileDestination
     object Policy : MobileDestination
