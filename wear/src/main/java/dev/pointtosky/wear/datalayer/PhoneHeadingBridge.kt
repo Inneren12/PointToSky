@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlin.math.floorMod
 
 /**
  * Stores heading values sent from the phone and clears them after a short timeout.
@@ -38,9 +37,10 @@ object PhoneHeadingBridge {
     }
 
     private fun normalizeDeg(value: Float): Float {
-        val normalized = floorMod(value.toInt(), 360)
-        val fraction = value - value.toInt()
-        return normalized + fraction
+        // безопасная нормализация без floorMod: ((x % 360) + 360) % 360
+        val full = value % 360f
+        val norm = if (full < 0f) full + 360f else full
+        return norm
     }
 }
 

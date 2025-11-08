@@ -57,6 +57,7 @@ import dev.pointtosky.mobile.settings.MobileSettingsState
 import dev.pointtosky.mobile.settings.SettingsScreen
 import dev.pointtosky.mobile.skymap.SkyMapRoute
 import dev.pointtosky.mobile.search.SearchRoute
+import dev.pointtosky.mobile.settings.from
 import dev.pointtosky.mobile.tile.tonight.TonightPreviewActivity
 import dev.pointtosky.mobile.time.TimeDebugScreen
 import kotlinx.coroutines.Dispatchers

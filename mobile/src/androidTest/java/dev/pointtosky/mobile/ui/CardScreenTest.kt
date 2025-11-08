@@ -15,9 +15,10 @@ import dev.pointtosky.mobile.card.CardUiState
 import dev.pointtosky.mobile.card.CardScreen
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import java.time.Instant
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -44,7 +45,7 @@ class CardScreenTest {
 
     private var sentTargetId: String? = null
 
-    @BeforeTest
+    @Before
     fun reset() {
         sentTargetId = null
     }

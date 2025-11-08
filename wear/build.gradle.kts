@@ -1,5 +1,3 @@
-import org.gradle.internal.impldep.org.junit.experimental.categories.Categories.CategoryFilter.exclude
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -90,7 +88,8 @@ dependencies {
     implementation(libs.wear.compose.navigation)
     // Data Layer (MessageClient)
     implementation("com.google.android.gms:play-services-wearable:18.1.0")
-
+    // S8A: типы kotlinx.serialization.json (JsonElement) используются из core в WearBridge
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
     implementation(libs.compose.material.icons.extended)
 
@@ -107,6 +106,7 @@ dependencies {
 
     // DataStore для кэша
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation(project(":core:common"))
 
     // Тесты
     testImplementation("junit:junit:4.13.2")
@@ -114,9 +114,7 @@ dependencies {
     testImplementation("androidx.test:core:1.5.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     androidTestImplementation("com.google.truth:truth:1.4.4")
-    // --- Unit tests (JVM) ---
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+
     // Robolectric нужен из-за android Context/DataStore в провайдере
     testImplementation("org.robolectric:robolectric:4.12.2")
     testImplementation("com.google.truth:truth:1.4.4")
@@ -125,18 +123,21 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test:core:1.6.1")
+
     // для проверки построения тайла (присутствует в classpath; используем API сервисов напрямую)
     androidTestImplementation("androidx.wear.tiles:tiles-testing:1.3.0")
     // Нужен для ServiceScenario, ActivityScenario и пр.
     androidTestImplementation("androidx.test:core:1.6.1")
 
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.7.3")
-    debugImplementation("androidx.compose.ui:ui-test-manifest:1.7.3")
-
+    // Compose UI tests — только через BOM, без явной версии у артефактов
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation(platform("androidx.compose:compose-bom:2024.09.01"))
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // Assertions (если используешь Assert.*)
+    androidTestImplementation("junit:junit:4.13.2")
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)

@@ -12,9 +12,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.pointtosky.mobile.catalog.CatalogRepositoryProvider
 import dev.pointtosky.mobile.search.SearchRoute
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertNotNull
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.Assert.assertNotNull
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -24,7 +25,7 @@ class SearchScreenTest {
 
     private val openedCardId = AtomicReference<String?>()
 
-    @BeforeTest
+    @Before
     fun reset() {
         openedCardId.set(null)
     }

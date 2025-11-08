@@ -104,8 +104,8 @@
     <string name="settings_mirror_desc">Отображать данные тайла Tonight на телефоне.</string>
     <string name="settings_ar_title">AR режим</string>
     <string name="settings_ar_desc">Показывать режим дополненной реальности на телефоне (нужна камера).</string>
-    <string name="settings_privacy_redact_title">Скрывать payload&#39;ы</string>
-    <string name="settings_privacy_redact_desc">Не отправлять подробные payload&#39;ы через мост (часть функций станет недоступной).</string>
+    <string name="settings_privacy_redact_title">Privacy</string>
+    <string name="settings_privacy_redact_desc">Mask sensitive values (e.g., tokens, IDs) in logs and payloads.</string>
     <string name="settings_location_mode_title">Режим источника локации</string>
     <string name="settings_location_mode_auto">Авто</string>
     <string name="settings_location_mode_auto_desc">Использовать автоматически определённые координаты.</string>
@@ -124,6 +124,6 @@
     <string name="settings_mirror_preview">Tonight Preview</string>
     <string name="settings_policy_open_error">Не удалось открыть ссылку</string>
     <string name="settings_mirror_preview_error">Предпросмотр недоступен</string>
-    <string name="settings_redact_payloads_blocked">Защита payload&#39;ов включена — отправка цели недоступна</string>
+    <string name="settings_redact_payloads_blocked">Sending raw payloads is disabled by privacy settings</string>
     <string name="settings_ar_disabled_toast">Включите AR в настройках телефона</string>
 </resources>

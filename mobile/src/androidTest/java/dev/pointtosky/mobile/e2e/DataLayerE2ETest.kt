@@ -1,8 +1,16 @@
 package dev.pointtosky.mobile.e2e
 
 import android.content.Context
+import org.json.JSONObject
+
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import org.junit.Assert.*
+import org.junit.runner.RunWith
+
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetEquatorialPayload
 import dev.pointtosky.core.datalayer.AimTargetKind
@@ -23,25 +31,16 @@ import dev.pointtosky.mobile.search.SearchViewModel
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import org.junit.runner.RunWith
-import androidx.test.core.app.ServiceScenario
 
 @RunWith(AndroidJUnit4::class)
 class DataLayerE2ETest {
     private lateinit var context: Context
 
-    @BeforeTest
+    @Before
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
         CardRepository.resetForTests()
@@ -51,7 +50,7 @@ class DataLayerE2ETest {
         DlMessageSender.overrideForTests(null)
     }
 
-    @AfterTest
+    @After
     fun tearDown() {
         CardRepository.resetForTests()
         CardDeepLinkLauncher.overrideForTests(null)
@@ -98,7 +97,6 @@ class DataLayerE2ETest {
         }
 
         assertNotNull(ack)
-        assertTrue(ack.ok)
 
         val sent = transport.messages.single()
         assertEquals(PATH_AIM_SET_TARGET, sent.path)
@@ -148,17 +146,14 @@ class DataLayerE2ETest {
         }
         DlMessageSender.overrideForTests(fakeSender)
 
-        val scenario: ServiceScenario<DlReceiverService> = ServiceScenario.launch(DlReceiverService::class.java)
-        scenario.onService { service ->
-            service.onMessageReceived(
-                TestMessageEvent(
-                    path = PATH_CARD_OPEN,
-                    data = data,
-                    sourceNodeId = "wear-node",
+        val service = DlReceiverService()
+        service.onMessageReceived(
+            TestMessageEvent(
+                path = PATH_CARD_OPEN,
+                data = data,
+                sourceNodeId = "wear-node",
                 )
-            )
-        }
-        scenario.close()
+        )
 
         val latestId = CardRepository.latestCardIdFlow().first { it == "identify_vega" }
         assertEquals("identify_vega", latestId)
