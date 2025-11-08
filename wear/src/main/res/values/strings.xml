@@ -135,4 +135,11 @@
     <string name="tile_debug_last_generation">Last generation: %1$s, %2$s</string>
     <string name="tile_debug_last_generation_unknown">Last generation: —</string>
     <string name="tile_debug_target_unknown">—</string>
+    <string name="onboarding_title">Безопасность</string>
+    <string name="onboarding_description">Point-to-Sky показывает астрономические подсказки, но не заменяет приборы навигации.</string>
+    <string name="onboarding_checkbox">Я понимаю, что приложение не для навигации.</string>
+    <string name="onboarding_location_label">Локация</string>
+    <string name="onboarding_location_granted">Разрешение на локацию уже выдано.</string>
+    <string name="onboarding_location_button">Разрешить локацию во время использования</string>
+    <string name="onboarding_continue">Продолжить</string>
 </resources>

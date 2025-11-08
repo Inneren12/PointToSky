@@ -84,4 +84,11 @@
     <string name="tile_tonight_label">Tonight</string>
     <string name="tile_more">More</string>
     <string name="tonight_targets_label">Tonight targets</string>
+    <string name="onboarding_title">Safety</string>
+    <string name="onboarding_description">Point-to-Sky provides astronomy guidance only and must not be used for navigation.</string>
+    <string name="onboarding_checkbox">I understand this app is not for navigation.</string>
+    <string name="onboarding_location_label">Location</string>
+    <string name="onboarding_location_granted">Location permission is already granted.</string>
+    <string name="onboarding_location_button">Allow location while in use</string>
+    <string name="onboarding_continue">Continue</string>
 </resources>

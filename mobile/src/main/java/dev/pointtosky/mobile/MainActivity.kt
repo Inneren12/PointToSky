@@ -2,7 +2,6 @@ package dev.pointtosky.mobile
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
@@ -17,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,8 +48,14 @@ import dev.pointtosky.mobile.datalayer.DemoAimTargets
 import dev.pointtosky.mobile.datalayer.MobileBridge
 import dev.pointtosky.mobile.ar.ArRoute
 import dev.pointtosky.mobile.location.LocationSetupScreen
+import dev.pointtosky.mobile.onboarding.MobileOnboardingPrefs
+import dev.pointtosky.mobile.onboarding.OnboardingScreen
+import dev.pointtosky.mobile.onboarding.from
 import dev.pointtosky.mobile.location.share.PhoneLocationBridge
 import dev.pointtosky.mobile.logging.MobileLog
+import dev.pointtosky.mobile.policy.PolicyDocument
+import dev.pointtosky.mobile.policy.PolicyDocumentScreen
+import dev.pointtosky.mobile.policy.PolicyScreen
 import dev.pointtosky.mobile.sensors.PhoneCompassBridge
 import dev.pointtosky.mobile.settings.LocationMode
 import dev.pointtosky.mobile.settings.MobileSettings
@@ -91,6 +97,10 @@ class MainActivity : ComponentActivity() {
         MobileSettings.from(applicationContext)
     }
 
+    private val onboardingPrefs: MobileOnboardingPrefs by lazy {
+        MobileOnboardingPrefs.from(applicationContext)
+    }
+
     private val navigationState = MutableStateFlow<MobileDestination>(MobileDestination.Home)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,10 +112,18 @@ class MainActivity : ComponentActivity() {
             val latestCardId by CardRepository.latestCardIdFlow().collectAsStateWithLifecycle(initialValue = null)
             val phoneCompassEnabled by phoneCompassBridge.enabled.collectAsStateWithLifecycle()
             val settingsState by mobileSettings.state.collectAsStateWithLifecycle(initialValue = MobileSettingsState())
+            val onboardingAccepted by onboardingPrefs.acceptedFlow.collectAsStateWithLifecycle(initialValue = false)
             val coroutineScope = rememberCoroutineScope()
             val aimTargets = remember { DemoAimTargets.list() }
             val appContext = this@MainActivity.applicationContext
             val dataLayerBridge: dev.pointtosky.mobile.datalayer.MobileBridge.Sender = remember { MobileBridge.get(appContext) }
+            LaunchedEffect(onboardingAccepted, destination) {
+                if (!onboardingAccepted && destination != MobileDestination.Onboarding) {
+                    navigationState.value = MobileDestination.Onboarding
+                } else if (onboardingAccepted && destination == MobileDestination.Onboarding) {
+                    navigationState.value = MobileDestination.Home
+                }
+            }
             val openLatestCard: () -> Unit = {
                 val id = latestCardId
                 if (id != null) {
@@ -225,8 +243,14 @@ class MainActivity : ComponentActivity() {
                 onToggleRedactPayloads = { enabled ->
                     coroutineScope.launch { mobileSettings.setRedactPayloads(enabled) }
                 },
-                onOpenPolicy = { openPolicy() },
+                onOpenPolicy = { navigationState.value = MobileDestination.Policy },
                 onOpenMirrorPreview = { openMirrorPreview() },
+                onCompleteOnboarding = {
+                    coroutineScope.launch { onboardingPrefs.setAccepted(true) }
+                },
+                onOpenPolicyDocument = { document ->
+                    navigationState.value = MobileDestination.PolicyDocument(document)
+                },
             )
         }
     }
@@ -282,16 +306,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openPolicy() {
-        val url = getString(R.string.settings_policy_url)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        try {
-            startActivity(intent)
-        } catch (error: ActivityNotFoundException) {
-            Toast.makeText(this, getString(R.string.settings_policy_open_error), Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun showNotEnoughDataToast() {
         Toast.makeText(this, getString(R.string.card_error_not_enough_data), Toast.LENGTH_SHORT).show()
     }
@@ -326,10 +340,17 @@ fun PointToSkyMobileApp(
     onToggleRedactPayloads: (Boolean) -> Unit,
     onOpenPolicy: () -> Unit,
     onOpenMirrorPreview: () -> Unit,
+    onCompleteOnboarding: () -> Unit,
+    onOpenPolicyDocument: (PolicyDocument) -> Unit,
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             when (val current = destination) {
+                MobileDestination.Onboarding -> OnboardingScreen(
+                    onComplete = onCompleteOnboarding,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
                 MobileDestination.Home -> MobileHome(
                     onOpenCard = onOpenLatestCard,
                     onSkyMap = { onNavigate(MobileDestination.SkyMap) },
@@ -399,6 +420,16 @@ fun PointToSkyMobileApp(
                     onRedactPayloadsChanged = onToggleRedactPayloads,
                     onOpenPolicy = onOpenPolicy,
                     onBack = { onNavigate(MobileDestination.Home) },
+                )
+
+                MobileDestination.Policy -> PolicyScreen(
+                    onOpenDocument = onOpenPolicyDocument,
+                    onBack = { onNavigate(MobileDestination.Settings) },
+                )
+
+                is MobileDestination.PolicyDocument -> PolicyDocumentScreen(
+                    document = current.document,
+                    onBack = { onNavigate(MobileDestination.Policy) },
                 )
 
                 is MobileDestination.Card -> CardRoute(
@@ -541,6 +572,7 @@ fun MobileHome(
 }
 
 sealed interface MobileDestination {
+    object Onboarding : MobileDestination
     object Home : MobileDestination
     object SkyMap : MobileDestination
     object Search : MobileDestination
@@ -549,6 +581,8 @@ sealed interface MobileDestination {
     object CatalogDebug : MobileDestination
     object Ar : MobileDestination
     object Settings : MobileDestination
+    object Policy : MobileDestination
+    data class PolicyDocument(val document: PolicyDocument) : MobileDestination
     data class Card(val cardId: String) : MobileDestination
 }
 
@@ -591,5 +625,7 @@ fun MobileHomePreview() {
         onToggleRedactPayloads = {},
         onOpenPolicy = {},
         onOpenMirrorPreview = {},
+        onCompleteOnboarding = {},
+        onOpenPolicyDocument = {},
     )
 }
