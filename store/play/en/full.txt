@@ -1,0 +1,19 @@
+PointToSky helps you learn the night sky the easy way: point and know.
+
+• Aim & Identify — Raise your wrist and get instant object info on Wear OS.
+• Tonight — Tile and card with the best targets for your location and time.
+• Details — Quick facts for stars, planets and constellations (type, magnitude, etc.).
+• Map — Clean star map with official IAU boundaries and search.
+• Phone companion — Optional map/AR views on the paired phone.
+• Works offline — No sign-up, no internet required for core features.
+• Privacy-friendly — No accounts. No cloud profiles.
+• Open catalogs — Based on established astronomical data sources.
+• Local sync — Fast phone↔watch sync via Data Layer.
+• Dark-friendly UI — Designed for night use.
+• Languages — English, Russian.
+
+Notes & accuracy
+Sensor accuracy depends on calibration and environment (compass, gyro, time & location). For best results, calibrate your device and allow approximate location.
+
+Disclaimers
+Not for navigation or safety-critical use. Astronomy data may contain small deviations. This app is for education and stargazing only.

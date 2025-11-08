@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bg" cx="50%" cy="38%" r="70%">
+          <stop offset="0%" stop-color="#0B1E3A"/>
+          <stop offset="100%" stop-color="#071224"/>
+        </radialGradient>
+        <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="1.2"/>
+        </filter>
+      </defs>
+      <rect width="512" height="512" fill="url(#bg)"/>
+      <g opacity="0.45" fill="#9FC7FF">
+        <circle cx="82" cy="96" r="1.4"/><circle cx="144" cy="60" r="1.2"/>
+        <circle cx="420" cy="110" r="1.1"/><circle cx="360" cy="70" r="1.3"/>
+        <circle cx="460" cy="220" r="1.0"/><circle cx="72" cy="300" r="1.1"/>
+        <circle cx="180" cy="410" r="1.2"/><circle cx="330" cy="440" r="1.0"/>
+      </g>
+      <g transform="translate(256,256)">
+        <path d="M -18,74 L 0,-120 L 18,74 Q 18,88 0,96 Q -18,88 -18,74 Z" fill="#E6F1FF"/>
+        <path d="M -9,56 L 0,-70 L 9,56 Q 9,62 0,66 Q -9,62 -9,56 Z" fill="#0B1E3A"/>
+      </g>
+      <g transform="translate(312,148)">
+        <circle cx="0" cy="0" r="8" fill="#5DE4FF" filter="url(#soft)" opacity="0.6"/>
+        <path d="M0,-14 L3,-3 L14,0 L3,3 L0,14 L-3,3 L-14,0 L-3,-3 Z" fill="#E6F1FF"/>
+      </g>
+    </svg>

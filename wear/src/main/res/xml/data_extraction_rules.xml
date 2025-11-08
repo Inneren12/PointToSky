@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <!-- Ничего не отдаём в облако -->
+        <exclude domain="full-backup-content"/>
+        <exclude domain="sharedpref"/>
+        <exclude domain="database"/>
+        <exclude domain="external-files"/>
+        <exclude domain="files"/>
+        <exclude domain="root"/>
+        <exclude domain="device-transfer"/>
+    </cloud-backup>
+    <device-transfer>
+        <!-- Ничего не переносим между устройствами -->
+        <exclude domain="full-backup-content"/>
+        <exclude domain="sharedpref"/>
+        <exclude domain="database"/>
+        <exclude domain="external-files"/>
+        <exclude domain="files"/>
+        <exclude domain="root"/>
+    </device-transfer>
+</data-extraction-rules>

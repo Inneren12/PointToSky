@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg">
+      <rect width="640" height="640" fill="#000000"/>
+      <circle cx="320" cy="320" r="292" fill="#111827"/>
+      <!-- Вставьте скрин UI поверх круга, без надписей вне UI -->
+    </svg>

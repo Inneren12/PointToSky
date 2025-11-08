@@ -1,0 +1,4 @@
+Add alt-text for each graphic asset in Play Console (accessibility):
+- Keep it ≤140 chars
+- Focus on UI context (e.g., "Identify screen with star details")
+- Avoid "image of"/"photo of"

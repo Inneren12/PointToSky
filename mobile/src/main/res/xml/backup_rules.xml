@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Бэкап полностью отключён атрибутом android:fullBackupContent="false" -->
+</full-backup-content>

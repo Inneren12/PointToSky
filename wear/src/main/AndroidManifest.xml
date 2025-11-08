@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="com.google.android.wearable.permission.BIND_TILE_PROVIDER"/>
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -17,7 +15,9 @@
 
     <application
         android:name=".PointToSkyWearApp"
-        android:allowBackup="true"
+        android:usesCleartextTraffic="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -29,24 +29,42 @@
             android:name="com.google.android.wearable"
             android:required="false" />
 
-        <!-- S8.A: Data Layer v1 receiver (watch side) -->
+        <!-- Data Layer v1 receiver (watch side). Сужаем pathPrefix. -->
         <service
-        android:name="dev.pointtosky.wear.datalayer.v1.DlReceiverService"
-        android:exported="true">
-        <intent-filter>
-        <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-        <data android:scheme="wear" android:host="*" android:pathPrefix="/" />
-    </intent-filter>
-        <intent-filter>
-        <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-        <data android:scheme="wear" android:host="*" android:pathPrefix="/" />
-    </intent-filter>
-    </service>
+            android:name="dev.pointtosky.wear.datalayer.v1.DlReceiverService"
+            android:exported="true">
+            <!-- Один фильтр на каждый путь — убираем неоднозначность -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/card" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/aim" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/app" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/card" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/aim" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/app" />
+            </intent-filter>
+        </service>
 
         <activity
             android:name="dev.pointtosky.wear.MainActivity"
             android:exported="true"
-            android:label="@string/app_name">
+            android:taskAffinity=""
+            android:relinquishTaskIdentity="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -54,9 +72,10 @@
             </intent-filter>
         </activity>
 
+        <!-- Для BIND_LISTENER обязателен exported=true -->
         <service
             android:name="dev.pointtosky.wear.datalayer.WearBridgeListenerService"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.BIND_LISTENER" />
             </intent-filter>
@@ -66,7 +85,8 @@
         <activity
             android:name="dev.pointtosky.wear.tile.tonight.TileEntryActivity"
             android:exported="true"
-            android:label="@string/app_name">
+            android:taskAffinity=""
+            android:relinquishTaskIdentity="true">
             <intent-filter>
                 <action android:name="dev.pointtosky.ACTION_OPEN_AIM"/>
                 <action android:name="dev.pointtosky.ACTION_OPEN_IDENTIFY"/>
@@ -78,16 +98,20 @@
         <service
             android:name="dev.pointtosky.wear.tile.tonight.TonightTileService"
             android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER"
             android:label="@string/tile_tonight_label">
             <intent-filter>
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
             </intent-filter>
+            <meta-data android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@mipmap/ic_launcher" />
         </service>
 
         <!-- Экран списка целей для кнопки "Ещё" -->
         <activity
             android:name="dev.pointtosky.wear.tile.tonight.TonightTargetsActivity"
-            android:exported="true"
+            android:exported="false"
+            android:taskAffinity=""
             android:label="@string/tonight_targets_label" />
     </application>
 </manifest>

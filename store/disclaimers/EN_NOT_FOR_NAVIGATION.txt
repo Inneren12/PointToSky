@@ -1,0 +1,3 @@
+Not for navigation or safety-critical use.
+Accuracy depends on device sensors, calibration, time and location settings.
+This app provides educational stargazing information only.

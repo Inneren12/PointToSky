@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="fgGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0B1E3A"/>
+          <stop offset="100%" stop-color="#071224"/>
+        </linearGradient>
+      </defs>
+      <rect width="1024" height="500" fill="url(#fgGrad)"/>
+      <!-- subtle star field -->
+      <g opacity="0.35" fill="#9FC7FF">
+        <circle cx="120" cy="120" r="2"/><circle cx="200" cy="60" r="1.6"/>
+        <circle cx="940" cy="150" r="1.6"/><circle cx="820" cy="80" r="1.8"/>
+        <circle cx="900" cy="360" r="1.6"/><circle cx="160" cy="410" r="1.4"/>
+        <circle cx="480" cy="300" r="1.6"/><circle cx="700" cy="430" r="1.4"/>
+      </g>
+      <!-- icon mark (vector) on left, no text per Play best practices -->
+      <g transform="translate(140,250) scale(1.2)">
+        <g transform="translate(0,0)">
+          <path d="M -18,74 L 0,-120 L 18,74 Q 18,88 0,96 Q -18,88 -18,74 Z" fill="#E6F1FF"/>
+          <path d="M -9,56 L 0,-70 L 9,56 Q 9,62 0,66 Q -9,62 -9,56 Z" fill="#0B1E3A"/>
+        </g>
+        <g transform="translate(56,-102)">
+          <circle cx="0" cy="0" r="10" fill="#5DE4FF" opacity="0.6"/>
+          <path d="M0,-16 L3,-3 L16,0 L3,3 L0,16 L-3,3 L-16,0 L-3,-3 Z" fill="#E6F1FF"/>
+        </g>
+      </g>
+    </svg>

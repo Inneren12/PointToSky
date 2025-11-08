@@ -1,0 +1,5 @@
+First public build:
+• Aim & Identify on Wear OS
+• “Tonight” Tile and card
+• Map view with search
+• RU/EN localization
