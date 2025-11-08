@@ -64,6 +64,25 @@
     <!-- Tiles (S7.A) -->
     <string name="time_debug_label">Время</string>
     <string name="time_debug_toggle">1 Гц / 0.2 Гц</string>
+    <string name="crash_logs_button">Crash logs</string>
+    <string name="crash_logs_title">Crash logs</string>
+    <string name="crash_logs_instruction">Для ANR/Crash смотри Play Console → Play Vitals. Здесь — локальные JSONL логи.</string>
+    <string name="crash_logs_message_dismiss">Скрыть сообщение</string>
+    <string name="crash_logs_zip_path">ZIP: %1$s</string>
+    <string name="crash_logs_last_crash">Последний краш</string>
+    <string name="crash_logs_last_crash_time">Время: %1$s</string>
+    <string name="crash_logs_last_crash_thread">Поток: %1$s (#%2$d)</string>
+    <string name="crash_logs_last_crash_type">Тип: %1$s</string>
+    <string name="crash_logs_last_crash_message">Сообщение: %1$s</string>
+    <string name="crash_logs_stacktrace_label">Стек:</string>
+    <string name="crash_logs_empty">Краши не зафиксированы.</string>
+    <string name="crash_logs_create_zip">Создать ZIP</string>
+    <string name="crash_logs_clear">Очистить</string>
+    <string name="crash_logs_back">Назад</string>
+    <string name="crash_logs_zip_ready">ZIP сохранён: %1$s</string>
+    <string name="crash_logs_zip_unavailable">Нет логов для экспорта.</string>
+    <string name="crash_logs_cleared">Логи очищены.</string>
+    <string name="crash_logs_operation_failed">Не удалось выполнить операцию.</string>
     <string name="catalog_debug_label">Catalog Debug</string>
     <string name="catalog_debug_title">Catalog Debug</string>
     <string name="catalog_debug_probe_header">Пробный запрос</string>

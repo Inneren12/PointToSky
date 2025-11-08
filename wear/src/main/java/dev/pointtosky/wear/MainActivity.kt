@@ -78,6 +78,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import dev.pointtosky.wear.catalog.CatalogRepositoryProvider
 import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
+import dev.pointtosky.wear.crash.CrashLogRoute
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
 
 class MainActivity : ComponentActivity() {
@@ -218,6 +219,7 @@ private const val ROUTE_SENSORS_CALIBRATE = "sensors_calibrate"
 private const val ROUTE_LOCATION = "location"
 private const val ROUTE_TIME_DEBUG = "time_debug"
 private const val ROUTE_CATALOG_DEBUG = "catalog_debug"
+private const val ROUTE_CRASH_LOGS = "crash_logs"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_CARD = "card"
 const val ACTION_OPEN_AIM = "dev.pointtosky.action.OPEN_AIM"
@@ -288,6 +290,7 @@ fun PointToSkyWearApp(
                         onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
                         onLocationClick = { navController.navigate(ROUTE_LOCATION) },
                         onTimeDebugClick = { navController.navigate(ROUTE_TIME_DEBUG) },
+                        onCrashLogsClick = { navController.navigate(ROUTE_CRASH_LOGS) },
                         onSettingsClick = { navController.navigate(ROUTE_SETTINGS) },
                     )
                 }
@@ -393,6 +396,11 @@ fun PointToSkyWearApp(
                     onBack = { navController.popBackStack() }
                 )
             }
+            composable(ROUTE_CRASH_LOGS) {
+                CrashLogRoute(
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 
@@ -425,6 +433,7 @@ fun HomeScreen(
     onSensorsDebugClick: () -> Unit,
     onLocationClick: () -> Unit,
     onTimeDebugClick: () -> Unit,
+    onCrashLogsClick: () -> Unit,
     onSettingsClick: () -> Unit = {},   // ← дефолт для старых вызовов
     modifier: Modifier = Modifier
 ) {
@@ -485,6 +494,13 @@ fun HomeScreen(
             Text(text = stringResource(id = R.string.time_debug_label))
         }
         Button(
+            onClick = onCrashLogsClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.secondaryButtonColors(),
+        ) {
+            Text(text = stringResource(id = R.string.crash_logs_button))
+        }
+        Button(
             onClick = onSettingsClick,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.primaryButtonColors(),
@@ -531,7 +547,8 @@ fun HomeScreenPreview() {
             onCatalogDebugClick = {},
             onSensorsDebugClick = {},
             onLocationClick = {},
-            onTimeDebugClick = {}
+            onTimeDebugClick = {},
+            onCrashLogsClick = {},
         )
     }
 }
