@@ -17,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -64,6 +65,9 @@ import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationRepositoryConfig
 import dev.pointtosky.wear.sensors.orientation.PhoneHeadingOverrideRepository
+import dev.pointtosky.wear.onboarding.WearOnboardingPrefs
+import dev.pointtosky.wear.onboarding.WearOnboardingScreen
+import dev.pointtosky.wear.onboarding.from
 import dev.pointtosky.wear.time.TimeDebugScreen
 import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import dev.pointtosky.wear.datalayer.AppOpenRequest
@@ -101,6 +105,10 @@ class MainActivity : ComponentActivity() {
             manualPrefs = locationPrefs,
             remotePhone = phoneLocationRepository,
         )
+    }
+
+    private val onboardingPrefs: WearOnboardingPrefs by lazy {
+        WearOnboardingPrefs.from(applicationContext)
     }
 
     @Suppress("UnusedPrivateMember")
@@ -145,6 +153,7 @@ class MainActivity : ComponentActivity() {
                 locationRepository = locationOrchestrator,
                 aimLaunches = WearBridge.aimLaunches(),
                 appOpens = WearBridge.appOpens(),
+                onboardingPrefs = onboardingPrefs,
             )
         }
     }
@@ -227,12 +236,15 @@ fun PointToSkyWearApp(
     locationRepository: DefaultLocationOrchestrator,
     aimLaunches: Flow<AimLaunchRequest>,
     appOpens: Flow<AppOpenRequest>,
+    onboardingPrefs: WearOnboardingPrefs,
 ) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
     val appContext = context.applicationContext
     val catalogRepository = remember(appContext) { CatalogRepositoryProvider.get(appContext) }
     val settings = remember(appContext) { AimIdentifySettingsDataStore(appContext) }
+    val coroutineScope = rememberCoroutineScope()
+    val onboardingAccepted by onboardingPrefs.acceptedFlow.collectAsStateWithLifecycle(initialValue = false)
 
     val viewModelFactory = remember(orientationRepository, appContext) {
         SensorsViewModelFactory(
@@ -255,51 +267,59 @@ fun PointToSkyWearApp(
     val appOpenRequest = latestAppOpen.value
 
     MaterialTheme {
-        SwipeDismissableNavHost(
-            navController = navController,
-            startDestination = ROUTE_HOME
-        ) {
-            composable(ROUTE_HOME) {
-                HomeScreen(
-                    onAimClick = { navController.navigate(ROUTE_AIM) },
-                    onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
-                    onAstroDebugClick = { navController.navigate(ROUTE_ASTRO_DEBUG) },
-                    onCatalogDebugClick = { navController.navigate(ROUTE_CATALOG_DEBUG) },
-                    onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
-                    onLocationClick = { navController.navigate(ROUTE_LOCATION) },
-                    onTimeDebugClick = { navController.navigate(ROUTE_TIME_DEBUG) },
-                    onSettingsClick = { navController.navigate(ROUTE_SETTINGS) },
-                )
-            }
-            composable(ROUTE_AIM) {
-                // Экран Aim с реальным контроллером (S6.B)
-                AimRoute(
-                    orientationRepository = orientationRepository,
-                    locationRepository = locationRepository,
-                    externalAim = aimRequest,
-                )
-            }
-            composable(ROUTE_IDENTIFY) {
-                // Экран Identify (S6.C) с реальным каталогом и ориентацией
-                val factory = remember(orientationRepository, locationRepository, catalogRepository, settings) {
-                    IdentifyViewModelFactory(
-                        orientationRepository = orientationRepository,
-                        locationRepository = locationRepository,
-                        catalogRepository = catalogRepository,
-                        settings = settings,
+        if (!onboardingAccepted) {
+            WearOnboardingScreen(
+                onComplete = {
+                    coroutineScope.launch { onboardingPrefs.setAccepted(true) }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            SwipeDismissableNavHost(
+                navController = navController,
+                startDestination = ROUTE_HOME
+            ) {
+                composable(ROUTE_HOME) {
+                    HomeScreen(
+                        onAimClick = { navController.navigate(ROUTE_AIM) },
+                        onIdentifyClick = { navController.navigate(ROUTE_IDENTIFY) },
+                        onAstroDebugClick = { navController.navigate(ROUTE_ASTRO_DEBUG) },
+                        onCatalogDebugClick = { navController.navigate(ROUTE_CATALOG_DEBUG) },
+                        onSensorsDebugClick = { navController.navigate(ROUTE_SENSORS_DEBUG) },
+                        onLocationClick = { navController.navigate(ROUTE_LOCATION) },
+                        onTimeDebugClick = { navController.navigate(ROUTE_TIME_DEBUG) },
+                        onSettingsClick = { navController.navigate(ROUTE_SETTINGS) },
                     )
                 }
-                IdentifyRoute(
-                    factory = factory,
-                    onOpenCard = { state -> navController.navigate(buildCardRouteFrom(state)) },
-                )
-            }
-            composable(ROUTE_SETTINGS) {
-                SettingsRoute(
-                    settings = settings,
-                    onBack = { navController.popBackStack() }
-                )
-            }
+                composable(ROUTE_AIM) {
+                    // Экран Aim с реальным контроллером (S6.B)
+                    AimRoute(
+                        orientationRepository = orientationRepository,
+                        locationRepository = locationRepository,
+                        externalAim = aimRequest,
+                    )
+                }
+                composable(ROUTE_IDENTIFY) {
+                    // Экран Identify (S6.C) с реальным каталогом и ориентацией
+                    val factory = remember(orientationRepository, locationRepository, catalogRepository, settings) {
+                        IdentifyViewModelFactory(
+                            orientationRepository = orientationRepository,
+                            locationRepository = locationRepository,
+                            catalogRepository = catalogRepository,
+                            settings = settings,
+                        )
+                    }
+                    IdentifyRoute(
+                        factory = factory,
+                        onOpenCard = { state -> navController.navigate(buildCardRouteFrom(state)) },
+                    )
+                }
+                composable(ROUTE_SETTINGS) {
+                    SettingsRoute(
+                        settings = settings,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
             // Параметризованный экран карточки (S6.D)
             cardDestination(locationRepository = locationRepository)
             composable(ROUTE_ASTRO_DEBUG) {
@@ -376,19 +396,22 @@ fun PointToSkyWearApp(
         }
     }
 
-    LaunchedEffect(aimRequest?.seq) {
+    LaunchedEffect(onboardingAccepted, aimRequest?.seq) {
+        if (!onboardingAccepted) return@LaunchedEffect
         val request = aimRequest ?: return@LaunchedEffect
         navController.navigate(ROUTE_AIM) {
             launchSingleTop = true
         }
     }
 
-    LaunchedEffect(appOpenRequest?.seq) {
+    LaunchedEffect(onboardingAccepted, appOpenRequest?.seq) {
+        if (!onboardingAccepted) return@LaunchedEffect
         val request = appOpenRequest ?: return@LaunchedEffect
         when (request.screen) {
             AppOpenScreen.AIM -> navController.navigate(ROUTE_AIM) { launchSingleTop = true }
             AppOpenScreen.IDENTIFY -> navController.navigate(ROUTE_IDENTIFY) { launchSingleTop = true }
             AppOpenScreen.TILE -> navController.navigate(ROUTE_HOME)
+            }
         }
     }
 }
