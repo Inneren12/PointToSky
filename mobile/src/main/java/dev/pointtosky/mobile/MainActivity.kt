@@ -342,7 +342,7 @@ fun PointToSkyMobileApp(
     onOpenPolicy: () -> Unit,
     onOpenMirrorPreview: () -> Unit,
     onCompleteOnboarding: () -> Unit,
-    onOpenPolicyDocument: (PolicyDocument) -> Unit,
+    onOpenPolicyDocument: (dev.pointtosky.mobile.policy.PolicyDocument) -> Unit,
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -596,7 +596,9 @@ sealed interface MobileDestination {
     object Ar : MobileDestination
     object Settings : MobileDestination
     object Policy : MobileDestination
-    data class PolicyDocument(val document: PolicyDocument) : MobileDestination
+
+    data class PolicyDocument(val document: dev.pointtosky.mobile.policy.PolicyDocument) : MobileDestination
+
     data class Card(val cardId: String) : MobileDestination
 }
 

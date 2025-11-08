@@ -76,26 +76,26 @@ fun CrashLogScreen(
             )
         }
         if (state.statusMessage != null || state.errorMessage != null) {
-            val text = state.statusMessage ?: state.errorMessage ?: ""
-            val color = if (state.errorMessage != null) {
-                MaterialTheme.colors.error
-            } else {
-                MaterialTheme.colors.primary
-            }
             item {
+                val text = state.statusMessage ?: state.errorMessage ?: ""
+                val color = if (state.errorMessage != null) {
+                    MaterialTheme.colors.error
+                } else {
+                    MaterialTheme.colors.primary
+                }
                 Text(
                     text = text,
                     color = color,
                     style = MaterialTheme.typography.body2,
                     textAlign = TextAlign.Center,
-                )
+                    )
             }
             item {
                 Button(
                     onClick = onDismissMessage,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.secondaryButtonColors(),
-                ) {
+                    ) {
                     Text(text = stringResource(id = R.string.crash_logs_message_dismiss))
                 }
             }
@@ -113,8 +113,10 @@ fun CrashLogScreen(
             item {
                 Text(text = stringResource(id = R.string.crash_logs_last_crash), style = MaterialTheme.typography.body2)
             }
-            timestampText?.let { formatted ->
-                item { Text(text = stringResource(id = R.string.crash_logs_last_crash_time, formatted)) }
+            if (timestampText != null) {
+                item {
+                    Text(text = stringResource(id = R.string.crash_logs_last_crash_time, timestampText))
+                }
             }
             item {
                 Text(text = stringResource(id = R.string.crash_logs_last_crash_thread, lastCrash.threadName, lastCrash.threadId))

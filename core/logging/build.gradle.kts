@@ -38,10 +38,24 @@ android {
     }
 }
 
+// Единая тулчейн-версия для Kotlin/JVM
+kotlin {
+    jvmToolchain(17)
+}
+
 dependencies {
+    // корутины/серилизация
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
+
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-crashlytics-ktx")
+
+    // часто требуются для Crash/Log утилит:
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
+    implementation("androidx.core:core-ktx:1.13.1")
+
+    api("com.jakewharton.timber:timber:5.0.1")
 
     testImplementation(kotlin("test"))
 }

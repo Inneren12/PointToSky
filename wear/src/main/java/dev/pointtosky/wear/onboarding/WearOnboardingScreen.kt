@@ -27,6 +27,7 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChip
 import androidx.wear.compose.material.rememberScalingLazyListState
 import dev.pointtosky.wear.R
+import android.content.pm.PackageManager
 
 @Composable
 fun WearOnboardingScreen(
@@ -111,8 +112,7 @@ fun WearOnboardingScreen(
                 Button(
                     onClick = { locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
                     modifier = Modifier.fillMaxWidth(),
-                    contentPadding = ButtonDefaults.ContentPadding
-                ) {
+                    ) {
                     Text(text = stringResource(id = R.string.onboarding_location_button))
                 }
             }
@@ -122,8 +122,7 @@ fun WearOnboardingScreen(
                 onClick = onComplete,
                 enabled = acknowledged,
                 modifier = Modifier.fillMaxWidth(),
-                contentPadding = ButtonDefaults.ContentPadding
-            ) {
+                ) {
                 Text(text = stringResource(id = R.string.onboarding_continue))
             }
         }

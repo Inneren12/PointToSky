@@ -21,6 +21,20 @@ android {
     }
 }
 
+// Глобально включаем preview/experimental API корутин,
+// чтобы убрать варнинги вида "This declaration needs opt-in"
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    kotlinOptions.freeCompilerArgs += listOf(
+        "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+        "-opt-in=kotlinx.coroutines.FlowPreview"
+    )
+}
+
+// Единая тулчейн-версия для Kotlin/JVM
+kotlin {
+    jvmToolchain(17)
+}
+
 dependencies {
     api(libs.kotlinx.coroutines.core)
     implementation(libs.play.services.location)
