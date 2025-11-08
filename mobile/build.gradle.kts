@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.license.report)
 }
 
 android {
@@ -163,4 +164,11 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.1")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation(libs.kotlinx.coroutines.test)
+}
+
+licenseReport {
+    generateHtmlReport = true
+    generateJsonReport = true
+    copyHtmlReportToAssets = false
+    copyJsonReportToAssets = false
 }

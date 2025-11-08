@@ -1,0 +1,114 @@
+name: Android Release Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/s9g-ci-release-artifacts
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.module }} ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [mobile, wear]
+        target: [tests, bundle]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Configure signing
+        if: ${{ matrix.target == 'bundle' }}
+        env:
+          MODULE: ${{ matrix.module }}
+          MOBILE_KEYSTORE_BASE64: ${{ secrets.MOBILE_KEYSTORE_BASE64 }}
+          MOBILE_KEYSTORE_PASSWORD: ${{ secrets.MOBILE_KEYSTORE_PASSWORD }}
+          MOBILE_KEY_ALIAS: ${{ secrets.MOBILE_KEY_ALIAS }}
+          MOBILE_KEY_PASSWORD: ${{ secrets.MOBILE_KEY_PASSWORD }}
+          WEAR_KEYSTORE_BASE64: ${{ secrets.WEAR_KEYSTORE_BASE64 }}
+          WEAR_KEYSTORE_PASSWORD: ${{ secrets.WEAR_KEYSTORE_PASSWORD }}
+          WEAR_KEY_ALIAS: ${{ secrets.WEAR_KEY_ALIAS }}
+          WEAR_KEY_PASSWORD: ${{ secrets.WEAR_KEY_PASSWORD }}
+        run: |
+          set -eo pipefail
+          case "$MODULE" in
+            mobile)
+              if [ -n "$MOBILE_KEYSTORE_BASE64" ]; then
+                printf '%s' "$MOBILE_KEYSTORE_BASE64" | base64 --decode > mobile-release.keystore
+                {
+                  echo "P2S_MOBILE_KEYSTORE_PATH=$GITHUB_WORKSPACE/mobile-release.keystore"
+                  echo "P2S_MOBILE_KEYSTORE_PASSWORD=$MOBILE_KEYSTORE_PASSWORD"
+                  echo "P2S_MOBILE_KEY_ALIAS=$MOBILE_KEY_ALIAS"
+                  echo "P2S_MOBILE_KEY_PASSWORD=$MOBILE_KEY_PASSWORD"
+                } >> "$GITHUB_ENV"
+              fi
+              ;;
+            wear)
+              if [ -n "$WEAR_KEYSTORE_BASE64" ]; then
+                printf '%s' "$WEAR_KEYSTORE_BASE64" | base64 --decode > wear-release.keystore
+                {
+                  echo "P2S_WEAR_KEYSTORE_PATH=$GITHUB_WORKSPACE/wear-release.keystore"
+                  echo "P2S_WEAR_KEYSTORE_PASSWORD=$WEAR_KEYSTORE_PASSWORD"
+                  echo "P2S_WEAR_KEY_ALIAS=$WEAR_KEY_ALIAS"
+                  echo "P2S_WEAR_KEY_PASSWORD=$WEAR_KEY_PASSWORD"
+                } >> "$GITHUB_ENV"
+              fi
+              ;;
+          esac
+
+      - name: Build unit and instrumentation artifacts
+        if: ${{ matrix.target == 'tests' }}
+        run: ./gradlew :${{ matrix.module }}:testPublicDebugUnitTest :${{ matrix.module }}:assemblePublicDebugAndroidTest --stacktrace
+
+      - name: Upload test outputs
+        if: ${{ matrix.target == 'tests' && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ format('{0}-public-debug-tests', matrix.module) }}
+          path: |
+            ${{ matrix.module }}/build/reports/tests/testPublicDebugUnitTest
+            ${{ matrix.module }}/build/test-results/testPublicDebugUnitTest
+            ${{ matrix.module }}/build/outputs/apk/androidTest/public/debug
+          if-no-files-found: warn
+
+      - name: Build release bundle
+        if: ${{ matrix.target == 'bundle' }}
+        run: ./gradlew :${{ matrix.module }}:bundlePublicRelease :${{ matrix.module }}:assemblePublicRelease :${{ matrix.module }}:licensePublicReleaseReport --stacktrace
+
+      - name: Upload release artifacts
+        if: ${{ matrix.target == 'bundle' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ format('{0}-public-release', matrix.module) }}
+          path: |
+            ${{ matrix.module }}/build/outputs/bundle/publicRelease/*.aab
+            ${{ matrix.module }}/build/outputs/apk/public/release/*.apk
+            ${{ matrix.module }}/build/reports/licenses/licensePublicReleaseReport.html
+            ${{ matrix.module }}/build/reports/licenses/licensePublicReleaseReport.json
+            ${{ matrix.module }}/build/reports/licenses/licensePublicReleaseReport.csv
+            ${{ matrix.module }}/build/reports/licenses/licensePublicReleaseReport.txt
+          if-no-files-found: warn

@@ -18,6 +18,7 @@ composeCompiler = "1.5.14"
 kotlinxCoroutines = "1.9.0"
 kotlinxSerialization = "1.7.1"
 datastore = "1.1.1"
+jaredsBurrowsLicense = "0.9.7"
 junitJupiter = "5.10.2"
 kotlinCsv = "1.10.0"
 
@@ -61,3 +62,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+license-report = { id = "com.jaredsburrows.license", version.ref = "jaredsBurrowsLicense" }
