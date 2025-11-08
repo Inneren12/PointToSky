@@ -1,3 +1,10 @@
+import org.gradle.api.Project
+
+fun Project.resolveConfigProperty(key: String): String? =
+    providers.gradleProperty(key)
+        .orElse(providers.environmentVariable(key))
+        .orNull
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -13,17 +20,44 @@ android {
         minSdk = libs.versions.minSdkMobile.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 1
-        versionName = "0.1.0"
+        val resolvedVersionCode = project.resolveConfigProperty("P2S_VERSION_CODE")?.toIntOrNull() ?: 1
+        val resolvedVersionName = project.resolveConfigProperty("P2S_VERSION_NAME") ?: "0.1.0"
+        versionCode = resolvedVersionCode
+        versionName = resolvedVersionName
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = project.resolveConfigProperty("P2S_MOBILE_KEYSTORE_PATH")
+            if (!keystorePath.isNullOrBlank()) {
+                storeFile = file(keystorePath)
+            }
+            storePassword = project.resolveConfigProperty("P2S_MOBILE_KEYSTORE_PASSWORD")
+            keyAlias = project.resolveConfigProperty("P2S_MOBILE_KEY_ALIAS")
+            keyPassword = project.resolveConfigProperty("P2S_MOBILE_KEY_PASSWORD")
+        }
     }
 
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
+    flavorDimensions += "distribution"
+
+    productFlavors {
+        create("internal") {
+            dimension = "distribution"
+            applicationIdSuffix = ".int"
+        }
+        create("public") {
+            dimension = "distribution"
         }
     }
 

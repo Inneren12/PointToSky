@@ -1,3 +1,10 @@
+import org.gradle.api.Project
+
+fun Project.resolveConfigProperty(key: String): String? =
+    providers.gradleProperty(key)
+        .orElse(providers.environmentVariable(key))
+        .orNull
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,56 +12,81 @@ plugins {
 }
 
 android {
-    defaultConfig { testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    namespace = "dev.pointtosky.wear"
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
-    android {
-        namespace = "dev.pointtosky.wear"
-        compileSdk = libs.versions.compileSdk.get().toInt()
+    defaultConfig {
+        applicationId = "dev.pointtosky.wear"
+        minSdk = libs.versions.minSdkWear.get().toInt()
+        targetSdk = libs.versions.targetSdk.get().toInt()
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        val resolvedVersionCode = project.resolveConfigProperty("P2S_VERSION_CODE")?.toIntOrNull() ?: 1
+        val resolvedVersionName = project.resolveConfigProperty("P2S_VERSION_NAME") ?: "0.1.0"
+        versionCode = resolvedVersionCode
+        versionName = resolvedVersionName
+    }
 
-        defaultConfig {
-            applicationId = "dev.pointtosky.wear"
-            minSdk = libs.versions.minSdkWear.get().toInt()
-            targetSdk = libs.versions.targetSdk.get().toInt()
-            versionCode = 1
-            versionName = "0.1.0"
-        }
-
-        buildTypes {
-            release {
-                isMinifyEnabled = false
-                proguardFiles(
-                    getDefaultProguardFile("proguard-android-optimize.txt"),
-                    "proguard-rules.pro"
-                )
+    signingConfigs {
+        create("release") {
+            val keystorePath = project.resolveConfigProperty("P2S_WEAR_KEYSTORE_PATH")
+            if (!keystorePath.isNullOrBlank()) {
+                storeFile = file(keystorePath)
             }
-        }
-
-        compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_17
-            targetCompatibility = JavaVersion.VERSION_17
-        }
-
-        kotlinOptions {
-            jvmTarget = libs.versions.jvmTarget.get()
-        }
-
-        buildFeatures {
-            compose = true
-            buildConfig = true
-        }
-
-        packaging {
-            resources {
-                excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            }
+            storePassword = project.resolveConfigProperty("P2S_WEAR_KEYSTORE_PASSWORD")
+            keyAlias = project.resolveConfigProperty("P2S_WEAR_KEY_ALIAS")
+            keyPassword = project.resolveConfigProperty("P2S_WEAR_KEY_PASSWORD")
         }
     }
-    // Временно исключаем старый Compose smoke-тест, чтобы не тащить стек UI тестов под Compose в этой задаче
-    tasks.withType<Test>().configureEach {
-            filter {
-                excludeTestsMatching("dev.pointtosky.wear.aim.core.DefaultAimControllerTest")
-            }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
+
+    flavorDimensions += "distribution"
+
+    productFlavors {
+        create("internal") {
+            dimension = "distribution"
+            applicationIdSuffix = ".int"
+        }
+        create("public") {
+            dimension = "distribution"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = libs.versions.jvmTarget.get()
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+// Временно исключаем старый Compose smoke-тест, чтобы не тащить стек UI тестов под Compose в этой задаче
+tasks.withType<Test>().configureEach {
+        filter {
+            excludeTestsMatching("dev.pointtosky.wear.aim.core.DefaultAimControllerTest")
+        }
 }
 
 // S7.G: временно исключаем флейковый класс тестов на AimController (ждёт перевода на виртуальное время)
