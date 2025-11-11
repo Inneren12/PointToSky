@@ -1,15 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Соответствие permission ↔ feature, не блокируем установку на устройствах без камеры -->
-    <uses-feature
-    android:name="android.hardware.camera"
-    android:required="false" />
-
     <!-- Минимально необходимая локация: COARSE достаточно для онбординга/функций приложения -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- Камера оставлена, т.к. используется в AR; если не используется — удалить -->
-    <uses-permission android:name="android.permission.CAMERA" />
 
     <application
         android:name=".PointToSkyMobileApp"
@@ -42,7 +35,7 @@
         <!-- Data Layer v1 receiver (phone side). Сужаем pathPrefix до реальных пространств путей. -->
         <service
             android:name="dev.pointtosky.mobile.datalayer.v1.DlReceiverService"
-            android:exported="true">
+            android:exported="false">
             <!-- Один фильтр на каждый путь — убираем неоднозначность -->
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
@@ -56,36 +49,6 @@
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/app" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/card" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/aim" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/app" />
-            </intent-filter>
-        </service>
-
-        <service
-            android:name="dev.pointtosky.mobile.datalayer.v1.DlReceiverService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/card" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/aim" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/app" />
-            </intent-filter>
-            <!-- DATA_CHANGED оставляй только если действительно используешь DataClient -->
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/card" />
