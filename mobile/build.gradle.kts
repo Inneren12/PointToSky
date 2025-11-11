@@ -81,6 +81,14 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // не стричь эти .so → предупреждение “Unable to strip …” уйдёт
+            keepDebugSymbols += listOf(
+                "**/libandroidx.graphics.path.so",
+                "**/libdatastore_shared_counter.so",
+                "**/libimage_processing_util_jni.so",
+                )
+        }
     }
     lint {
         // S9: варнинги не валят сборку, критичные чиним
