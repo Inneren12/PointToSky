@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.stateIn
 internal class DelegatingOrientationRepository(
     private val primary: OrientationRepository?,
     private val fallback: OrientationRepository?,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : OrientationRepository {
 
     private val activeRepository = MutableStateFlow<OrientationRepository?>(null)

@@ -1,5 +1,7 @@
 package dev.pointtosky.wear
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorManager
@@ -23,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -39,7 +42,12 @@ import androidx.wear.tooling.preview.devices.WearDevices
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
+import dev.pointtosky.core.datalayer.AimSetTargetMessage
+import dev.pointtosky.core.datalayer.AppOpenMessage
 import dev.pointtosky.core.datalayer.AppOpenScreen
+import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
+import dev.pointtosky.core.datalayer.JsonCodec
+import dev.pointtosky.core.datalayer.SensorHeadingMessage
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
 import dev.pointtosky.core.location.prefs.LocationPrefs
@@ -53,7 +61,9 @@ import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
 import dev.pointtosky.wear.crash.CrashLogRoute
 import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import dev.pointtosky.wear.datalayer.AppOpenRequest
+import dev.pointtosky.wear.datalayer.PhoneHeadingBridge
 import dev.pointtosky.wear.datalayer.WearBridge
+import dev.pointtosky.wear.datalayer.v1.DlIntents
 import dev.pointtosky.wear.identify.IdentifyRoute
 import dev.pointtosky.wear.identify.IdentifyViewModelFactory
 import dev.pointtosky.wear.identify.buildCardRouteFrom
@@ -77,20 +87,10 @@ import dev.pointtosky.wear.time.TimeDebugScreen
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import android.content.BroadcastReceiver
-import android.content.Context
-import androidx.core.content.ContextCompat
-import dev.pointtosky.wear.datalayer.v1.DlIntents
-import dev.pointtosky.core.datalayer.JsonCodec
-import dev.pointtosky.core.datalayer.AppOpenMessage
-import dev.pointtosky.core.datalayer.AimSetTargetMessage
-import dev.pointtosky.wear.datalayer.PhoneHeadingBridge
-import dev.pointtosky.core.datalayer.SensorHeadingMessage
-import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
-
 
 class MainActivity : ComponentActivity() {
     private var dlReceiver: BroadcastReceiver? = null
+
     /** Для защиты от повторной обработки того же самого интента. */
     private var lastIntentSignature: Int? = null
     private val hasMagnetometer: Boolean by lazy {
@@ -188,7 +188,10 @@ class MainActivity : ComponentActivity() {
 
                 // 2) AppOpen → мост сам разрулит, если нужно
                 runCatching { JsonCodec.decode<AppOpenMessage>(payload) }
-                    .onSuccess { WearBridge.handleAppOpenMessage(applicationContext, it); return }
+                    .onSuccess {
+                        WearBridge.handleAppOpenMessage(applicationContext, it)
+                        return
+                    }
 
                 // 3) AimSetTarget
                 runCatching { JsonCodec.decode<AimSetTargetMessage>(payload) }
@@ -196,10 +199,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         ContextCompat.registerReceiver(
-            /* context = */ this,
-            /* receiver = */ dlReceiver,
-            /* filter = */ DlIntents.filter(),
-            /* flags = */ ContextCompat.RECEIVER_NOT_EXPORTED
+            /* context = */
+            this,
+            /* receiver = */
+            dlReceiver,
+            /* filter = */
+            DlIntents.filter(),
+            /* flags = */
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
     }
 
@@ -229,15 +236,15 @@ class MainActivity : ComponentActivity() {
     private fun buildIntentSignature(intent: Intent?): Int? {
         intent ?: return null
         val sb = StringBuilder()
-            .append(intent.action ?: "")
+            .append(intent.action.orEmpty())
             .append('|')
-            .append(intent.getStringExtra(EXTRA_AIM_TARGET_KIND) ?: "")
+            .append(intent.getStringExtra(EXTRA_AIM_TARGET_KIND).orEmpty())
             .append('|')
             .append(intent.getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN))
             .append('|')
             .append(intent.getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN))
             .append('|')
-            .append(intent.getStringExtra(EXTRA_AIM_BODY) ?: "")
+            .append(intent.getStringExtra(EXTRA_AIM_BODY).orEmpty())
         return sb.toString().hashCode()
     }
 

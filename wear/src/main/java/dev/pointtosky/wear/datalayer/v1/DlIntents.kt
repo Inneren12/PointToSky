@@ -11,10 +11,9 @@ object DlIntents {
 
     fun filter(): IntentFilter = IntentFilter(ACTION_MESSAGE)
 
-    fun build(context: Context, path: String, payload: ByteArray): Intent =
-        Intent(ACTION_MESSAGE).apply {
-            setPackage(context.packageName) // только своё приложение
-            putExtra(EXTRA_PATH, path)
-            putExtra(EXTRA_PAYLOAD, payload)
-        }
+    fun build(context: Context, path: String, payload: ByteArray): Intent = Intent(ACTION_MESSAGE).apply {
+        setPackage(context.packageName) // только своё приложение
+        putExtra(EXTRA_PATH, path)
+        putExtra(EXTRA_PAYLOAD, payload)
+    }
 }

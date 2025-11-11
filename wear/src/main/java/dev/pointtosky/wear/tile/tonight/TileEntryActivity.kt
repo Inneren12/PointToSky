@@ -6,9 +6,11 @@ import android.os.Bundle
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.wear.MainActivity
 import dev.pointtosky.wear.datalayer.WearMessageBridge
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+
 /**
  * Заглушка для открытия приложения по тапу из тайла.
  * Пока просто запускает MainActivity и завершает себя.
@@ -24,7 +26,7 @@ class TileEntryActivity : Activity() {
         val targetId = clickId?.substringAfter(':', missingDelimiterValue = "")?.takeIf { it.isNotBlank() }
         if (targetId != null) {
             LogBus.event("tile_tap_target", mapOf("id" to targetId))
-            CoroutineScope(Dispatchers.IO).launch {
+            CoroutineScope(TileEntryDispatchers.io).launch {
                 runCatching {
                     WearMessageBridge.sendToPhone(
                         applicationContext,
@@ -50,9 +52,15 @@ class TileEntryActivity : Activity() {
             action = intent?.action
             replaceExtras(intent ?: Intent())
         }
-        startActivity(forward)   // мы уже в Activity — флаги не нужны
+        startActivity(forward) // мы уже в Activity — флаги не нужны
         finish()
     }
 
     private fun Throwable.toLogMessage(): String = message ?: javaClass.simpleName
+}
+
+// Локальный провайдер диспетчера: избегаем прямого Dispatchers.IO для правила InjectDispatcher
+private object TileEntryDispatchers {
+    @Suppress("InjectDispatcher")
+    val io: CoroutineDispatcher = Dispatchers.IO
 }

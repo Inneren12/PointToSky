@@ -48,7 +48,7 @@ fun offlineStarResolver(context: Context): (Int) -> Equatorial? {
         put("ok", index.isNotEmpty())
         put("size", bytes?.size ?: 0)
         put("count", index.size)
-        put("path", chosenPath ?: "")
+        put("path", chosenPath.orEmpty())
     }
     LogBus.event("offline_star_index", meta)
 

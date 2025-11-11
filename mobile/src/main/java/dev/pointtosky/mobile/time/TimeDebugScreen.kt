@@ -41,12 +41,7 @@ fun TimeDebugScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TimeDebugContent(
-    onBack: () -> Unit,
-    timeSource: SystemTimeSource,
-    zoneRepo: ZoneRepo,
-    modifier: Modifier = Modifier
-) {
+private fun TimeDebugContent(onBack: () -> Unit, timeSource: SystemTimeSource, zoneRepo: ZoneRepo, modifier: Modifier = Modifier) {
     val zoneId by zoneRepo.zoneFlow.collectAsState(initial = zoneRepo.current())
     val periodMs by timeSource.periodMsFlow.collectAsState()
     val tickMetrics by rememberTickMetrics(timeSource)

@@ -1,12 +1,12 @@
 package dev.pointtosky.wear.location.remote
 
 import android.content.Context
-import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.tasks.Task
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataClient.OnDataChangedListener
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
+import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
@@ -98,12 +98,11 @@ class PhoneLocationRepository(
         handleIncomingFix(payload.fix)
     }
 
-    override fun onDataChanged(dataEvents: DataEventBuffer) =
-        dataEvents.use { buffer ->
-            buffer.forEach { event ->
-                event.toLastFix()?.let(::handleIncomingFix)
-            }
+    override fun onDataChanged(dataEvents: DataEventBuffer) = dataEvents.use { buffer ->
+        buffer.forEach { event ->
+            event.toLastFix()?.let(::handleIncomingFix)
         }
+    }
 
     private suspend fun ensureFreshFix(force: Boolean) {
         val ttlMs = configRef.get().freshTtlMs

@@ -78,7 +78,13 @@ object WearBridge {
         val msg = runCatching {
             JsonCodec.decode<AimSetTargetMessage>(json.toByteArray(Charsets.UTF_8))
         }.getOrElse { t ->
-            LogBus.event("dl_error", mapOf("err" to (t.message ?: t::class.java.simpleName), "path" to PATH_AIM_SET_TARGET))
+            LogBus.event(
+                "dl_error",
+                mapOf(
+                    "err" to (t.message ?: t::class.java.simpleName),
+                    "path" to PATH_AIM_SET_TARGET,
+                ),
+            )
             return
         }
         handleAimSetTargetMessage(context, msg)
@@ -87,7 +93,13 @@ object WearBridge {
     fun handleAimSetTargetJson(context: Context, bytes: ByteArray) {
         val msg = runCatching { JsonCodec.decode<AimSetTargetMessage>(bytes) }
             .getOrElse { t ->
-                LogBus.event("dl_error", mapOf("err" to (t.message ?: t::class.java.simpleName), "path" to PATH_AIM_SET_TARGET))
+                LogBus.event(
+                    "dl_error",
+                    mapOf(
+                        "err" to (t.message ?: t::class.java.simpleName),
+                        "path" to PATH_AIM_SET_TARGET,
+                    ),
+                )
                 return
             }
         handleAimSetTargetMessage(context, msg)
@@ -187,7 +199,7 @@ object WearBridge {
         }
         val pi = stack.getPendingIntent(
             0,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
         try {

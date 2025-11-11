@@ -22,6 +22,7 @@ import dev.pointtosky.core.catalog.star.StarCatalog
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.ZoneRepo
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
@@ -51,11 +52,14 @@ class RealTonightProvider(
     // если null — загрузим BinaryStarCatalog из assets
     private val starCatalog: StarCatalog? = null,
     private val getLastKnownLocation: suspend () -> GeoPoint? = { null },
+    // инжектируемые диспетчеры (для тестов и без хардкода)
+    private val computation: CoroutineDispatcher = TonightDispatchers.computation,
+    private val io: CoroutineDispatcher = TonightDispatchers.io,
 ) : TonightProvider {
 
-    private val cache by lazy { TonightCacheStore(context) }
+    private val cache by lazy { TonightCacheStore(context, io) }
 
-    override suspend fun getModel(now: Instant): TonightTileModel = withContext(Dispatchers.Default) {
+    override suspend fun getModel(now: Instant): TonightTileModel = withContext(computation) {
         val zone = zoneRepo.current()
         // Сначала пробуем получить локацию — она нужна для реального гражданского сумрака
         val gp = getLastKnownLocation.invoke()
@@ -106,6 +110,16 @@ class RealTonightProvider(
         model
     }
 
+    // File-level provider for dispatchers (keeps InjectDispatcher lint happy and is testable).
+    private object TonightDispatchers {
+
+        @Suppress("InjectDispatcher")
+        val computation: CoroutineDispatcher = Dispatchers.Default
+
+        @Suppress("InjectDispatcher")
+        val io: CoroutineDispatcher = Dispatchers.IO
+    }
+
     // --- Подбор целей ---
 
     private fun pickTargets(now: Instant, start: Instant, end: Instant, gp: GeoPoint?, zone: ZoneId): TonightTileModel {
@@ -150,8 +164,8 @@ class RealTonightProvider(
 
         val all = (planets + stars)
             .sortedWith(
-                compareByDescending<Candidate> { it.kind.priority }
-                    .thenByDescending { it.score },
+                compareByDescending<Candidate> { cand -> cand.kind.priority }
+                    .thenByDescending { cand -> cand.score },
             )
         val top = all.take(3)
         val targets = top.map { cand ->
@@ -253,12 +267,7 @@ class RealTonightProvider(
 
     // --- Вспомогательные: выборка, видимость, окно ночи, форматирование ---
 
-    private fun sampleWindow(
-        start: Instant,
-        end: Instant,
-        stepMinutes: Long,
-        f: (Instant) -> Double
-    ): List<Pair<Instant, Double>> {
+    private fun sampleWindow(start: Instant, end: Instant, stepMinutes: Long, f: (Instant) -> Double): List<Pair<Instant, Double>> {
         val out = ArrayList<Pair<Instant, Double>>()
         var t = start
         val step = Duration.ofMinutes(stepMinutes)
@@ -477,10 +486,11 @@ private val Context.tonightCacheDS: DataStore<Preferences> by preferencesDataSto
 
 private class TonightCacheStore(
     private val context: Context,
+    private val io: CoroutineDispatcher,
 ) {
     private val store: DataStore<Preferences>
         get() = context.tonightCacheDS
-    suspend fun get(key: String): CacheEntry? = withContext(Dispatchers.IO) {
+    suspend fun get(key: String): CacheEntry? = withContext(io) {
         val prefs = store.data.firstOrNull() ?: return@withContext null
         val payload = prefs[stringPreferencesKey("payload_$key")] ?: return@withContext null
         val expires = prefs[longPreferencesKey("expires_$key")] ?: return@withContext null
@@ -488,13 +498,14 @@ private class TonightCacheStore(
         CacheEntry(model, expires)
     }
 
-    suspend fun put(key: String, entry: CacheEntry) = withContext(Dispatchers.IO) {
+    suspend fun put(key: String, entry: CacheEntry) = withContext(io) {
         val encoded = encodeModel(entry.model)
         store.edit { p ->
             p[stringPreferencesKey("payload_$key")] = encoded
             p[longPreferencesKey("expires_$key")] = entry.expiresAt
         }
     }
+
     private fun encodeModel(model: TonightTileModel): String {
         val b = StringBuilder()
         b.append(model.updatedAt.epochSecond).append('|')
@@ -502,7 +513,7 @@ private class TonightCacheStore(
         model.items.forEach { t ->
             b.append(b64(t.id)).append(';')
             b.append(b64(t.title)).append(';')
-            b.append(b64(t.subtitle ?: "")).append(';')
+            b.append(b64(t.subtitle.orEmpty())).append(';')
             b.append(t.icon.name).append(';')
             b.append(t.azDeg ?: Double.NaN).append(';')
             b.append(t.altDeg ?: Double.NaN).append(';')
@@ -528,10 +539,14 @@ private class TonightCacheStore(
             val subtitleRaw = b64d(fields[2])
             val subtitle = subtitleRaw.ifBlank { null }
             val icon = runCatching { TonightIcon.valueOf(fields[3]) }.getOrDefault(TonightIcon.STAR)
-            val az = fields[4].toDoubleOrNull()?.takeUnless { it.isNaN() }
-            val alt = fields[5].toDoubleOrNull()?.takeUnless { it.isNaN() }
-            val ws = fields[6].toLongOrNull()?.takeIf { it >= 0 }?.let { Instant.ofEpochSecond(it) }
-            val we = fields[7].toLongOrNull()?.takeIf { it >= 0 }?.let { Instant.ofEpochSecond(it) }
+            val az = fields[4].toDoubleOrNull()?.takeUnless { v -> v.isNaN() }
+            val alt = fields[5].toDoubleOrNull()?.takeUnless { v -> v.isNaN() }
+            val ws = fields[6].toLongOrNull()
+                ?.takeIf { secs -> secs >= 0 }
+                ?.let { secs -> Instant.ofEpochSecond(secs) }
+            val we = fields[7].toLongOrNull()
+                ?.takeIf { secs -> secs >= 0 }
+                ?.let { secs -> Instant.ofEpochSecond(secs) }
             items += TonightTarget(id, title, subtitle, icon, az, alt, ws, we)
         }
         return TonightTileModel(updatedAt, items)

@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.stateIn
 
 class PhoneHeadingOverrideRepository(
     private val delegate: OrientationRepository,
-    private val phoneHeadingBridge: PhoneHeadingBridge = PhoneHeadingBridge,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    phoneHeadingBridge: PhoneHeadingBridge = PhoneHeadingBridge,
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : OrientationRepository by delegate {
 
     private val headingFlow = phoneHeadingBridge.heading()

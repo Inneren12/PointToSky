@@ -25,11 +25,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 
 @Composable
-fun IdentifyRoute(
-    factory: IdentifyViewModelFactory,
-    onOpenCard: ((IdentifyUiState) -> Unit)?,
-    modifier: Modifier = Modifier
-) {
+fun IdentifyRoute(factory: IdentifyViewModelFactory, onOpenCard: ((IdentifyUiState) -> Unit)?, modifier: Modifier = Modifier) {
     val viewModel: IdentifyViewModel = viewModel(factory = factory)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     IdentifyScreen(

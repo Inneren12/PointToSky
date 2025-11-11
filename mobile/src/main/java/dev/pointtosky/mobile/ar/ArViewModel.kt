@@ -3,7 +3,6 @@ package dev.pointtosky.mobile.ar
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.CoroutineDispatcher
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
@@ -11,6 +10,7 @@ import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted

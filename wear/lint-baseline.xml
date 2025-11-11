@@ -1,0 +1,2475 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.7.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.7.2)" variant="all" version="8.7.2">
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.work:work-runtime-ktx than 2.9.0 is available: 2.11.0"
+        errorLine1="    implementation(&quot;androidx.work:work-runtime-ktx:2.9.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="147"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of com.google.android.gms:play-services-wearable than 18.1.0 is available: 19.0.0"
+        errorLine1="    implementation(&quot;com.google.android.gms:play-services-wearable:18.1.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="152"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of org.jetbrains.kotlinx:kotlinx-serialization-json than 1.6.3 is available: 1.9.0"
+        errorLine1="    implementation(&quot;org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="154"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of com.google.android.material:material than 1.12.0 is available: 1.13.0"
+        errorLine1="    implementation(&quot;com.google.android.material:material:1.12.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="161"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.wear.tiles:tiles than 1.3.0 is available: 1.5.0"
+        errorLine1="    implementation(&quot;androidx.wear.tiles:tiles:1.3.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="167"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.wear.tiles:tiles-material than 1.3.0 is available: 1.5.0"
+        errorLine1="    implementation(&quot;androidx.wear.tiles:tiles-material:1.3.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="168"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.wear.protolayout:protolayout-expression than 1.1.0 is available: 1.3.0"
+        errorLine1="    implementation(&quot;androidx.wear.protolayout:protolayout-expression:1.1.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="169"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of com.google.guava:guava than 32.1.2-android is available: 33.2.1-android"
+        errorLine1="    implementation(&quot;com.google.guava:guava:32.1.2-android&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="170"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.datastore:datastore-preferences than 1.1.1 is available: 1.1.7"
+        errorLine1="    implementation(&quot;androidx.datastore:datastore-preferences:1.1.1&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="173"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of org.jetbrains.kotlin:kotlin-test than 1.9.24 is available: 2.2.20"
+        errorLine1="    testImplementation(&quot;org.jetbrains.kotlin:kotlin-test:1.9.24&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="178"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.test:core than 1.5.0 is available: 1.7.0"
+        errorLine1="    testImplementation(&quot;androidx.test:core:1.5.0&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="179"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-test than 1.8.1 is available: 1.9.0"
+        errorLine1="    testImplementation(&quot;org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="180"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.test.ext:junit than 1.2.1 is available: 1.3.0"
+        errorLine1="    androidTestImplementation(&quot;androidx.test.ext:junit:1.2.1&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="188"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.test:runner than 1.6.2 is available: 1.7.0"
+        errorLine1="    androidTestImplementation(&quot;androidx.test:runner:1.6.2&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="189"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.test:rules than 1.6.1 is available: 1.7.0"
+        errorLine1="    androidTestImplementation(&quot;androidx.test:rules:1.6.1&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="190"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.test:core than 1.6.1 is available: 1.7.0"
+        errorLine1="    androidTestImplementation(&quot;androidx.test:core:1.6.1&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="191"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.wear.tiles:tiles-testing than 1.3.0 is available: 1.5.0"
+        errorLine1="    androidTestImplementation(&quot;androidx.wear.tiles:tiles-testing:1.3.0&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="194"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.test:core than 1.6.1 is available: 1.7.0"
+        errorLine1="    androidTestImplementation(&quot;androidx.test:core:1.6.1&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="196"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.compose:compose-bom than 2024.09.01 is available: 2025.11.00"
+        errorLine1="    androidTestImplementation(platform(&quot;androidx.compose:compose-bom:2024.09.01&quot;))"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="199"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.compose:compose-bom than 2024.09.01 is available: 2025.11.00"
+        errorLine1="    debugImplementation(platform(&quot;androidx.compose:compose-bom:2024.09.01&quot;))"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="201"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="ProduceStateDoesNotAssignValue"
+        message="produceState calls should assign `value` inside the producer lambda"
+        errorLine1="    return produceState("
+        errorLine2="           ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/pointtosky/wear/time/TimeDebugScreen.kt"
+            line="116"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;app_name&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;app_name&quot;>Point-to-Sky Wear&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="2"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;find_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;find_label&quot;>Найти&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="3"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;identify_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;identify_label&quot;>Что там?&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="4"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;identify_low_accuracy&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;identify_low_accuracy&quot;>Low accuracy&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="5"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensors_debug_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensors_debug_label&quot;>Датчики&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensors_debug_title&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensors_debug_title&quot;>Датчики&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="7"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensors_calibrate_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensors_calibrate_label&quot;>Калибровка&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="8"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensors_calibrate_title&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensors_calibrate_title&quot;>Калибровка&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="9"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;set_zero_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;set_zero_label&quot;>Установить ноль&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="10"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;reset_zero_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;reset_zero_label&quot;>Сбросить&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="11"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;current_azimuth_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;current_azimuth_label&quot;>Азимут: %1$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="12"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;current_azimuth_unknown_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;current_azimuth_unknown_label&quot;>Азимут: —&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="13"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;current_pitch_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;current_pitch_label&quot;>Тангаж: %1$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="14"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;current_roll_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;current_roll_label&quot;>Крен: %1$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="15"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;current_accuracy_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;current_accuracy_label&quot;>Точность: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="16"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;zero_offset_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;zero_offset_label&quot;>Смещение нуля: %1$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="17"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;screen_rotation_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;screen_rotation_label&quot;>Поворот экрана&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="18"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;screen_rotation_option&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;screen_rotation_option&quot;>Поворот %1$d°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="19"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensors_calibrate_hint&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensors_calibrate_hint&quot;>Держите часы в нужном направлении и нажмите «Установить ноль».&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="20"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;value_not_available&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;value_not_available&quot;>—&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="21"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;orientation_accuracy_unreliable&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;orientation_accuracy_unreliable&quot;>Ненадёжно&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="22"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;orientation_accuracy_low&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;orientation_accuracy_low&quot;>Низкая&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="23"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;orientation_accuracy_medium&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;orientation_accuracy_medium&quot;>Средняя&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="24"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;orientation_accuracy_high&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;orientation_accuracy_high&quot;>Высокая&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="25"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;current_fps_prefix&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;current_fps_prefix&quot;>FPS: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="26"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;current_fps_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;current_fps_label&quot;>%1$.1f&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="27"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;current_source_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;current_source_label&quot;>Источник: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="28"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;source_rotation_vector&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;source_rotation_vector&quot;>Rotation Vector&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="29"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;source_accel_mag&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;source_accel_mag&quot;>Accel+Mag&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="30"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;source_phone&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;source_phone&quot;>Phone&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="31"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;accuracy_hint_figure_eight&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;accuracy_hint_figure_eight&quot;>Сделайте восьмёрку для калибровки магнитометра.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="32"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;frame_trace_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;frame_trace_label&quot;>Frame trace&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="33"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;frame_trace_off&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;frame_trace_off&quot;>OFF&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="34"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;frame_trace_summary&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;frame_trace_summary&quot;>1 Hz summary&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="35"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;frame_trace_full&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;frame_trace_full&quot;>15 Hz full&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="36"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;writer_stats_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;writer_stats_label&quot;>Writer queued: %1$d dropped: %2$d&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="37"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensor_status_active&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensor_status_active&quot;>Сенсор активен&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="38"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensor_status_inactive&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensor_status_inactive&quot;>Сенсор выключен&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="39"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensor_status_icon_active&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensor_status_icon_active&quot;>Иконка активного сенсора&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="40"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;sensor_status_icon_inactive&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;sensor_status_icon_inactive&quot;>Иконка неактивного сенсора&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="41"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_settings&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_settings&quot;>Локация&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="42"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_title&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_title&quot;>Настройка локации&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="43"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_description&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_description&quot;>Локация нужна для расчёта видимой части неба.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="44"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_request_permission&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_request_permission&quot;>Разрешить локацию&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="45"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_open_settings&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_open_settings&quot;>Открыть настройки&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="46"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_permission_granted&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_permission_granted&quot;>Разрешение на геолокацию уже выдано.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="47"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_manual_toggle&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_manual_toggle&quot;>Ввести координаты вручную&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="48"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_manual_hint&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_manual_hint&quot;>Широта и долгота в десятичных градусах, например 55.7558 / 37.6176&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="49"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_lat_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_lat_label&quot;>Широта&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="50"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_lat_hint&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_lat_hint&quot;>Например: 55.7558&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="51"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_lat_error_format&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_lat_error_format&quot;>Введите широту в формате десятичных градусов.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="52"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_lat_error_range&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_lat_error_range&quot;>Широта должна быть в диапазоне от -90 до 90.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="53"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_lon_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_lon_label&quot;>Долгота&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="54"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_lon_hint&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_lon_hint&quot;>Например: 37.6176&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="55"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_lon_error_format&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_lon_error_format&quot;>Введите долготу в формате десятичных градусов.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="56"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_lon_error_range&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_lon_error_range&quot;>Долгота должна быть в диапазоне от -180 до 180.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="57"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_save&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_save&quot;>Сохранить координаты&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="58"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_saved_toast&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_saved_toast&quot;>Координаты сохранены&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="59"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_use_phone_fallback&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;location_setup_use_phone_fallback&quot;>Использовать локацию телефона&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="60"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_phone_source_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;location_phone_source_label&quot;>Источник: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="61"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_phone_source_phone&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;location_phone_source_phone&quot;>PHONE&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="62"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_phone_source_unknown&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;location_phone_source_unknown&quot;>—&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="63"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;time_debug_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;time_debug_label&quot;>Время&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="65"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;time_debug_toggle&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;time_debug_toggle&quot;>1 Гц / 0.2 Гц&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="66"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_button&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_button&quot;>Crash logs&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="67"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_title&quot;>Crash logs&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="68"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_instruction&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_instruction&quot;>Для ANR/Crash смотри Play Console → Play Vitals. Здесь — локальные JSONL логи.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="69"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_message_dismiss&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_message_dismiss&quot;>Скрыть сообщение&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="70"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_zip_path&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_zip_path&quot;>ZIP: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="71"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_last_crash&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_last_crash&quot;>Последний краш&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="72"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_last_crash_time&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_last_crash_time&quot;>Время: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="73"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_last_crash_thread&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_last_crash_thread&quot;>Поток: %1$s (#%2$d)&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="74"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_last_crash_type&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_last_crash_type&quot;>Тип: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="75"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_last_crash_message&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_last_crash_message&quot;>Сообщение: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="76"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_stacktrace_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_stacktrace_label&quot;>Стек:&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="77"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_empty&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_empty&quot;>Краши не зафиксированы.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="78"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_create_zip&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_create_zip&quot;>Создать ZIP&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="79"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_clear&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_clear&quot;>Очистить&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="80"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_back&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_back&quot;>Назад&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="81"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_zip_ready&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_zip_ready&quot;>ZIP сохранён: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="82"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_zip_unavailable&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_zip_unavailable&quot;>Нет логов для экспорта.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="83"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_cleared&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_cleared&quot;>Логи очищены.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="84"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;crash_logs_operation_failed&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;crash_logs_operation_failed&quot;>Не удалось выполнить операцию.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="85"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_label&quot;>Catalog Debug&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="86"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_title&quot;>Catalog Debug&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="87"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_probe_header&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_probe_header&quot;>Пробный запрос&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="88"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_probe_ra&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_probe_ra&quot;>RA (°)&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="89"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_probe_dec&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_probe_dec&quot;>Dec (°)&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="90"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_probe_radius&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_probe_radius&quot;>Радиус (°)&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="91"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_probe_mag&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_probe_mag&quot;>Предел звёздн. величины&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="92"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_probe_action&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_probe_action&quot;>Найти&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="93"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_probe_results_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_probe_results_title&quot;>Результаты&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="94"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_probe_timestamp&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_probe_timestamp&quot;>Обновлено: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="95"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_self_test_action&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_self_test_action&quot;>Self-test&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="96"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_self_test_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_self_test_title&quot;>Диагностика&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="97"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_back&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_back&quot;>Назад&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="98"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;time_debug_back&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;time_debug_back&quot;>Назад&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="99"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_label&quot;>Astro Debug&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="100"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_title&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_title&quot;>Astro Debug&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="101"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_lst_degrees&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_lst_degrees&quot;>LST: %1$.2f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="102"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_lst_unknown&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_lst_unknown&quot;>LST: —&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="103"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_lst_time&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_lst_time&quot;>LST (часы): %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="104"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_value_unknown&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_value_unknown&quot;>—&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="105"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_horizontal&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_horizontal&quot;>Az/Alt: %1$.1f° / %2$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="106"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_equatorial&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_equatorial&quot;>RA/Dec: %1$.1f° / %2$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="107"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_best_match_object&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_best_match_object&quot;>Лучшее совпадение: %1$s (m=%2$s, созвездие=%3$s)&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="108"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_best_match_constellation&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_best_match_constellation&quot;>Созвездие: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="109"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_best_match_unknown&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_best_match_unknown&quot;>Лучшее совпадение: —&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="110"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_best_match_unknown_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_best_match_unknown_label&quot;>Без имени&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="111"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_constellation_unknown&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_constellation_unknown&quot;>—&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="112"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_target_summary&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_target_summary&quot;>Цель: %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="113"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_target_sun&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_target_sun&quot;>Солнце&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="114"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_target_moon&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_target_moon&quot;>Луна&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="115"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_target_jupiter&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_target_jupiter&quot;>Юпитер&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="116"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_target_saturn&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_target_saturn&quot;>Сатурн&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="117"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_aim_error&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_aim_error&quot;>Δaz=%1$.1f° Δalt=%2$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="118"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;astro_debug_aim_error_unknown&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;astro_debug_aim_error_unknown&quot;>Δaz/Δalt: —&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="119"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_lock_captured&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_lock_captured&quot;>Target locked&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="121"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_confidence&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_confidence&quot;>Confidence %1$d%%&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="122"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_right&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_right&quot;>right&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="123"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_left&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_left&quot;>left&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="124"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_up&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_up&quot;>up&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="125"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_down&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_down&quot;>down&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="126"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_aim_arrow&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_aim_arrow&quot;>Turn %1$s. ΔAz %2$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="127"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_alt_scale&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_alt_scale&quot;>Move %1$s. ΔAlt %2$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="128"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;a11y_open_card&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;a11y_open_card&quot;>Open card&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="129"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tonight_targets_loading&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tonight_targets_loading&quot;>Loading…&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="131"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tonight_targets_empty&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tonight_targets_empty&quot;>No targets available&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="132"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;settings_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;settings_label&quot;>Settings&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="137"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;settings_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;settings_title&quot;>Settings&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="138"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;settings_back&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;settings_back&quot;>Back&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="139"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;aim_az_tol_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;aim_az_tol_label&quot;>Az tolerance: %1$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="140"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;aim_alt_tol_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;aim_alt_tol_label&quot;>Alt tolerance: %1$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="141"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;aim_hold_ms_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;aim_hold_ms_label&quot;>Hold to lock: %1$d ms&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="142"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;aim_haptic_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;aim_haptic_label&quot;>Haptic&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="143"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;identify_radius_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;identify_radius_label&quot;>Identify radius: %1$.1f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="144"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;identify_mag_limit_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;identify_mag_limit_label&quot;>Mag limit: %1$.1f&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="145"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;settings_tile_mirroring_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;settings_tile_mirroring_title&quot;>Mirroring to phone&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="147"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;settings_tile_mirroring_desc&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;settings_tile_mirroring_desc&quot;>Send Tonight tile preview to phone&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="148"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_section_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_section_title&quot;>Tile&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="150"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_mag_limit_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_mag_limit_label&quot;>Stars: mag ≤ %1$.1f&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="151"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_min_alt_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_min_alt_label&quot;>Min altitude: %1$.0f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="152"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_max_items_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_max_items_label&quot;>Max items: %1$d&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="153"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_prefer_planets_label&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_prefer_planets_label&quot;>Prefer planets&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="154"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_force_refresh&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_force_refresh&quot;>Force refresh&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="155"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_debug_last_generation&quot; is not translated in &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_debug_last_generation&quot;>Last generation: %1$s, %2$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="156"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_debug_last_generation_unknown&quot; is not translated in &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_debug_last_generation_unknown&quot;>Last generation: —&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="157"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;tile_debug_target_unknown&quot; is not translated in &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;tile_debug_target_unknown&quot;>—&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="158"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;onboarding_title&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;onboarding_title&quot;>Безопасность&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="159"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;onboarding_description&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;onboarding_description&quot;>Point-to-Sky показывает астрономические подсказки, но не заменяет приборы навигации.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="160"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;onboarding_checkbox&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;onboarding_checkbox&quot;>Я понимаю, что приложение не для навигации.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="161"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;onboarding_location_label&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;onboarding_location_label&quot;>Локация&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="162"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;onboarding_location_granted&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;onboarding_location_granted&quot;>Разрешение на локацию уже выдано.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="163"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;onboarding_location_button&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;onboarding_location_button&quot;>Разрешить локацию во время использования&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="164"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;onboarding_continue&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;onboarding_continue&quot;>Продолжить&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="165"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="PluralsCandidate"
+        message="Formatting %d followed by words (&quot;dropped&quot;): This should probably be a plural rather than a string"
+        errorLine1="    &lt;string name=&quot;writer_stats_label&quot;>Writer queued: %1$d dropped: %2$d&lt;/string>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values-en/strings.xml"
+            line="36"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="PluralsCandidate"
+        message="Formatting %d followed by words (&quot;dropped&quot;): This should probably be a plural rather than a string"
+        errorLine1="    &lt;string name=&quot;writer_stats_label&quot;>Writer queued: %1$d dropped: %2$d&lt;/string>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="37"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 30. Merge all the resources in this folder into `mipmap-anydpi`.">
+        <location
+            file="src/main/res/mipmap-anydpi-v26"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; SDK_INT is always >= 29"
+        errorLine1="        &lt;item name=&quot;android:forceDarkAllowed&quot; tools:targetApi=&quot;q&quot;>false&lt;/item>"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/themes.xml"
+            line="9"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="WearableBindListener"
+        message="The `com.google.android.gms.wearable.BIND_LISTENER` action is deprecated"
+        errorLine1="                &lt;action android:name=&quot;com.google.android.gms.wearable.BIND_LISTENER&quot; />"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="80"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.xml.backup_rules` appears to be unused"
+        errorLine1="&lt;full-backup-content>"
+        errorLine2="^">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.mipmap.ic_launcher_round` appears to be unused"
+        errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
+        errorLine2="^">
+        <location
+            file="src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.identify_low_accuracy` appears to be unused"
+        errorLine1="    &lt;string name=&quot;identify_low_accuracy&quot;>Low accuracy&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="5"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.a11y_open_card` appears to be unused"
+        errorLine1="    &lt;string name=&quot;a11y_open_card&quot;>Open card&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="129"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.settings_tile_mirroring_desc` appears to be unused"
+        errorLine1="    &lt;string name=&quot;settings_tile_mirroring_desc&quot;>Send Tonight tile preview to phone&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="148"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tile_section_title` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tile_section_title&quot;>Tile&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="150"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tile_mag_limit_label` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tile_mag_limit_label&quot;>Stars: mag ≤ %1$.1f&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="151"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tile_min_alt_label` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tile_min_alt_label&quot;>Min altitude: %1$.0f°&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="152"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tile_max_items_label` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tile_max_items_label&quot;>Max items: %1$d&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="153"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tile_prefer_planets_label` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tile_prefer_planets_label&quot;>Prefer planets&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="154"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tile_force_refresh` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tile_force_refresh&quot;>Force refresh&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="155"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.compose.material3:material3&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="133"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.compose.ui:ui-text&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="134"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.work:work-runtime-ktx:2.9.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="147"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead (com.google.android.gms:play-services-wearable is already available as `play-services-wearable`, but using version 18.2.0 instead)"
+        errorLine1="    implementation(&quot;com.google.android.gms:play-services-wearable:18.1.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="152"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead (org.jetbrains.kotlinx:kotlinx-serialization-json is already available as `kotlinx-serialization-json`, but using version 1.7.1 instead)"
+        errorLine1="    implementation(&quot;org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="154"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    detektPlugins(&quot;io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6&quot;)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="155"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.wear:wear-tooling-preview:1.0.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="159"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;com.google.android.material:material:1.12.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="161"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.compose.ui:ui&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="163"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.compose.runtime:runtime&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="164"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.wear.tiles:tiles:1.3.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="167"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.wear.tiles:tiles-material:1.3.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="168"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;androidx.wear.protolayout:protolayout-expression:1.1.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="169"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    implementation(&quot;com.google.guava:guava:32.1.2-android&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="170"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use the existing version catalog reference (`libs.androidx.datastore.preferences`) instead"
+        errorLine1="    implementation(&quot;androidx.datastore:datastore-preferences:1.1.1&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="173"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    testImplementation(&quot;junit:junit:4.13.2&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="177"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    testImplementation(&quot;org.jetbrains.kotlin:kotlin-test:1.9.24&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="178"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    testImplementation(&quot;androidx.test:core:1.5.0&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="179"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead (org.jetbrains.kotlinx:kotlinx-coroutines-test is already available as `kotlinx-coroutines-test`, but using version 1.9.0 instead)"
+        errorLine1="    testImplementation(&quot;org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="180"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;com.google.truth:truth:1.4.4&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="181"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    testImplementation(&quot;org.robolectric:robolectric:4.12.2&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="184"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    testImplementation(&quot;com.google.truth:truth:1.4.4&quot;)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="185"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;androidx.test.ext:junit:1.2.1&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="188"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;androidx.test:runner:1.6.2&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="189"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;androidx.test:rules:1.6.1&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="190"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;androidx.test:core:1.6.1&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="191"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;androidx.wear.tiles:tiles-testing:1.3.0&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="194"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;androidx.test:core:1.6.1&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="196"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead (androidx.compose:compose-bom is already available as `compose-bom`, but using version 2024.09.02 instead)"
+        errorLine1="    androidTestImplementation(platform(&quot;androidx.compose:compose-bom:2024.09.01&quot;))"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="199"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;androidx.compose.ui:ui-test-junit4&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="200"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead (androidx.compose:compose-bom is already available as `compose-bom`, but using version 2024.09.02 instead)"
+        errorLine1="    debugImplementation(platform(&quot;androidx.compose:compose-bom:2024.09.01&quot;))"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="201"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    debugImplementation(&quot;androidx.compose.ui:ui-test-manifest&quot;)"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="202"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UseTomlInstead"
+        message="Use version catalog instead"
+        errorLine1="    androidTestImplementation(&quot;junit:junit:4.13.2&quot;)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="205"
+            column="31"/>
+    </issue>
+
+</issues>

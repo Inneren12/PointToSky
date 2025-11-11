@@ -24,7 +24,7 @@ class HapticPolicy(private val context: Context) {
             HapticEvent.ENTER -> oneShot(vibrator, 60)
             HapticEvent.LOCK -> tripleWave(vibrator)
             HapticEvent.LOST -> oneShot(vibrator, 130)
-             }
+        }
     }
 
     private fun oneShot(vibrator: Vibrator, millis: Long) {

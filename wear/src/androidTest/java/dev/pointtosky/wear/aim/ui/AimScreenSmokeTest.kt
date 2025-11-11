@@ -32,11 +32,11 @@ class AimScreenSmokeTest {
                         confidence = 0.7f,
                     ),
                 )
-            override fun setTarget(target: AimTarget) {}
-            override fun setTolerance(t: dev.pointtosky.wear.aim.core.AimTolerance) {}
-            override fun setHoldToLockMs(ms: Long) {}
-            override fun start() {}
-            override fun stop() {}
+            override fun setTarget(target: AimTarget) = Unit
+            override fun setTolerance(t: dev.pointtosky.wear.aim.core.AimTolerance) = Unit
+            override fun setHoldToLockMs(ms: Long) = Unit
+            override fun start() = Unit
+            override fun stop() = Unit
         }
 
         compose.setContent {

@@ -225,7 +225,7 @@ licenseReport {
 // Select flavor via -Pptswear.flavor=internal|public (default: internal)
 run {
     val flavorProp = project.resolveConfigProperty("ptswear.flavor")?.lowercase() ?: "internal"
-    val Flavor = when (flavorProp) {
+    val flavor = when (flavorProp) {
         "internal" -> "Internal"
         "public" -> "Public"
         else -> error("ptswear.flavor must be 'internal' or 'public' (got '$flavorProp')")
@@ -236,7 +236,7 @@ run {
         dependsOn(target)
     }
     // не используем имена типа assembleDebug/compileDebugSources — это имена AGP
-    alias("ptswearCompileDebug", "compile${Flavor}DebugSources")
-    alias("ptswearAssembleDebug", "assemble${Flavor}Debug")
-    alias("ptswearInstallDebug", "install${Flavor}Debug")
+    alias("ptswearCompileDebug", "compile${flavor}DebugSources")
+    alias("ptswearAssembleDebug", "assemble${flavor}Debug")
+    alias("ptswearInstallDebug", "install${flavor}Debug")
 }

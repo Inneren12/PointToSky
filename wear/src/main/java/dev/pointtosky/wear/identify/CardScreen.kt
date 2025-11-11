@@ -144,13 +144,7 @@ private fun starDetails(mag: String?, ra: String?, dec: String?, point: GeoPoint
     }
 }
 
-private fun bodyDetails(
-    type: String,
-    body: String?,
-    point: GeoPoint?,
-    ephemeris: SimpleEphemerisComputer,
-    instant: Instant
-): String {
+private fun bodyDetails(type: String, body: String?, point: GeoPoint?, ephemeris: SimpleEphemerisComputer, instant: Instant): String {
     val bodyEnum = runCatching { Body.valueOf(body ?: "MOON") }.getOrNull() ?: Body.MOON
     return if (point != null) {
         val eq = ephemeris.compute(bodyEnum, instant).eq

@@ -10,7 +10,30 @@ data class OrientationFrame(
     val forward: FloatArray,
     val accuracy: OrientationAccuracy,
     val rotationMatrix: FloatArray,
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is OrientationFrame) return false
+        return timestampNanos == other.timestampNanos &&
+                azimuthDeg.toBits() == other.azimuthDeg.toBits() &&
+                pitchDeg.toBits() == other.pitchDeg.toBits() &&
+                rollDeg.toBits() == other.rollDeg.toBits() &&
+                forward.contentEquals(other.forward) &&
+                accuracy == other.accuracy &&
+                rotationMatrix.contentEquals(other.rotationMatrix)
+    }
+
+    override fun hashCode(): Int {
+        var result = timestampNanos.hashCode()
+        result = 31 * result + azimuthDeg.toBits()
+        result = 31 * result + pitchDeg.toBits()
+        result = 31 * result + rollDeg.toBits()
+        result = 31 * result + forward.contentHashCode()
+        result = 31 * result + accuracy.hashCode()
+        result = 31 * result + rotationMatrix.contentHashCode()
+        return result
+    }
+}
 
 object OrientationFrameDefaults {
     val EMPTY = OrientationFrame(

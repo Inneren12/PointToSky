@@ -9,9 +9,10 @@ import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.TimeSource
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +49,8 @@ class DefaultAimController(
     private val raDecToAltAz: (Equatorial, Double, Double) -> Horizontal,
     /** Оффлайн‑резолвер звезды по id (если eq не передали). */
     private val starResolver: ((Int) -> Equatorial?)? = null,
+    /** Диспетчер для вычислений/сбора потоков (инжектируется для тестов). */
+    private val dispatcher: CoroutineDispatcher = AimDispatchers.computation,
 ) : AimController {
     private val _state = MutableStateFlow(
         AimState(
@@ -103,7 +106,7 @@ class DefaultAimController(
                     tag = "Aim",
                     msg = "aim_target_changed",
                     payload = mapOf("target" to "EQUATORIAL", "raDeg" to target.eq.raDeg, "decDeg" to target.eq.decDeg),
-                    )
+                )
             }
         }
     }
@@ -121,7 +124,7 @@ class DefaultAimController(
         // aim_start
         LogBus.d(tag = "Aim", msg = "aim_start", payload = emptyMap())
 
-        scope = CoroutineScope(Dispatchers.Default + Job()).also { sc ->
+        scope = CoroutineScope(dispatcher + SupervisorJob()).also { sc ->
             // поток локации (редко)
             sc.launch {
                 lastFix = location.getLastKnown()
@@ -212,11 +215,10 @@ class DefaultAimController(
     }
 
     // --- core helpers kept in class (логическая часть) ---
-    private fun toHorizontal(frame: OrientationFrame): Horizontal =
-        Horizontal(
-            azDeg = wrapDeg0To360(frame.azimuthDeg.toDouble()),
-            altDeg = clamp(frame.pitchDeg.toDouble(), -90.0, 90.0),
-        )
+    private fun toHorizontal(frame: OrientationFrame): Horizontal = Horizontal(
+        azDeg = wrapDeg0To360(frame.azimuthDeg.toDouble()),
+        altDeg = clamp(frame.pitchDeg.toDouble(), -90.0, 90.0),
+    )
 
     private fun computeTargetHorizontal(now: Instant, fix: LocationFix?): Horizontal? {
         val lat = fix?.point?.latDeg ?: 0.0
@@ -308,16 +310,20 @@ private fun normalizeAzimuthDelta(delta: Double): Double {
     return d
 }
 
-private fun julianDay(instant: Instant): Double =
-    // JD from Unix time: JD = (ms/86400000) + 2440587.5
+private fun julianDay(instant: Instant): Double = // JD from Unix time: JD = (ms/86400000) + 2440587.5
     instant.toEpochMilli() / 86_400_000.0 + 2440587.5
 
 private fun gmstDeg(jd: Double): Double {
     val t = (jd - 2451545.0) / 36525.0
     val theta = 280.46061837 + 360.98564736629 * (jd - 2451545.0) +
-            0.000387933 * t * t - (t * t * t) / 38710000.0
+        0.000387933 * t * t - (t * t * t) / 38710000.0
     return wrapDeg0To360(theta)
 }
 
-private fun lstDeg(instant: Instant, lonDeg: Double): Double =
-    wrapDeg0To360(gmstDeg(julianDay(instant)) + lonDeg)
+private fun lstDeg(instant: Instant, lonDeg: Double): Double = wrapDeg0To360(gmstDeg(julianDay(instant)) + lonDeg)
+
+// Локальный провайдер дефолтного диспетчера с подавлением линта.
+private object AimDispatchers {
+    @Suppress("InjectDispatcher")
+    val computation: CoroutineDispatcher = Dispatchers.Default
+}

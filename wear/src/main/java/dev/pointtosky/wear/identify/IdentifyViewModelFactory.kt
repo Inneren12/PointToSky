@@ -34,6 +34,7 @@ class IdentifyViewModelFactory(
     }
 }
 
+@Suppress("unused")
 fun NavGraphBuilder.identifyDestination(factory: IdentifyViewModelFactory, onOpenCard: ((IdentifyUiState) -> Unit)?) {
     composable("identify") {
         IdentifyRoute(factory = factory, onOpenCard = onOpenCard)
@@ -66,7 +67,7 @@ fun buildCardRouteFrom(state: IdentifyUiState): String {
             "$base?type=${state.type.name}&body=$body"
         }
         IdentifyType.CONST -> {
-            val iau = Uri.encode(state.constellationIau ?: "")
+            val iau = Uri.encode(state.constellationIau.orEmpty())
             "$base?type=CONST&iau=$iau"
         }
     }

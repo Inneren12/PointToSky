@@ -31,7 +31,7 @@ class TonightTileServiceRenderTest {
         val res = service.callOnResourcesRequest(req).get()
         // Версия ресурсов должна быть та, что задаёт сервис (RES_VER)
         // Smoke: версия ресурсов есть (конкретное значение может меняться)
-        assertTrue("Empty resources version", !res.version.isNullOrEmpty())
+        assertTrue("Empty resources version", res.version.isNotEmpty())
         // println("Resources version = ${res.version}")
     }
 
@@ -52,7 +52,7 @@ class TonightTileServiceRenderTest {
 
         val tile = service.callOnTileRequest(req).get()
         // Smoke: версия ресурсов есть
-        assertTrue("Empty tile resourcesVersion", !tile.resourcesVersion.isNullOrEmpty())
+        assertTrue("Empty tile resourcesVersion", tile.resourcesVersion.isNotEmpty())
         val timeline = tile.timeline
         assertNotNull(timeline)
         assertNotNull(timeline!!.timelineEntries.firstOrNull()?.layout)

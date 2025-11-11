@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -88,12 +89,7 @@ fun SkyMapRoute(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SkyMapScreen(
-    state: SkyMapState,
-    onBack: () -> Unit,
-    onOpenCard: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun SkyMapScreen(state: SkyMapState, onBack: () -> Unit, onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
     val colorScheme = MaterialTheme.colorScheme
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -134,7 +130,7 @@ private fun SkyMapScreen(
 private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    var scale by rememberSaveable { mutableStateOf(1f) }
+    var scale by rememberSaveable { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var selectedId by rememberSaveable { mutableStateOf<Int?>(null) }
 
@@ -303,12 +299,7 @@ private fun DrawScope.drawAltitudeGrid(scale: Float, offset: Offset, color: Colo
     }
 }
 
-private fun DrawScope.drawConstellations(
-    constellations: List<ConstellationProjection>,
-    scale: Float,
-    offset: Offset,
-    color: Color
-) {
+private fun DrawScope.drawConstellations(constellations: List<ConstellationProjection>, scale: Float, offset: Offset, color: Color) {
     val path = Path()
     val stroke = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
     constellations.forEach { constellation ->
@@ -372,10 +363,6 @@ private fun projectToCanvas(horizontal: Horizontal, size: IntSize, scale: Float,
     val center = Offset(size.width / 2f, size.height / 2f)
     return center + Offset(x, y)
 }
-
-private fun Offset.getDistance(): Float = kotlin.math.sqrt(x * x + y * y)
-
-private fun Offset.getDistanceSquared(): Float = x * x + y * y
 
 private fun formatCoordinate(value: Double, isLat: Boolean): String {
     val hemi = if (isLat) {

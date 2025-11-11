@@ -168,6 +168,7 @@ fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Un
                     color = Color.White,
                 )
             }
+
             is ArUiState.Ready -> {
                 val overlay = remember(state, rotationFrame, overlaySize) {
                     if (rotationFrame != null && overlaySize != IntSize.Zero) {
@@ -266,12 +267,7 @@ private fun Reticle(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun InfoPanel(
-    overlay: OverlayData,
-    targetLabel: String,
-    onSetTarget: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: () -> Unit, modifier: Modifier = Modifier) {
     val locale = Locale.getDefault()
     Column(
         modifier = modifier

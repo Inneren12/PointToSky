@@ -2,16 +2,15 @@ package dev.pointtosky.core.time
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
-import kotlinx.coroutines.channels.TickerMode
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.channels.ticker
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import java.time.Instant
 
 interface TimeSource {
@@ -42,21 +41,14 @@ class SystemTimeSource(
     @OptIn(ObsoleteCoroutinesApi::class, ExperimentalCoroutinesApi::class)
     override val ticks: Flow<Instant> = periodMsState
         .flatMapLatest { period ->
-            callbackFlow {
-                trySend(now())
-                val ticker = ticker(
-                    delayMillis = period,
-                    initialDelayMillis = period,
-                    mode = TickerMode.FIXED_PERIOD,
-                )
-                val job = launch {
-                    for (ignored in ticker) {
-                        trySend(now())
-                    }
-                }
-                awaitClose {
-                    ticker.cancel()
-                    job.cancel()
+            flow {
+                // сразу отдать первый тик (как у тебя было)
+                emit(now())
+
+                // затем тикаем каждые period мс, пока активен scope
+                while (currentCoroutineContext().isActive) {
+                    delay(period)
+                    emit(now())
                 }
             }
         }

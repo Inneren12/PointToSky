@@ -159,8 +159,8 @@ class IdentifyViewModel(
         val body = nearestBody(equatorial, instant)
 
         return when (pickWinner(star, body)) {
-            Winner.STAR -> stateForStar(star!!, lowAccuracy)
-            Winner.BODY -> stateForBody(body!!, lowAccuracy)
+            Winner.STAR -> star?.let { stateForStar(it, lowAccuracy) } ?: stateForConst(equatorial, lowAccuracy)
+            Winner.BODY -> body?.let { stateForBody(it, lowAccuracy) } ?: stateForConst(equatorial, lowAccuracy)
             Winner.CONST -> stateForConst(equatorial, lowAccuracy)
         }
     }
@@ -273,7 +273,14 @@ class IdentifyViewModel(
             IdentifyType.MOON -> "MOON"
             IdentifyType.CONST -> "CONST"
         }
-        val idOrName = objectId ?: body?.name ?: constellationIau ?: title
+        val idOrName: String? = when (type) {
+            IdentifyType.STAR -> objectId // для звезды ждём ID
+            IdentifyType.PLANET -> body?.name // планеты/луна — имя тела
+            IdentifyType.MOON -> body?.name
+            IdentifyType.CONST ->
+                constellationIau
+                    ?: title.takeUnless { it.isBlank() || it == "—" } // пропустить заглушку
+        }
         if (idOrName == null) return null
         val payload = mutableMapOf<String, Any?>(
             "id" to idOrName,

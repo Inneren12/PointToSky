@@ -1,5 +1,6 @@
 package dev.pointtosky.wear.datalayer
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,7 +17,7 @@ import kotlinx.coroutines.launch
 object PhoneHeadingBridge {
     private const val STALE_AFTER_MS: Long = 2_000L
 
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + PhoneHeadingDispatchers.default)
     private val headingState = MutableStateFlow<PhoneHeading?>(null)
 
     private var expiryJob: Job? = null
@@ -48,3 +49,8 @@ data class PhoneHeading(
     val azimuthDeg: Float,
     val timestampMs: Long,
 )
+
+private object PhoneHeadingDispatchers {
+    @Suppress("InjectDispatcher")
+    val default: CoroutineDispatcher = Dispatchers.Default
+}

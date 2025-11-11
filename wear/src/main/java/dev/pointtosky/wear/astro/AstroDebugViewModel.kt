@@ -1,5 +1,6 @@
 package dev.pointtosky.wear.astro
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.astro.aim.AimError
@@ -19,15 +20,19 @@ import dev.pointtosky.core.astro.units.radToDeg
 import dev.pointtosky.core.astro.units.wrapDeg0To360
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.core.location.model.LocationFix
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
+import dev.pointtosky.wear.sensors.util.FrameRateAverager
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -46,20 +51,40 @@ class AstroDebugViewModel(
     private val ephemerisComputer: SimpleEphemerisComputer,
     private val identifySolver: IdentifySolver,
     private val constellations: ConstellationBoundaries,
-    private val timeSource: SystemTimeSource = SystemTimeSource(periodMs = 200L),
+    timeSource: SystemTimeSource = SystemTimeSource(periodMs = 200L),
 ) : ViewModel() {
-
+    private val fpsAverager = FrameRateAverager()
+    private var lastFpsLogAt = 0L
+    private val _fps = MutableStateFlow<Float?>(null)
+    val fps = _fps.asStateFlow()
     private val locationState = MutableStateFlow<LocationFix?>(null)
     private val targetState = MutableStateFlow(Body.SUN)
 
     @OptIn(FlowPreview::class)
-    private val orientationState: StateFlow<OrientationFrame> = orientationRepository.frames
+    private val orientationState = orientationRepository.frames
+        // Считаем FPS на каждом входящем кадре, сохраняем в стейт и логируем не чаще 1/с
+        .onEach {
+            val fpsNow = fpsAverager.add(System.nanoTime())
+            if (fpsNow != null) {
+                _fps.value = fpsNow
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastFpsLogAt >= 1000L) {
+                    LogBus.event("astro_fps", mapOf("fps" to String.format(Locale.US, "%.1f", fpsNow)))
+                    lastFpsLogAt = now
+                }
+            }
+        }
         .sample(ORIENTATION_SAMPLE_MS)
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
             OrientationFrameDefaults.EMPTY,
         )
+
+    override fun onCleared() {
+        fpsAverager.reset() // чтобы метод был «реально использован»
+        super.onCleared()
+    }
 
     init {
         viewModelScope.launch {
@@ -79,8 +104,9 @@ class AstroDebugViewModel(
         locationState,
         timeSource.ticks,
         targetState,
-    ) { frame, locationFix, instant, target ->
-        computeState(frame, locationFix, instant, target)
+        fps,
+    ) { frame, locationFix, instant, target, fpsValue ->
+        computeState(frame, locationFix, instant, target, fpsValue)
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
@@ -95,7 +121,8 @@ class AstroDebugViewModel(
         frame: OrientationFrame,
         locationFix: LocationFix?,
         instant: Instant,
-        target: Body
+        target: Body,
+        fpsValue: Float?,
     ): AstroDebugUiState {
         val horizontal = frame.toHorizontal()
         val locationPoint = locationFix?.point
@@ -108,6 +135,7 @@ class AstroDebugViewModel(
                 bestMatch = null,
                 target = target,
                 aimError = null,
+                fps = null,
             )
         }
 
@@ -128,6 +156,7 @@ class AstroDebugViewModel(
             bestMatch = bestMatch,
             target = target,
             aimError = aimError,
+            fps = fpsValue,
         )
     }
 
@@ -176,6 +205,7 @@ data class AstroDebugUiState(
     val bestMatch: AstroBestMatch?,
     val target: Body,
     val aimError: AimError?,
+    val fps: Float?,
 ) {
     companion object {
         val Empty = AstroDebugUiState(
@@ -186,6 +216,7 @@ data class AstroDebugUiState(
             bestMatch = null,
             target = Body.SUN,
             aimError = null,
+            fps = null,
         )
     }
 }

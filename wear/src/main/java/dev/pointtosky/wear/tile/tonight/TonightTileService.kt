@@ -38,7 +38,11 @@ open class TonightTileService : TileService() {
         // Инкремент при изменении набора ресурсов (иконки, имена id и т.п.)
         private const val RES_VER = "tonight_v2"
         const val ACTION_OPEN_AIM = "dev.pointtosky.ACTION_OPEN_AIM"
+
+        @Suppress("unused")
         const val ACTION_OPEN_IDENTIFY = "dev.pointtosky.ACTION_OPEN_IDENTIFY"
+
+        @Suppress("unused")
         const val EXTRA_TARGET_ID = "targetId"
         private const val PATH_PUSH = "/tile/tonight/push_model"
 
@@ -161,9 +165,7 @@ open class TonightTileService : TileService() {
     }
 
     @Deprecated("Tiles v1 API; kept for backward compatibility. Consider migrating to ProtoLayout.")
-    override fun onResourcesRequest(
-        requestParams: RequestBuilders.ResourcesRequest
-    ): ListenableFuture<ResourceBuilders.Resources> {
+    override fun onResourcesRequest(requestParams: RequestBuilders.ResourcesRequest): ListenableFuture<ResourceBuilders.Resources> {
         val res = ResourceBuilders.Resources.Builder().setVersion(RES_VER)
         listOf(
             TonightIcon.SUN,

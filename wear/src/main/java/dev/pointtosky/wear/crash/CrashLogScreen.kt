@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -15,12 +16,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Text
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.wear.R
+import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -52,6 +55,7 @@ fun CrashLogScreen(
 ) {
     val zoneId = remember { ZoneId.systemDefault() }
     val formatter = remember { DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US) }
+    val scope = rememberCoroutineScope()
     val lastCrash = state.lastCrash
     val timestampText = remember(lastCrash) {
         lastCrash?.timestamp?.atZone(zoneId)?.let { formatter.format(it) }
@@ -74,7 +78,7 @@ fun CrashLogScreen(
         }
         if (state.statusMessage != null || state.errorMessage != null) {
             item {
-                val text = state.statusMessage ?: state.errorMessage ?: ""
+                val text = (state.statusMessage ?: state.errorMessage).orEmpty()
                 val color = if (state.errorMessage != null) {
                     MaterialTheme.colors.error
                 } else {
@@ -149,7 +153,12 @@ fun CrashLogScreen(
         }
         item {
             Button(
-                onClick = onCreateZip,
+                onClick = {
+                    scope.launch {
+                        LogBus.flushAndSync()
+                        onCreateZip()
+                    }
+                },
                 enabled = state.hasLogs && !state.isBusy,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.primaryButtonColors(),

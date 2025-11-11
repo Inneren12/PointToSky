@@ -14,10 +14,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Text
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.core.time.ZoneRepo
@@ -41,12 +41,7 @@ fun TimeDebugScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TimeDebugContent(
-    onBack: () -> Unit,
-    timeSource: SystemTimeSource,
-    zoneRepo: ZoneRepo,
-    modifier: Modifier = Modifier
-) {
+private fun TimeDebugContent(onBack: () -> Unit, timeSource: SystemTimeSource, zoneRepo: ZoneRepo, modifier: Modifier = Modifier) {
     val zoneId by zoneRepo.zoneFlow.collectAsState(initial = zoneRepo.current())
     val periodMs by timeSource.periodMsFlow.collectAsState()
     val tickMetrics by rememberTickMetrics(timeSource)

@@ -70,13 +70,35 @@
             </intent-filter>
         </service>
 
-        <!-- GMS привязывается к этому сервису: для Android 12+ требуется exported=true -->
         <service
-        android:name="dev.pointtosky.mobile.datalayer.MobileBridgeListenerService"
-        android:exported="true">
+            android:name="dev.pointtosky.mobile.datalayer.v1.DlReceiverService"
+            android:exported="true">
             <intent-filter>
-                <action android:name="com.google.android.gms.wearable.BIND_LISTENER" />
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/card" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/aim" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/app" />
+            </intent-filter>
+            <!-- DATA_CHANGED оставляй только если действительно используешь DataClient -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/card" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/aim" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/app" />
             </intent-filter>
         </service>
+
     </application>
 </manifest>

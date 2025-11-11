@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package dev.pointtosky.core.logging
 
 import android.app.Application

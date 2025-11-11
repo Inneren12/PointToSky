@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package dev.pointtosky.wear.settings
 
 import android.content.Context

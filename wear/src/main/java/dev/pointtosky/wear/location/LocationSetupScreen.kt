@@ -2,6 +2,7 @@ package dev.pointtosky.wear.location
 
 import android.Manifest
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -30,26 +31,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import android.app.PendingIntent
 import androidx.core.app.TaskStackBuilder
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChip
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.model.LocationFix
@@ -61,12 +61,7 @@ import java.util.Locale
 import kotlin.math.abs
 
 @Composable
-fun LocationSetupScreen(
-    locationPrefs: LocationPrefs,
-    phoneFix: LocationFix?,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun LocationSetupScreen(locationPrefs: LocationPrefs, phoneFix: LocationFix?, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val permissionState = rememberPermissionUiState()
     val manualPoint by locationPrefs.manualPointFlow.collectAsState(initial = null)
@@ -393,9 +388,11 @@ private fun openAppSettings(context: Context) {
         val stack = TaskStackBuilder.create(context).addNextIntentWithParentStack(intent)
         val pi = stack.getPendingIntent(
             0,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        try { pi?.send() } catch (_: PendingIntent.CanceledException) { /* no-op */ }
+        try {
+            pi?.send()
+        } catch (_: PendingIntent.CanceledException) { /* no-op */ }
     }
 }
 

@@ -32,7 +32,7 @@ class DlReceiverService : WearableListenerService() {
             val ack = DlJson.buildAck(cid, ok = true)
             Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, DlPaths.ACK, ack)
         }
-        LogBus.event("dl_recv", mapOf("path" to path, "cid" to (cid ?: "")))
+        LogBus.event("dl_recv", mapOf("path" to path, "cid" to cid.orEmpty()))
         // route → внутренняя доставка в UI/VM
         DlRouter.route(applicationContext, path, data)
     }

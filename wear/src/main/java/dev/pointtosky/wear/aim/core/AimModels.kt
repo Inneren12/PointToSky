@@ -31,16 +31,6 @@ sealed interface AimTarget {
     data class StarTarget(val starId: Int, val eq: Equatorial? = null) : AimTarget
 }
 
-/**
- * Утилита: получить экваториальные координаты, если они есть прямо в цели.
- * Возвращает null для BodyTarget и для StarTarget без предзаданного eq.
- */
-fun AimTarget.asEquatorialOrNull(): Equatorial? = when (this) {
-    is AimTarget.EquatorialTarget -> this.eq
-    is AimTarget.StarTarget -> this.eq
-    is AimTarget.BodyTarget -> null
-}
-
 interface AimController {
     val state: kotlinx.coroutines.flow.StateFlow<AimState>
 

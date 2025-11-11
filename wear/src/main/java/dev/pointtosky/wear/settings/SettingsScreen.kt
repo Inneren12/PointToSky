@@ -13,13 +13,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChip
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import dev.pointtosky.wear.R
 import kotlinx.coroutines.launch
 
@@ -56,12 +56,7 @@ private fun rememberSettingsState(settings: AimIdentifySettingsDataStore): Setti
 }
 
 @Composable
-fun SettingsScreen(
-    state: SettingsState,
-    settings: AimIdentifySettingsDataStore,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun SettingsScreen(state: SettingsState, settings: AimIdentifySettingsDataStore, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val listState = rememberScalingLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -251,7 +246,6 @@ fun SettingsScreen(
         }
         // Tiles: Mirroring toggle
         item {
-            val scope = rememberCoroutineScope()
             ToggleChip(
                 checked = state.tileMirror,
                 onCheckedChange = { enabled -> scope.launch { settings.setTileMirroringEnabled(enabled) } },

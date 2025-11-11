@@ -19,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -29,7 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.pointtosky.core.logging.CrashLogEntry
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.mobile.R
+import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -60,6 +63,7 @@ fun CrashLogScreen(
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
     val zoneId = remember { ZoneId.systemDefault() }
     val formatter = remember {
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z", Locale.US)
@@ -149,7 +153,12 @@ fun CrashLogScreen(
         }
         Spacer(modifier = Modifier.height(16.dp))
         Button(
-            onClick = onCreateZip,
+            onClick = {
+                scope.launch {
+                    LogBus.flushAndSync()
+                    onCreateZip()
+                }
+            },
             enabled = state.hasLogs && !state.isBusy,
             modifier = Modifier.fillMaxWidth(),
         ) {

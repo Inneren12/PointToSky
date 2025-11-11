@@ -5,7 +5,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import dev.pointtosky.core.catalog.star.FakeStarCatalog
 import dev.pointtosky.core.location.model.GeoPoint
-import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.core.time.ZoneRepo
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -36,7 +35,6 @@ class RealTonightProviderTest {
 
     private fun newProvider(getLoc: suspend () -> GeoPoint?) = RealTonightProvider(
         context = app,
-        timeSource = SystemTimeSource(),
         zoneRepo = zoneRepo,
         // Критично: подменяем каталог на тестовый, чтобы не грузить assets/bin
         starCatalog = FakeStarCatalog(),
