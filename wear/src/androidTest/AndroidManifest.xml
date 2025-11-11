@@ -4,7 +4,7 @@
         <!-- Тестовый сервис-харнесс; не экспортируем -->
         <service
             android:name="dev.pointtosky.wear.tile.tonight.TonightTileServiceTestHarness"
-            android:exported="false"
+            android:exported="true"
             android:enabled="true" />
     </application>
 </manifest>

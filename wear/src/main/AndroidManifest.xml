@@ -110,7 +110,7 @@
         <!-- Экран списка целей для кнопки "Ещё" -->
         <activity
             android:name="dev.pointtosky.wear.tile.tonight.TonightTargetsActivity"
-            android:exported="false"
+            android:exported="true"
             android:taskAffinity=""
             android:label="@string/tonight_targets_label" />
     </application>
