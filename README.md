@@ -43,3 +43,36 @@ adb shell cmd tile add dev.pointtosky.wear/dev.pointtosky.wear.tile.tonight.Toni
 - **Instrumented (TonightTileService):**
   - выдаёт корректную версию ресурсов и маппинги иконок,
   - возвращает непустую `Timeline` с валидным `Layout` (PrimaryLayout в корне). :contentReference[oaicite:9]{index=9}
+
+## Security checks
+
+Чтобы убедиться, что чувствительные компоненты не «торчат наружу» и все `PendingIntent`/`FileProvider` настроены корректно, запустите короткий смоук:
+
+```bash
+bash tools/security_smoke.sh
+```
+
+Скрипт проверяет экспортируемость сервисов/провайдеров и выводит сведения о `FileProvider` из дебажного APK. Если требуется выполнить команды вручную (например, в Windows PowerShell — замените `grep` на `findstr`), используйте следующую последовательность:
+
+```powershell
+adb shell dumpsys package dev.pointtosky.wear   | findstr exported
+adb shell dumpsys package dev.pointtosky.mobile | findstr exported
+aapt dump badging mobile-debug.apk              | findstr provider
+```
+
+> `mobile-debug.apk` лежит в `mobile/build/outputs/apk/debug/` после выполнения `./gradlew :mobile:assembleDebug`.
+
+### FileProvider и временные grant'ы
+
+- Провайдер объявлен с `android:authorities="${applicationId}.logs"`, поэтому ожидаемый URI выглядит так:
+  `content://dev.pointtosky.mobile.logs/crash_logs/<имя_файла>.zip` (см. `mobile/src/main/res/xml/filepaths_logs.xml`).
+- Попытка читать URI из shell без grant'а должна заканчиваться `Permission Denial`:
+  ```bash
+  adb shell content read --uri "content://dev.pointtosky.mobile.logs/crash_logs/example.zip"
+  ```
+- После того как пользователь поделился ZIP (через `CrashLogSharing.shareZip`), проверьте, что доступ выдан ровно целевому приложению:
+  ```powershell
+  adb shell dumpsys package com.google.android.gm | findstr dev.pointtosky.mobile.logs
+  ```
+  Здесь должен быть единственный `grantedUriPermissions` с нашим `content://`-URI. После закрытия экрана шаринга запись исчезает, что подтверждает отсутствие висячих grant'ов.
+
