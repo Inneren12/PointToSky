@@ -86,7 +86,8 @@ class CrashLogViewModel(
     fun createZip() {
         viewModelScope.launch(io) {
             _state.update { it.copy(isBusy = true, statusMessage = null, errorMessage = null) }
-            val result = runCatching { CrashLogManager.createZip(application.cacheDir) }
+            val targetDirectory = File(application.filesDir, "crash")
+            val result = runCatching { CrashLogManager.createZip(targetDirectory) }
             val hasLogs = runCatching { CrashLogManager.hasLogs() }.getOrElse { false }
             result.onSuccess { file ->
                 if (file != null) {

@@ -88,12 +88,16 @@
     <string name="crash_logs_stacktrace_label">Стек:</string>
     <string name="crash_logs_empty">Краши не зафиксированы.</string>
     <string name="crash_logs_create_zip">Создать ZIP</string>
+    <string name="crash_logs_share_zip">Поделиться ZIP</string>
     <string name="crash_logs_clear">Очистить</string>
     <string name="crash_logs_back">Назад</string>
     <string name="crash_logs_zip_ready">ZIP сохранён: %1$s</string>
     <string name="crash_logs_zip_unavailable">Нет логов для экспорта.</string>
     <string name="crash_logs_cleared">Логи очищены.</string>
     <string name="crash_logs_operation_failed">Не удалось выполнить операцию.</string>
+    <string name="crash_logs_share_title">Поделиться crash-логами</string>
+    <string name="crash_logs_share_error">Нет приложений для отправки файлов.</string>
+    <string name="crash_logs_share_missing">Файл не найден.</string>
     <string name="catalog_debug">Catalog Debug</string>
     <string name="catalog_debug_title">Catalog Debug</string>
     <string name="catalog_debug_probe_header">Пробный запрос</string>
