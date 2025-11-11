@@ -69,9 +69,10 @@ class DlReceiverService : WearableListenerService() {
             val entry = payload.toEntry(message.cid.ifBlank { fallbackCid })
             val resolvedId = when (entry) {
                 is CardRepository.Entry.Ready -> entry.model.id
-                is CardRepository.Entry.Invalid -> payload.id
-                    ?: message.cid.takeIf { it.isNotBlank() }
-                    ?: fallbackCid
+                is CardRepository.Entry.Invalid ->
+                    payload.id
+                        ?: message.cid.takeIf { it.isNotBlank() }
+                        ?: fallbackCid
             }
             if (resolvedId != null) {
                 CardRepository.update(resolvedId, entry)

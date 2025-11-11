@@ -16,7 +16,7 @@ fun SearchRoute(
     catalogRepository: CatalogRepository,
     onBack: () -> Unit,
     onOpenCard: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val factory = rememberSearchViewModelFactory(context, catalogRepository)

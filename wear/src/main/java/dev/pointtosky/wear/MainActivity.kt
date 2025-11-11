@@ -1,6 +1,5 @@
 package dev.pointtosky.wear
 
-import android.content.Context
 import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorManager
@@ -22,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -30,7 +28,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.ambient.AmbientModeSupport
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
@@ -38,15 +35,11 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
-import dev.pointtosky.wear.identify.IdentifyViewModelFactory
-import dev.pointtosky.wear.identify.IdentifyRoute
-import dev.pointtosky.wear.identify.buildCardRouteFrom
-import dev.pointtosky.wear.identify.cardDestination
-import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
-import dev.pointtosky.wear.settings.SettingsRoute
-import dev.pointtosky.core.datalayer.AppOpenScreen
+import androidx.wear.tooling.preview.devices.WearDevices
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
+import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
+import dev.pointtosky.core.datalayer.AppOpenScreen
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
 import dev.pointtosky.core.location.prefs.LocationPrefs
@@ -55,8 +48,21 @@ import dev.pointtosky.wear.aim.core.AimTarget
 import dev.pointtosky.wear.aim.ui.AimRoute
 import dev.pointtosky.wear.astro.AstroDebugRoute
 import dev.pointtosky.wear.astro.AstroDebugViewModelFactory
+import dev.pointtosky.wear.catalog.CatalogRepositoryProvider
+import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
+import dev.pointtosky.wear.crash.CrashLogRoute
+import dev.pointtosky.wear.datalayer.AimLaunchRequest
+import dev.pointtosky.wear.datalayer.AppOpenRequest
+import dev.pointtosky.wear.datalayer.WearBridge
+import dev.pointtosky.wear.identify.IdentifyRoute
+import dev.pointtosky.wear.identify.IdentifyViewModelFactory
+import dev.pointtosky.wear.identify.buildCardRouteFrom
+import dev.pointtosky.wear.identify.cardDestination
 import dev.pointtosky.wear.location.LocationSetupScreen
 import dev.pointtosky.wear.location.remote.PhoneLocationRepository
+import dev.pointtosky.wear.onboarding.WearOnboardingPrefs
+import dev.pointtosky.wear.onboarding.WearOnboardingScreen
+import dev.pointtosky.wear.onboarding.from
 import dev.pointtosky.wear.sensors.SensorsCalibrateScreen
 import dev.pointtosky.wear.sensors.SensorsDebugScreen
 import dev.pointtosky.wear.sensors.SensorsViewModel
@@ -65,25 +71,30 @@ import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationRepositoryConfig
 import dev.pointtosky.wear.sensors.orientation.PhoneHeadingOverrideRepository
-import dev.pointtosky.wear.onboarding.WearOnboardingPrefs
-import dev.pointtosky.wear.onboarding.WearOnboardingScreen
-import dev.pointtosky.wear.onboarding.from
+import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
+import dev.pointtosky.wear.settings.SettingsRoute
 import dev.pointtosky.wear.time.TimeDebugScreen
-import dev.pointtosky.wear.datalayer.AimLaunchRequest
-import dev.pointtosky.wear.datalayer.AppOpenRequest
-import dev.pointtosky.wear.datalayer.WearBridge
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
-import dev.pointtosky.wear.catalog.CatalogRepositoryProvider
-import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
-import dev.pointtosky.wear.crash.CrashLogRoute
-import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
+import kotlinx.coroutines.launch
+import android.content.BroadcastReceiver
+import android.content.Context
+import androidx.core.content.ContextCompat
+import dev.pointtosky.wear.datalayer.v1.DlIntents
+import dev.pointtosky.core.datalayer.JsonCodec
+import dev.pointtosky.core.datalayer.AppOpenMessage
+import dev.pointtosky.core.datalayer.AimSetTargetMessage
+import dev.pointtosky.wear.datalayer.PhoneHeadingBridge
+import dev.pointtosky.core.datalayer.SensorHeadingMessage
+import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
+
 
 class MainActivity : ComponentActivity() {
+    private var dlReceiver: BroadcastReceiver? = null
+    /** Для защиты от повторной обработки того же самого интента. */
+    private var lastIntentSignature: Int? = null
     private val hasMagnetometer: Boolean by lazy {
-        val manager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val manager = getSystemService(SENSOR_SERVICE) as SensorManager
         manager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) != null
     }
 
@@ -110,13 +121,6 @@ class MainActivity : ComponentActivity() {
 
     private val onboardingPrefs: WearOnboardingPrefs by lazy {
         WearOnboardingPrefs.from(applicationContext)
-    }
-
-    @Suppress("UnusedPrivateMember")
-    private val ambientCallback = object : AmbientModeSupport.AmbientCallback() {
-        override fun onEnterAmbient(ambientDetails: Bundle?) {
-            // TODO: reduce rate in ambient
-        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -161,16 +165,80 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // важно: чтобы Activity.intent тоже обновился
+        setIntent(intent)
         handleBridgeIntent(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (dlReceiver != null) return
+        dlReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val payload = intent.getByteArrayExtra(DlIntents.EXTRA_PAYLOAD) ?: return
+
+                // 1) SensorHeading: обновляем мост и выходим
+                runCatching { JsonCodec.decode<SensorHeadingMessage>(payload) }
+                    .onSuccess { msg ->
+                        if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                            PhoneHeadingBridge.updateHeading(msg.azDeg, msg.ts)
+                            return
+                        }
+                    }
+
+                // 2) AppOpen → мост сам разрулит, если нужно
+                runCatching { JsonCodec.decode<AppOpenMessage>(payload) }
+                    .onSuccess { WearBridge.handleAppOpenMessage(applicationContext, it); return }
+
+                // 3) AimSetTarget
+                runCatching { JsonCodec.decode<AimSetTargetMessage>(payload) }
+                    .onSuccess { WearBridge.handleAimSetTargetMessage(applicationContext, it) }
+            }
+        }
+        ContextCompat.registerReceiver(
+            /* context = */ this,
+            /* receiver = */ dlReceiver,
+            /* filter = */ DlIntents.filter(),
+            /* flags = */ ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+    }
+
+    override fun onStop() {
+        super.onStop()
+        dlReceiver?.let { unregisterReceiver(it) }
+        dlReceiver = null
     }
 
     private fun handleBridgeIntent(intent: Intent?) {
         if (intent == null) return
+        // Отсекаем дубликаты (например, singleTop + повторная доставка того же Intent)
+        val sig = buildIntentSignature(intent)
+        if (sig != null && sig == lastIntentSignature) return
+        lastIntentSignature = sig
         when (intent.action) {
             ACTION_OPEN_AIM -> handleAimIntent(intent)
             ACTION_OPEN_IDENTIFY, ACTION_OPEN_IDENTIFY_LEGACY ->
                 WearBridge.emitAppOpen(AppOpenScreen.IDENTIFY, null)
         }
+    }
+
+    /**
+     * Формируем компактную подпись интента только по тем полям, которые
+     * реально влияют на навигацию. Если поля не заданы — это всё равно валидная подпись.
+     */
+    private fun buildIntentSignature(intent: Intent?): Int? {
+        intent ?: return null
+        val sb = StringBuilder()
+            .append(intent.action ?: "")
+            .append('|')
+            .append(intent.getStringExtra(EXTRA_AIM_TARGET_KIND) ?: "")
+            .append('|')
+            .append(intent.getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN))
+            .append('|')
+            .append(intent.getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN))
+            .append('|')
+            .append(intent.getStringExtra(EXTRA_AIM_BODY) ?: "")
+        return sb.toString().hashCode()
     }
 
     private fun handleAimIntent(intent: Intent) {
@@ -221,7 +289,6 @@ private const val ROUTE_TIME_DEBUG = "time_debug"
 private const val ROUTE_CATALOG_DEBUG = "catalog_debug"
 private const val ROUTE_CRASH_LOGS = "crash_logs"
 private const val ROUTE_SETTINGS = "settings"
-private const val ROUTE_CARD = "card"
 const val ACTION_OPEN_AIM = "dev.pointtosky.action.OPEN_AIM"
 const val ACTION_OPEN_IDENTIFY = "dev.pointtosky.ACTION_OPEN_IDENTIFY"
 const val ACTION_OPEN_IDENTIFY_LEGACY = "dev.pointtosky.action.OPEN_IDENTIFY"
@@ -279,7 +346,7 @@ fun PointToSkyWearApp(
         } else {
             SwipeDismissableNavHost(
                 navController = navController,
-                startDestination = ROUTE_HOME
+                startDestination = ROUTE_HOME,
             ) {
                 composable(ROUTE_HOME) {
                     HomeScreen(
@@ -320,105 +387,107 @@ fun PointToSkyWearApp(
                 composable(ROUTE_SETTINGS) {
                     SettingsRoute(
                         settings = settings,
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStack() },
                     )
                 }
-            // Параметризованный экран карточки (S6.D)
-            cardDestination(locationRepository = locationRepository)
-            composable(ROUTE_ASTRO_DEBUG) {
-                val factory = remember(orientationRepository, locationRepository, catalogRepository) {
-                    AstroDebugViewModelFactory(
-                        orientationRepository = orientationRepository,
-                        locationRepository = locationRepository,
-                        catalogRepository = catalogRepository,
+                // Параметризованный экран карточки (S6.D)
+                cardDestination(locationRepository = locationRepository)
+                composable(ROUTE_ASTRO_DEBUG) {
+                    val factory = remember(orientationRepository, locationRepository, catalogRepository) {
+                        AstroDebugViewModelFactory(
+                            orientationRepository = orientationRepository,
+                            locationRepository = locationRepository,
+                            catalogRepository = catalogRepository,
                         )
+                    }
+                    AstroDebugRoute(
+                        factory = factory,
+                    )
                 }
-                AstroDebugRoute(
-                    factory = factory,
-                )
-            }
-            composable(ROUTE_CATALOG_DEBUG) {
-                val factory: CatalogDebugViewModelFactory = remember(catalogRepository) {
-                    CatalogDebugViewModelFactory(catalogRepository)
+                composable(ROUTE_CATALOG_DEBUG) {
+                    val factory: CatalogDebugViewModelFactory = remember(catalogRepository) {
+                        CatalogDebugViewModelFactory(catalogRepository)
+                    }
+                    CatalogDebugRoute(
+                        factory = factory,
+                        onBack = { navController.popBackStack() },
+                    )
                 }
-                CatalogDebugRoute(
-                    factory = factory,
-                    onBack = { navController.popBackStack() },
-                )
-            }
 
-            composable(ROUTE_SENSORS_DEBUG) {
-                val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(
-                    initialValue = OrientationFrameDefaults.EMPTY
-                )
-                val zero by sensorsViewModel.zero.collectAsStateWithLifecycle()
-                val screenRotation by sensorsViewModel.screenRotation.collectAsStateWithLifecycle()
-                val frameTraceMode by sensorsViewModel.frameTraceMode.collectAsStateWithLifecycle()
-                val writerStats by sensorsViewModel.writerStats.collectAsStateWithLifecycle()
-                val source by sensorsViewModel.source.collectAsStateWithLifecycle()
-                val fps by sensorsViewModel.fps.collectAsStateWithLifecycle()
-                val isSensorActive by sensorsViewModel.isSensorActive.collectAsStateWithLifecycle()
-                SensorsDebugScreen(
-                    frame = frame,
-                    zero = zero,
-                    screenRotation = screenRotation,
-                    frameTraceMode = frameTraceMode,
-                    fps = fps,
-                    source = source,
-                    writerStats = writerStats,
-                    isSensorActive = isSensorActive,
-                    onFrameTraceModeSelected = sensorsViewModel::selectFrameTraceMode,
-                    onScreenRotationSelected = sensorsViewModel::selectScreenRotation,
-                    onNavigateToCalibrate = { navController.navigate(ROUTE_SENSORS_CALIBRATE) },
-                )
-            }
-            composable(ROUTE_SENSORS_CALIBRATE) {
-                val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(
-                    initialValue = OrientationFrameDefaults.EMPTY
-                )
-                SensorsCalibrateScreen(
-                    azimuthDeg = frame.azimuthDeg,
-                    accuracy = frame.accuracy,
-                    onSetZero = sensorsViewModel::setZeroAzimuthOffset,
-                    onResetZero = sensorsViewModel::resetZero,
-                )
-            }
-            composable(ROUTE_LOCATION) {
-                val phoneFix by phoneLocationRepository.lastKnownFix.collectAsStateWithLifecycle(initialValue = null)
-                LocationSetupScreen(
-                    locationPrefs = locationPrefs,
-                    phoneFix = phoneFix,
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable(ROUTE_TIME_DEBUG) {
-                TimeDebugScreen(
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable(ROUTE_CRASH_LOGS) {
-                CrashLogRoute(
-                    onBack = { navController.popBackStack() }
-                )
+                composable(ROUTE_SENSORS_DEBUG) {
+                    val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(
+                        initialValue = OrientationFrameDefaults.EMPTY,
+                    )
+                    val zero by sensorsViewModel.zero.collectAsStateWithLifecycle()
+                    val screenRotation by sensorsViewModel.screenRotation.collectAsStateWithLifecycle()
+                    val frameTraceMode by sensorsViewModel.frameTraceMode.collectAsStateWithLifecycle()
+                    val writerStats by sensorsViewModel.writerStats.collectAsStateWithLifecycle()
+                    val source by sensorsViewModel.source.collectAsStateWithLifecycle()
+                    val fps by sensorsViewModel.fps.collectAsStateWithLifecycle()
+                    val isSensorActive by sensorsViewModel.isSensorActive.collectAsStateWithLifecycle()
+                    SensorsDebugScreen(
+                        frame = frame,
+                        zero = zero,
+                        screenRotation = screenRotation,
+                        frameTraceMode = frameTraceMode,
+                        fps = fps,
+                        source = source,
+                        writerStats = writerStats,
+                        isSensorActive = isSensorActive,
+                        onFrameTraceModeSelected = sensorsViewModel::selectFrameTraceMode,
+                        onScreenRotationSelected = sensorsViewModel::selectScreenRotation,
+                        onNavigateToCalibrate = { navController.navigate(ROUTE_SENSORS_CALIBRATE) },
+                    )
+                }
+                composable(ROUTE_SENSORS_CALIBRATE) {
+                    val frame by sensorsViewModel.frames.collectAsStateWithLifecycle(
+                        initialValue = OrientationFrameDefaults.EMPTY,
+                    )
+                    SensorsCalibrateScreen(
+                        azimuthDeg = frame.azimuthDeg,
+                        accuracy = frame.accuracy,
+                        onSetZero = sensorsViewModel::setZeroAzimuthOffset,
+                        onResetZero = sensorsViewModel::resetZero,
+                    )
+                }
+                composable(ROUTE_LOCATION) {
+                    val phoneFix by phoneLocationRepository.lastKnownFix.collectAsStateWithLifecycle(
+                        initialValue = null,
+                    )
+                    LocationSetupScreen(
+                        locationPrefs = locationPrefs,
+                        phoneFix = phoneFix,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable(ROUTE_TIME_DEBUG) {
+                    TimeDebugScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable(ROUTE_CRASH_LOGS) {
+                    CrashLogRoute(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
         }
-    }
 
-    LaunchedEffect(onboardingAccepted, aimRequest?.seq) {
-        if (!onboardingAccepted) return@LaunchedEffect
-        val request = aimRequest ?: return@LaunchedEffect
-        navController.navigate(ROUTE_AIM) {
-            launchSingleTop = true
+        LaunchedEffect(onboardingAccepted, aimRequest?.seq) {
+            if (!onboardingAccepted) return@LaunchedEffect
+            aimRequest ?: return@LaunchedEffect
+            navController.navigate(ROUTE_AIM) {
+                launchSingleTop = true
+            }
         }
-    }
 
-    LaunchedEffect(onboardingAccepted, appOpenRequest?.seq) {
-        if (!onboardingAccepted) return@LaunchedEffect
-        val request = appOpenRequest ?: return@LaunchedEffect
-        when (request.screen) {
-            AppOpenScreen.AIM -> navController.navigate(ROUTE_AIM) { launchSingleTop = true }
-            AppOpenScreen.IDENTIFY -> navController.navigate(ROUTE_IDENTIFY) { launchSingleTop = true }
-            AppOpenScreen.TILE -> navController.navigate(ROUTE_HOME)
+        LaunchedEffect(onboardingAccepted, appOpenRequest?.seq) {
+            if (!onboardingAccepted) return@LaunchedEffect
+            val request = appOpenRequest ?: return@LaunchedEffect
+            when (request.screen) {
+                AppOpenScreen.AIM -> navController.navigate(ROUTE_AIM) { launchSingleTop = true }
+                AppOpenScreen.IDENTIFY -> navController.navigate(ROUTE_IDENTIFY) { launchSingleTop = true }
+                AppOpenScreen.TILE -> navController.navigate(ROUTE_HOME)
             }
         }
     }
@@ -434,27 +503,28 @@ fun HomeScreen(
     onLocationClick: () -> Unit,
     onTimeDebugClick: () -> Unit,
     onCrashLogsClick: () -> Unit,
-    onSettingsClick: () -> Unit = {},   // ← дефолт для старых вызовов
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // дефолт для старых вызовов
+    onSettingsClick: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 12.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
     ) {
         Button(
             onClick = onAimClick,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.primaryButtonColors()
+            colors = ButtonDefaults.primaryButtonColors(),
         ) {
             Text(text = stringResource(id = R.string.find_label))
         }
         Button(
             onClick = onIdentifyClick,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.primaryButtonColors()
+            colors = ButtonDefaults.primaryButtonColors(),
         ) {
             Text(text = stringResource(id = R.string.identify_label))
         }
@@ -517,7 +587,7 @@ fun AimScreen(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
     ) {
         Text(text = "Aim screen placeholder")
     }
@@ -530,13 +600,13 @@ fun IdentifyScreen(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
     ) {
         Text(text = "Identify screen placeholder")
     }
 }
 
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true)
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
@@ -553,7 +623,7 @@ fun HomeScreenPreview() {
     }
 }
 
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true)
 @Composable
 fun AimScreenPreview() {
     MaterialTheme {
@@ -561,7 +631,7 @@ fun AimScreenPreview() {
     }
 }
 
-@Preview(device = Devices.WEAR_OS_SMALL_ROUND, showSystemUi = true)
+@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true)
 @Composable
 fun IdentifyScreenPreview() {
     MaterialTheme {

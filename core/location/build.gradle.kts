@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    id("io.gitlab.arturbosch.detekt")
+    id("org.jlleitschuh.gradle.ktlint")
 }
 
 android {
@@ -19,6 +21,32 @@ android {
     kotlinOptions {
         jvmTarget = libs.versions.jvmTarget.get()
     }
+
+    lint {
+        warningsAsErrors = false
+        abortOnError = false
+        checkReleaseBuilds = true
+        baseline = file("lint-baseline.xml")
+    }
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    autoCorrect = false
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+}
+
+ktlint {
+    android.set(true)
+    ignoreFailures.set(false)
+    reporters {
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
+    }
 }
 
 // Глобально включаем preview/experimental API корутин,
@@ -26,13 +54,8 @@ android {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     kotlinOptions.freeCompilerArgs += listOf(
         "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-        "-opt-in=kotlinx.coroutines.FlowPreview"
+        "-opt-in=kotlinx.coroutines.FlowPreview",
     )
-}
-
-// Единая тулчейн-версия для Kotlin/JVM
-kotlin {
-    jvmToolchain(17)
 }
 
 dependencies {
@@ -42,4 +65,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
+    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6")
 }

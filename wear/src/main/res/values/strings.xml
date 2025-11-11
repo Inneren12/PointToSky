@@ -128,6 +128,8 @@
     <string name="a11y_alt_scale">Move %1$s. ΔAlt %2$.1f°</string>
     <string name="a11y_open_card">Open card</string>
     <!-- Tonight tile -->
+    <string name="tonight_targets_loading">Loading…</string>
+    <string name="tonight_targets_empty">No targets available</string>
     <string name="tile_tonight_label">Tonight</string>
     <string name="tile_more">More</string>
     <string name="tonight_targets_label">Tonight targets</string>

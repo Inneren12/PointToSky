@@ -1,3 +1,4 @@
+
 package dev.pointtosky.mobile.location
 
 import android.Manifest
@@ -18,9 +19,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -44,10 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
@@ -73,26 +73,8 @@ fun LocationSetupScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val permissionState = rememberLocationPermissionUiState()
     val manualPoint by locationPrefs.manualPointFlow.collectAsState(initial = null)
-    var manualEnabled by remember { mutableStateOf(manualPoint != null) }
-    var latitudeInput by remember { mutableStateOf("") }
-    var longitudeInput by remember { mutableStateOf("") }
-    var showValidationErrors by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
-
-    LaunchedEffect(manualPoint) {
-        manualEnabled = manualPoint != null
-        if (manualPoint != null) {
-            latitudeInput = manualPoint!!.latDeg.formatCoordinate()
-            longitudeInput = manualPoint!!.lonDeg.formatCoordinate()
-        } else {
-            latitudeInput = ""
-            longitudeInput = ""
-        }
-    }
-
     BackHandler(onBack = onBack)
 
     Scaffold(
@@ -102,11 +84,11 @@ fun LocationSetupScreen(
                 title = { Text(text = stringResource(id = R.string.location_setup_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
-                }
+                },
             )
-        }
+        },
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -114,202 +96,228 @@ fun LocationSetupScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            val dateFormat = remember { DateFormat.getTimeInstance(DateFormat.SHORT) }
-
             Text(
                 text = stringResource(id = R.string.location_setup_description),
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            PermissionSection(permissionState)
+            ShareSection(shareState = shareState, onShareToggle = onShareToggle)
+            ManualSection(manualPoint = manualPoint, locationPrefs = locationPrefs)
+        }
+    }
+}
+
+@Composable
+private fun PermissionSection(state: PermissionUiState) {
+    if (state.granted) {
+        Text(
+            text = stringResource(id = R.string.location_setup_permission_granted),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    } else {
+        Button(onClick = state.requestPermission) {
+            Text(text = stringResource(id = R.string.location_setup_request_permission))
+        }
+        if (state.shouldOpenSettings) {
+            OutlinedButton(onClick = state.openSettings) {
+                Text(text = stringResource(id = R.string.location_setup_open_settings))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShareSection(shareState: PhoneLocationBridge.PhoneLocationBridgeState, onShareToggle: (Boolean) -> Unit) {
+    val dateFormat = remember { DateFormat.getTimeInstance(DateFormat.SHORT) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(id = R.string.location_share_toggle),
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = shareState.shareEnabled,
+                onCheckedChange = onShareToggle,
+            )
+        }
+
+        Text(
+            text = stringResource(id = R.string.location_share_description),
+            style = MaterialTheme.typography.bodySmall,
+        )
+
+        shareState.lastRequest?.let { request ->
+            val timeString = dateFormat.format(Date(request.timestampMs))
+            val ttlString = stringResource(
+                id = R.string.location_share_ttl_seconds,
+                (request.freshTtlMs / 1000L).coerceAtLeast(0L).toInt(),
+            )
+            Text(
+                text = stringResource(
+                    id = R.string.location_share_last_request,
+                    timeString,
+                    ttlString,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        shareState.lastResponse?.let { response ->
+            val timeString = dateFormat.format(Date(response.timestampMs))
+            val message = when (response.status) {
+                PhoneLocationBridge.ResponseStatus.SUCCESS -> {
+                    val accuracyText = response.accuracyM?.let {
+                        stringResource(id = R.string.location_share_accuracy, it)
+                    }
+                    val info = listOfNotNull(response.provider, accuracyText)
+                        .joinToString(separator = " • ")
+                        .ifEmpty { response.provider ?: "" }
+                    stringResource(
+                        id = R.string.location_share_status_success,
+                        timeString,
+                        info.ifEmpty { "—" },
+                    )
+                }
+                PhoneLocationBridge.ResponseStatus.SHARING_DISABLED -> stringResource(
+                    id = R.string.location_share_status_disabled,
+                )
+                PhoneLocationBridge.ResponseStatus.PERMISSION_DENIED -> stringResource(
+                    id = R.string.location_share_status_permission_denied,
+                )
+                PhoneLocationBridge.ResponseStatus.LOCATION_UNAVAILABLE -> stringResource(
+                    id = R.string.location_share_status_unavailable,
+                )
+                PhoneLocationBridge.ResponseStatus.SEND_FAILED -> stringResource(
+                    id = R.string.location_share_status_send_failed,
+                )
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ManualSection(manualPoint: GeoPoint?, locationPrefs: LocationPrefs) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var manualEnabled by remember { mutableStateOf(manualPoint != null) }
+    var latitudeInput by remember { mutableStateOf("") }
+    var longitudeInput by remember { mutableStateOf("") }
+    var showValidationErrors by remember { mutableStateOf(false) }
+
+    LaunchedEffect(manualPoint) {
+        manualEnabled = manualPoint != null
+        if (manualPoint != null) {
+            latitudeInput = manualPoint.latDeg.formatCoordinate()
+            longitudeInput = manualPoint.lonDeg.formatCoordinate()
+        } else {
+            latitudeInput = ""
+            longitudeInput = ""
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(id = R.string.location_setup_manual_toggle),
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = manualEnabled,
+                onCheckedChange = { enabled ->
+                    manualEnabled = enabled
+                    showValidationErrors = false
+                    if (!enabled) {
+                        coroutineScope.launch { locationPrefs.setManual(null) }
+                    }
+                },
+            )
+        }
+
+        if (manualEnabled) {
+            Text(
+                text = stringResource(id = R.string.location_setup_manual_hint),
+                style = MaterialTheme.typography.bodySmall,
             )
 
-            if (permissionState.granted) {
-                Text(
-                    text = stringResource(id = R.string.location_setup_permission_granted),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            } else {
-                Button(onClick = permissionState.requestPermission) {
-                    Text(text = stringResource(id = R.string.location_setup_request_permission))
-                }
-                if (permissionState.shouldOpenSettings) {
-                    OutlinedButton(onClick = permissionState.openSettings) {
-                        Text(text = stringResource(id = R.string.location_setup_open_settings))
+            val latitudeValidation = validateLatitude(latitudeInput)
+            val longitudeValidation = validateLongitude(longitudeInput)
+            val latError = latitudeValidation.errorRes?.takeIf { showValidationErrors }
+            val lonError = longitudeValidation.errorRes?.takeIf { showValidationErrors }
+
+            OutlinedTextField(
+                value = latitudeInput,
+                onValueChange = { latitudeInput = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(text = stringResource(id = R.string.location_setup_lat_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.location_setup_lat_hint)) },
+                isError = latError != null,
+                supportingText = {
+                    if (latError != null) {
+                        Text(text = stringResource(id = latError))
                     }
-                }
-            }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Next,
+                ),
+            )
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.location_share_toggle),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = shareState.shareEnabled,
-                        onCheckedChange = onShareToggle,
-                    )
-                }
+            OutlinedTextField(
+                value = longitudeInput,
+                onValueChange = { longitudeInput = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(text = stringResource(id = R.string.location_setup_lon_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.location_setup_lon_hint)) },
+                isError = lonError != null,
+                supportingText = {
+                    if (lonError != null) {
+                        Text(text = stringResource(id = lonError))
+                    }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Done,
+                ),
+            )
 
-                Text(
-                    text = stringResource(id = R.string.location_share_description),
-                    style = MaterialTheme.typography.bodySmall
-                )
-
-                shareState.lastRequest?.let { request ->
-                    val timeString = dateFormat.format(Date(request.timestampMs))
-                    val ttlString = stringResource(
-                        id = R.string.location_share_ttl_seconds,
-                        (request.freshTtlMs / 1000L).coerceAtLeast(0L).toInt()
-                    )
-                    Text(
-                        text = stringResource(
-                            id = R.string.location_share_last_request,
-                            timeString,
-                            ttlString
-                        ),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                shareState.lastResponse?.let { response ->
-                    val timeString = dateFormat.format(Date(response.timestampMs))
-                    val message = when (response.status) {
-                        PhoneLocationBridge.ResponseStatus.SUCCESS -> {
-                            val accuracyText = response.accuracyM?.let {
-                                stringResource(id = R.string.location_share_accuracy, it)
-                            }
-                            val info = listOfNotNull(response.provider, accuracyText)
-                                .joinToString(separator = " • ")
-                                .ifEmpty { response.provider ?: "" }
-                            stringResource(
-                                id = R.string.location_share_status_success,
-                                timeString,
-                                info.ifEmpty { "—" }
+            Button(
+                onClick = {
+                    showValidationErrors = true
+                    val latResult = validateLatitude(latitudeInput)
+                    val lonResult = validateLongitude(longitudeInput)
+                    if (latResult.value != null && lonResult.value != null) {
+                        coroutineScope.launch {
+                            locationPrefs.setManual(
+                                GeoPoint(
+                                    latDeg = latResult.value,
+                                    lonDeg = lonResult.value,
+                                ),
                             )
                         }
-
-                        PhoneLocationBridge.ResponseStatus.SHARING_DISABLED -> stringResource(
-                            id = R.string.location_share_status_disabled
-                        )
-
-                        PhoneLocationBridge.ResponseStatus.PERMISSION_DENIED -> stringResource(
-                            id = R.string.location_share_status_permission_denied
-                        )
-
-                        PhoneLocationBridge.ResponseStatus.LOCATION_UNAVAILABLE -> stringResource(
-                            id = R.string.location_share_status_unavailable
-                        )
-
-                        PhoneLocationBridge.ResponseStatus.SEND_FAILED -> stringResource(
-                            id = R.string.location_share_status_send_failed
-                        )
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.location_setup_saved_toast),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        showValidationErrors = false
                     }
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.location_setup_manual_toggle),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = manualEnabled,
-                        onCheckedChange = { enabled ->
-                            manualEnabled = enabled
-                            showValidationErrors = false
-                            if (!enabled) {
-                                coroutineScope.launch { locationPrefs.setManual(null) }
-                            }
-                        }
-                    )
-                }
-
-                if (manualEnabled) {
-                    Text(
-                        text = stringResource(id = R.string.location_setup_manual_hint),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-
-                    val latitudeValidation = validateLatitude(latitudeInput)
-                    val longitudeValidation = validateLongitude(longitudeInput)
-                    val latError = latitudeValidation.errorRes?.takeIf { showValidationErrors }
-                    val lonError = longitudeValidation.errorRes?.takeIf { showValidationErrors }
-
-                    OutlinedTextField(
-                        value = latitudeInput,
-                        onValueChange = { latitudeInput = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(text = stringResource(id = R.string.location_setup_lat_label)) },
-                        placeholder = { Text(text = stringResource(id = R.string.location_setup_lat_hint)) },
-                        isError = latError != null,
-                        supportingText = {
-                            if (latError != null) {
-                                Text(text = stringResource(id = latError))
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Next
-                        )
-                    )
-
-                    OutlinedTextField(
-                        value = longitudeInput,
-                        onValueChange = { longitudeInput = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(text = stringResource(id = R.string.location_setup_lon_label)) },
-                        placeholder = { Text(text = stringResource(id = R.string.location_setup_lon_hint)) },
-                        isError = lonError != null,
-                        supportingText = {
-                            if (lonError != null) {
-                                Text(text = stringResource(id = lonError))
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Done
-                        )
-                    )
-
-                    Button(
-                        onClick = {
-                            showValidationErrors = true
-                            val latResult = validateLatitude(latitudeInput)
-                            val lonResult = validateLongitude(longitudeInput)
-                            if (latResult.value != null && lonResult.value != null) {
-                                coroutineScope.launch {
-                                    locationPrefs.setManual(
-                                        GeoPoint(
-                                            latDeg = latResult.value,
-                                            lonDeg = lonResult.value
-                                        )
-                                    )
-                                }
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.location_setup_saved_toast),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                showValidationErrors = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = stringResource(id = R.string.location_setup_save))
-                    }
-                }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = stringResource(id = R.string.location_setup_save))
             }
         }
     }
@@ -325,21 +333,21 @@ private data class PermissionUiState(
 @Composable
 private fun rememberLocationPermissionUiState(): PermissionUiState {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val activity = remember(context) { context.findActivity() }
     var granted by remember { mutableStateOf(isLocationPermissionGranted(context)) }
     var shouldOpenSettings by remember { mutableStateOf(false) }
     var hasRequested by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         granted = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (!granted) {
             val rationale = activity?.let {
                 ActivityCompat.shouldShowRequestPermissionRationale(
                     it,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
                 )
             } ?: false
             shouldOpenSettings = !rationale
@@ -357,7 +365,7 @@ private fun rememberLocationPermissionUiState(): PermissionUiState {
                     val rationale = activity?.let {
                         ActivityCompat.shouldShowRequestPermissionRationale(
                             it,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
                         )
                     } ?: false
                     shouldOpenSettings = !rationale
@@ -376,12 +384,11 @@ private fun rememberLocationPermissionUiState(): PermissionUiState {
             shouldOpenSettings = false
             launcher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION))
         },
-        openSettings = { openAppSettings(context) }
+        openSettings = { openAppSettings(context) },
     )
 }
 
-private fun String.normalizeCoordinate(): Double? =
-    replace(',', '.').toDoubleOrNull()
+private fun String.normalizeCoordinate(): Double? = replace(',', '.').toDoubleOrNull()
 
 private data class CoordinateValidation(
     val value: Double?,
@@ -408,11 +415,10 @@ private fun validateLongitude(input: String): CoordinateValidation {
 
 private fun Double.formatCoordinate(): String = String.format(Locale.US, "%.5f", this)
 
-private fun isLocationPermissionGranted(context: Context): Boolean =
-    ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.ACCESS_COARSE_LOCATION
-    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+private fun isLocationPermissionGranted(context: Context): Boolean = ContextCompat.checkSelfPermission(
+    context,
+    Manifest.permission.ACCESS_COARSE_LOCATION,
+) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
 private fun openAppSettings(context: Context) {
     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {

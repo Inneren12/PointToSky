@@ -21,22 +21,24 @@ class BinaryConstellationBoundariesLoadTest {
     fun `load one region and find point`() {
         val payload = buildPayload(
             code = "ORI",
-            minRa = 80.0, maxRa = 100.0,
-            minDec = -10.0, maxDec = 10.0
+            minRa = 80.0,
+            maxRa = 100.0,
+            minDec = -10.0,
+            maxDec = 10.0,
         )
         val crc = CRC32().apply { update(payload) }.value.toInt()
 
         val header = ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN).apply {
             put("PTSK".toByteArray(StandardCharsets.US_ASCII)) // magic
             put("CONS".toByteArray(StandardCharsets.US_ASCII)) // type
-            putInt(1)      // version
-            putInt(1)      // recordCount
-            putInt(crc)    // payloadCrc32
+            putInt(1) // version
+            putInt(1) // recordCount
+            putInt(crc) // payloadCrc32
         }.array()
 
         val fileBytes = header + payload
         val provider = ByteArrayAssetProvider(
-            mapOf(BinaryConstellationBoundaries.DEFAULT_PATH to fileBytes)
+            mapOf(BinaryConstellationBoundaries.DEFAULT_PATH to fileBytes),
         )
 
         val loaded = BinaryConstellationBoundaries.load(provider)
@@ -51,13 +53,7 @@ class BinaryConstellationBoundariesLoadTest {
         assertEquals(1, bin.metadata.recordCount)
     }
 
-    private fun buildPayload(
-        code: String,
-        minRa: Double,
-        maxRa: Double,
-        minDec: Double,
-        maxDec: Double
-    ): ByteArray {
+    private fun buildPayload(code: String, minRa: Double, maxRa: Double, minDec: Double, maxDec: Double): ByteArray {
         val nameBytes = code.toByteArray(StandardCharsets.UTF_8)
         val bb = ByteBuffer.allocate(4 + nameBytes.size + 8 * 4)
             .order(ByteOrder.LITTLE_ENDIAN)
@@ -70,4 +66,3 @@ class BinaryConstellationBoundariesLoadTest {
         return bb.array()
     }
 }
-

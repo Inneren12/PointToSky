@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -15,6 +14,7 @@ import kotlinx.serialization.json.put
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import androidx.core.content.pm.PackageInfoCompat
 
 enum class LogLevel {
     VERBOSE,
@@ -22,7 +22,7 @@ enum class LogLevel {
     INFO,
     WARN,
     ERROR,
-    EVENT
+    EVENT,
 }
 
 data class LogEvent(
@@ -35,7 +35,7 @@ data class LogEvent(
     val thread: ThreadSnapshot,
     val process: ProcessSnapshot,
     val device: DeviceInfo,
-    val error: ThrowableSnapshot? = null
+    val error: ThrowableSnapshot? = null,
 ) {
     fun toJsonLine(json: Json = defaultJson): String {
         val element = buildJsonObject {
@@ -70,7 +70,7 @@ data class LogEvent(
 data class ThreadSnapshot(
     val name: String,
     val id: Long,
-    val isMainThread: Boolean
+    val isMainThread: Boolean,
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("name", name)
@@ -81,7 +81,7 @@ data class ThreadSnapshot(
 
 data class ProcessSnapshot(
     val pid: Int,
-    val processName: String
+    val processName: String,
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("pid", pid)
@@ -98,7 +98,7 @@ data class DeviceInfo(
     val appVersionCode: Long,
     val packageName: String,
     val isDebug: Boolean,
-    val diagnosticsEnabled: Boolean
+    val diagnosticsEnabled: Boolean,
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("manufacturer", manufacturer)
@@ -113,22 +113,14 @@ data class DeviceInfo(
     }
 
     companion object {
-        fun from(
-            context: Context,
-            isDebug: Boolean,
-            diagnosticsEnabled: Boolean = isDebug
-        ): DeviceInfo {
+        fun from(context: Context, isDebug: Boolean, diagnosticsEnabled: Boolean = isDebug): DeviceInfo {
             val packageManager = context.packageManager
             val packageName = context.packageName
             val packageInfo = runCatching {
                 packageManager.getPackageInfoCompat(packageName)
             }.getOrNull()
             val versionName = packageInfo?.versionName ?: "0.0"
-            val versionCode = if (packageInfo != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) packageInfo.longVersionCode else packageInfo.versionCode.toLong()
-            } else {
-                0L
-            }
+            val versionCode = packageInfo?.let { PackageInfoCompat.getLongVersionCode(it) } ?: 0L
             return DeviceInfo(
                 manufacturer = Build.MANUFACTURER.orEmptyFallback("unknown"),
                 model = Build.MODEL.orEmptyFallback("unknown"),
@@ -138,17 +130,16 @@ data class DeviceInfo(
                 appVersionCode = versionCode,
                 packageName = packageName,
                 isDebug = isDebug,
-                diagnosticsEnabled = diagnosticsEnabled
+                diagnosticsEnabled = diagnosticsEnabled,
             )
         }
 
-        private fun PackageManager.getPackageInfoCompat(packageName: String) =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION")
-                getPackageInfo(packageName, 0)
-            }
+        private fun PackageManager.getPackageInfoCompat(packageName: String) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            getPackageInfo(packageName, 0)
+        }
 
         private fun String?.orEmptyFallback(fallback: String): String = this?.takeIf { it.isNotBlank() } ?: fallback
     }
@@ -157,7 +148,7 @@ data class DeviceInfo(
 data class ThrowableSnapshot(
     val type: String,
     val message: String?,
-    val stackTrace: String
+    val stackTrace: String,
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("type", type)
@@ -169,7 +160,7 @@ data class ThrowableSnapshot(
         fun from(throwable: Throwable): ThrowableSnapshot = ThrowableSnapshot(
             type = throwable::class.java.name,
             message = throwable.message,
-            stackTrace = throwable.stackTraceToString()
+            stackTrace = throwable.stackTraceToString(),
         )
     }
 }

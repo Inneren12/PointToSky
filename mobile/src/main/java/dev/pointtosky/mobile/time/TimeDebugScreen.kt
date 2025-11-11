@@ -13,8 +13,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -26,13 +26,9 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.collections.ArrayDeque
-import kotlinx.coroutines.flow.collect
 
 @Composable
-fun TimeDebugScreen(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun TimeDebugScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val timeSource = remember { SystemTimeSource() }
     val zoneRepo = remember(context.applicationContext) { ZoneRepo(context.applicationContext) }
@@ -40,7 +36,7 @@ fun TimeDebugScreen(
         onBack = onBack,
         timeSource = timeSource,
         zoneRepo = zoneRepo,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -49,7 +45,7 @@ private fun TimeDebugContent(
     onBack: () -> Unit,
     timeSource: SystemTimeSource,
     zoneRepo: ZoneRepo,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
 ) {
     val zoneId by zoneRepo.zoneFlow.collectAsState(initial = zoneRepo.current())
     val periodMs by timeSource.periodMsFlow.collectAsState()
@@ -74,11 +70,11 @@ private fun TimeDebugContent(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
             text = stringResource(id = R.string.time_debug),
-            style = MaterialTheme.typography.headlineSmall
+            style = MaterialTheme.typography.headlineSmall,
         )
         Text(text = "UTC: $utcText")
         Text(text = "Local: $localText")
@@ -103,7 +99,7 @@ private fun TimeDebugContent(
 private fun rememberTickMetrics(timeSource: SystemTimeSource): State<TickMetrics> {
     return produceState(
         initialValue = TickMetrics(timeSource.now(), null, null),
-        key1 = timeSource
+        key1 = timeSource,
     ) {
         val samples = ArrayDeque<Long>()
         timeSource.ticks.collect { instant ->
@@ -133,4 +129,3 @@ private data class TickMetrics(
 private const val FAST_PERIOD_MS = 1_000L
 private const val SLOW_PERIOD_MS = 5_000L
 private const val SAMPLE_WINDOW_SIZE = 6
-

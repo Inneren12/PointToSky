@@ -26,8 +26,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.pointtosky.core.logging.CrashLogEntry
 import dev.pointtosky.mobile.R
 import java.time.ZoneId
@@ -35,10 +35,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun CrashLogRoute(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun CrashLogRoute(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val application = remember(context) { context.applicationContext as Application }
     val viewModel: CrashLogViewModel = viewModel(factory = CrashLogViewModelFactory(application))
@@ -77,15 +74,15 @@ fun CrashLogScreen(
             .fillMaxSize()
             .verticalScroll(scrollState)
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
             text = stringResource(id = R.string.crash_logs_title),
-            style = MaterialTheme.typography.headlineSmall
+            style = MaterialTheme.typography.headlineSmall,
         )
         Text(
             text = stringResource(id = R.string.crash_logs_instruction),
-            style = MaterialTheme.typography.bodyMedium
+            style = MaterialTheme.typography.bodyMedium,
         )
         if (state.statusMessage != null || state.errorMessage != null) {
             val text = state.statusMessage ?: state.errorMessage ?: ""
@@ -111,12 +108,25 @@ fun CrashLogScreen(
         }
         Spacer(modifier = Modifier.height(8.dp))
         if (lastCrash != null) {
-            Text(text = stringResource(id = R.string.crash_logs_last_crash))
+            Text(
+                text = stringResource(id = R.string.crash_logs_last_crash),
+            )
             timestampText?.let {
                 Text(text = stringResource(id = R.string.crash_logs_last_crash_time, it))
             }
-            Text(text = stringResource(id = R.string.crash_logs_last_crash_thread, lastCrash.threadName, lastCrash.threadId))
-            Text(text = stringResource(id = R.string.crash_logs_last_crash_type, lastCrash.exceptionType))
+            Text(
+                text = stringResource(
+                    id = R.string.crash_logs_last_crash_thread,
+                    lastCrash.threadName,
+                    lastCrash.threadId,
+                ),
+            )
+            Text(
+                text = stringResource(
+                    id = R.string.crash_logs_last_crash_type,
+                    lastCrash.exceptionType,
+                ),
+            )
             lastCrash.message?.let { message ->
                 if (message.isNotBlank()) {
                     Text(text = stringResource(id = R.string.crash_logs_last_crash_message, message))
@@ -141,20 +151,20 @@ fun CrashLogScreen(
         Button(
             onClick = onCreateZip,
             enabled = state.hasLogs && !state.isBusy,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = stringResource(id = R.string.crash_logs_create_zip))
         }
         OutlinedButton(
             onClick = onClear,
             enabled = state.hasLogs && !state.isBusy,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = stringResource(id = R.string.crash_logs_clear))
         }
         OutlinedButton(
             onClick = onBack,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = stringResource(id = R.string.crash_logs_back))
         }

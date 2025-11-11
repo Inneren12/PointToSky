@@ -6,8 +6,8 @@ import dev.pointtosky.core.astro.identify.SkyCatalog
 import dev.pointtosky.core.astro.identify.SkyObject
 import dev.pointtosky.core.astro.identify.Type
 
-public object FakeSkyCatalog : SkyCatalog {
-    public val placeholder: SkyObject = SkyObject(
+object FakeSkyCatalog : SkyCatalog {
+    val placeholder: SkyObject = SkyObject(
         id = "debug-star",
         name = "Debug Star",
         eq = Equatorial(0.0, 0.0),
@@ -22,6 +22,6 @@ public object FakeSkyCatalog : SkyCatalog {
     }
 }
 
-public object FakeConstellationBoundaries : ConstellationBoundaries {
+object FakeConstellationBoundaries : ConstellationBoundaries {
     override fun findByEq(eq: Equatorial): String? = null
 }

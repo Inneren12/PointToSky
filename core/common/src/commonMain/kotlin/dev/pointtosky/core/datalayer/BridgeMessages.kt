@@ -75,6 +75,9 @@ data class AimTargetBodyPayload(
 @Serializable
 data class AimTargetStarPayload(
     val id: String,
+    // Опциональные координаты, если телефон уже вычислил целевую позицию (предпочтительно).
+    val raDeg: Double? = null,
+    val decDeg: Double? = null,
 )
 
 @Serializable

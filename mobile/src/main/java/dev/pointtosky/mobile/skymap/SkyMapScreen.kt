@@ -1,24 +1,24 @@
 package dev.pointtosky.mobile.skymap
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,17 +39,17 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.toIntSize
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toIntSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.astro.coord.Horizontal
+import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import java.time.ZoneId
@@ -75,7 +75,7 @@ fun SkyMapRoute(
             catalogRepository = catalogRepository,
             locationPrefs = locationPrefs,
             context = context.applicationContext,
-        )
+        ),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
     SkyMapScreen(
@@ -92,7 +92,7 @@ private fun SkyMapScreen(
     state: SkyMapState,
     onBack: () -> Unit,
     onOpenCard: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
 ) {
     val colorScheme = MaterialTheme.colorScheme
     Scaffold(
@@ -102,18 +102,18 @@ private fun SkyMapScreen(
                 title = { Text(text = stringResource(id = R.string.sky_map_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
-                }
+                },
             )
-        }
+        },
     ) { padding ->
         when (state) {
             SkyMapState.Loading -> Box(
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize(),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator()
             }
@@ -131,11 +131,7 @@ private fun SkyMapScreen(
 }
 
 @Composable
-private fun SkyMapContent(
-    state: SkyMapState.Ready,
-    onOpenCard: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var scale by rememberSaveable { mutableStateOf(1f) }
@@ -193,7 +189,7 @@ private fun SkyMapContent(
                             }
                         }
                     }
-                }
+                },
         ) {
             drawSkyBackground(scale, offset, backgroundColor)
             drawAltitudeGrid(scale, offset, gridColor)
@@ -205,11 +201,11 @@ private fun SkyMapContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Box(
                 modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.TopEnd
+                contentAlignment = Alignment.TopEnd,
             ) {
                 Surface(tonalElevation = 2.dp) {
                     val latText = formatCoordinate(state.location.latDeg, isLat = true)
@@ -235,12 +231,12 @@ private fun SkyMapContent(
             selectedStar?.let { star ->
                 Surface(
                     tonalElevation = 4.dp,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
                             text = star.label ?: stringResource(id = R.string.sky_map_unnamed_star),
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
                         )
                         star.constellation?.let { code ->
                             Text(
@@ -311,7 +307,7 @@ private fun DrawScope.drawConstellations(
     constellations: List<ConstellationProjection>,
     scale: Float,
     offset: Offset,
-    color: Color,
+    color: Color
 ) {
     val path = Path()
     val stroke = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
@@ -360,7 +356,7 @@ private fun DrawScope.drawStars(
                 color = selectedColor,
                 radius = radius * 1.6f,
                 center = projected,
-                style = Stroke(width = radius * 0.4f)
+                style = Stroke(width = radius * 0.4f),
             )
         }
     }

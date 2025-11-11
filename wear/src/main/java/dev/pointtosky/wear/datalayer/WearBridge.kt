@@ -1,25 +1,32 @@
 package dev.pointtosky.wear.datalayer
 
+import android.app.Activity
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.core.app.TaskStackBuilder
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetBodyPayload
 import dev.pointtosky.core.datalayer.AimTargetEquatorialPayload
 import dev.pointtosky.core.datalayer.AimTargetKind
+import dev.pointtosky.core.datalayer.AimTargetStarPayload
 import dev.pointtosky.core.datalayer.AppOpenMessage
 import dev.pointtosky.core.datalayer.AppOpenScreen
 import dev.pointtosky.core.datalayer.JsonCodec
+import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
 import dev.pointtosky.core.logging.LogBus
-import dev.pointtosky.wear.MainActivity
 import dev.pointtosky.wear.ACTION_OPEN_AIM
 import dev.pointtosky.wear.ACTION_OPEN_IDENTIFY
 import dev.pointtosky.wear.EXTRA_AIM_BODY
 import dev.pointtosky.wear.EXTRA_AIM_DEC_DEG
 import dev.pointtosky.wear.EXTRA_AIM_RA_DEG
+import dev.pointtosky.wear.EXTRA_AIM_STAR_ID
 import dev.pointtosky.wear.EXTRA_AIM_TARGET_KIND
+import dev.pointtosky.wear.MainActivity
 import dev.pointtosky.wear.aim.core.AimTarget
+import dev.pointtosky.wear.datalayer.WearBridge.handleAimSetTargetJson
 import dev.pointtosky.wear.tile.tonight.TonightTargetsActivity
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -64,6 +71,26 @@ object WearBridge {
                 target = target,
             ),
         )
+    }
+
+    // --- Back-compat: алиасы для старых вызовов ---
+    fun handleAimSetTargetJson(context: Context, json: String) {
+        val msg = runCatching {
+            JsonCodec.decode<AimSetTargetMessage>(json.toByteArray(Charsets.UTF_8))
+        }.getOrElse { t ->
+            LogBus.event("dl_error", mapOf("err" to (t.message ?: t::class.java.simpleName), "path" to PATH_AIM_SET_TARGET))
+            return
+        }
+        handleAimSetTargetMessage(context, msg)
+    }
+
+    fun handleAimSetTargetJson(context: Context, bytes: ByteArray) {
+        val msg = runCatching { JsonCodec.decode<AimSetTargetMessage>(bytes) }
+            .getOrElse { t ->
+                LogBus.event("dl_error", mapOf("err" to (t.message ?: t::class.java.simpleName), "path" to PATH_AIM_SET_TARGET))
+                return
+            }
+        handleAimSetTargetMessage(context, msg)
     }
 
     fun handleAimSetTargetMessage(context: Context, message: AimSetTargetMessage) {
@@ -118,33 +145,56 @@ object WearBridge {
                     putExtra(EXTRA_AIM_TARGET_KIND, "body")
                     putExtra(EXTRA_AIM_BODY, target.body.name)
                 }
+                is AimTarget.StarTarget -> {
+                    putExtra(EXTRA_AIM_TARGET_KIND, "star")
+                    putExtra(EXTRA_AIM_STAR_ID, target.starId)
+                    // Если координаты уже даны — продублируем как экваториальные (UI сможет ими сразу пользоваться)
+                    target.eq?.let {
+                        putExtra(EXTRA_AIM_RA_DEG, it.raDeg)
+                        putExtra(EXTRA_AIM_DEC_DEG, it.decDeg)
+                    }
+                }
             }
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(intent)
+        startActivitySafe(context, intent)
     }
 
     private fun openAim(context: Context) {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            action = ACTION_OPEN_AIM
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
+        val intent = Intent(context, MainActivity::class.java).apply { action = ACTION_OPEN_AIM }
+        startActivitySafe(context, intent)
     }
 
     private fun openIdentify(context: Context) {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            action = ACTION_OPEN_IDENTIFY
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
+        val intent = Intent(context, MainActivity::class.java).apply { action = ACTION_OPEN_IDENTIFY }
+        startActivitySafe(context, intent)
     }
 
     private fun openTileTargets(context: Context) {
-        val intent = Intent(context, TonightTargetsActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = Intent(context, TonightTargetsActivity::class.java)
+        startActivitySafe(context, intent)
+    }
+
+    private fun startActivitySafe(context: Context, intent: Intent) {
+        if (context is Activity) {
+            context.startActivity(intent)
+            return
         }
-        context.startActivity(intent)
+
+        // Запускаем через стек и PendingIntent — без прямого NEW_TASK/CLEAR_TOP
+        val stack = TaskStackBuilder.create(context).apply {
+            // если в манифесте задан parentActivityName, сформирует корректный back stack
+            addNextIntentWithParentStack(intent)
+        }
+        val pi = stack.getPendingIntent(
+            0,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            pi?.send()
+        } catch (_: PendingIntent.CanceledException) {
+            // опционально: лог, фолбек на уведомление
+        }
     }
 
     private fun parseAimTarget(kind: AimTargetKind, payload: kotlinx.serialization.json.JsonElement): AimTarget? {
@@ -161,7 +211,17 @@ object WearBridge {
                 }.getOrNull()?.body ?: return null
                 runCatching { Body.valueOf(bodyName) }.getOrNull()?.let { AimTarget.BodyTarget(it) }
             }
-            AimTargetKind.STAR -> null
+            AimTargetKind.STAR -> {
+                val dto = runCatching {
+                    JsonCodec.decodeFromElement<AimTargetStarPayload>(payload)
+                }.getOrNull() ?: return null
+                val idInt = dto.id.toIntOrNull() ?: return null
+                // локальные переменные — без смарт‑каста публичных свойств из другого модуля
+                val ra = dto.raDeg
+                val dec = dto.decDeg
+                val eq = if (ra != null && dec != null) Equatorial(ra, dec) else null
+                AimTarget.StarTarget(idInt, eq)
+            }
         }
     }
 }

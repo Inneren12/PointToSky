@@ -13,9 +13,9 @@ import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.zip.CRC32
 
-public class BinaryConstellationBoundaries private constructor(
+class BinaryConstellationBoundaries private constructor(
     private val regions: List<Region>,
-    public val metadata: Metadata,
+    val metadata: Metadata,
 ) : ConstellationBoundaries {
     override fun findByEq(eq: Equatorial): String? {
         val normalizedRa = normalizeRa(eq.raDeg)
@@ -40,15 +40,15 @@ public class BinaryConstellationBoundaries private constructor(
         }
     }
 
-    public companion object {
+    companion object {
         private const val TAG: String = "BinaryConstellation"
         private const val MAGIC_PREFIX: String = "PTSK"
         private const val EXPECTED_TYPE: String = "CONS"
         private const val HEADER_SIZE_BYTES: Int = 20
         private const val SUPPORTED_VERSION: Int = 1
-        public const val DEFAULT_PATH: String = "catalog/const_v1.bin"
+        const val DEFAULT_PATH: String = "catalog/const_v1.bin"
 
-        public fun load(
+        fun load(
             assetProvider: AssetProvider,
             path: String = DEFAULT_PATH,
             fallback: ConstellationBoundaries = FakeConstellationBoundaries,
@@ -204,7 +204,7 @@ public class BinaryConstellationBoundaries private constructor(
             }
         }
     }
-    public data class Metadata(
+    data class Metadata(
         val sizeBytes: Int,
         val recordCount: Int,
         val payloadCrc32: Long,

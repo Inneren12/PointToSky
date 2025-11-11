@@ -4,65 +4,67 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.booleanPreferencesKey as boolKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import androidx.datastore.preferences.core.booleanPreferencesKey as boolKey
 
 private val Context.aimIdentifyPrefsDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "aim_identify_prefs"
+    name = "aim_identify_prefs",
 )
 
 class AimIdentifySettingsDataStore(
-    private val context: Context
+    private val context: Context,
 ) {
     // Keys
-    private val KEY_AZ_TOL = doublePreferencesKey("aim.azTol")
-    private val KEY_ALT_TOL = doublePreferencesKey("aim.altTol")
-    private val KEY_HOLD_MS = longPreferencesKey("aim.holdMs")
-    private val KEY_HAPTIC = booleanPreferencesKey("aim.hapticEnabled")
-    private val KEY_MAG_LIMIT = doublePreferencesKey("identify.magLimit")
-    private val KEY_RADIUS = doublePreferencesKey("identify.radiusDeg")
+    private val keyAzTol = doublePreferencesKey("aim.azTol")
+    private val keyAltTol = doublePreferencesKey("aim.altTol")
+    private val keyHoldMs = longPreferencesKey("aim.holdMs")
+    private val keyHaptic = booleanPreferencesKey("aim.hapticEnabled")
+    private val keyMagLimit = doublePreferencesKey("identify.magLimit")
+    private val keyRadius = doublePreferencesKey("identify.radiusDeg")
 
     // Defaults (per spec)
-    private val DEF_AZ_TOL = 3.0
-    private val DEF_ALT_TOL = 4.0
-    private val DEF_HOLD_MS = 1200L
-    private val DEF_HAPTIC = true
-    private val DEF_MAG_LIMIT = 5.5
-    private val DEF_RADIUS = 5.0
-    private val DEF_TILE_MIRROR = false
+    private val defAzTol = 3.0
+    private val defAltTol = 4.0
+    private val defHoldMs = 1200L
+    private val defHaptic = true
+    private val defMagLimit = 5.5
+    private val defRadius = 5.0
+    private val defTileMirror = false
 
     // Flows
     val aimAzTolFlow: Flow<Double> =
-        context.aimIdentifyPrefsDataStore.data.map { it[KEY_AZ_TOL] ?: DEF_AZ_TOL }
+        context.aimIdentifyPrefsDataStore.data.map { it[keyAzTol] ?: defAzTol }
     val aimAltTolFlow: Flow<Double> =
-        context.aimIdentifyPrefsDataStore.data.map { it[KEY_ALT_TOL] ?: DEF_ALT_TOL }
+        context.aimIdentifyPrefsDataStore.data.map { it[keyAltTol] ?: defAltTol }
     val aimHoldMsFlow: Flow<Long> =
-        context.aimIdentifyPrefsDataStore.data.map { it[KEY_HOLD_MS] ?: DEF_HOLD_MS }
+        context.aimIdentifyPrefsDataStore.data.map { it[keyHoldMs] ?: defHoldMs }
     val aimHapticEnabledFlow: Flow<Boolean> =
-        context.aimIdentifyPrefsDataStore.data.map { it[KEY_HAPTIC] ?: DEF_HAPTIC }
+        context.aimIdentifyPrefsDataStore.data.map { it[keyHaptic] ?: defHaptic }
     val identifyMagLimitFlow: Flow<Double> =
-        context.aimIdentifyPrefsDataStore.data.map { it[KEY_MAG_LIMIT] ?: DEF_MAG_LIMIT }
+        context.aimIdentifyPrefsDataStore.data.map { it[keyMagLimit] ?: defMagLimit }
     val identifyRadiusDegFlow: Flow<Double> =
-        context.aimIdentifyPrefsDataStore.data.map { it[KEY_RADIUS] ?: DEF_RADIUS }
+        context.aimIdentifyPrefsDataStore.data.map { it[keyRadius] ?: defRadius }
 
     // S7.E: Mirroring toggle
-    private val KEY_TILE_MIRROR = boolKey("tile.mirroringEnabled")
+    private val keyTileMirror = boolKey("tile.mirroringEnabled")
     val tileMirroringEnabledFlow: Flow<Boolean> =
-        context.aimIdentifyPrefsDataStore.data.map { it[KEY_TILE_MIRROR] ?: DEF_TILE_MIRROR }
+        context.aimIdentifyPrefsDataStore.data.map { it[keyTileMirror] ?: defTileMirror }
 
     // Setters
-    suspend fun setAimAzTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[KEY_AZ_TOL] = value }
-    suspend fun setAimAltTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[KEY_ALT_TOL] = value }
-    suspend fun setAimHoldMs(value: Long) = context.aimIdentifyPrefsDataStore.edit { it[KEY_HOLD_MS] = value }
-    suspend fun setAimHapticEnabled(value: Boolean) = context.aimIdentifyPrefsDataStore.edit { it[KEY_HAPTIC] = value }
-    suspend fun setIdentifyMagLimit(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[KEY_MAG_LIMIT] = value }
-    suspend fun setIdentifyRadiusDeg(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[KEY_RADIUS] = value }
+    suspend fun setAimAzTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyAzTol] = value }
+    suspend fun setAimAltTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyAltTol] = value }
+    suspend fun setAimHoldMs(value: Long) = context.aimIdentifyPrefsDataStore.edit { it[keyHoldMs] = value }
+    suspend fun setAimHapticEnabled(value: Boolean) = context.aimIdentifyPrefsDataStore.edit { it[keyHaptic] = value }
+    suspend fun setIdentifyMagLimit(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyMagLimit] = value }
+    suspend fun setIdentifyRadiusDeg(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyRadius] = value }
+
     // S7.E
-    suspend fun setTileMirroringEnabled(value: Boolean) =
-        context.aimIdentifyPrefsDataStore.edit { it[KEY_TILE_MIRROR] = value }
+    suspend fun setTileMirroringEnabled(value: Boolean) = context.aimIdentifyPrefsDataStore.edit {
+        it[keyTileMirror] = value
+    }
 }

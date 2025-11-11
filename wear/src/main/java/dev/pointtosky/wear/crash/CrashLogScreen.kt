@@ -6,30 +6,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Text
 import dev.pointtosky.wear.R
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import androidx.compose.ui.unit.dp
 
 @Composable
-fun CrashLogRoute(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun CrashLogRoute(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val application = remember(context) { context.applicationContext as Application }
     val viewModel: CrashLogViewModel = viewModel(factory = CrashLogViewModelFactory(application))
@@ -63,7 +60,7 @@ fun CrashLogScreen(
     ScalingLazyColumn(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         item {
             Text(text = stringResource(id = R.string.crash_logs_title), style = MaterialTheme.typography.title3)
@@ -88,14 +85,14 @@ fun CrashLogScreen(
                     color = color,
                     style = MaterialTheme.typography.body2,
                     textAlign = TextAlign.Center,
-                    )
+                )
             }
             item {
                 Button(
                     onClick = onDismissMessage,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.secondaryButtonColors(),
-                    ) {
+                ) {
                     Text(text = stringResource(id = R.string.crash_logs_message_dismiss))
                 }
             }
@@ -119,7 +116,13 @@ fun CrashLogScreen(
                 }
             }
             item {
-                Text(text = stringResource(id = R.string.crash_logs_last_crash_thread, lastCrash.threadName, lastCrash.threadId))
+                Text(
+                    text = stringResource(
+                        id = R.string.crash_logs_last_crash_thread,
+                        lastCrash.threadName,
+                        lastCrash.threadId,
+                    ),
+                )
             }
             item {
                 Text(text = stringResource(id = R.string.crash_logs_last_crash_type, lastCrash.exceptionType))

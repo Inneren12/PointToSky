@@ -8,7 +8,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.zip.CRC32
 import kotlin.math.abs
-import kotlin.math.ceil
 import kotlin.math.min
 
 class BinaryConstellationBoundaries(
@@ -201,14 +200,14 @@ class BinaryConstellationBoundaries(
             for (i in unwrappedRa.indices) {
                 val x = angleDelta(unwrappedRa[i], ra)
                 val y = dec[i] - decValue
-                val cross = prevX * y - x * prevY    // псевдоскаляр (2D cross)
-                val dot = prevX * x + prevY * y      // скалярное произведение
+                val cross = prevX * y - x * prevY // псевдоскаляр (2D cross)
+                val dot = prevX * x + prevY * y // скалярное произведение
                 sum += kotlin.math.atan2(cross, dot)
                 prevX = x
                 prevY = y
             }
             // |sum| ≈ 2π — внутри; ≈ 0 — снаружи.
-            return kotlin.math.abs(sum) > Math.PI
+            return abs(sum) > Math.PI
         }
 
         /** Минимальная знаковая разность (vertexRa - refRa) по кругу, диапазон [-180; +180). */

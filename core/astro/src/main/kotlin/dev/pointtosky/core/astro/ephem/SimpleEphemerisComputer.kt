@@ -3,7 +3,7 @@ package dev.pointtosky.core.astro.ephem
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.units.degToRad
 import dev.pointtosky.core.astro.units.radToDeg
-import dev.pointtosky.core.astro.units.wrapDeg0_360
+import dev.pointtosky.core.astro.units.wrapDeg0To360
 import dev.pointtosky.core.time.instantToJulianDay
 import java.time.Instant
 import kotlin.math.abs
@@ -12,24 +12,24 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-public enum class Body {
+enum class Body {
     SUN,
     MOON,
     JUPITER,
     SATURN,
 }
 
-public data class Ephemeris(
+data class Ephemeris(
     val eq: Equatorial,
     val distanceAu: Double? = null,
     val phase: Double? = null,
 )
 
-public interface EphemerisComputer {
-    public fun compute(body: Body, instant: Instant): Ephemeris
+interface EphemerisComputer {
+    fun compute(body: Body, instant: Instant): Ephemeris
 }
 
-public class SimpleEphemerisComputer : EphemerisComputer {
+class SimpleEphemerisComputer : EphemerisComputer {
 
     override fun compute(body: Body, instant: Instant): Ephemeris {
         val jd = instantToJulianDay(instant)
@@ -38,10 +38,10 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         val eclRad = degToRad(eclDeg)
 
         val sun = computeSun(d, eclRad)
-        val jupiterMeanAnomalyDeg = wrapDeg0_360(
+        val jupiterMeanAnomalyDeg = wrapDeg0To360(
             JUPITER_ELEMENTS.meanAnomaly + JUPITER_ELEMENTS.meanAnomalyRate * d,
         )
-        val saturnMeanAnomalyDeg = wrapDeg0_360(
+        val saturnMeanAnomalyDeg = wrapDeg0To360(
             SATURN_ELEMENTS.meanAnomaly + SATURN_ELEMENTS.meanAnomalyRate * d,
         )
 
@@ -70,12 +70,12 @@ public class SimpleEphemerisComputer : EphemerisComputer {
     }
 
     private fun computeMoon(d: Double, eclRad: Double, sun: SunContext): Ephemeris {
-        val nDeg = wrapDeg0_360(125.1228 - 0.0529538083 * d)
+        val nDeg = wrapDeg0To360(125.1228 - 0.0529538083 * d)
         val iDeg = 5.1454
-        val wDeg = wrapDeg0_360(318.0634 + 0.1643573223 * d)
+        val wDeg = wrapDeg0To360(318.0634 + 0.1643573223 * d)
         val aEarthRadii = 60.2666
         val e = 0.0549
-        val mDeg = wrapDeg0_360(115.3654 + 13.0649929509 * d)
+        val mDeg = wrapDeg0To360(115.3654 + 13.0649929509 * d)
 
         val nRad = degToRad(nDeg)
         val iRad = degToRad(iDeg)
@@ -104,15 +104,15 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         val yh = rEarthRadii * (sinN * cosVPlusW + cosN * sinVPlusW * cos(iRad))
         val zh = rEarthRadii * sinVPlusW * sin(iRad)
 
-        var loneclDeg = wrapDeg0_360(radToDeg(atan2(yh, xh)))
+        var loneclDeg = wrapDeg0To360(radToDeg(atan2(yh, xh)))
         var lateclDeg = radToDeg(atan2(zh, sqrt(xh * xh + yh * yh)))
         var distanceEarthRadii = rEarthRadii
 
         val msDeg = sun.meanAnomalyDeg
-        val lsDeg = wrapDeg0_360(msDeg + sun.wDeg)
-        val lmDeg = wrapDeg0_360(mDeg + wDeg + nDeg)
-        val dDeg = wrapDeg0_360(lmDeg - lsDeg)
-        val fDeg = wrapDeg0_360(lmDeg - nDeg)
+        val lsDeg = wrapDeg0To360(msDeg + sun.wDeg)
+        val lmDeg = wrapDeg0To360(mDeg + wDeg + nDeg)
+        val dDeg = wrapDeg0To360(lmDeg - lsDeg)
+        val fDeg = wrapDeg0To360(lmDeg - nDeg)
 
         val mRadSun = degToRad(msDeg)
         val dRad = degToRad(dDeg)
@@ -131,7 +131,7 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         loneclDeg += (-0.031) * sin(mRadMoon + mRadSun)
         loneclDeg += (-0.015) * sin(2.0 * fRad - 2.0 * dRad)
         loneclDeg += 0.011 * sin(mRadMoon - 4.0 * dRad)
-        loneclDeg = wrapDeg0_360(loneclDeg)
+        loneclDeg = wrapDeg0To360(loneclDeg)
 
         lateclDeg += (-0.173) * sin(fRad - 2.0 * dRad)
         lateclDeg += (-0.055) * sin(mRadMoon - fRad - 2.0 * dRad)
@@ -153,11 +153,11 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         val ye = yg * cos(eclRad) - zg * sin(eclRad)
         val ze = yg * sin(eclRad) + zg * cos(eclRad)
 
-        val raDeg = wrapDeg0_360(radToDeg(atan2(ye, xe)))
+        val raDeg = wrapDeg0To360(radToDeg(atan2(ye, xe)))
         val decDeg = radToDeg(atan2(ze, sqrt(xe * xe + ye * ye)))
 
         val distanceAu = distanceEarthRadii * EARTH_RADIUS_AU
-        val elongation = degToRad(wrapDeg0_360(loneclDeg - sun.eclipticLongitudeDeg))
+        val elongation = degToRad(wrapDeg0To360(loneclDeg - sun.eclipticLongitudeDeg))
         val phase = 0.5 * (1.0 - cos(elongation))
 
         return Ephemeris(
@@ -176,12 +176,12 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         saturnMeanAnomalyDeg: Double,
         perturbations: (PlanetPosition, Double, Double, Double) -> PlanetPosition,
     ): Ephemeris {
-        val nDeg = wrapDeg0_360(elements.node + elements.nodeRate * d)
+        val nDeg = wrapDeg0To360(elements.node + elements.nodeRate * d)
         val iDeg = elements.inclination + elements.inclinationRate * d
-        val wDeg = wrapDeg0_360(elements.perihelion + elements.perihelionRate * d)
+        val wDeg = wrapDeg0To360(elements.perihelion + elements.perihelionRate * d)
         val a = elements.semiMajorAxis
         val e = elements.eccentricity + elements.eccentricityRate * d
-        val mDeg = wrapDeg0_360(elements.meanAnomaly + elements.meanAnomalyRate * d)
+        val mDeg = wrapDeg0To360(elements.meanAnomaly + elements.meanAnomalyRate * d)
 
         val nRad = degToRad(nDeg)
         val iRad = degToRad(iDeg)
@@ -210,7 +210,7 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         val yh = r * (sinN * cosVPlusW + cosN * sinVPlusW * cos(iRad))
         val zh = r * (sinVPlusW * sin(iRad))
 
-        var loneclDeg = wrapDeg0_360(radToDeg(atan2(yh, xh)))
+        var loneclDeg = wrapDeg0To360(radToDeg(atan2(yh, xh)))
         var lateclDeg = radToDeg(atan2(zh, sqrt(xh * xh + yh * yh)))
         var radius = r
 
@@ -242,7 +242,7 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         val ye = yg * cos(eclRad) - zg * sin(eclRad)
         val ze = yg * sin(eclRad) + zg * cos(eclRad)
 
-        val raDeg = wrapDeg0_360(radToDeg(atan2(ye, xe)))
+        val raDeg = wrapDeg0To360(radToDeg(atan2(ye, xe)))
         val decDeg = radToDeg(atan2(ze, sqrt(xe * xe + ye * ye)))
         val distanceAu = sqrt(xg * xg + yg * yg + zg * zg)
 
@@ -252,7 +252,7 @@ public class SimpleEphemerisComputer : EphemerisComputer {
     private fun computeSun(d: Double, eclRad: Double): SunContext {
         val wDeg = 282.9404 + 4.70935e-5 * d
         val e = 0.016709 - 1.151e-9 * d
-        val mDeg = wrapDeg0_360(356.0470 + 0.9856002585 * d)
+        val mDeg = wrapDeg0To360(356.0470 + 0.9856002585 * d)
         val mRad = degToRad(mDeg)
 
         var eccentricAnomaly = mRad + e * sin(mRad) * (1.0 + e * cos(mRad))
@@ -267,7 +267,7 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         val v = atan2(yv, xv)
         val r = sqrt(xv * xv + yv * yv)
         val lonRad = v + degToRad(wDeg)
-        val lonDeg = wrapDeg0_360(radToDeg(lonRad))
+        val lonDeg = wrapDeg0To360(radToDeg(lonRad))
 
         val xs = r * cos(lonRad)
         val ys = r * sin(lonRad)
@@ -275,7 +275,7 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         val ye = ys * cos(eclRad)
         val ze = ys * sin(eclRad)
 
-        val raDeg = wrapDeg0_360(radToDeg(atan2(ye, xe)))
+        val raDeg = wrapDeg0To360(radToDeg(atan2(ye, xe)))
         val decDeg = radToDeg(atan2(ze, sqrt(xe * xe + ye * ye)))
 
         return SunContext(
@@ -311,7 +311,7 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         lon += 0.022 * cos(mj - ms)
         lon += 0.023 * sin(2.0 * mj - 3.0 * ms + PERT_DEG_52)
         lon += (-0.016) * sin(mj - 5.0 * ms - PERT_DEG_69)
-        return PlanetPosition(position.radiusAu, wrapDeg0_360(lon), position.latitudeDeg)
+        return PlanetPosition(position.radiusAu, wrapDeg0To360(lon), position.latitudeDeg)
     }
 
     private fun applySaturnPerturbations(
@@ -333,7 +333,7 @@ public class SimpleEphemerisComputer : EphemerisComputer {
         var lat = position.latitudeDeg
         lat += (-0.020) * cos(2.0 * mj - 4.0 * ms - PERT_DEG_2)
         lat += 0.018 * sin(2.0 * mj - 6.0 * ms - PERT_DEG_49)
-        return PlanetPosition(position.radiusAu, wrapDeg0_360(lon), lat)
+        return PlanetPosition(position.radiusAu, wrapDeg0To360(lon), lat)
     }
 
     private data class SunContext(

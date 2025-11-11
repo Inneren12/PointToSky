@@ -22,9 +22,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-public class BinaryStarCatalog private constructor(
+class BinaryStarCatalog private constructor(
     private val data: CatalogData,
-    public val metadata: Metadata,
+    val metadata: Metadata,
 ) : StarCatalog {
 
     private val stringCache = ConcurrentHashMap<Int, String>()
@@ -175,13 +175,7 @@ public class BinaryStarCatalog private constructor(
         return bayer to flamsteed
     }
 
-    private fun angularSeparationDeg(
-        centerRa: Double,
-        sinDec: Double,
-        cosDec: Double,
-        candidateRa: Double,
-        candidateDec: Double,
-    ): Double {
+    private fun angularSeparationDeg(centerRa: Double, sinDec: Double, cosDec: Double, candidateRa: Double, candidateDec: Double): Double {
         val cosine = sinDec * sin(candidateDec) + cosDec * cos(candidateDec) * cos(centerRa - candidateRa)
         val clamped = cosine.coerceIn(-1.0, 1.0)
         return Math.toDegrees(acos(clamped))
@@ -193,9 +187,9 @@ public class BinaryStarCatalog private constructor(
         val magnitude: Double,
     )
 
-    public companion object {
+    companion object {
         private const val TAG: String = "BinaryStarCatalog"
-        public const val DEFAULT_PATH: String = "catalog/stars_v1.bin"
+        const val DEFAULT_PATH: String = "catalog/stars_v1.bin"
         private const val SUPPORTED_VERSION: Int = 1
         private const val STAR_RECORD_SIZE_BYTES: Int = 32
         private const val BAND_COUNT: Int = 180
@@ -212,10 +206,10 @@ public class BinaryStarCatalog private constructor(
             "Oct", "Oph", "Ori", "Pav", "Peg", "Per", "Phe", "Pic",
             "PsA", "Psc", "Pup", "Pyx", "Ret", "Scl", "Sco", "Sct",
             "Ser", "Sex", "Sge", "Sgr", "Tau", "Tel", "TrA", "Tri",
-            "Tuc", "UMa", "UMi", "Vel", "Vir", "Vol", "Vul"
+            "Tuc", "UMa", "UMi", "Vel", "Vir", "Vol", "Vul",
         ).map { it.uppercase() }.toTypedArray()
 
-        public fun load(
+        fun load(
             assetProvider: AssetProvider,
             path: String = DEFAULT_PATH,
             fallback: StarCatalog = FakeStarCatalog(),
@@ -493,11 +487,7 @@ public class BinaryStarCatalog private constructor(
         val starIdsByBand: IntArray,
         val raByBand: FloatArray,
     ) {
-        fun toStar(
-            index: Int,
-            decoder: (Int) -> String?,
-            designationSplitter: (String?, String?) -> Pair<String?, String?>,
-        ): Star {
+        fun toStar(index: Int, decoder: (Int) -> String?, designationSplitter: (String?, String?) -> Pair<String?, String?>): Star {
             val hipId = hip[index]
             val id = if (hipId > 0) hipId else index
             val name = decoder(nameOffsets[index])
@@ -518,7 +508,7 @@ public class BinaryStarCatalog private constructor(
             )
         }
     }
-    public data class Metadata(
+    data class Metadata(
         val sizeBytes: Int,
         val starCount: Int,
         val stringPoolBytes: Int,

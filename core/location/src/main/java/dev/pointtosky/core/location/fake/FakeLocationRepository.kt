@@ -5,19 +5,19 @@ import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.model.LocationFix
 import dev.pointtosky.core.location.model.ProviderType
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.SupervisorJob
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 class FakeLocationRepository(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),

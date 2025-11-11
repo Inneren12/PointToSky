@@ -1,11 +1,11 @@
 package dev.pointtosky.core.logging
 
 import android.os.Looper
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicReference
 
 interface Logger {
     fun v(tag: String, msg: String, payload: Map<String, Any?> = emptyMap())
@@ -24,13 +24,7 @@ object LogBus : Logger {
     private val ringBufferRef = AtomicReference<RingBufferSink?>()
     private val frameTraceModeState = MutableStateFlow(FrameTraceMode.OFF)
 
-    fun install(
-        writer: LogWriter,
-        config: LoggerConfig,
-        deviceInfo: DeviceInfo,
-        process: ProcessSnapshot,
-        ringBufferSink: RingBufferSink
-    ) {
+    fun install(writer: LogWriter, config: LoggerConfig, deviceInfo: DeviceInfo, process: ProcessSnapshot, ringBufferSink: RingBufferSink) {
         writerRef.getAndSet(writer)?.let { runBlocking { it.shutdown() } }
         configRef.set(config)
         deviceInfoRef.set(deviceInfo)
@@ -103,14 +97,7 @@ object LogBus : Logger {
         writerRef.get()?.let { runBlocking { it.flushAndSync() } }
     }
 
-    private fun log(
-        level: LogLevel,
-        tag: String,
-        msg: String,
-        throwable: Throwable?,
-        payload: Map<String, Any?>,
-        eventName: String?
-    ) {
+    private fun log(level: LogLevel, tag: String, msg: String, throwable: Throwable?, payload: Map<String, Any?>, eventName: String?) {
         val writer = writerRef.get() ?: return
         val deviceInfo = deviceInfoRef.get() ?: return
         val process = processRef.get() ?: ProcessSnapshot(android.os.Process.myPid(), "unknown")
@@ -119,7 +106,7 @@ object LogBus : Logger {
         val threadSnapshot = ThreadSnapshot(
             name = thread.name,
             id = thread.id,
-            isMainThread = thread === Looper.getMainLooper()?.thread
+            isMainThread = thread === Looper.getMainLooper()?.thread,
         )
         val event = LogEvent(
             level = level,
@@ -130,7 +117,7 @@ object LogBus : Logger {
             thread = threadSnapshot,
             process = process,
             device = deviceInfo,
-            error = throwable?.let(ThrowableSnapshot::from)
+            error = throwable?.let(ThrowableSnapshot::from),
         )
         val config = configRef.get()
         val redacted = config?.redactor?.redact(event) ?: event

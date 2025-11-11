@@ -11,15 +11,15 @@ import dev.pointtosky.core.datalayer.AimTargetKind
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.mobile.card.CardBestWindow
 import dev.pointtosky.mobile.card.CardObjectType
-import dev.pointtosky.mobile.card.CardUiState
 import dev.pointtosky.mobile.card.CardScreen
+import dev.pointtosky.mobile.card.CardUiState
 import dev.pointtosky.mobile.datalayer.AimTargetOption
-import java.time.Instant
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
+import java.time.Instant
 
 @RunWith(AndroidJUnit4::class)
 class CardScreenTest {
@@ -37,7 +37,7 @@ class CardScreenTest {
                     AimTargetEquatorialPayload(
                         raDeg = 279.23473479,
                         decDeg = 38.78368896,
-                    )
+                    ),
                 ),
             )
         },

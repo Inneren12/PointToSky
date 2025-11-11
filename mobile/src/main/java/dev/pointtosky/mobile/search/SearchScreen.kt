@@ -1,6 +1,5 @@
 package dev.pointtosky.mobile.search
 
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,8 +12,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.Divider
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -23,14 +26,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.pointtosky.mobile.R
 
@@ -49,9 +50,9 @@ fun SearchScreen(
                 title = { Text(text = stringResource(id = R.string.search_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
-                }
+                },
             )
         },
         modifier = modifier,
@@ -88,7 +89,12 @@ fun SearchScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = stringResource(id = R.string.search_empty), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = stringResource(
+                                id = R.string.search_empty,
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                 }
 
@@ -104,7 +110,7 @@ fun SearchScreen(
                                 result = result,
                                 onClick = { onResultClick(result) },
                             )
-                            Divider()
+                            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
                         }
                     }
                 }
@@ -114,11 +120,7 @@ fun SearchScreen(
 }
 
 @Composable
-private fun SearchResultRow(
-    result: SearchViewModel.SearchResult,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun SearchResultRow(result: SearchViewModel.SearchResult, onClick: () -> Unit, modifier: Modifier = Modifier) {
     ListItem(
         headlineContent = {
             Text(

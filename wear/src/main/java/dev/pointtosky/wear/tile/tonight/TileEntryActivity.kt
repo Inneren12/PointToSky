@@ -5,8 +5,6 @@ import android.content.Intent
 import android.os.Bundle
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.wear.MainActivity
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import dev.pointtosky.wear.datalayer.WearMessageBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,15 +29,15 @@ class TileEntryActivity : Activity() {
                     WearMessageBridge.sendToPhone(
                         applicationContext,
                         "/tile/tonight/open",
-                        """{"id":"$targetId"}""".toByteArray(Charsets.UTF_8)
+                        """{"id":"$targetId"}""".toByteArray(Charsets.UTF_8),
                     )
                 }.onFailure { e ->
                     LogBus.event(
                         name = "tile_error",
                         payload = mapOf(
                             "err" to e.toLogMessage(),
-                            "stage" to "tap_forward"
-                        )
+                            "stage" to "tap_forward",
+                        ),
                     )
                 }
             }
@@ -48,12 +46,11 @@ class TileEntryActivity : Activity() {
         }
 
         val forward = Intent(this, MainActivity::class.java).apply {
-            // сохраняем action/extras — при желании позже их обработаем в MainActivity
+            // сохраняем action/extras — при желании обработаем в MainActivity (onNewIntent)
             action = intent?.action
-            putExtras(intent ?: Intent())
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            replaceExtras(intent ?: Intent())
         }
-        startActivity(forward)
+        startActivity(forward)   // мы уже в Activity — флаги не нужны
         finish()
     }
 

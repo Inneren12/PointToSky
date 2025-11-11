@@ -2,8 +2,8 @@ package dev.pointtosky.core.astro.transform
 
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
-import dev.pointtosky.core.astro.units.wrapDeg0_360
-import dev.pointtosky.core.astro.units.wrapDegN180_180
+import dev.pointtosky.core.astro.units.wrapDeg0To360
+import dev.pointtosky.core.astro.units.wrapDegMinus180To180
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 private const val ANGLE_TOLERANCE = 1e-6
 
 private fun deltaAngleDeg(expected: Double, actual: Double): Double {
-    val diff = wrapDegN180_180(actual - expected)
+    val diff = wrapDegMinus180To180(actual - expected)
     return abs(diff)
 }
 
@@ -28,7 +28,7 @@ class EquatorialHorizontalTransformTest {
         for (lat in latitudes) {
             for (dec in declinations) {
                 for (tau in hourAngles) {
-                    val ra = wrapDeg0_360(lstDeg - tau)
+                    val ra = wrapDeg0To360(lstDeg - tau)
                     val equatorial = Equatorial(raDeg = ra, decDeg = dec)
 
                     val horizontal = raDecToAltAz(
@@ -96,7 +96,7 @@ class EquatorialHorizontalTransformTest {
         val taus = listOf(-90.0, 90.0)
 
         for (tau in taus) {
-            val ra = wrapDeg0_360(lstDeg - tau)
+            val ra = wrapDeg0To360(lstDeg - tau)
             val equatorial = Equatorial(raDeg = ra, decDeg = 0.0)
             val horizontal = raDecToAltAz(
                 eq = equatorial,

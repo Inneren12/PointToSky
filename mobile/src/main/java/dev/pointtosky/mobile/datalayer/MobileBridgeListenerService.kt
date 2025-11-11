@@ -7,8 +7,8 @@ import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.datalayer.PATH_TILE_TONIGHT_PUSH_MODEL
 import dev.pointtosky.core.datalayer.TileTonightPushModelMessage
-import dev.pointtosky.mobile.settings.MobileSettings
 import dev.pointtosky.mobile.logging.MobileLog
+import dev.pointtosky.mobile.settings.MobileSettings
 import dev.pointtosky.mobile.settings.from
 import dev.pointtosky.mobile.tile.tonight.TonightMirrorStore
 import kotlinx.coroutines.flow.first
@@ -44,12 +44,21 @@ class MobileBridgeListenerService : WearableListenerService() {
                     )
                 }
             }
-            // TODO: /ack и остальные пути можно добавить позже
+            // Универсальная обработка подтверждений (ack) по соглашению суффикса
+            else -> {
+                if (event.path.endsWith("/ack")) {
+                    // Ack обрабатывается уровнем request/response в мосте — здесь только фиксация факта получения.
+                    // Дополнительно можно проставить телеметрию, если понадобится.
+                    return
+                }
+                // Неизвестный путь — сознательно игнорируем.
+            }
         }
     }
 
+    // Fallback DataClient в этой ветке не используется (канал Phone↔Wear обслуживается через MessageClient).
+    // Оставляем вызов super, чтобы play‑services выполнили внутренние действия, собственной логики здесь пока нет.
     override fun onDataChanged(dataEvents: DataEventBuffer) {
-        // Fallback DataClient пока не используется для этой ветки.
         super.onDataChanged(dataEvents)
     }
 }

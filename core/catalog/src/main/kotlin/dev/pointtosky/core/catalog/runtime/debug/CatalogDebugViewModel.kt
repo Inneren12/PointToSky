@@ -5,11 +5,11 @@ import androidx.lifecycle.ViewModelProvider
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.catalog.runtime.CatalogDiagnostics
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
-import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlin.math.roundToInt
 
 class CatalogDebugViewModel(private val repository: CatalogRepository) : ViewModel() {
     private val _state = MutableStateFlow(
@@ -20,7 +20,7 @@ class CatalogDebugViewModel(private val repository: CatalogRepository) : ViewMod
             probeError = null,
             lastProbeTimestamp = null,
             selfTestResults = emptyList(),
-        )
+        ),
     )
     val state: StateFlow<CatalogDebugUiState> = _state.asStateFlow()
 
@@ -137,5 +137,5 @@ fun formatBytes(bytes: Int): String {
         unitIndex += 1
     }
     val rounded = (size * 10).roundToInt() / 10.0
-    return "${rounded} ${units[unitIndex]}"
+    return "$rounded ${units[unitIndex]}"
 }

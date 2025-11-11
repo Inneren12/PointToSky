@@ -5,12 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
-import java.time.ZoneId
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import java.time.ZoneId
 
 class ZoneRepo(
     private val context: Context,
@@ -20,7 +20,7 @@ class ZoneRepo(
             ctx,
             receiver,
             filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
     },
     private val unregisterReceiver: (Context, BroadcastReceiver) -> Unit = { ctx, receiver ->

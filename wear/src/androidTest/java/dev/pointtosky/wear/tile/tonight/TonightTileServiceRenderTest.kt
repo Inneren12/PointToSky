@@ -2,15 +2,12 @@ package dev.pointtosky.wear.tile.tonight
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.Test
-import org.junit.runner.RunWith
-import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.DeviceParametersBuilders
-import android.content.Context
-import android.content.ContextWrapper
-import org.junit.Assert.assertEquals
+import androidx.wear.tiles.RequestBuilders
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
 /**
  * Инструментальные тесты построения тайла с помощью Tiles API (и tiles-testing в classpath).
  * Проверяем, что:
@@ -35,7 +32,7 @@ class TonightTileServiceRenderTest {
         // Версия ресурсов должна быть та, что задаёт сервис (RES_VER)
         // Smoke: версия ресурсов есть (конкретное значение может меняться)
         assertTrue("Empty resources version", !res.version.isNullOrEmpty())
-    // println("Resources version = ${res.version}")
+        // println("Resources version = ${res.version}")
     }
 
     @Test
@@ -60,6 +57,4 @@ class TonightTileServiceRenderTest {
         assertNotNull(timeline)
         assertNotNull(timeline!!.timelineEntries.firstOrNull()?.layout)
     }
-
-
 }

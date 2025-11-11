@@ -16,26 +16,26 @@ import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.altAzToRaDec
 import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.units.radToDeg
-import dev.pointtosky.core.astro.units.wrapDeg0_360
+import dev.pointtosky.core.astro.units.wrapDeg0To360
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.core.location.model.LocationFix
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.util.Locale
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.roundToInt
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 private const val ORIENTATION_SAMPLE_MS = 100L
 private const val UI_IDLE_STOP_TIMEOUT_MS = 5_000L
@@ -95,7 +95,7 @@ class AstroDebugViewModel(
         frame: OrientationFrame,
         locationFix: LocationFix?,
         instant: Instant,
-        target: Body,
+        target: Body
     ): AstroDebugUiState {
         val horizontal = frame.toHorizontal()
         val locationPoint = locationFix?.point
@@ -138,7 +138,7 @@ class AstroDebugViewModel(
         val upClamped = up.coerceIn(-1.0, 1.0)
         val altitudeDeg = radToDeg(asin(upClamped))
         val azimuthRad = atan2(east, north)
-        val azimuthDeg = wrapDeg0_360(radToDeg(azimuthRad))
+        val azimuthDeg = wrapDeg0To360(radToDeg(azimuthRad))
         return Horizontal(azimuthDeg, altitudeDeg)
     }
 

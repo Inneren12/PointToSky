@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,27 +30,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import android.app.PendingIntent
+import androidx.core.app.TaskStackBuilder
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Text
-import androidx.compose.material3.TextField
 import androidx.wear.compose.material.ToggleChip
-import androidx.wear.compose.material.ToggleChipDefaults
-import androidx.wear.compose.material.rememberScalingLazyListState
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.model.LocationFix
@@ -64,7 +65,7 @@ fun LocationSetupScreen(
     locationPrefs: LocationPrefs,
     phoneFix: LocationFix?,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val permissionState = rememberPermissionUiState()
@@ -95,14 +96,14 @@ fun LocationSetupScreen(
         modifier = modifier.fillMaxSize(),
         state = listState,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
             Text(
                 text = stringResource(id = R.string.location_setup_title),
                 style = MaterialTheme.typography.title3,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         item {
@@ -110,7 +111,7 @@ fun LocationSetupScreen(
                 text = stringResource(id = R.string.location_setup_description),
                 style = MaterialTheme.typography.body2,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         if (permissionState.granted) {
@@ -119,7 +120,7 @@ fun LocationSetupScreen(
                     text = stringResource(id = R.string.location_setup_permission_granted),
                     style = MaterialTheme.typography.body2,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         } else {
@@ -127,7 +128,7 @@ fun LocationSetupScreen(
                 Button(
                     onClick = permissionState.requestPermission,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.primaryButtonColors()
+                    colors = ButtonDefaults.primaryButtonColors(),
                 ) {
                     Text(text = stringResource(id = R.string.location_setup_request_permission))
                 }
@@ -152,11 +153,11 @@ fun LocationSetupScreen(
                     if (!enabled) {
                         coroutineScope.launch { locationPrefs.setManual(null) }
                     }
-                                                   },
+                },
                 label = { Text(text = stringResource(id = R.string.location_setup_manual_toggle)) },
                 toggleControl = {},
                 modifier = Modifier.fillMaxWidth(),
-                )
+            )
         }
         if (manualEnabled) {
             val latitudeValidation = validateLatitude(latitudeInput)
@@ -169,7 +170,7 @@ fun LocationSetupScreen(
                     text = stringResource(id = R.string.location_setup_manual_hint),
                     style = MaterialTheme.typography.caption2,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             item {
@@ -181,7 +182,7 @@ fun LocationSetupScreen(
                         placeholder = { Text(text = stringResource(id = R.string.location_setup_lat_hint)) },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Next
+                            imeAction = ImeAction.Next,
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -191,7 +192,7 @@ fun LocationSetupScreen(
                             style = MaterialTheme.typography.caption3,
                             color = MaterialTheme.colors.error,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -205,7 +206,7 @@ fun LocationSetupScreen(
                         placeholder = { Text(text = stringResource(id = R.string.location_setup_lon_hint)) },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Done
+                            imeAction = ImeAction.Done,
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -215,7 +216,7 @@ fun LocationSetupScreen(
                             style = MaterialTheme.typography.caption3,
                             color = MaterialTheme.colors.error,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -231,20 +232,20 @@ fun LocationSetupScreen(
                                 locationPrefs.setManual(
                                     GeoPoint(
                                         latDeg = latResult.value,
-                                        lonDeg = lonResult.value
-                                    )
+                                        lonDeg = lonResult.value,
+                                    ),
                                 )
                             }
                             Toast.makeText(
                                 context,
                                 context.getString(R.string.location_setup_saved_toast),
-                                Toast.LENGTH_SHORT
+                                Toast.LENGTH_SHORT,
                             ).show()
                             showValidationErrors = false
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.primaryButtonColors()
+                    colors = ButtonDefaults.primaryButtonColors(),
                 ) {
                     Text(text = stringResource(id = R.string.location_setup_save))
                 }
@@ -274,11 +275,11 @@ fun LocationSetupScreen(
                 checked = usePhoneFallback,
                 onCheckedChange = { enabled ->
                     coroutineScope.launch { locationPrefs.setUsePhoneFallback(enabled) }
-                                                   },
+                },
                 label = { Text(text = stringResource(id = R.string.location_setup_use_phone_fallback)) },
                 toggleControl = {},
                 modifier = Modifier.fillMaxWidth(),
-                )
+            )
         }
     }
 }
@@ -300,14 +301,14 @@ private fun rememberPermissionUiState(): PermissionUiState {
     var hasRequested by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         granted = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (!granted) {
             val rationale = activity?.let {
                 ActivityCompat.shouldShowRequestPermissionRationale(
                     it,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
                 )
             } ?: false
             shouldOpenSettings = !rationale
@@ -325,7 +326,7 @@ private fun rememberPermissionUiState(): PermissionUiState {
                     val rationale = activity?.let {
                         ActivityCompat.shouldShowRequestPermissionRationale(
                             it,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
                         )
                     } ?: false
                     shouldOpenSettings = !rationale
@@ -344,12 +345,11 @@ private fun rememberPermissionUiState(): PermissionUiState {
             shouldOpenSettings = false
             launcher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION))
         },
-        openSettings = { openAppSettings(context) }
+        openSettings = { openAppSettings(context) },
     )
 }
 
-private fun String.normalizeCoordinate(): Double? =
-    replace(',', '.').toDoubleOrNull()
+private fun String.normalizeCoordinate(): Double? = replace(',', '.').toDoubleOrNull()
 
 private data class CoordinateValidation(
     val value: Double?,
@@ -376,18 +376,27 @@ private fun validateLongitude(input: String): CoordinateValidation {
 
 private fun Double.formatCoordinate(): String = String.format(Locale.US, "%.5f", this)
 
-private fun isLocationPermissionGranted(context: Context): Boolean =
-    ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.ACCESS_COARSE_LOCATION
-    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+private fun isLocationPermissionGranted(context: Context): Boolean = ContextCompat.checkSelfPermission(
+    context,
+    Manifest.permission.ACCESS_COARSE_LOCATION,
+) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
 private fun openAppSettings(context: Context) {
     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
         data = Uri.fromParts("package", context.packageName, null)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    context.startActivity(intent)
+    val activity = context.findActivity()
+    if (activity != null) {
+        activity.startActivity(intent)
+    } else {
+        // безопасный запуск без NEW_TASK/CLEAR_TOP
+        val stack = TaskStackBuilder.create(context).addNextIntentWithParentStack(intent)
+        val pi = stack.getPendingIntent(
+            0,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        try { pi?.send() } catch (_: PendingIntent.CanceledException) { /* no-op */ }
+    }
 }
 
 private fun Context.findActivity(): Activity? = when (this) {

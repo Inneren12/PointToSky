@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,7 +31,8 @@ import java.util.Locale
 
 enum class PolicyDocument(@StringRes val titleRes: Int, private val baseName: String) {
     PrivacyPolicy(R.string.policy_document_privacy_title, "policy/privacy_policy"),
-    Disclaimer(R.string.policy_document_disclaimer_title, "policy/disclaimer");
+    Disclaimer(R.string.policy_document_disclaimer_title, "policy/disclaimer"),
+    ;
 
     fun assetPath(locale: Locale): String {
         return if (locale.language.equals("ru", ignoreCase = true)) {
@@ -44,11 +45,7 @@ enum class PolicyDocument(@StringRes val titleRes: Int, private val baseName: St
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PolicyScreen(
-    onOpenDocument: (PolicyDocument) -> Unit,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun PolicyScreen(onOpenDocument: (PolicyDocument) -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -56,22 +53,22 @@ fun PolicyScreen(
                 title = { Text(text = stringResource(id = R.string.policy_screen_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
-                }
+                },
             )
-        }
+        },
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .padding(paddingValues)
                 .fillMaxSize()
                 .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
                 text = stringResource(id = R.string.policy_screen_description),
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
             )
 
             Surface(
@@ -103,11 +100,7 @@ fun PolicyScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PolicyDocumentScreen(
-    document: PolicyDocument,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun PolicyDocumentScreen(document: PolicyDocument, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val locale = remember {
         val configuration = context.resources.configuration
@@ -127,16 +120,16 @@ fun PolicyDocumentScreen(
                 title = { Text(text = stringResource(id = document.titleRes)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = null)
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
-                }
+                },
             )
-        }
+        },
     ) { paddingValues ->
         Surface(
             modifier = Modifier
                 .padding(paddingValues)
-                .fillMaxSize()
+                .fillMaxSize(),
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
@@ -157,7 +150,7 @@ fun PolicyDocumentScreen(
                     if (webView.url != url) {
                         webView.loadUrl(url)
                     }
-                }
+                },
             )
         }
     }

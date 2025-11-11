@@ -32,10 +32,7 @@ import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import java.util.Locale
 
 @Composable
-fun AstroDebugRoute(
-    factory: AstroDebugViewModelFactory,
-    modifier: Modifier = Modifier,
-) {
+fun AstroDebugRoute(factory: AstroDebugViewModelFactory, modifier: Modifier = Modifier) {
     val viewModel: AstroDebugViewModel = viewModel(factory = factory)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     AstroDebugScreen(
@@ -47,11 +44,7 @@ fun AstroDebugRoute(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AstroDebugScreen(
-    state: AstroDebugUiState,
-    onTargetSelected: (Body) -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -> Unit, modifier: Modifier = Modifier) {
     val az = state.horizontal.azDeg
     val alt = state.horizontal.altDeg
     val azAltText = stringResource(R.string.astro_debug_horizontal, az, alt)

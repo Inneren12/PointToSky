@@ -8,7 +8,7 @@ import kotlin.math.sin
 /**
  * Minimal, hand-authored list of bright stars for demos and tests.
  */
-public class FakeStarCatalog : StarCatalog {
+class FakeStarCatalog : StarCatalog {
     private data class Candidate(val star: Star, val separationDeg: Double)
 
     private val stars: List<Star> = listOf(

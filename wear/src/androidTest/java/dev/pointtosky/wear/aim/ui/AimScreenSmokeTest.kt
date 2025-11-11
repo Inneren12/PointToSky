@@ -30,7 +30,7 @@ class AimScreenSmokeTest {
                         dAltDeg = -5.0,
                         phase = AimPhase.SEARCHING,
                         confidence = 0.7f,
-                    )
+                    ),
                 )
             override fun setTarget(target: AimTarget) {}
             override fun setTolerance(t: dev.pointtosky.wear.aim.core.AimTolerance) {}

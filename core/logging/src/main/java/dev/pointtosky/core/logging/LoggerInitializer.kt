@@ -46,7 +46,7 @@ object LoggerInitializer {
         }
         return ProcessSnapshot(
             pid = Process.myPid(),
-            processName = processName ?: context.packageName
+            processName = processName ?: context.packageName,
         )
     }
 }

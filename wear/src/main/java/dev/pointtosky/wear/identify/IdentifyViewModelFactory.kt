@@ -1,16 +1,15 @@
 package dev.pointtosky.wear.identify
 
-import androidx.compose.runtime.Composable
-import androidx.navigation.NavGraphBuilder
-import androidx.navigation.NavHostController
-import androidx.wear.compose.navigation.composable
 import android.net.Uri
+import androidx.navigation.NavGraphBuilder
+import androidx.wear.compose.navigation.composable
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
+import java.util.Locale
 
 class IdentifyViewModelFactory(
     private val orientationRepository: OrientationRepository,
@@ -35,14 +34,12 @@ class IdentifyViewModelFactory(
     }
 }
 
-fun NavGraphBuilder.identifyDestination(
-    factory: IdentifyViewModelFactory,
-    onOpenCard: ((IdentifyUiState) -> Unit)?,
-) {
+fun NavGraphBuilder.identifyDestination(factory: IdentifyViewModelFactory, onOpenCard: ((IdentifyUiState) -> Unit)?) {
     composable("identify") {
         IdentifyRoute(factory = factory, onOpenCard = onOpenCard)
     }
 }
+
 /**
  * Построить строку маршрута на экран карточки (S6.D) из текущего состояния Identify.
  * Маршрут использует только строковые query‑параметры (без Parcelize/новых зависимостей).
@@ -52,9 +49,9 @@ fun buildCardRouteFrom(state: IdentifyUiState): String {
     return when (state.type) {
         IdentifyType.STAR -> {
             val name = Uri.encode(state.title)
-            val mag = state.magnitude?.let { String.format("%.2f", it) }
-            val ra = state.objectEq?.raDeg?.let { String.format("%.6f", it) }
-            val dec = state.objectEq?.decDeg?.let { String.format("%.6f", it) }
+            val mag = state.magnitude?.let { String.format(Locale.US, "%.2f", it) }
+            val ra = state.objectEq?.raDeg?.let { String.format(Locale.US, "%.6f", it) }
+            val dec = state.objectEq?.decDeg?.let { String.format(Locale.US, "%.6f", it) }
             listOfNotNull(
                 "type=STAR",
                 "name=$name",
@@ -74,4 +71,3 @@ fun buildCardRouteFrom(state: IdentifyUiState): String {
         }
     }
 }
-

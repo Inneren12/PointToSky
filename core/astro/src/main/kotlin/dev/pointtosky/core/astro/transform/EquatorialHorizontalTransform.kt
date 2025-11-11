@@ -5,8 +5,8 @@ import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.units.clamp
 import dev.pointtosky.core.astro.units.degToRad
 import dev.pointtosky.core.astro.units.radToDeg
-import dev.pointtosky.core.astro.units.wrapDeg0_360
-import dev.pointtosky.core.astro.units.wrapDegN180_180
+import dev.pointtosky.core.astro.units.wrapDeg0To360
+import dev.pointtosky.core.astro.units.wrapDegMinus180To180
 import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -24,7 +24,7 @@ private const val EPS = 1e-12
  * @property pressureMbar Atmospheric pressure in millibars (hPa).
  * @property temperatureC Ambient temperature in degrees Celsius.
  */
-public data class Meteo(
+data class Meteo(
     val pressureMbar: Double = 1010.0,
     val temperatureC: Double = 10.0,
 )
@@ -45,19 +45,13 @@ public data class Meteo(
  * @param meteo Meteorological parameters used for refraction correction when [applyRefraction] is true.
  * @return Horizontal coordinates (azimuth 0°–360°, altitude −90°…+90°).
  */
-public fun raDecToAltAz(
-    eq: Equatorial,
-    lstDeg: Double,
-    latDeg: Double,
-    applyRefraction: Boolean = true,
-    meteo: Meteo? = Meteo(),
-): Horizontal {
-    val lstDegWrapped = wrapDeg0_360(lstDeg)
-    val raDegWrapped = wrapDeg0_360(eq.raDeg)
+fun raDecToAltAz(eq: Equatorial, lstDeg: Double, latDeg: Double, applyRefraction: Boolean = true, meteo: Meteo? = Meteo()): Horizontal {
+    val lstDegWrapped = wrapDeg0To360(lstDeg)
+    val raDegWrapped = wrapDeg0To360(eq.raDeg)
     val decRad = degToRad(clamp(eq.decDeg, -90.0, 90.0))
     val latRad = degToRad(clamp(latDeg, -90.0, 90.0))
 
-    val tauRad = degToRad(wrapDegN180_180(lstDegWrapped - raDegWrapped))
+    val tauRad = degToRad(wrapDegMinus180To180(lstDegWrapped - raDegWrapped))
 
     val sinPhi = sin(latRad)
     val cosPhi = cos(latRad)
@@ -97,7 +91,7 @@ public fun raDecToAltAz(
         }
     }
 
-    val azDeg = wrapDeg0_360(radToDeg(azRad))
+    val azDeg = wrapDeg0To360(radToDeg(azRad))
 
     return Horizontal(azDeg = azDeg, altDeg = altDeg)
 }
@@ -115,13 +109,9 @@ public fun raDecToAltAz(
  * @param latDeg Observer geographic latitude in degrees.
  * @return Equatorial coordinates (right ascension 0°–360°, declination −90°…+90°).
  */
-public fun altAzToRaDec(
-    hor: Horizontal,
-    lstDeg: Double,
-    latDeg: Double,
-): Equatorial {
-    val lstRad = degToRad(wrapDeg0_360(lstDeg))
-    val azRad = degToRad(wrapDeg0_360(hor.azDeg))
+fun altAzToRaDec(hor: Horizontal, lstDeg: Double, latDeg: Double): Equatorial {
+    val lstRad = degToRad(wrapDeg0To360(lstDeg))
+    val azRad = degToRad(wrapDeg0To360(hor.azDeg))
     val altRad = degToRad(clamp(hor.altDeg, -90.0, 90.0))
     val latRad = degToRad(clamp(latDeg, -90.0, 90.0))
 
@@ -149,7 +139,7 @@ public fun altAzToRaDec(
     val tauRad = atan2(sinTau, cosTau)
 
     val raRad = lstRad - tauRad
-    val raDeg = wrapDeg0_360(radToDeg(raRad))
+    val raDeg = wrapDeg0To360(radToDeg(raRad))
     val decDeg = clamp(radToDeg(deltaRad), -90.0, 90.0)
 
     return Equatorial(raDeg = raDeg, decDeg = decDeg)

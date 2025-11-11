@@ -4,14 +4,11 @@ import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.floor
 
-fun formatLatitudeDms(latDeg: Double): String =
-    formatDms(latDeg, positiveSuffix = "N", negativeSuffix = "S")
+fun formatLatitudeDms(latDeg: Double): String = formatDms(latDeg, positiveSuffix = "N", negativeSuffix = "S")
 
-fun formatLongitudeDms(lonDeg: Double): String =
-    formatDms(lonDeg, positiveSuffix = "E", negativeSuffix = "W")
+fun formatLongitudeDms(lonDeg: Double): String = formatDms(lonDeg, positiveSuffix = "E", negativeSuffix = "W")
 
-fun formatGeoPointDms(point: GeoPoint): String =
-    "${formatLatitudeDms(point.latDeg)} ${formatLongitudeDms(point.lonDeg)}"
+fun formatGeoPointDms(point: GeoPoint): String = "${formatLatitudeDms(point.latDeg)} ${formatLongitudeDms(point.lonDeg)}"
 
 private fun formatDms(value: Double, positiveSuffix: String, negativeSuffix: String): String {
     val suffix = if (value >= 0.0) positiveSuffix else negativeSuffix

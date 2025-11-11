@@ -2,9 +2,26 @@ package dev.pointtosky.wear.aim.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -12,7 +29,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -24,6 +40,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.MaterialTheme
@@ -39,6 +56,7 @@ import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.aim.core.AimController
@@ -47,12 +65,12 @@ import dev.pointtosky.wear.aim.core.AimTarget
 import dev.pointtosky.wear.aim.core.AimTarget.BodyTarget
 import dev.pointtosky.wear.aim.core.AimTarget.EquatorialTarget
 import dev.pointtosky.wear.aim.core.DefaultAimController
-import dev.pointtosky.core.logging.LogBus
+import dev.pointtosky.wear.aim.offline.offlineStarResolver
+import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import dev.pointtosky.wear.haptics.HapticEvent
 import dev.pointtosky.wear.haptics.HapticPolicy
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
-import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -67,6 +85,8 @@ fun AimRoute(
     externalAim: AimLaunchRequest? = null,
     initialTarget: AimTarget? = null,
 ) {
+    // val appContext = LocalContext.current.applicationContext
+    val context = LocalContext.current.applicationContext
     val controller = remember(orientationRepository, locationRepository) {
         DefaultAimController(
             orientation = orientationRepository,
@@ -76,6 +96,7 @@ fun AimRoute(
             raDecToAltAz = { eq, lstDeg, latDeg ->
                 raDecToAltAz(eq, lstDeg, latDeg, applyRefraction = false)
             },
+            starResolver = offlineStarResolver(context),
         )
     }
     LaunchedEffect(externalAim?.seq) {
@@ -86,10 +107,7 @@ fun AimRoute(
 
 /** Экран «Найти»: стрелка/шкала, фазы, confidence, picker целей, haptics+a11y. */
 @Composable
-fun AimScreen(
-    aimController: AimController,
-    initialTarget: AimTarget?,
-) {
+fun AimScreen(aimController: AimController, initialTarget: AimTarget?) {
     // lifecycle: start/stop
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(aimController, lifecycleOwner) {
@@ -150,12 +168,12 @@ fun AimScreen(
     val arrowCd = stringResource(
         id = R.string.a11y_aim_arrow,
         if (azRight) stringResource(R.string.a11y_right) else stringResource(R.string.a11y_left),
-        azAbs
+        azAbs,
     )
     val altCd = stringResource(
         id = R.string.a11y_alt_scale,
         if (altUp) stringResource(R.string.a11y_up) else stringResource(R.string.a11y_down),
-        altAbs
+        altAbs,
     )
 
     // targets
@@ -169,7 +187,7 @@ fun AimScreen(
             UiTarget("POLARIS", EquatorialTarget(polarisEq)),
         )
     }
-    val initialIndex = remember(initialTarget) { targetIndexFor(initialTarget, options) }
+    val initialIndex = remember(initialTarget) { targetIndexFor(initialTarget) }
     val pickerState = rememberPickerState(
         initialNumberOfOptions = options.size,
         initiallySelectedOption = initialIndex,
@@ -271,10 +289,7 @@ fun AimScreen(
 // -------- pieces --------
 
 @Composable
-private fun TopBar(
-    phase: AimPhase,
-    confidence: Float,
-) {
+private fun TopBar(phase: AimPhase, confidence: Float) {
     val confPct = (confidence.coerceIn(0f, 1f) * 100).toInt()
     val confCd = stringResource(id = R.string.a11y_confidence, confPct)
     Row(
@@ -369,13 +384,7 @@ private fun AltScale(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp) {
 }
 
 @Composable
-private fun AltScaleWithA11y(
-    absAltDeg: Float,
-    dirUp: Boolean,
-    height: Dp,
-    width: Dp,
-    contentDesc: String,
-) {
+private fun AltScaleWithA11y(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp, contentDesc: String) {
     Box(Modifier.semantics { contentDescription = contentDesc }) {
         AltScale(absAltDeg, dirUp, height, width)
     }
@@ -383,16 +392,19 @@ private fun AltScaleWithA11y(
 
 @Composable
 private fun TurnArrow(right: Boolean, emphasized: Boolean, size: Dp) {
-    val color = if (emphasized) MaterialTheme.colors.primary
-    else MaterialTheme.colors.onBackground.copy(alpha = 0.6f)
+    val color = if (emphasized) {
+        MaterialTheme.colors.primary
+    } else {
+        MaterialTheme.colors.onBackground.copy(alpha = 0.6f)
+    }
     Canvas(modifier = Modifier.size(size)) {
-        val W = this.size.width
-        val H = this.size.height
-        val cw = kotlin.math.min(W, H)
+        val w = this.size.width
+        val h = this.size.height
+        val cw = kotlin.math.min(w, h)
         val arrowLength = (cw * 0.8f)
         val arrowHeight = (cw * 0.35f)
-        val centerY = H / 2f
-        val startX = (W - arrowLength) / 2f
+        val centerY = h / 2f
+        val startX = (w - arrowLength) / 2f
         val endX = startX + arrowLength
 
         val path = Path()
@@ -412,20 +424,21 @@ private fun TurnArrow(right: Boolean, emphasized: Boolean, size: Dp) {
 }
 
 private fun formatDeg(value: Float): String {
-    val s = String.format("%.1f°", value)
+    val s = java.lang.String.format(java.util.Locale.US, "%.1f°", value)
     return s.replace(".0°", "°")
 }
 
-private fun targetIndexFor(initial: AimTarget?, options: List<UiTarget>): Int {
+private fun targetIndexFor(initial: AimTarget?): Int {
     if (initial == null) return 0
     return when (initial) {
-        is BodyTarget -> when (initial.body) {
-            Body.SUN -> 0
-            Body.MOON -> 1
-            Body.JUPITER -> 2
-            Body.SATURN -> 3
+        is BodyTarget -> when {
+            initial.body == Body.SUN -> 0
+            initial.body == Body.MOON -> 1
+            initial.body == Body.JUPITER -> 2
+            initial.body == Body.SATURN -> 3
             else -> 0
         }
         is EquatorialTarget -> 4 // Polaris
+        is AimTarget.StarTarget -> 4 // фолбэк: как экваториальная цель (Polaris slot)
     }
 }

@@ -9,7 +9,7 @@ import kotlin.math.sqrt
  * Immutable right-handed 3D Cartesian vector with double precision components.
  * All angles and distances are expressed in SI units unless noted otherwise.
  */
-public data class Vector3(
+data class Vector3(
     val x: Double,
     val y: Double,
     val z: Double,
@@ -18,22 +18,22 @@ public data class Vector3(
     /**
      * Euclidean length of the vector.
      */
-    public val magnitude: Double = sqrt(x * x + y * y + z * z)
+    val magnitude: Double = sqrt(x * x + y * y + z * z)
 
     /**
      * Returns a vector scaled by the provided factor.
      */
-    public fun scale(factor: Double): Vector3 = Vector3(x * factor, y * factor, z * factor)
+    fun scale(factor: Double): Vector3 = Vector3(x * factor, y * factor, z * factor)
 
     /**
      * Computes the dot product between this vector and [other].
      */
-    public infix fun dot(other: Vector3): Double = x * other.x + y * other.y + z * other.z
+    infix fun dot(other: Vector3): Double = x * other.x + y * other.y + z * other.z
 
     /**
      * Computes the cross product between this vector and [other].
      */
-    public infix fun cross(other: Vector3): Vector3 = Vector3(
+    infix fun cross(other: Vector3): Vector3 = Vector3(
         y * other.z - z * other.y,
         z * other.x - x * other.z,
         x * other.y - y * other.x,
@@ -44,7 +44,7 @@ public data class Vector3(
      *
      * @throws IllegalStateException if the vector has zero magnitude.
      */
-    public fun normalized(): Vector3 {
+    fun normalized(): Vector3 {
         require(magnitude != 0.0) { "Cannot normalize a zero-length vector" }
         val invMag = 1.0 / magnitude
         return scale(invMag)
@@ -53,12 +53,12 @@ public data class Vector3(
     /**
      * Adds [other] to this vector component-wise.
      */
-    public operator fun plus(other: Vector3): Vector3 = Vector3(x + other.x, y + other.y, z + other.z)
+    operator fun plus(other: Vector3): Vector3 = Vector3(x + other.x, y + other.y, z + other.z)
 
     /**
      * Subtracts [other] from this vector component-wise.
      */
-    public operator fun minus(other: Vector3): Vector3 = Vector3(x - other.x, y - other.y, z - other.z)
+    operator fun minus(other: Vector3): Vector3 = Vector3(x - other.x, y - other.y, z - other.z)
 }
 
 /**
@@ -68,7 +68,7 @@ public data class Vector3(
  * @param elevationDeg Elevation angle in degrees above the X-Y plane (`-90°..+90°`).
  * @param radius Radial distance from the origin.
  */
-public fun vectorFromSphericalDegrees(azimuthDeg: Double, elevationDeg: Double, radius: Double = 1.0): Vector3 {
+fun vectorFromSphericalDegrees(azimuthDeg: Double, elevationDeg: Double, radius: Double = 1.0): Vector3 {
     val azRad = degToRad(azimuthDeg)
     val elRad = degToRad(elevationDeg)
     val cosEl = cos(elRad)

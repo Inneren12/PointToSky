@@ -1,7 +1,5 @@
 package dev.pointtosky.core.logging
 
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +11,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class LogWriter(
     private val sink: LogSink,
@@ -50,7 +50,9 @@ class LogWriter(
                 enqueue(LogCommand.Flush(null, sync = false), dropIfFull = true)
             }
         }
-    } else null
+    } else {
+        null
+    }
 
     fun publish(event: LogEvent) {
         val enqueued = enqueue(LogCommand.Event(event), dropIfFull = true)

@@ -1,11 +1,9 @@
 package dev.pointtosky.wear.datalayer.v1
 
-import android.util.Log
 import com.google.android.gms.wearable.MessageEvent
-import com.google.android.gms.wearable.WearableListenerService
 import com.google.android.gms.wearable.Wearable
+import com.google.android.gms.wearable.WearableListenerService
 import dev.pointtosky.core.logging.LogBus
-import java.nio.charset.StandardCharsets
 
 /**
  * Приёмник всех сообщений Data Layer (watch).
@@ -15,7 +13,11 @@ import java.nio.charset.StandardCharsets
 class DlReceiverService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
         val path = event.path
-        val data = event.data ?: ByteArray(0)
+        val data = event.data // non-null; пустой массив проверим отдельно
+        if (data.isEmpty()) {
+            LogBus.event("dl_recv_empty", mapOf("path" to path))
+            return
+        }
         if (path == DlPaths.ACK) {
             val (refCid, ok) = DlJson.parseAck(data)
             if (!refCid.isNullOrBlank()) {
@@ -30,7 +32,8 @@ class DlReceiverService : WearableListenerService() {
             val ack = DlJson.buildAck(cid, ok = true)
             Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, DlPaths.ACK, ack)
         }
-        LogBus.event("dl_recv", mapOf("path" to path))
-        // TODO(route): здесь можно пробрасывать intent/broadcast в нужные экраны/VM.
+        LogBus.event("dl_recv", mapOf("path" to path, "cid" to (cid ?: "")))
+        // route → внутренняя доставка в UI/VM
+        DlRouter.route(applicationContext, path, data)
     }
 }

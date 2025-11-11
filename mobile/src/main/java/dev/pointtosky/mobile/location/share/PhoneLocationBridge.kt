@@ -16,9 +16,7 @@ import dev.pointtosky.core.location.remote.LocationRequestPayload
 import dev.pointtosky.core.location.remote.LocationResponsePayload
 import dev.pointtosky.core.location.remote.PATH_LOCATION_REQUEST_ONE
 import dev.pointtosky.core.location.remote.PATH_LOCATION_RESPONSE_ONE
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import dev.pointtosky.mobile.logging.MobileLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,7 +27,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import dev.pointtosky.mobile.logging.MobileLog
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class PhoneLocationBridge(
     context: Context,

@@ -12,7 +12,7 @@ package dev.pointtosky.core.catalog.star
  * @property flamsteed Flamsteed designation (e.g. "13 Ori") if present.
  * @property constellation IAU constellation code (three letters) if known.
  */
-public data class Star(
+data class Star(
     val id: Int,
     val raDeg: Float,
     val decDeg: Float,

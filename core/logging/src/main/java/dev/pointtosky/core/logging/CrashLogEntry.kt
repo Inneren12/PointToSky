@@ -1,10 +1,10 @@
 package dev.pointtosky.core.logging
 
+import org.json.JSONObject
 import java.io.PrintWriter
 import java.io.StringWriter
-import java.time.Instant
 import java.time.Clock
-import org.json.JSONObject
+import java.time.Instant
 
 /**
  * Represents a single crash event captured by [CrashLogStore].
@@ -67,7 +67,7 @@ data class CrashLogEntry(
                 val message = if (json.isNull(KEY_MESSAGE)) {
                     null
                 } else {
-                    json.optString(KEY_MESSAGE, null)
+                    json.optString(KEY_MESSAGE)
                 }
                 val stacktrace = json.optString(KEY_STACKTRACE, "")
                 val isFatal = json.optBoolean(KEY_IS_FATAL, true)

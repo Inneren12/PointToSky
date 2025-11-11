@@ -1,6 +1,9 @@
 package dev.pointtosky.mobile.search
 
 import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.EphemerisComputer
@@ -12,9 +15,6 @@ import dev.pointtosky.mobile.card.CardObjectModel
 import dev.pointtosky.mobile.card.CardObjectType
 import dev.pointtosky.mobile.card.CardRepository
 import dev.pointtosky.mobile.logging.MobileLog
-import java.text.Normalizer
-import java.time.Instant
-import java.util.Locale
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -25,9 +25,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
+import java.text.Normalizer
+import java.time.Instant
+import java.util.Locale
 
 class SearchViewModel(
     context: Context,
@@ -272,7 +272,11 @@ class SearchViewModel(
                 val score = entry.matchScore(normalizedQuery) ?: continue
                 matches += SearchMatch(entry, score)
             }
-            matches.sortWith(compareBy<SearchMatch>({ it.score }, { it.entry.priority }, { it.entry.magnitude ?: Double.MAX_VALUE }, { it.entry.title }))
+            matches.sortWith(
+                compareBy<SearchMatch>({
+                    it.score
+                }, { it.entry.priority }, { it.entry.magnitude ?: Double.MAX_VALUE }, { it.entry.title }),
+            )
             return matches.take(limit).map { match ->
                 val entry = match.entry
                 SearchResult(
@@ -384,7 +388,7 @@ class SearchViewModel(
                     when (ch) {
                         'ё' -> 'е'
                         else -> ch
-                    }
+                    },
                 )
             }
             return WHITESPACE_REGEX.replace(builder.toString(), " ").trim()

@@ -15,14 +15,14 @@ import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.datalayer.AimTargetOption
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class CardViewModel(
     private val cardId: String,
@@ -94,11 +94,7 @@ class CardViewModel(
         }
     }
 
-    private fun buildTargetOption(
-        model: CardObjectModel,
-        label: String,
-        equatorial: Equatorial?,
-    ): AimTargetOption? {
+    private fun buildTargetOption(model: CardObjectModel, label: String, equatorial: Equatorial?): AimTargetOption? {
         return when (model.type) {
             CardObjectType.STAR -> equatorial?.let { eq ->
                 AimTargetOption(
@@ -187,7 +183,7 @@ class CardViewModel(
         val startText = start?.let { formatter.format(it) }
         val endText = end?.let { formatter.format(it) }
         return when {
-            startText != null && endText != null -> "${startText} – ${endText}"
+            startText != null && endText != null -> "$startText – $endText"
             startText != null -> startText
             endText != null -> endText
             else -> null

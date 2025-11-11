@@ -14,57 +14,47 @@ import dev.pointtosky.core.logging.LogBus
 
 class WearBridgeListenerService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
-        val data = event.data ?: ByteArray(0)
-        when (event.path) {
-            PATH_AIM_SET_TARGET -> {
-                runCatching {
-                    val message = JsonCodec.decode<AimSetTargetMessage>(data)
-                    if (message.v == DATA_LAYER_PROTOCOL_VERSION) {
-                        WearBridge.handleAimSetTargetMessage(applicationContext, message)
-                    }
-                }.onFailure { error ->
-                    LogBus.event(
-                        "dl_error",
-                        mapOf(
-                            "err" to (error.message ?: error::class.java.simpleName),
-                            "path" to PATH_AIM_SET_TARGET,
-                        ),
-                    )
+        val data: ByteArray = event.data // уже non-nullable
+        val path = event.path
+
+        fun logError(path: String, error: Throwable) {
+            LogBus.event(
+                "dl_error",
+                mapOf(
+                    "err" to (error.message ?: error::class.java.simpleName),
+                    "path" to path,
+                ),
+            )
+        }
+
+        fun handle(path: String, block: () -> Unit) {
+            runCatching(block).onFailure { logError(path, it) }
+        }
+
+        when (path) {
+            PATH_AIM_SET_TARGET -> handle(PATH_AIM_SET_TARGET) {
+                val msg = JsonCodec.decode<AimSetTargetMessage>(data)
+                if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                    WearBridge.handleAimSetTargetMessage(applicationContext, msg)
                 }
             }
 
-            PATH_APP_OPEN -> {
-                runCatching {
-                    val message = JsonCodec.decode<AppOpenMessage>(data)
-                    if (message.v == DATA_LAYER_PROTOCOL_VERSION) {
-                        WearBridge.handleAppOpenMessage(applicationContext, message)
-                    }
-                }.onFailure { error ->
-                    LogBus.event(
-                        "dl_error",
-                        mapOf(
-                            "err" to (error.message ?: error::class.java.simpleName),
-                            "path" to PATH_APP_OPEN,
-                        ),
-                    )
+            PATH_APP_OPEN -> handle(PATH_APP_OPEN) {
+                val msg = JsonCodec.decode<AppOpenMessage>(data)
+                if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                    WearBridge.handleAppOpenMessage(applicationContext, msg)
                 }
             }
 
-            PATH_SENSOR_HEADING -> {
-                runCatching {
-                    val message = JsonCodec.decode<SensorHeadingMessage>(data)
-                    if (message.v == DATA_LAYER_PROTOCOL_VERSION) {
-                        PhoneHeadingBridge.updateHeading(message.azDeg, message.ts)
-                    }
-                }.onFailure { error ->
-                    LogBus.event(
-                        "dl_error",
-                        mapOf(
-                            "err" to (error.message ?: error::class.java.simpleName),
-                            "path" to PATH_SENSOR_HEADING,
-                        ),
-                    )
+            PATH_SENSOR_HEADING -> handle(PATH_SENSOR_HEADING) {
+                val msg = JsonCodec.decode<SensorHeadingMessage>(data)
+                if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                    PhoneHeadingBridge.updateHeading(msg.azDeg, msg.ts)
                 }
+            }
+
+            else -> {
+                LogBus.event("dl_error", mapOf("err" to "unknown_path", "path" to path))
             }
         }
     }

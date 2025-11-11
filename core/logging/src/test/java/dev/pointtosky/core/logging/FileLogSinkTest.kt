@@ -1,5 +1,6 @@
 package dev.pointtosky.core.logging
 
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
@@ -7,7 +8,6 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
 
 class FileLogSinkTest {
     private lateinit var tempDir: File
@@ -29,7 +29,7 @@ class FileLogSinkTest {
             diagnosticsEnabled = true,
             maxFileSizeBytes = 512,
             maxFiles = 5,
-            flushIntervalMs = 0
+            flushIntervalMs = 0,
         )
         val manager = LogFileManager(config)
         val sink = FileLogSink(config, manager)
@@ -52,7 +52,7 @@ class FileLogSinkTest {
             diagnosticsEnabled = true,
             maxFileSizeBytes = 1024,
             maxFiles = 5,
-            flushIntervalMs = 0
+            flushIntervalMs = 0,
         )
         val manager = LogFileManager(config)
         val sink = FileLogSink(config, manager)
@@ -88,7 +88,7 @@ class FileLogSinkTest {
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
             isDebug = true,
-            diagnosticsEnabled = true
-        )
+            diagnosticsEnabled = true,
+        ),
     )
 }

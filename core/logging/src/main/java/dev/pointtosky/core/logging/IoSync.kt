@@ -3,7 +3,6 @@ package dev.pointtosky.core.logging
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
-import java.io.IOException
 import java.nio.channels.FileChannel
 
 /** flush() + fsync для OutputStream (если это FileOutputStream). */
@@ -17,7 +16,7 @@ fun OutputStream.flushAndSyncBlocking() {
 /** fsync для File через FileChannel.force(true). */
 fun File.flushAndSyncBlocking() {
     runCatching {
-        FileOutputStream(this, /*append=*/true).channel.use { ch ->
+        FileOutputStream(this, true).channel.use { ch ->
             ch.force(true)
         }
     }

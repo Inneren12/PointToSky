@@ -1,7 +1,6 @@
 package dev.pointtosky.mobile.datalayer
 
 import dev.pointtosky.core.astro.ephem.Body
-import kotlinx.serialization.json.JsonElement
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetBodyPayload
 import dev.pointtosky.core.datalayer.AimTargetEquatorialPayload

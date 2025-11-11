@@ -5,16 +5,16 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import java.time.ZoneId
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import java.time.ZoneId
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class ZoneRepoTest {
 
@@ -43,7 +43,7 @@ class ZoneRepoTest {
 
         assertEquals(
             listOf(ZoneId.of("UTC"), ZoneId.of("Europe/Berlin")),
-            values
+            values,
         )
 
         val filter = registrar.filter

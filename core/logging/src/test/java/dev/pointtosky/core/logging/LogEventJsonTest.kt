@@ -20,14 +20,14 @@ class LogEventJsonTest {
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
             isDebug = true,
-            diagnosticsEnabled = true
+            diagnosticsEnabled = true,
         )
         val thread = ThreadSnapshot(name = "TestThread", id = 1L, isMainThread = false)
         val process = ProcessSnapshot(pid = 42, processName = "test")
         val throwable = ThrowableSnapshot(
             type = IllegalStateException::class.java.name,
             message = "boom",
-            stackTrace = "trace"
+            stackTrace = "trace",
         )
         val event = LogEvent(
             level = LogLevel.ERROR,
@@ -37,12 +37,12 @@ class LogEventJsonTest {
             payload = mapOf(
                 "id" to 123,
                 "nested" to mapOf("value" to true),
-                "list" to listOf("a", "b")
+                "list" to listOf("a", "b"),
             ),
             thread = thread,
             process = process,
             device = device,
-            error = throwable
+            error = throwable,
         )
 
         val json = Json.parseToJsonElement(event.toJsonLine()).jsonObject

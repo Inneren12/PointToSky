@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -14,18 +16,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.Button
-import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.ScalingLazyColumn
-import androidx.wear.compose.material.ScalingLazyListState
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyListState
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.Text
-import androidx.compose.material3.TextField
-import androidx.wear.compose.material.rememberScalingLazyListState
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugUiState
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModel
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
@@ -38,14 +38,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import androidx.compose.ui.text.input.KeyboardType
 
 @Composable
-fun CatalogDebugRoute(
-    factory: CatalogDebugViewModelFactory,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun CatalogDebugRoute(factory: CatalogDebugViewModelFactory, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val viewModel: CatalogDebugViewModel = viewModel(factory = factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
@@ -84,7 +79,7 @@ fun CatalogDebugScreen(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         state = listState,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
             Text(
@@ -102,7 +97,10 @@ fun CatalogDebugScreen(
         }
         item {
             Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-                Text(text = stringResource(id = R.string.catalog_debug_probe_header), style = MaterialTheme.typography.caption2)
+                Text(
+                    text = stringResource(id = R.string.catalog_debug_probe_header),
+                    style = MaterialTheme.typography.caption2,
+                )
                 TextField(
                     value = state.probeForm.ra,
                     onValueChange = onRaChange,
@@ -226,7 +224,7 @@ private fun buildStarInfo(state: CatalogDebugUiState): String {
     return if (metadata != null) {
         val crcHex = metadata.payloadCrc32.toString(16).uppercase(Locale.ROOT)
         val size = formatBytes(metadata.sizeBytes)
-        "Stars: ${metadata.starCount} • ${size} • CRC ${crcHex} • load ${diagnostics.starLoadDurationMs} ms"
+        "Stars: ${metadata.starCount} • $size • CRC $crcHex • load ${diagnostics.starLoadDurationMs} ms"
     } else {
         "Stars: fallback catalog • load ${diagnostics.starLoadDurationMs} ms"
     }
@@ -238,7 +236,7 @@ private fun buildConstellationInfo(state: CatalogDebugUiState): String {
     return if (metadata != null) {
         val crcHex = metadata.payloadCrc32.toString(16).uppercase(Locale.ROOT)
         val size = formatBytes(metadata.sizeBytes)
-        "Constellations: ${metadata.recordCount} • ${size} • CRC ${crcHex} • load ${diagnostics.boundaryLoadDurationMs} ms"
+        "Constellations: ${metadata.recordCount} • $size • CRC $crcHex • load ${diagnostics.boundaryLoadDurationMs} ms"
     } else {
         "Constellations: fallback boundaries • load ${diagnostics.boundaryLoadDurationMs} ms"
     }

@@ -3,9 +3,9 @@ package dev.pointtosky.mobile.card
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.datalayer.EquatorialDto
-import java.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.time.Instant
 
 @Serializable
 internal data class CardObjectPayload(

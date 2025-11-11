@@ -21,4 +21,3 @@ class BinaryStarCatalogLoadFallbackTest {
         assertSame(sentinel, loaded)
     }
 }
-

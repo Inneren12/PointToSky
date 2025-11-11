@@ -3,13 +3,13 @@ package dev.pointtosky.core.astro.aim
 import dev.pointtosky.core.astro.coord.Horizontal
 import kotlin.math.abs
 
-public data class AimError(
+data class AimError(
     val dAzDeg: Double,
     val dAltDeg: Double,
     val inTolerance: Boolean,
 )
 
-public data class AimTolerance(
+data class AimTolerance(
     val azimuthDeg: Double = 3.0,
     val altitudeDeg: Double = 4.0,
 )

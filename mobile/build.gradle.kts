@@ -1,15 +1,16 @@
 import org.gradle.api.Project
 
-fun Project.resolveConfigProperty(key: String): String? =
-    providers.gradleProperty(key)
-        .orElse(providers.environmentVariable(key))
-        .orNull
+fun Project.resolveConfigProperty(key: String): String? = providers.gradleProperty(key)
+    .orElse(providers.environmentVariable(key))
+    .orNull
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.license.report)
+    id("io.gitlab.arturbosch.detekt")
+    id("org.jlleitschuh.gradle.ktlint")
 }
 
 android {
@@ -45,7 +46,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
             signingConfig = signingConfigs.getByName("release")
         }
@@ -81,6 +82,33 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    lint {
+        // S9: варнинги не валят сборку, критичные чиним
+        warningsAsErrors = false
+        abortOnError = false
+        checkReleaseBuilds = true
+        baseline = file("lint-baseline.xml")
+    }
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    autoCorrect = false
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    baseline = file("detekt-baseline.xml")
+}
+
+ktlint {
+    android.set(true)
+    ignoreFailures.set(false)
+    reporters {
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
+    }
 }
 
 dependencies {
@@ -91,9 +119,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit-ktx:1.1.5")
     androidTestImplementation("androidx.test:runner:1.5.2")
     androidTestImplementation("androidx.test:rules:1.5.0")
-
-    // Если в main ещё нет Play Services Wearable, добавь и для тестов:
-    // androidTestImplementation("com.google.android.gms:play-services-wearable:18.2.0")
+    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6")
 
     implementation(platform(libs.compose.bom))
 
@@ -140,7 +166,6 @@ dependencies {
 
     // Приём сообщений от часов
     implementation("com.google.android.gms:play-services-wearable:18.1.0")
-
 
     implementation(libs.play.services.wearable)
 

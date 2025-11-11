@@ -1,15 +1,16 @@
 import org.gradle.api.Project
 
-fun Project.resolveConfigProperty(key: String): String? =
-    providers.gradleProperty(key)
-        .orElse(providers.environmentVariable(key))
-        .orNull
+fun Project.resolveConfigProperty(key: String): String? = providers.gradleProperty(key)
+    .orElse(providers.environmentVariable(key))
+    .orNull
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.license.report)
+    id("io.gitlab.arturbosch.detekt")
+    id("org.jlleitschuh.gradle.ktlint")
 }
 
 android {
@@ -45,7 +46,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
             signingConfig = signingConfigs.getByName("release")
         }
@@ -82,13 +83,20 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    lint {
+        warningsAsErrors = false
+        abortOnError = false
+        checkReleaseBuilds = true
+        baseline = file("lint-baseline.xml")
+    }
 }
 
 // Временно исключаем старый Compose smoke-тест, чтобы не тащить стек UI тестов под Compose в этой задаче
 tasks.withType<Test>().configureEach {
-        filter {
-            excludeTestsMatching("dev.pointtosky.wear.aim.core.DefaultAimControllerTest")
-        }
+    filter {
+        excludeTestsMatching("dev.pointtosky.wear.aim.core.DefaultAimControllerTest")
+    }
 }
 
 // S7.G: временно исключаем флейковый класс тестов на AimController (ждёт перевода на виртуальное время)
@@ -97,6 +105,26 @@ tasks.withType<Test>().configureEach {
     // Исключаем весь класс со старыми флейковыми кейсами (методы в backticks + реальное время)
     filter {
         excludeTestsMatching("dev.pointtosky.wear.aim.core.DefaultAimControllerTest")
+    }
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    autoCorrect = false
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    baseline = file("detekt-baseline.xml")
+}
+
+ktlint {
+    android.set(true)
+    ignoreFailures.set(false)
+    reporters {
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
     }
 }
 
@@ -124,8 +152,11 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:18.1.0")
     // S8A: типы kotlinx.serialization.json (JsonElement) используются из core в WearBridge
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-
+    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6")
     implementation(libs.compose.material.icons.extended)
+
+    // для @Preview(device = WearDevices.SMALL_ROUND)
+    implementation("androidx.wear:wear-tooling-preview:1.0.0")
 
     implementation("com.google.android.material:material:1.12.0")
 
@@ -184,4 +215,28 @@ licenseReport {
     generateJsonReport = true
     copyHtmlReportToAssets = false
     copyJsonReportToAssets = false
+}
+
+// --- PTSWear flavor-aware helper tasks (no collision with AGP default tasks) ---
+// Usage:
+//   ./gradlew :wear:ptswearCompileDebug
+//   ./gradlew :wear:ptswearAssembleDebug
+//   ./gradlew :wear:ptswearInstallDebug
+// Select flavor via -Pptswear.flavor=internal|public (default: internal)
+run {
+    val flavorProp = project.resolveConfigProperty("ptswear.flavor")?.lowercase() ?: "internal"
+    val Flavor = when (flavorProp) {
+        "internal" -> "Internal"
+        "public" -> "Public"
+        else -> error("ptswear.flavor must be 'internal' or 'public' (got '$flavorProp')")
+    }
+    fun alias(name: String, target: String) = tasks.register(name) {
+        group = "ptswear"
+        description = "Runs $target (default flavor=$flavorProp)"
+        dependsOn(target)
+    }
+    // не используем имена типа assembleDebug/compileDebugSources — это имена AGP
+    alias("ptswearCompileDebug", "compile${Flavor}DebugSources")
+    alias("ptswearAssembleDebug", "assemble${Flavor}Debug")
+    alias("ptswearInstallDebug", "install${Flavor}Debug")
 }

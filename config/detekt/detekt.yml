@@ -1,0 +1,80 @@
+config:
+  validation: true
+
+build:
+  maxIssues: 0
+
+processors:
+  active: true
+
+console-reports:
+  active: true
+
+comments:
+  UndocumentedPublicClass:
+    active: false
+  UndocumentedPublicFunction:
+    active: false
+
+style:
+  ReturnCount:
+    max: 6
+    excludedFunctions:
+      - 'equals'
+    excludeLabeled: true
+    excludeReturnFromLambda: true
+    excludeGuardClauses: true
+  UnusedPrivateMember:
+    ignoreAnnotated:
+      - 'Preview'
+  MagicNumber:
+    active: false
+  WildcardImport:
+    active: true
+  MaxLineLength:
+    active: true
+    maxLineLength: 140
+
+complexity:
+  TooManyFunctions:
+    thresholdInFiles: 20
+    thresholdInClasses: 16
+    thresholdInObjects: 16
+    thresholdInInterfaces: 16
+    thresholdInEnums: 16
+  LongParameterList:
+    functionThreshold: 12
+    constructorThreshold: 10
+    ignoreDefaultParameters: true
+  LongMethod:
+    active: false
+  LargeClass:
+    active: false
+  CyclomaticComplexMethod:
+    threshold: 30
+  NestedBlockDepth:
+    threshold: 6
+
+naming:
+  FunctionNaming:
+      # Разрешаем PascalCase для @Composable
+    ignoreAnnotated:
+      - 'Composable'
+
+coroutines:
+  active: true
+
+potential-bugs:
+  LateinitUsage:
+    active: false
+
+formatting:
+  active: true
+  android: true
+  Indentation:
+    active: false
+  ImportOrdering:
+    active: false
+  MaxLineLength:
+    active: true
+    maxLineLength: 140

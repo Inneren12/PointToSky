@@ -112,7 +112,7 @@ class DataStoreLocationPrefs(
 }
 
 val Context.locationPrefsDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "location_prefs"
+    name = "location_prefs",
 )
 
 fun LocationPrefs.Companion.fromContext(context: Context): LocationPrefs {

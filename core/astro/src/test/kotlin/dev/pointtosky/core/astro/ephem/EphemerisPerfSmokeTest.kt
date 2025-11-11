@@ -1,10 +1,10 @@
 package dev.pointtosky.core.astro.ephem
 
-import java.time.Duration
-import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.time.Instant
 
 class EphemerisPerfSmokeTest {
 
@@ -37,7 +37,7 @@ class EphemerisPerfSmokeTest {
 
         assertTrue(
             averageMicrosPerCall <= softBudgetMicros,
-            "Expected average ephemeris compute time <= 50 µs (soft limit ${softBudgetMicros} µs), was ${averageMicrosPerCall} µs",
+            "Expected average ephemeris compute time <= 50 µs (soft limit $softBudgetMicros µs), was $averageMicrosPerCall µs",
         )
         assertFalse(checksum.isNaN())
     }

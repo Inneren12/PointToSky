@@ -3,8 +3,8 @@ package dev.pointtosky.mobile.datalayer
 import android.content.Context
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
-import java.util.UUID
 import dev.pointtosky.mobile.logging.MobileLog
+import java.util.UUID
 
 /**
  * Простой отправитель сообщений на часы через MessageClient (без ACK/Retry).
@@ -13,6 +13,7 @@ import dev.pointtosky.mobile.logging.MobileLog
 object MobileBridge {
     @Volatile
     private var instance: Sender? = null
+
     @Volatile
     private var transportOverride: Sender.Transport? = null
 

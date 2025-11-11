@@ -29,7 +29,7 @@ object TonightMirrorStore {
                                 title = it.optString("title"),
                                 subtitle = it.optString("subtitle").takeIf { s -> s.isNotBlank() },
                                 icon = it.optString("icon"),
-                            )
+                            ),
                         )
                     }
                 }

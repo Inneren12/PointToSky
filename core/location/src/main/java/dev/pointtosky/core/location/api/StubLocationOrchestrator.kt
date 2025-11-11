@@ -29,8 +29,7 @@ class StubLocationOrchestrator(
         delegate.stop()
     }
 
-    override suspend fun getLastKnown(): LocationFix? =
-        manualFix.value ?: delegate.getLastKnown()
+    override suspend fun getLastKnown(): LocationFix? = manualFix.value ?: delegate.getLastKnown()
 
     override suspend fun setManual(point: GeoPoint?) {
         manualFix.value = point?.let {

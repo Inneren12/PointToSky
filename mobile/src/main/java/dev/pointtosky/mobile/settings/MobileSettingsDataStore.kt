@@ -8,11 +8,11 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 
 enum class LocationMode {
     AUTO,
@@ -103,14 +103,13 @@ private class MobileSettingsDataStore(
         }
     }
 
-    private fun Flow<Preferences>.handleErrors(): Flow<Preferences> =
-        catch { error ->
-            if (error is IOException) {
-                emit(emptyPreferences())
-            } else {
-                throw error
-            }
+    private fun Flow<Preferences>.handleErrors(): Flow<Preferences> = catch { error ->
+        if (error is IOException) {
+            emit(emptyPreferences())
+        } else {
+            throw error
         }
+    }
 
     companion object {
         private val MIRROR_ENABLED_KEY = booleanPreferencesKey("mirror.enabled")

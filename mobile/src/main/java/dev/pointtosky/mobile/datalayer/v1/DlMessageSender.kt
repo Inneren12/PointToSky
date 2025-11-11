@@ -21,7 +21,7 @@ internal object DlMessageSender {
         nodeId: String,
         path: String,
         payload: ByteArray,
-        onFailure: (Exception) -> Unit,
+        onFailure: (Exception) -> Unit
     ) {
         val delegate = overrideDelegate ?: RealDelegate
         delegate.sendMessage(context, nodeId, path, payload) { error -> onFailure(error) }
@@ -38,7 +38,7 @@ internal object DlMessageSender {
             nodeId: String,
             path: String,
             payload: ByteArray,
-            onFailure: FailureListener,
+            onFailure: FailureListener
         ) {
             Wearable.getMessageClient(context)
                 .sendMessage(nodeId, path, payload)

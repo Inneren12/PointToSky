@@ -41,10 +41,7 @@ import androidx.core.content.ContextCompat
 import dev.pointtosky.mobile.R
 
 @Composable
-fun OnboardingScreen(
-    onComplete: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun OnboardingScreen(onComplete: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val packageManager = context.packageManager
 
@@ -53,27 +50,27 @@ fun OnboardingScreen(
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED,
         )
     }
     var cameraGranted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
-                Manifest.permission.CAMERA
-            ) == PackageManager.PERMISSION_GRANTED
+                Manifest.permission.CAMERA,
+            ) == PackageManager.PERMISSION_GRANTED,
         )
     }
 
     val locationLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         locationGranted = granted
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         cameraGranted = granted
     }
@@ -85,11 +82,11 @@ fun OnboardingScreen(
     LaunchedEffect(Unit) {
         locationGranted = ContextCompat.checkSelfPermission(
             context,
-            Manifest.permission.ACCESS_COARSE_LOCATION
+            Manifest.permission.ACCESS_COARSE_LOCATION,
         ) == PackageManager.PERMISSION_GRANTED
         cameraGranted = ContextCompat.checkSelfPermission(
             context,
-            Manifest.permission.CAMERA
+            Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -97,7 +94,7 @@ fun OnboardingScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(title = { Text(text = stringResource(id = R.string.onboarding_title)) })
-        }
+        },
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -105,21 +102,21 @@ fun OnboardingScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
                 text = stringResource(id = R.string.onboarding_description),
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(
                     checked = acknowledged,
-                    onCheckedChange = { acknowledged = it }
+                    onCheckedChange = { acknowledged = it },
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
@@ -131,12 +128,12 @@ fun OnboardingScreen(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = stringResource(id = R.string.onboarding_location_label),
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
                 )
                 if (locationGranted) {
                     Text(
                         text = stringResource(id = R.string.onboarding_location_granted),
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 } else {
                     Button(onClick = { locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }) {
@@ -145,7 +142,7 @@ fun OnboardingScreen(
                     Text(
                         text = stringResource(id = R.string.onboarding_location_denied),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -154,12 +151,12 @@ fun OnboardingScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = stringResource(id = R.string.onboarding_camera_label),
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
                     )
                     if (cameraGranted) {
                         Text(
                             text = stringResource(id = R.string.onboarding_camera_granted),
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                     } else {
                         Button(onClick = { cameraLauncher.launch(Manifest.permission.CAMERA) }) {
@@ -168,7 +165,7 @@ fun OnboardingScreen(
                         Text(
                             text = stringResource(id = R.string.onboarding_camera_denied),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

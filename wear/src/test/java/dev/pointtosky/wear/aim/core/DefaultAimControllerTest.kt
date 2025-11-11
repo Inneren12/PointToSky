@@ -16,9 +16,6 @@ import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.sensors.orientation.OrientationSource
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
-import java.time.Instant
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +25,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class DefaultAimControllerTest {
 

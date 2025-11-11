@@ -101,6 +101,5 @@ object MobileLog {
         )
     }
 
-    private fun Map<String, Any?>.filterValuesNotNull(): Map<String, Any?> =
-        filterValues { value -> value != null }
+    private fun Map<String, Any?>.filterValuesNotNull(): Map<String, Any?> = filterValues { value -> value != null }
 }

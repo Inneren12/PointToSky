@@ -23,7 +23,7 @@ class TonightOpenActivity : ComponentActivity() {
             MaterialTheme {
                 Text(
                     text = "Payload: $payload",
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier.padding(16.dp),
                 )
             }
         }

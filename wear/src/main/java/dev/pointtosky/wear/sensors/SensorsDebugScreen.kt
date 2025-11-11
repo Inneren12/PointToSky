@@ -23,9 +23,9 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import dev.pointtosky.core.logging.FrameTraceMode
@@ -212,11 +212,7 @@ fun SensorsDebugScreen(
 }
 
 @Composable
-private fun SensorStatusRow(
-    isSensorActive: Boolean,
-    fps: Float?,
-    accuracy: OrientationAccuracy?,
-) {
+private fun SensorStatusRow(isSensorActive: Boolean, fps: Float?, accuracy: OrientationAccuracy?) {
     val statusText = if (isSensorActive) {
         stringResource(id = R.string.sensor_status_active)
     } else {
@@ -242,7 +238,13 @@ private fun SensorStatusRow(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (isSensorActive) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+            tint = if (isSensorActive) {
+                MaterialTheme.colors.primary
+            } else {
+                MaterialTheme.colors.onSurface.copy(
+                    alpha = 0.6f,
+                )
+            },
         )
         Spacer(modifier = Modifier.width(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -260,10 +262,7 @@ private fun SensorStatusRow(
 }
 
 @Composable
-private fun AccuracyIndicator(
-    accuracy: OrientationAccuracy,
-    modifier: Modifier = Modifier,
-) {
+private fun AccuracyIndicator(accuracy: OrientationAccuracy, modifier: Modifier = Modifier) {
     val label = stringResource(id = orientationAccuracyStringRes(accuracy))
     val (background, content) = accuracyColors(accuracy)
     Text(

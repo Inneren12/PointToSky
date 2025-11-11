@@ -1,6 +1,7 @@
 @file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 // Если в этом файле есть debounce/flatMapLatest etc. из preview Flow:
 // @file:OptIn(kotlinx.coroutines.FlowPreview::class)
+
 package dev.pointtosky.wear.sensors.orientation
 
 import kotlinx.coroutines.CoroutineScope
@@ -14,7 +15,6 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.*
 
 internal class DelegatingOrientationRepository(
     private val primary: OrientationRepository?,

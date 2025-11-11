@@ -6,19 +6,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Button
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ButtonDefaults
-import androidx.wear.compose.material.ScalingLazyColumn
+import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.material.Text
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.core.time.ZoneRepo
 import dev.pointtosky.wear.R
@@ -26,14 +26,9 @@ import dev.pointtosky.wear.tile.tonight.TonightTileDebug
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.collections.ArrayDeque
-import kotlinx.coroutines.flow.collect
 
 @Composable
-fun TimeDebugScreen(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun TimeDebugScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val timeSource = remember { SystemTimeSource() }
     val zoneRepo = remember(context.applicationContext) { ZoneRepo(context.applicationContext) }
@@ -41,7 +36,7 @@ fun TimeDebugScreen(
         onBack = onBack,
         timeSource = timeSource,
         zoneRepo = zoneRepo,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -50,7 +45,7 @@ private fun TimeDebugContent(
     onBack: () -> Unit,
     timeSource: SystemTimeSource,
     zoneRepo: ZoneRepo,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
 ) {
     val zoneId by zoneRepo.zoneFlow.collectAsState(initial = zoneRepo.current())
     val periodMs by timeSource.periodMsFlow.collectAsState()
@@ -79,7 +74,7 @@ private fun TimeDebugContent(
     ScalingLazyColumn(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
             Text(text = stringResource(id = R.string.time_debug_label), style = MaterialTheme.typography.title3)
@@ -99,7 +94,7 @@ private fun TimeDebugContent(
                     timeSource.updatePeriod(next)
                 },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.primaryButtonColors()
+                colors = ButtonDefaults.primaryButtonColors(),
             ) {
                 Text(text = stringResource(id = R.string.time_debug_toggle))
             }
@@ -108,7 +103,7 @@ private fun TimeDebugContent(
             Button(
                 onClick = onBack,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.secondaryButtonColors()
+                colors = ButtonDefaults.secondaryButtonColors(),
             ) {
                 Text(text = stringResource(id = R.string.time_debug_back))
             }
@@ -120,7 +115,7 @@ private fun TimeDebugContent(
 private fun rememberTickMetrics(timeSource: SystemTimeSource): State<TickMetrics> {
     return produceState(
         initialValue = TickMetrics(timeSource.now(), null, null),
-        key1 = timeSource
+        key1 = timeSource,
     ) {
         val samples = ArrayDeque<Long>()
         timeSource.ticks.collect { instant ->

@@ -1,22 +1,16 @@
 package dev.pointtosky.mobile.e2e
 
 import android.content.Context
-import org.json.JSONObject
-
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.junit.After
-import org.junit.Before
-import org.junit.Test
-import org.junit.Assert.*
-import org.junit.runner.RunWith
-
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetEquatorialPayload
 import dev.pointtosky.core.datalayer.AimTargetKind
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
 import dev.pointtosky.core.datalayer.PATH_CARD_OPEN
+import dev.pointtosky.core.location.prefs.LocationPrefs
+import dev.pointtosky.core.location.prefs.fromContext
 import dev.pointtosky.mobile.card.CardDeepLinkLauncher
 import dev.pointtosky.mobile.card.CardRepository
 import dev.pointtosky.mobile.card.CardUiState
@@ -28,13 +22,19 @@ import dev.pointtosky.mobile.datalayer.v1.DlJson
 import dev.pointtosky.mobile.datalayer.v1.DlMessageSender
 import dev.pointtosky.mobile.datalayer.v1.DlReceiverService
 import dev.pointtosky.mobile.search.SearchViewModel
-import dev.pointtosky.core.location.prefs.LocationPrefs
-import dev.pointtosky.core.location.prefs.fromContext
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
 
 @RunWith(AndroidJUnit4::class)
 class DataLayerE2ETest {
@@ -116,10 +116,13 @@ class DataLayerE2ETest {
             put("type", "STAR")
             put("name", "Vega")
             put("constellation", "LYR")
-            put("eq", JSONObject().apply {
-                put("raDeg", 279.23473479)
-                put("decDeg", 38.78368896)
-            })
+            put(
+                "eq",
+                JSONObject().apply {
+                    put("raDeg", 279.23473479)
+                    put("decDeg", 38.78368896)
+                },
+            )
             put("mag", 0.03)
         }
         val message = JSONObject().apply {
@@ -152,7 +155,7 @@ class DataLayerE2ETest {
                 path = PATH_CARD_OPEN,
                 data = data,
                 sourceNodeId = "wear-node",
-                )
+            ),
         )
 
         val latestId = CardRepository.latestCardIdFlow().first { it == "identify_vega" }

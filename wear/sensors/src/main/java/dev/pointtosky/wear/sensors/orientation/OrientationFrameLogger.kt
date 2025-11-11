@@ -2,14 +2,14 @@ package dev.pointtosky.wear.sensors.orientation
 
 import dev.pointtosky.core.logging.FrameTraceMode
 import dev.pointtosky.core.logging.LogBus
-import kotlin.math.sqrt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.util.ArrayDeque
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.flow.collect
+import kotlin.math.sqrt
 
 internal class OrientationFrameLogger(
     private val source: OrientationSource,

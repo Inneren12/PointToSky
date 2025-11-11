@@ -14,7 +14,7 @@ import kotlin.math.max
 
 class LogFileManager(
     private val config: LoggerConfig,
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val formatter = DateTimeFormatter.ofPattern("yyyyMMdd-HH-mm-ss", Locale.US)
         .withZone(ZoneId.of("UTC"))
@@ -128,7 +128,7 @@ class LogFileManager(
         val file: File,
         val createdAt: Instant,
         val sequence: Int,
-        var size: Long
+        var size: Long,
     )
 
     companion object {

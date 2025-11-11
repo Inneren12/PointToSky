@@ -2,30 +2,30 @@ package dev.pointtosky.core.catalog.runtime
 
 import android.content.Context
 import dev.pointtosky.core.astro.coord.Equatorial
+import dev.pointtosky.core.astro.identify.ConstellationBoundaries
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
 import dev.pointtosky.core.catalog.CatalogAdapter
+import dev.pointtosky.core.catalog.binary.BinaryConstellationBoundaries
+import dev.pointtosky.core.catalog.binary.BinaryStarCatalog
 import dev.pointtosky.core.catalog.io.AndroidAssetProvider
 import dev.pointtosky.core.catalog.io.AssetProvider
 import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.catalog.star.StarCatalog
 import kotlin.math.roundToInt
 import kotlin.system.measureNanoTime
-import dev.pointtosky.core.catalog.binary.BinaryConstellationBoundaries
-import dev.pointtosky.core.catalog.binary.BinaryStarCatalog
-import dev.pointtosky.core.astro.identify.ConstellationBoundaries
-public class CatalogRepository private constructor(
+class CatalogRepository private constructor(
     private val assetProvider: AssetProvider,
-    public val starCatalog: StarCatalog,
-    public val starMetadata: BinaryStarCatalog.Metadata?,
-    public val starLoadDurationMs: Long,
-    public val constellationBoundaries: ConstellationBoundaries,
-    public val boundaryMetadata: BinaryConstellationBoundaries.Metadata?,
-    public val boundaryLoadDurationMs: Long,
-    public val skyCatalog: CatalogAdapter,
-    public val identifySolver: IdentifySolver,
+    val starCatalog: StarCatalog,
+    val starMetadata: BinaryStarCatalog.Metadata?,
+    val starLoadDurationMs: Long,
+    val constellationBoundaries: ConstellationBoundaries,
+    val boundaryMetadata: BinaryConstellationBoundaries.Metadata?,
+    val boundaryLoadDurationMs: Long,
+    val skyCatalog: CatalogAdapter,
+    val identifySolver: IdentifySolver,
 ) {
-    public val diagnostics: CatalogDiagnostics = CatalogDiagnostics(
+    val diagnostics: CatalogDiagnostics = CatalogDiagnostics(
         starMetadata = starMetadata,
         starLoadDurationMs = starLoadDurationMs,
         boundaryMetadata = boundaryMetadata,
@@ -34,12 +34,7 @@ public class CatalogRepository private constructor(
         usingBinaryBoundaries = boundaryMetadata != null,
     )
 
-    public fun probe(
-        center: Equatorial,
-        radiusDeg: Double,
-        magLimit: Double?,
-        maxResults: Int = 8,
-    ): List<ProbeResult> {
+    fun probe(center: Equatorial, radiusDeg: Double, magLimit: Double?, maxResults: Int = 8): List<ProbeResult> {
         if (radiusDeg <= 0.0) return emptyList()
         val matches = starCatalog.nearby(center, radiusDeg, magLimit)
             .take(maxResults)
@@ -56,7 +51,7 @@ public class CatalogRepository private constructor(
         }
     }
 
-    public fun runSelfTest(): List<SelfTestResult> {
+    fun runSelfTest(): List<SelfTestResult> {
         val cases = listOf(
             SelfTestCase(
                 name = "Sirius proximity",
@@ -98,14 +93,14 @@ public class CatalogRepository private constructor(
     private fun Star.designationLabel(): String? {
         return when {
             !bayer.isNullOrBlank() && !constellation.isNullOrBlank() -> "${bayer.uppercase()} ${constellation.uppercase()}"
-            !flamsteed.isNullOrBlank() && !constellation.isNullOrBlank() -> "${flamsteed} ${constellation.uppercase()}"
+            !flamsteed.isNullOrBlank() && !constellation.isNullOrBlank() -> "$flamsteed ${constellation.uppercase()}"
             !bayer.isNullOrBlank() -> bayer.uppercase()
             !flamsteed.isNullOrBlank() -> flamsteed
             else -> null
         }
     }
 
-    public data class ProbeResult(
+    data class ProbeResult(
         val id: Int,
         val name: String?,
         val designation: String?,
@@ -114,7 +109,7 @@ public class CatalogRepository private constructor(
         val constellation: String?,
     )
 
-    public data class SelfTestResult(
+    data class SelfTestResult(
         val name: String,
         val passed: Boolean,
         val detail: String,
@@ -127,14 +122,15 @@ public class CatalogRepository private constructor(
         val expectedId: Int,
     )
 
-    public companion object {
-        public fun create(context: Context): CatalogRepository {
+    companion object {
+        fun create(context: Context): CatalogRepository {
             val provider = AndroidAssetProvider(context.applicationContext)
             val starHolder = loadStars(provider)
             val boundariesHolder = loadBoundaries(provider)
             val adapter = CatalogAdapter(
                 starHolder.catalog,
-                boundariesHolder.catalog  // тип уже ConstellationBoundaries из astro.identify
+                // тип уже ConstellationBoundaries из astro.identify
+                boundariesHolder.catalog,
             )
             val solver = IdentifySolver(adapter, adapter)
             return CatalogRepository(
@@ -188,7 +184,7 @@ public class CatalogRepository private constructor(
     )
 }
 
-public data class CatalogDiagnostics(
+data class CatalogDiagnostics(
     val starMetadata: BinaryStarCatalog.Metadata?,
     val starLoadDurationMs: Long,
     val boundaryMetadata: BinaryConstellationBoundaries.Metadata?,

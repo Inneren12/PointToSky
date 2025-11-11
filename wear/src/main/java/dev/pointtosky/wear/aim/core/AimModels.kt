@@ -20,7 +20,25 @@ data class AimState(
 sealed interface AimTarget {
     data class EquatorialTarget(val eq: Equatorial) : AimTarget
     data class BodyTarget(val body: Body) : AimTarget
-    // TODO: data class StarTarget(val starId: Int): AimTarget  // после S5
+
+    /**
+     * Цель — звезда по идентификатору каталога (S5).
+     *
+     * [starId] — числовой ID звезды в каталоге (например, внутренний ID S5).
+     * [eq] — опциональные координаты, если они уже известны на стороне отправителя.
+     *        Если координаты не переданы, их можно дорезолвить по [starId] в месте применения.
+     */
+    data class StarTarget(val starId: Int, val eq: Equatorial? = null) : AimTarget
+}
+
+/**
+ * Утилита: получить экваториальные координаты, если они есть прямо в цели.
+ * Возвращает null для BodyTarget и для StarTarget без предзаданного eq.
+ */
+fun AimTarget.asEquatorialOrNull(): Equatorial? = when (this) {
+    is AimTarget.EquatorialTarget -> this.eq
+    is AimTarget.StarTarget -> this.eq
+    is AimTarget.BodyTarget -> null
 }
 
 interface AimController {

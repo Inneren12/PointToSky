@@ -1,23 +1,25 @@
+@file:Suppress("TooManyFunctions")
+
 package dev.pointtosky.mobile.ar
 
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -32,11 +34,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -46,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.foundation.Canvas
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
@@ -68,7 +69,6 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
-import androidx.compose.foundation.layout.offset
 
 @Composable
 fun ArRoute(
@@ -119,12 +119,7 @@ data class ArTarget(
 )
 
 @Composable
-fun ArScreen(
-    state: ArUiState,
-    onBack: () -> Unit,
-    onSetTarget: (ArTarget) -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val permission = Manifest.permission.CAMERA
     var hasPermission by remember {
@@ -163,7 +158,7 @@ fun ArScreen(
                 .padding(16.dp)
                 .background(color = Color(0x66000000), shape = CircleShape),
         ) {
-            Icon(imageVector = Icons.Default.ArrowBack, contentDescription = null)
+            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
         }
 
         when (state) {
@@ -248,7 +243,7 @@ private fun Reticle(modifier: Modifier = Modifier) {
     val strokeWidth = 2.dp
     Canvas(
         modifier = modifier
-            .size(96.dp)
+            .size(96.dp),
     ) {
         drawCircle(
             color = Color.White.copy(alpha = 0.6f),
@@ -275,7 +270,7 @@ private fun InfoPanel(
     overlay: OverlayData,
     targetLabel: String,
     onSetTarget: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
 ) {
     val locale = Locale.getDefault()
     Column(
@@ -327,10 +322,7 @@ private fun InfoPanel(
 }
 
 @Composable
-private fun ArObjectLabel(
-    data: OverlayObject,
-    modifier: Modifier = Modifier,
-) {
+private fun ArObjectLabel(data: OverlayObject, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     val offset = remember(data.position, density) {
         val anchorX = with(density) { 80.dp.toPx() }
@@ -364,11 +356,7 @@ private fun ArObjectLabel(
     }
 }
 
-private fun calculateOverlay(
-    state: ArUiState.Ready,
-    frame: RotationFrame,
-    viewport: IntSize,
-): OverlayData? {
+private fun calculateOverlay(state: ArUiState.Ready, frame: RotationFrame, viewport: IntSize): OverlayData? {
     if (viewport.width == 0 || viewport.height == 0) return null
 
     val reticleHorizontal = vectorToHorizontal(frame.forwardWorld)

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -19,7 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -35,14 +36,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import androidx.compose.ui.text.input.KeyboardType
 
 @Composable
-fun CatalogDebugRoute(
-    factory: CatalogDebugViewModelFactory,
-    modifier: Modifier = Modifier,
-    onBack: () -> Unit,
-) {
+fun CatalogDebugRoute(factory: CatalogDebugViewModelFactory, modifier: Modifier = Modifier, onBack: () -> Unit) {
     val viewModel: CatalogDebugViewModel = viewModel(factory = factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
     CatalogDebugScreen(
@@ -73,7 +69,7 @@ fun CatalogDebugScreen(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -196,7 +192,7 @@ private fun buildStarInfo(state: CatalogDebugUiState): String {
     return if (metadata != null) {
         val crcHex = metadata.payloadCrc32.toString(16).uppercase(Locale.ROOT)
         val size = formatBytes(metadata.sizeBytes)
-        "Stars: ${metadata.starCount} • ${size} • CRC ${crcHex} • load ${diagnostics.starLoadDurationMs} ms"
+        "Stars: ${metadata.starCount} • $size • CRC $crcHex • load ${diagnostics.starLoadDurationMs} ms"
     } else {
         "Stars: fallback catalog • load ${diagnostics.starLoadDurationMs} ms"
     }
@@ -208,7 +204,7 @@ private fun buildConstellationInfo(state: CatalogDebugUiState): String {
     return if (metadata != null) {
         val crcHex = metadata.payloadCrc32.toString(16).uppercase(Locale.ROOT)
         val size = formatBytes(metadata.sizeBytes)
-        "Constellations: ${metadata.recordCount} • ${size} • CRC ${crcHex} • load ${diagnostics.boundaryLoadDurationMs} ms"
+        "Constellations: ${metadata.recordCount} • $size • CRC $crcHex • load ${diagnostics.boundaryLoadDurationMs} ms"
     } else {
         "Constellations: fallback boundaries • load ${diagnostics.boundaryLoadDurationMs} ms"
     }

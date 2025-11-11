@@ -2,11 +2,7 @@ package dev.pointtosky.wear.sensors.orientation
 
 import android.hardware.SensorManager
 
-internal fun applyRemap(
-    sourceMatrix: FloatArray,
-    tempMatrix: FloatArray,
-    screenRotation: ScreenRotation,
-): FloatArray {
+internal fun applyRemap(sourceMatrix: FloatArray, tempMatrix: FloatArray, screenRotation: ScreenRotation): FloatArray {
     val success = SensorManager.remapCoordinateSystem(
         sourceMatrix,
         screenRotation.remapAxisX,

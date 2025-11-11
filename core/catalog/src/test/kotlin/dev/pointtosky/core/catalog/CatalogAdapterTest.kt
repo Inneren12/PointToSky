@@ -27,11 +27,7 @@ class CatalogAdapterTest {
             constellation = "CMA",
         )
         val stars = object : StarCatalog {
-            override fun nearby(
-                center: Equatorial,
-                radiusDeg: Double,
-                magLimit: Double?
-            ): List<Star> = listOf(star)
+            override fun nearby(center: Equatorial, radiusDeg: Double, magLimit: Double?): List<Star> = listOf(star)
         }
         val boundaries = object : ConstellationBoundaries {
             override fun findByEq(eq: Equatorial): String? = "CMA"
@@ -41,7 +37,7 @@ class CatalogAdapterTest {
         val result: List<SkyObject> = adapter.nearby(
             Equatorial(101.3, -16.7),
             radiusDeg = 2.0,
-            magLimit = 2.0
+            magLimit = 2.0,
         )
 
         assertEquals(1, result.size)
@@ -51,4 +47,3 @@ class CatalogAdapterTest {
         assertEquals(-1.46, obj.mag!!, 1e-4)
     }
 }
-

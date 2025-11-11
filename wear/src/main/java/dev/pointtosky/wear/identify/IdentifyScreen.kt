@@ -1,18 +1,19 @@
 package dev.pointtosky.wear.identify
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -22,14 +23,12 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import dev.pointtosky.wear.R
-
 
 @Composable
 fun IdentifyRoute(
     factory: IdentifyViewModelFactory,
     onOpenCard: ((IdentifyUiState) -> Unit)?,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
 ) {
     val viewModel: IdentifyViewModel = viewModel(factory = factory)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -41,11 +40,7 @@ fun IdentifyRoute(
 }
 
 @Composable
-fun IdentifyScreen(
-    state: IdentifyUiState,
-    onOpenCard: ((IdentifyUiState) -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
+fun IdentifyScreen(state: IdentifyUiState, onOpenCard: ((IdentifyUiState) -> Unit)?, modifier: Modifier = Modifier) {
     val title = state.title
     val typeLabel = when (state.type) {
         IdentifyType.STAR -> "STAR"
@@ -53,8 +48,8 @@ fun IdentifyScreen(
         IdentifyType.PLANET -> "PLANET"
         IdentifyType.MOON -> "MOON"
     }
-    val magText = state.magnitude?.let { String.format("m = %.1f", it) } ?: "—"
-    val sepText = state.separationDeg?.let { String.format("Δ = %.1f°", it) } ?: "—"
+    val magText = state.magnitude?.let { java.lang.String.format(java.util.Locale.US, "m = %.1f", it) } ?: "—"
+    val sepText = state.separationDeg?.let { java.lang.String.format(java.util.Locale.US, "Δ = %.1f°", it) } ?: "—"
 
     Column(
         modifier = modifier
@@ -63,8 +58,6 @@ fun IdentifyScreen(
         verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // a11y: пусть озвучивает тип и имя как единое описание заголовка
-        val titleCd = "$typeLabel $title"
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -107,7 +100,7 @@ private fun LowAccuracyBadge() {
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
             .background(Color(0x33FFAA00))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
     ) {
         Text(
             text = "низкая точность",

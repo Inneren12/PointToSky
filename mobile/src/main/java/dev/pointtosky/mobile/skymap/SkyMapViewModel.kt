@@ -13,8 +13,6 @@ import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
-import java.time.Instant
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,6 +23,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.util.Locale
 
 class SkyMapViewModel(
     private val catalogRepository: CatalogRepository,
@@ -48,7 +48,7 @@ class SkyMapViewModel(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
+            initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
         )
 
     val state: StateFlow<SkyMapState> = staticData
@@ -89,11 +89,7 @@ class SkyMapViewModel(
         }
     }
 
-    private fun buildState(
-        data: StaticSkyData,
-        location: LocationSnapshot,
-        instant: Instant,
-    ): SkyMapState {
+    private fun buildState(data: StaticSkyData, location: LocationSnapshot, instant: Instant): SkyMapState {
         val lst = lstAt(instant, location.point.lonDeg).lstDeg
         val lat = location.point.latDeg
         val projectedStars = data.stars.map { star ->

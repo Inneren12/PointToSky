@@ -14,50 +14,46 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.tilePrefsDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "tile_settings"
+    name = "tile_settings",
 )
 
 class TileSettingsDataStore(
-    private val context: Context
+    private val context: Context,
 ) {
     // Ключи
-    private val KEY_MAG_LIMIT = doublePreferencesKey("tile.magLimit")
-    private val KEY_MIN_ALT   = doublePreferencesKey("tile.minAltDeg")
-    private val KEY_MAX_ITEMS = intPreferencesKey("tile.maxItems")
-    private val KEY_PREF_PLAN = booleanPreferencesKey("tile.preferPlanets")
+    private val keyMagLimit = doublePreferencesKey("tile.magLimit")
+    private val keyMinAlt = doublePreferencesKey("tile.minAltDeg")
+    private val keyMaxItems = intPreferencesKey("tile.maxItems")
+    private val keyPrefPlan = booleanPreferencesKey("tile.preferPlanets")
 
     // Значения по умолчанию
-    private val DEF_MAG_LIMIT = 2.0
-    private val DEF_MIN_ALT   = 15.0
-    private val DEF_MAX_ITEMS = 3
-    private val DEF_PREF_PLAN = true
+    private val defMagLimit = 2.0
+    private val defMinAlt = 15.0
+    private val defMaxItems = 3
+    private val defPrefPlan = true
 
     // Flows
     val magLimitFlow: Flow<Double> =
-        context.tilePrefsDataStore.data.map { it[KEY_MAG_LIMIT] ?: DEF_MAG_LIMIT }
+        context.tilePrefsDataStore.data.map { it[keyMagLimit] ?: defMagLimit }
     val minAltDegFlow: Flow<Double> =
-        context.tilePrefsDataStore.data.map { it[KEY_MIN_ALT] ?: DEF_MIN_ALT }
+        context.tilePrefsDataStore.data.map { it[keyMinAlt] ?: defMinAlt }
     val maxItemsFlow: Flow<Int> =
-        context.tilePrefsDataStore.data.map { it[KEY_MAX_ITEMS] ?: DEF_MAX_ITEMS }
+        context.tilePrefsDataStore.data.map { it[keyMaxItems] ?: defMaxItems }
     val preferPlanetsFlow: Flow<Boolean> =
-        context.tilePrefsDataStore.data.map { it[KEY_PREF_PLAN] ?: DEF_PREF_PLAN }
+        context.tilePrefsDataStore.data.map { it[keyPrefPlan] ?: defPrefPlan }
 
     // Mutators
-    suspend fun setMagLimit(value: Double) =
-        context.tilePrefsDataStore.edit { it[KEY_MAG_LIMIT] = value }
-    suspend fun setMinAltDeg(value: Double) =
-        context.tilePrefsDataStore.edit { it[KEY_MIN_ALT] = value }
-    suspend fun setMaxItems(value: Int) =
-        context.tilePrefsDataStore.edit { it[KEY_MAX_ITEMS] = value }
-    suspend fun setPreferPlanets(value: Boolean) =
-        context.tilePrefsDataStore.edit { it[KEY_PREF_PLAN] = value }
+    suspend fun setMagLimit(value: Double) = context.tilePrefsDataStore.edit { it[keyMagLimit] = value }
+    suspend fun setMinAltDeg(value: Double) = context.tilePrefsDataStore.edit { it[keyMinAlt] = value }
+    suspend fun setMaxItems(value: Int) = context.tilePrefsDataStore.edit { it[keyMaxItems] = value }
+    suspend fun setPreferPlanets(value: Boolean) = context.tilePrefsDataStore.edit { it[keyPrefPlan] = value }
 
     // Снимок конфигурации для провайдера
     suspend fun readConfig(): TonightConfig {
         val mag = magLimitFlow.first()
         val alt = minAltDegFlow.first()
         val max = maxItemsFlow.first()
-        val pref= preferPlanetsFlow.first()
+        val pref = preferPlanetsFlow.first()
         return TonightConfig(magLimit = mag, minAltDeg = alt, maxItems = max, preferPlanets = pref).clamped()
     }
 }

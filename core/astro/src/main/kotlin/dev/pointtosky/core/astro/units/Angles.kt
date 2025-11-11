@@ -38,8 +38,13 @@ fun radToDeg(radians: Double): Double = radians * RAD
  * @param degrees Angle in degrees.
  * @return Angle normalized to [0°, 360°).
  */
-fun wrapDeg0_360(degrees: Double): Double =
-    ((degrees % 360.0) + 360.0) % 360.0
+fun wrapDeg0To360(degrees: Double): Double = ((degrees % 360.0) + 360.0) % 360.0
+
+/**
++ * Alias for readability/backward-compatibility.
++ * Wraps an angle in degrees to the (-180°, 180°] range.
++ */
+fun wrapDegMinus180To180(degrees: Double): Double = wrapDegN180To180(degrees)
 
 /**
  * Wraps an angle in degrees to the (-180°, 180°] range.
@@ -47,8 +52,8 @@ fun wrapDeg0_360(degrees: Double): Double =
  * @param degrees Angle in degrees.
  * @return Angle normalized to (-180°, 180°].
  */
-fun wrapDegN180_180(degrees: Double): Double {
-    val wrapped = wrapDeg0_360(degrees)
+fun wrapDegN180To180(degrees: Double): Double {
+    val wrapped = wrapDeg0To360(degrees)
     return if (wrapped > 180.0 || (wrapped == 180.0 && degrees < 0.0)) {
         wrapped - 360.0
     } else {

@@ -1,13 +1,13 @@
 package dev.pointtosky.core.astro.ephem
 
 import dev.pointtosky.core.astro.coord.Equatorial
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Instant
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 private const val GOLDEN_RESOURCE = "ephem_golden_v1.json"
 private val json = Json {
@@ -37,8 +37,7 @@ private fun goldenResourceStream(): InputStream {
     }
 }
 
-private fun goldenOutputPath(): Path =
-    Paths.get("src", "test", "resources", GOLDEN_RESOURCE)
+private fun goldenOutputPath(): Path = Paths.get("src", "test", "resources", GOLDEN_RESOURCE)
 
 internal data class EphemGolden(val dates: List<GoldenDate>) {
     fun toSamples(): List<GoldenSample> = dates.flatMap { date ->

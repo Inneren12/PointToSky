@@ -1,6 +1,5 @@
 package dev.pointtosky.core.time
 
-import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.TickerMode
@@ -11,9 +10,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import java.time.Instant
 
 interface TimeSource {
     fun now(): Instant
@@ -30,26 +29,25 @@ class SystemTimeSource(
         require(periodMs > 0) { "periodMs must be positive" }
     }
 
-    private val _periodMs = MutableStateFlow(periodMs)
+    private val periodMsState = MutableStateFlow(periodMs)
 
-    val periodMsFlow: StateFlow<Long> = _periodMs.asStateFlow()
-
+    val periodMsFlow: StateFlow<Long> = periodMsState.asStateFlow()
     fun updatePeriod(periodMs: Long) {
         require(periodMs > 0) { "periodMs must be positive" }
-        _periodMs.value = periodMs
+        periodMsState.value = periodMs
     }
 
     override fun now(): Instant = clock()
 
     @OptIn(ObsoleteCoroutinesApi::class, ExperimentalCoroutinesApi::class)
-    override val ticks: Flow<Instant> = _periodMs
+    override val ticks: Flow<Instant> = periodMsState
         .flatMapLatest { period ->
             callbackFlow {
                 trySend(now())
                 val ticker = ticker(
                     delayMillis = period,
                     initialDelayMillis = period,
-                    mode = TickerMode.FIXED_PERIOD
+                    mode = TickerMode.FIXED_PERIOD,
                 )
                 val job = launch {
                     for (ignored in ticker) {

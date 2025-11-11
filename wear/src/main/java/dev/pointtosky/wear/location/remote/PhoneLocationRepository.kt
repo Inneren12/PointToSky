@@ -1,6 +1,7 @@
 package dev.pointtosky.wear.location.remote
 
 import android.content.Context
+import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.tasks.Task
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataClient.OnDataChangedListener
@@ -17,10 +18,6 @@ import dev.pointtosky.core.location.remote.LocationRequestPayload
 import dev.pointtosky.core.location.remote.LocationResponsePayload
 import dev.pointtosky.core.location.remote.PATH_LOCATION_REQUEST_ONE
 import dev.pointtosky.core.location.remote.PATH_LOCATION_RESPONSE_ONE
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,10 +30,14 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.isActive
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.io.use
 
 class PhoneLocationRepository(
@@ -97,19 +98,12 @@ class PhoneLocationRepository(
         handleIncomingFix(payload.fix)
     }
 
-    override fun onDataChanged(dataEvents: DataEventBuffer) {
+    override fun onDataChanged(dataEvents: DataEventBuffer) =
         dataEvents.use { buffer ->
-            for (event in buffer) {
-                if (event.type != DataEvent.TYPE_CHANGED) continue
-                val item = event.dataItem
-                val path = item.uri.path
-                if (path != DATA_ITEM_LAST_FIX) continue
-                val data = item.data ?: continue
-                val payload = LocationResponsePayload.fromBytes(data) ?: continue
-                handleIncomingFix(payload.fix)
+            buffer.forEach { event ->
+                event.toLastFix()?.let(::handleIncomingFix)
             }
         }
-    }
 
     private suspend fun ensureFreshFix(force: Boolean) {
         val ttlMs = configRef.get().freshTtlMs
@@ -193,8 +187,21 @@ class PhoneLocationRepository(
     }
 }
 
+/**
+ * Извлекает последний фикc из события DataLayer, если это изменение нужного data item.
+ * Возвращает null, если событие не подходит или парсинг не удался.
+ */
+private fun DataEvent.toLastFix(): LocationFix? {
+    if (type != DataEvent.TYPE_CHANGED) return null
+    val item: DataItem = dataItem
+    val path = item.uri.path ?: return null
+    if (path != DATA_ITEM_LAST_FIX) return null
+    val bytes = item.data ?: return null
+    val payload = LocationResponsePayload.fromBytes(bytes) ?: return null
+    return payload.fix
+}
+
 private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
     addOnSuccessListener { result -> cont.resume(result) }
     addOnFailureListener { error -> cont.resumeWithException(error) }
 }
-

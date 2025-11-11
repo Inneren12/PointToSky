@@ -7,13 +7,13 @@ import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.logging.CrashLogEntry
 import dev.pointtosky.core.logging.CrashLogManager
 import dev.pointtosky.wear.R
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 data class CrashLogUiState(
     val lastCrash: CrashLogEntry? = null,
@@ -32,7 +32,7 @@ class CrashLogViewModel(
         CrashLogUiState(
             lastCrash = runCatching { CrashLogManager.currentLastCrash() }.getOrNull(),
             hasLogs = runCatching { CrashLogManager.hasLogs() }.getOrElse { false },
-        )
+        ),
     )
     val state: StateFlow<CrashLogUiState> = _state.asStateFlow()
 
@@ -73,7 +73,8 @@ class CrashLogViewModel(
                     _state.update { current ->
                         current.copy(
                             isBusy = false,
-                            errorMessage = error.localizedMessage ?: application.getString(R.string.crash_logs_operation_failed)
+                            errorMessage =
+                            error.localizedMessage ?: application.getString(R.string.crash_logs_operation_failed),
                         )
                     }
                 }

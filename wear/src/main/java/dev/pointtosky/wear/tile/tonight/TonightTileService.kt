@@ -1,34 +1,36 @@
+@file:Suppress("DEPRECATION")
+
 package dev.pointtosky.wear.tile.tonight
 
 import android.content.Context
 import android.os.SystemClock
-import android.util.Log
-import java.time.Instant
-import dev.pointtosky.core.logging.LogBus
-import dev.pointtosky.core.time.SystemTimeSource
-import dev.pointtosky.core.time.ZoneRepo
-import androidx.wear.tiles.TileService
-import androidx.wear.tiles.RequestBuilders
-import androidx.wear.tiles.TileBuilders
-import androidx.wear.tiles.TimelineBuilders
-import androidx.wear.tiles.ResourceBuilders
-import androidx.wear.tiles.LayoutElementBuilders
-import androidx.wear.tiles.DimensionBuilders
-import androidx.wear.tiles.ModifiersBuilders
 import androidx.wear.tiles.ActionBuilders
 import androidx.wear.tiles.DeviceParametersBuilders
-import androidx.wear.tiles.material.layouts.PrimaryLayout
+import androidx.wear.tiles.DimensionBuilders
+import androidx.wear.tiles.LayoutElementBuilders
+import androidx.wear.tiles.ModifiersBuilders
+import androidx.wear.tiles.RequestBuilders
+import androidx.wear.tiles.ResourceBuilders
+import androidx.wear.tiles.TileBuilders
+import androidx.wear.tiles.TileService
+import androidx.wear.tiles.TimelineBuilders
 import androidx.wear.tiles.material.CompactChip
 import androidx.wear.tiles.material.Text
+import androidx.wear.tiles.material.layouts.PrimaryLayout
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
+import dev.pointtosky.core.logging.LogBus
+import dev.pointtosky.core.time.ZoneRepo
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.datalayer.WearMessageBridge
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
+import java.time.Instant
 
 open class TonightTileService : TileService() {
 
@@ -61,12 +63,15 @@ open class TonightTileService : TileService() {
 
     // S7.C: реальный офлайн‑провайдер с кэшем.
     private val provider: TonightProvider by lazy {
-        val time = SystemTimeSource()
         val zoneRepo = ZoneRepo(this)
-        // Локация берётся через Orchestrator в app-слое; для тайла — мягкий лямбда‑геттер.
-        // Если интеграции нет, вернётся null и сработает фолбэк (Moon + Vega).
-        val getLastKnownLocation: suspend () -> dev.pointtosky.core.location.model.GeoPoint? = { null }
-        RealTonightProvider(context = this, timeSource = time, zoneRepo = zoneRepo, getLastKnownLocation = getLastKnownLocation)
+        val ephemeris = SimpleEphemerisComputer()
+        // StarCatalog здесь опционален → передаём null (провайдер использует дефолтные цели).
+        RealTonightProvider(
+            this,
+            zoneRepo,
+            ephemeris,
+            null,
+        )
     }
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
@@ -86,21 +91,20 @@ open class TonightTileService : TileService() {
                         WearMessageBridge.sendToPhone(
                             applicationContext,
                             PATH_PUSH,
-                            json.toByteArray(Charsets.UTF_8)
+                            json.toByteArray(Charsets.UTF_8),
                         )
                     }.onSuccess {
                         LogBus.event(
                             name = "tile_push_model",
-                            payload = mapOf("targetsCount" to model.items.size)
+                            payload = mapOf("targetsCount" to model.items.size),
                         )
                     }.onFailure { e ->
-                        Log.w("TonightTile", "push_model failed", e)
                         LogBus.event(
                             name = "tile_error",
                             payload = mapOf(
                                 "err" to e.toLogMessage(),
-                                "stage" to "push_model"
-                            )
+                                "stage" to "push_model",
+                            ),
                         )
                     }
                 }
@@ -110,7 +114,7 @@ open class TonightTileService : TileService() {
             val root = buildPrimaryLayoutRoot(
                 context = this,
                 model = model,
-                deviceParams = requestParams.deviceParameters
+                deviceParams = requestParams.deviceParameters,
             )
             val layout = LayoutElementBuilders.Layout.Builder().setRoot(root).build()
             val entry = TimelineBuilders.TimelineEntry.Builder().setLayout(layout).build()
@@ -121,15 +125,33 @@ open class TonightTileService : TileService() {
                     // Резервный периодический апдейт от платформы (на случай промаха воркера)
                     .setFreshnessIntervalMillis(45L * 60_000L)
                     .setTimeline(timeline)
-                    .build()
+                    .build(),
             )
-        } catch (e: Throwable) {
+        } catch (e: JSONException) {
             LogBus.event(
                 name = "tile_error",
                 payload = mapOf(
                     "err" to e.toLogMessage(),
-                    "stage" to "on_tile_request"
-                )
+                    "stage" to "on_tile_request_json",
+                ),
+            )
+            throw e
+        } catch (e: SecurityException) {
+            LogBus.event(
+                name = "tile_error",
+                payload = mapOf(
+                    "err" to e.toLogMessage(),
+                    "stage" to "on_tile_request_security",
+                ),
+            )
+            throw e
+        } catch (e: IllegalStateException) {
+            LogBus.event(
+                name = "tile_error",
+                payload = mapOf(
+                    "err" to e.toLogMessage(),
+                    "stage" to "on_tile_request_state",
+                ),
             )
             throw e
         } finally {
@@ -138,10 +160,19 @@ open class TonightTileService : TileService() {
         }
     }
 
-    override fun onResourcesRequest(requestParams: RequestBuilders.ResourcesRequest): ListenableFuture<ResourceBuilders.Resources> {
+    @Deprecated("Tiles v1 API; kept for backward compatibility. Consider migrating to ProtoLayout.")
+    override fun onResourcesRequest(
+        requestParams: RequestBuilders.ResourcesRequest
+    ): ListenableFuture<ResourceBuilders.Resources> {
         val res = ResourceBuilders.Resources.Builder().setVersion(RES_VER)
-        listOf(TonightIcon.SUN, TonightIcon.MOON, TonightIcon.JUPITER,
-            TonightIcon.SATURN, TonightIcon.STAR, TonightIcon.CONST)
+        listOf(
+            TonightIcon.SUN,
+            TonightIcon.MOON,
+            TonightIcon.JUPITER,
+            TonightIcon.SATURN,
+            TonightIcon.STAR,
+            TonightIcon.CONST,
+        )
             .forEach { icon ->
                 res.addIdToImageMapping(
                     iconResIdString(icon),
@@ -149,8 +180,8 @@ open class TonightTileService : TileService() {
                         .setAndroidResourceByResId(
                             ResourceBuilders.AndroidImageResourceByResId.Builder()
                                 .setResourceId(iconAndroidRes(icon))
-                                .build()
-                        ).build()
+                                .build(),
+                        ).build(),
                 )
             }
         return Futures.immediateFuture(res.build())
@@ -165,7 +196,7 @@ open class TonightTileService : TileService() {
     private fun buildPrimaryLayoutRoot(
         context: Context,
         model: TonightTileModel,
-        deviceParams: DeviceParametersBuilders.DeviceParameters?
+        deviceParams: DeviceParametersBuilders.DeviceParameters?,
     ): LayoutElementBuilders.LayoutElement {
         // список элементов
         val listColumn = LayoutElementBuilders.Column.Builder()
@@ -177,7 +208,7 @@ open class TonightTileService : TileService() {
                 listColumn.addContent(
                     LayoutElementBuilders.Spacer.Builder()
                         .setHeight(DimensionBuilders.DpProp.Builder().setValue(6f).build())
-                        .build()
+                        .build(),
                 )
             }
             listColumn.addContent(buildTargetRow(context, item))
@@ -189,16 +220,12 @@ open class TonightTileService : TileService() {
             return listColumn.build()
         }
 
-        val moreClickable = clickableOpenActivity(
-            context = context,
-            className = "dev.pointtosky.wear.tile.tonight.TonightTargetsActivity",
-            id = "open_tonight_list"
-        )
+        val moreClickable = clickableOpenTargetsActivity(context)
         val moreChip = CompactChip.Builder(
             context,
             getString(R.string.tile_more),
             moreClickable,
-            dp
+            dp,
         ).build()
 
         val title = Text.Builder(context, getString(R.string.tile_tonight_label)).build()
@@ -215,7 +242,7 @@ open class TonightTileService : TileService() {
      * Делает строку кликабельной (по желанию можно перевести на no-op).
      */
     private fun buildTargetRow(context: Context, item: TonightTarget): LayoutElementBuilders.LayoutElement {
-        val click = clickableLaunch(context, ACTION_OPEN_AIM, item.id)
+        val click = clickableOpenAim(context, item.id)
         val subtitle = item.subtitle ?: formatAzAlt(item.azDeg, item.altDeg)
 
         val row = LayoutElementBuilders.Row.Builder()
@@ -229,32 +256,32 @@ open class TonightTileService : TileService() {
                 .setResourceId(iconResIdString(item.icon))
                 .setWidth(DimensionBuilders.DpProp.Builder().setValue(20f).build())
                 .setHeight(DimensionBuilders.DpProp.Builder().setValue(20f).build())
-                .build()
+                .build(),
         )
         // Отступ
         row.addContent(
             LayoutElementBuilders.Spacer.Builder()
                 .setWidth(DimensionBuilders.DpProp.Builder().setValue(8f).build())
-                .build()
+                .build(),
         )
         // Тексты
         val textCol = LayoutElementBuilders.Column.Builder()
             .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
         // Primary (Material Text)
         textCol.addContent(
-            Text.Builder(context, item.title).build()
+            Text.Builder(context, item.title).build(),
         )
         if (subtitle != null) {
             textCol.addContent(
-                Text.Builder(context, subtitle).build()
+                Text.Builder(context, subtitle).build(),
             )
         }
         row.addContent(textCol.build())
         return row.build()
     }
 
-    private fun clickableLaunch(context: Context, action: String, targetId: String? = null): ModifiersBuilders.Clickable {
-        // Минимальный DoD: просто открываем TileEntryActivity (без extras/action), чтобы клик работал стабильно.
+    /** Клик на цель AIM (использует константу ACTION_OPEN_AIM). */
+    private fun clickableOpenAim(context: Context, targetId: String?): ModifiersBuilders.Clickable {
         val activity: ActionBuilders.AndroidActivity =
             ActionBuilders.AndroidActivity.Builder()
                 .setPackageName(context.packageName)
@@ -262,31 +289,27 @@ open class TonightTileService : TileService() {
                 .build()
         val launch: ActionBuilders.LaunchAction =
             ActionBuilders.LaunchAction.Builder()
-                .setAndroidActivity(activity) // ← сюда передаём уже построенный AndroidActivity
+                .setAndroidActivity(activity)
                 .build()
         return ModifiersBuilders.Clickable.Builder()
             .setOnClick(launch)
-            .setId(targetId?.let { "$action:$it" } ?: action) // человекочитаемый id для отладки
+            .setId(targetId?.let { "$ACTION_OPEN_AIM:$it" } ?: ACTION_OPEN_AIM)
             .build()
     }
 
-    /** Клик, открывающий конкретную Activity по полному имени класса. */
-    private fun clickableOpenActivity(
-        context: Context,
-        className: String,
-        id: String
-    ): ModifiersBuilders.Clickable {
+    /** Клик, открывающий список целей TonightTargetsActivity. */
+    private fun clickableOpenTargetsActivity(context: Context): ModifiersBuilders.Clickable {
         val activity: ActionBuilders.AndroidActivity =
             ActionBuilders.AndroidActivity.Builder()
                 .setPackageName(context.packageName)
-                .setClassName(className)
+                .setClassName("dev.pointtosky.wear.tile.tonight.TonightTargetsActivity")
                 .build()
         val launch: ActionBuilders.LaunchAction =
             ActionBuilders.LaunchAction.Builder()
                 .setAndroidActivity(activity)
                 .build()
         return ModifiersBuilders.Clickable.Builder()
-            .setId(id)
+            .setId("open_tonight_list")
             .setOnClick(launch)
             .build()
     }

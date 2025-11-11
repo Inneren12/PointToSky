@@ -3,8 +3,6 @@ package dev.pointtosky.core.astro.ephem
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.testkit.Angles.angularSeparationDeg
 import dev.pointtosky.core.astro.testkit.Tolerance.EPHEM_MAX_ERR_DEG
-import java.time.Instant
-import kotlin.math.abs
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -13,6 +11,8 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 import org.opentest4j.TestAbortedException
+import java.time.Instant
+import kotlin.math.abs
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SimpleEphemerisComputerGoldenTest {

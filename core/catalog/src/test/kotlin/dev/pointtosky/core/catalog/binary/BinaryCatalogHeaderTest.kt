@@ -16,12 +16,12 @@ class BinaryCatalogHeaderTest {
         // Собираем корректные 32 байта заголовка
         val header = ByteBuffer.allocate(32).order(ByteOrder.LITTLE_ENDIAN).apply {
             put("PTSKSTAR".toByteArray(StandardCharsets.US_ASCII)) // 8 байт
-            putShort(1)     // version
-            putShort(0)     // reserved
-            putInt(10)      // starCount
-            putInt(100)     // stringPoolSize
-            putInt(420)     // indexOffset
-            putInt(128)     // indexSize
+            putShort(1) // version
+            putShort(0) // reserved
+            putInt(10) // starCount
+            putInt(100) // stringPoolSize
+            putInt(420) // indexOffset
+            putInt(128) // indexSize
             putInt(0x12345678.toInt()) // payloadCrc32 (как int LE)
         }.array()
 
@@ -36,4 +36,3 @@ class BinaryCatalogHeaderTest {
         assertEquals(0x12345678L, parsed.payloadCrc32)
     }
 }
-

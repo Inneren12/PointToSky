@@ -3,6 +3,7 @@ package dev.pointtosky.mobile.ar
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
@@ -10,8 +11,6 @@ import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
-import java.time.Instant
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,16 +21,21 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.util.Locale
 
 class ArViewModel(
     private val catalogRepository: CatalogRepository,
-    private val locationPrefs: LocationPrefs,
-    private val timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1_000L),
+    locationPrefs: LocationPrefs,
+    timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1_000L),
+    /** DI-диспетчер вместо прямого Dispatchers.IO (detekt: InjectDispatcher) */
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val staticStars = MutableStateFlow<List<ArStar>?>(null)
 
-    private val locationSnapshot: StateFlow<LocationSnapshot> = locationPrefs.manualPointFlow
+    private val manualPointFlow = locationPrefs.manualPointFlow
+    private val locationSnapshot: StateFlow<LocationSnapshot> = manualPointFlow
         .map { manual ->
             if (manual != null) {
                 LocationSnapshot(point = manual, resolved = true)
@@ -58,12 +62,12 @@ class ArViewModel(
         )
 
     init {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             staticStars.value = loadStars()
         }
     }
 
-    private suspend fun loadStars(): List<ArStar> = withContext(Dispatchers.IO) {
+    private suspend fun loadStars(): List<ArStar> = withContext(ioDispatcher) {
         val stars = catalogRepository.starCatalog.nearby(
             center = Equatorial(0.0, 0.0),
             radiusDeg = 180.0,
@@ -79,11 +83,7 @@ class ArViewModel(
         }
     }
 
-    private fun buildState(
-        stars: List<ArStar>,
-        location: LocationSnapshot,
-        instant: Instant,
-    ): ArUiState {
+    private fun buildState(stars: List<ArStar>, location: LocationSnapshot, instant: Instant): ArUiState {
         val lstDeg = lstAt(instant, location.point.lonDeg).lstDeg
         return ArUiState.Ready(
             instant = instant,
@@ -125,13 +125,17 @@ sealed interface ArUiState {
 }
 
 private fun resolveLabel(star: Star): String? {
-    return when {
-        !star.name.isNullOrBlank() -> star.name
-        !star.bayer.isNullOrBlank() && !star.constellation.isNullOrBlank() ->
-            "${star.bayer!!.uppercase(Locale.ROOT)} ${star.constellation!!.uppercase(Locale.ROOT)}"
-        !star.flamsteed.isNullOrBlank() -> star.flamsteed
-        else -> null
-    }
+    // Избегаем '!!' — преобразуем в локальные безопасные переменные
+    val name = star.name?.takeIf { it.isNotBlank() }
+    if (name != null) return name
+
+    val bayer = star.bayer?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
+    val const = star.constellation?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
+    if (bayer != null && const != null) return "$bayer $const"
+
+    val flam = star.flamsteed?.takeIf { it.isNotBlank() }
+    if (flam != null) return flam
+    return null
 }
 
 class ArViewModelFactory(

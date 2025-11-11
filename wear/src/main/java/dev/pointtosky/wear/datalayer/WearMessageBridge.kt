@@ -3,7 +3,6 @@ package dev.pointtosky.wear.datalayer
 import android.content.Context
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
-import com.google.android.gms.wearable.MessageClient
 
 object WearMessageBridge {
     /**

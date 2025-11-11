@@ -3,8 +3,8 @@ package dev.pointtosky.wear.tile.tonight
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.catalog.star.FakeStarCatalog
+import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.core.time.ZoneRepo
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,15 +34,14 @@ class RealTonightProviderTest {
         zoneRepo = ZoneRepo(app)
     }
 
-    private fun newProvider(getLoc: suspend () -> GeoPoint?) =
-        RealTonightProvider(
-            context = app,
-            timeSource = SystemTimeSource(),
-            zoneRepo = zoneRepo,
-            // Критично: подменяем каталог на тестовый, чтобы не грузить assets/bin
-            starCatalog = FakeStarCatalog(),
-            getLastKnownLocation = getLoc
-        )
+    private fun newProvider(getLoc: suspend () -> GeoPoint?) = RealTonightProvider(
+        context = app,
+        timeSource = SystemTimeSource(),
+        zoneRepo = zoneRepo,
+        // Критично: подменяем каталог на тестовый, чтобы не грузить assets/bin
+        starCatalog = FakeStarCatalog(),
+        getLastKnownLocation = getLoc,
+    )
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
@@ -74,7 +73,11 @@ class RealTonightProviderTest {
         val first = model.items.firstOrNull()
         // В текущей реализации планеты имеют приоритет KIND.PLANET > KIND.STAR. :contentReference[oaicite:2]{index=2}
         // Если среди топ‑элементов есть планета — она должна быть выше любой звезды.
-        val planetIdx = model.items.indexOfFirst { it.icon == TonightIcon.MOON || it.icon == TonightIcon.JUPITER || it.icon == TonightIcon.SATURN }
+        val planetIdx = model.items.indexOfFirst {
+            it.icon == TonightIcon.MOON ||
+                it.icon == TonightIcon.JUPITER ||
+                it.icon == TonightIcon.SATURN
+        }
         if (planetIdx >= 0 && first != null) {
             assertThat(planetIdx).isEqualTo(0)
         }

@@ -1,9 +1,9 @@
 package dev.pointtosky.core.logging
 
 import android.content.Context
+import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Provides access to crash logging facilities across the app.

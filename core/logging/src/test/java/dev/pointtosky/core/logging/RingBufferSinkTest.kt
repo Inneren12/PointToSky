@@ -1,8 +1,8 @@
 package dev.pointtosky.core.logging
 
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlinx.coroutines.runBlocking
 
 class RingBufferSinkTest {
     @Test
@@ -17,7 +17,7 @@ class RingBufferSinkTest {
             appVersionCode = 1,
             packageName = "dev.pointtosky.test",
             isDebug = true,
-            diagnosticsEnabled = true
+            diagnosticsEnabled = true,
         )
         val process = ProcessSnapshot(pid = 1, processName = "proc")
         val thread = ThreadSnapshot(name = "main", id = 1L, isMainThread = true)
@@ -28,7 +28,7 @@ class RingBufferSinkTest {
                 message = "event-$index",
                 thread = thread,
                 process = process,
-                device = device
+                device = device,
             )
             sink.write(event)
         }

@@ -5,6 +5,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.Looper
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.Granularity
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -17,38 +18,37 @@ import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.model.LocationFix
 import dev.pointtosky.core.location.model.ProviderType
-import java.util.Locale
-import java.util.concurrent.atomic.AtomicReference
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.channels.BufferOverflow
-import com.google.android.gms.location.Granularity
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class AndroidFusedLocationRepository(
     context: Context,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val timeProvider: () -> Long = System::currentTimeMillis,
     private val delegate: FusedClientDelegate = RealFusedClientDelegate(
-        LocationServices.getFusedLocationProviderClient(context.applicationContext)
+        LocationServices.getFusedLocationProviderClient(context.applicationContext),
     ),
 ) : LocationRepository {
 
@@ -82,7 +82,7 @@ class AndroidFusedLocationRepository(
             // Явно используем GMS Builder с приоритетом и базовым интервалом
             val request = com.google.android.gms.location.LocationRequest.Builder(
                 Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                config.minUpdateIntervalMs.coerceAtLeast(0L)
+                config.minUpdateIntervalMs.coerceAtLeast(0L),
             )
                 .setMinUpdateIntervalMillis(config.minUpdateIntervalMs.coerceAtLeast(0L))
                 .setMinUpdateDistanceMeters(config.minDistanceM.toFloat())
@@ -127,10 +127,7 @@ class AndroidFusedLocationRepository(
         return runCatching { fetchLastKnown() }.getOrNull()
     }
 
-    suspend fun getCurrentLocation(
-        timeoutMs: Long,
-        priority: LocationPriority = LocationPriority.BALANCED,
-    ): LocationFix? {
+    suspend fun getCurrentLocation(timeoutMs: Long, priority: LocationPriority = LocationPriority.BALANCED): LocationFix? {
         val fusedPriority = when (priority) {
             LocationPriority.PASSIVE -> Priority.PRIORITY_PASSIVE
             LocationPriority.BALANCED -> Priority.PRIORITY_BALANCED_POWER_ACCURACY

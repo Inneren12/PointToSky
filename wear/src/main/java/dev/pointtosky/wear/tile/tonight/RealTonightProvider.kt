@@ -1,3 +1,5 @@
+@file:Suppress("TooGenericExceptionCaught")
+
 package dev.pointtosky.wear.tile.tonight
 
 import android.content.Context
@@ -9,34 +11,31 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import dev.pointtosky.core.time.TimeSource
-import dev.pointtosky.core.time.ZoneRepo
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.EphemerisComputer
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.catalog.binary.BinaryStarCatalog
 import dev.pointtosky.core.catalog.io.AssetProvider
-import kotlinx.coroutines.flow.firstOrNull
 import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.catalog.star.StarCatalog
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.logging.LogBus
+import dev.pointtosky.core.time.ZoneRepo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import java.io.InputStream
-import java.time.*
-import kotlinx.coroutines.flow.firstOrNull
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.abs
-import java.time.ZoneOffset
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlin.math.max
-import kotlin.math.round
 import kotlin.math.roundToInt
 
 /**
@@ -47,10 +46,10 @@ import kotlin.math.roundToInt
  */
 class RealTonightProvider(
     private val context: Context,
-    private val timeSource: TimeSource,
     private val zoneRepo: ZoneRepo,
     private val ephemeris: EphemerisComputer = SimpleEphemerisComputer(),
-    private val starCatalog: StarCatalog? = null, // если null — загрузим BinaryStarCatalog из assets
+    // если null — загрузим BinaryStarCatalog из assets
+    private val starCatalog: StarCatalog? = null,
     private val getLastKnownLocation: suspend () -> GeoPoint? = { null },
 ) : TonightProvider {
 
@@ -85,8 +84,8 @@ class RealTonightProvider(
                 name = "tile_error",
                 payload = mapOf(
                     "err" to e.toLogMessage(),
-                    "stage" to "build_model"
-                )
+                    "stage" to "build_model",
+                ),
             )
             throw e
         }
@@ -95,8 +94,8 @@ class RealTonightProvider(
             name = "tile_build_model",
             payload = mapOf(
                 "targetsCount" to model.items.size,
-                "tookMs" to tookMs
-            )
+                "tookMs" to tookMs,
+            ),
         )
 
         // TTL: до конца ночи + 5 минут
@@ -109,13 +108,7 @@ class RealTonightProvider(
 
     // --- Подбор целей ---
 
-    private suspend fun pickTargets(
-        now: Instant,
-        start: Instant,
-        end: Instant,
-        gp: GeoPoint?,
-        zone: ZoneId,
-    ): TonightTileModel {
+    private fun pickTargets(now: Instant, start: Instant, end: Instant, gp: GeoPoint?, zone: ZoneId): TonightTileModel {
         // Если локации нет — быстрый фолбэк (Moon + Vega)
         if (gp == null) {
             val moon = TonightTarget(
@@ -138,7 +131,7 @@ class RealTonightProvider(
 
         // Планеты
         val planets = listOf(Body.MOON, Body.JUPITER, Body.SATURN)
-            .mapNotNull { body -> evaluatePlanet(body, gp, zone, start, end, now) }
+            .mapNotNull { body -> evaluatePlanet(body, gp, start, end, now) }
 
         // Звёзды: маг ≤ 2.5
         val brightStars: List<Star> = catalog.nearby(Equatorial(0.0, 0.0), 180.0, 2.5)
@@ -148,14 +141,17 @@ class RealTonightProvider(
                     star.raDeg.toDouble(),
                     star.decDeg.toDouble(),
                     displayName(star),
-                    gp, zone, start, end, now
+                    gp,
+                    start,
+                    end,
+                    now,
                 )
             }
 
         val all = (planets + stars)
             .sortedWith(
                 compareByDescending<Candidate> { it.kind.priority }
-                    .thenByDescending { it.score }
+                    .thenByDescending { it.score },
             )
         val top = all.take(3)
         val targets = top.map { cand ->
@@ -175,53 +171,17 @@ class RealTonightProvider(
         val limited = when {
             targets.size >= 2 -> targets.take(3)
             else -> targets + listOf(
-                TonightTarget(id = "VEGA", title = "Vega", subtitle = null, icon = TonightIcon.STAR)
+                TonightTarget(id = "VEGA", title = "Vega", subtitle = null, icon = TonightIcon.STAR),
             )
         }
         return TonightTileModel(updatedAt = now, items = limited)
-    }
-
-    /**
-     * Ближайший момент, когда тайл стоит обновить:
-     *  - если мы до конца вечернего сумерка → на его конец,
-     *  - если в ночном окне → на начало утреннего сумерка,
-     *  - иначе → на следующий вечерний сумерки.
-     *  Резерв: ближайший «верх часа» — выбираем минимальный из двух.
-     */
-    suspend fun nextRefreshAt(now: Instant): Instant? = withContext(Dispatchers.Default) {
-        val zone = zoneRepo.current()
-        val gp = getLastKnownLocation.invoke()
-        val w = nightWindow(now, zone, gp)
-        val base = when {
-            now.isBefore(w.start) -> w.start
-            now.isBefore(w.end) -> w.end
-            else -> {
-                val wNext = nightWindow(now.plus(Duration.ofHours(24)), zone, gp)
-                wNext.start
-            }
-        }
-        val hour = nextTopOfHour(now, zone)
-        return@withContext minOf(base, hour)
-    }
-
-    private fun nextTopOfHour(now: Instant, zone: ZoneId): Instant {
-        val z = now.atZone(zone).plusHours(1)
-            .withMinute(0).withSecond(0).withNano(0)
-        return z.toInstant()
     }
 
     private fun displayName(star: Star): String {
         return star.name ?: star.bayer ?: star.flamsteed ?: "Star"
     }
 
-    private fun evaluatePlanet(
-        body: Body,
-        gp: GeoPoint,
-        zone: ZoneId,
-        start: Instant,
-        end: Instant,
-        now: Instant,
-    ): Candidate? {
+    private fun evaluatePlanet(body: Body, gp: GeoPoint, start: Instant, end: Instant, now: Instant): Candidate? {
         val name = when (body) {
             Body.MOON -> "Moon"
             Body.JUPITER -> "Jupiter"
@@ -238,14 +198,14 @@ class RealTonightProvider(
         val stepMin = 5L
         val samples = sampleWindow(start, end, stepMin) { t ->
             val eq = ephemeris.compute(body, t).eq
-            val h = AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg, zone)
+            val h = AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg)
             h.altDeg
         }
         val vis = summarizeVisibility(samples, stepMin)
         // Фильтры S7.C
         if (vis.altPeakDeg < 15.0 || vis.visibleMinutes < 30) return null
         val altNow = ephemeris.compute(body, now).eq.let { eq ->
-            AstroMath.raDecToAltAz(eq, now, gp.latDeg, gp.lonDeg, zone)
+            AstroMath.raDecToAltAz(eq, now, gp.latDeg, gp.lonDeg)
         }
         val score = 0.6 * vis.altPeakDeg + 0.3 * (vis.visibleMinutes / 60.0) - 0.1 * vis.airmassAtPeak
         return Candidate(
@@ -265,7 +225,6 @@ class RealTonightProvider(
         decDeg: Double,
         title: String,
         gp: GeoPoint,
-        zone: ZoneId,
         start: Instant,
         end: Instant,
         now: Instant,
@@ -273,12 +232,12 @@ class RealTonightProvider(
         val eq = Equatorial(raDeg, decDeg)
         val stepMin = 10L
         val samples = sampleWindow(start, end, stepMin) { t ->
-            AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg, zone).altDeg
+            AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg).altDeg
         }
         val vis = summarizeVisibility(samples, stepMin)
         // Фильтры звёзд
         if (vis.altPeakDeg < 25.0 || vis.visibleMinutes < 30) return null
-        val altNow = AstroMath.raDecToAltAz(eq, now, gp.latDeg, gp.lonDeg, zone)
+        val altNow = AstroMath.raDecToAltAz(eq, now, gp.latDeg, gp.lonDeg)
         val score = 0.6 * vis.altPeakDeg + 0.3 * (vis.visibleMinutes / 60.0) - 0.1 * vis.airmassAtPeak
         return Candidate(
             id = "STAR:$title",
@@ -331,8 +290,12 @@ class RealTonightProvider(
                 lastT = t
             } else {
                 if (runStart != null && lastT != null) {
-                    val candidate = runStart!! to lastT!!
-                    if (longest == null || Duration.between(longest!!.first, longest!!.second) < Duration.between(candidate.first, candidate.second)) {
+                    val first = runStart
+                    val second = lastT
+                    val candidate = first to second
+                    val longestDur = longest?.let { Duration.between(it.first, it.second) }
+                    val candidateDur = Duration.between(first, second)
+                    if (longestDur == null || longestDur < candidateDur) {
                         longest = candidate
                     }
                 }
@@ -341,8 +304,12 @@ class RealTonightProvider(
             }
         }
         if (runStart != null && lastT != null) {
-            val candidate = runStart!! to lastT!!
-            if (longest == null || Duration.between(longest!!.first, longest!!.second) < Duration.between(candidate.first, candidate.second)) {
+            val first = runStart
+            val second = lastT
+            val candidate = first to second
+            val longestDur = longest?.let { Duration.between(it.first, it.second) }
+            val candidateDur = Duration.between(first, second)
+            if (longestDur == null || longestDur < candidateDur) {
                 longest = candidate
             }
         }
@@ -368,8 +335,11 @@ class RealTonightProvider(
         }
         // Фолбэк: 18:00–06:00 (как раньше)
         val nowLocal = now.atZone(zone)
-        val nightDate = if (nowLocal.toLocalTime() < LocalTime.of(6, 0))
-            nowLocal.toLocalDate().minusDays(1) else nowLocal.toLocalDate()
+        val nightDate = if (nowLocal.toLocalTime() < LocalTime.of(6, 0)) {
+            nowLocal.toLocalDate().minusDays(1)
+        } else {
+            nowLocal.toLocalDate()
+        }
         val start = ZonedDateTime.of(nightDate, LocalTime.of(18, 0), zone).toInstant()
         val end = ZonedDateTime.of(nightDate.plusDays(1), LocalTime.of(6, 0), zone).toInstant()
         val nightUtcDate = start.atZone(ZoneOffset.UTC).toLocalDate()
@@ -383,7 +353,7 @@ class RealTonightProvider(
      *  • ASC crossing (снизу вверх) до полудня — начало утреннего гражданского сумерка.
      */
     private fun civilNightWindow(now: Instant, zone: ZoneId, gp: GeoPoint): NightWindow? {
-        val CIVIL = -6.0
+        val civil = -6.0
         val todayLocal = now.atZone(zone).toLocalDate().let { d ->
             if (now.atZone(zone).toLocalTime() < LocalTime.of(6, 0)) d.minusDays(1) else d
         }
@@ -392,25 +362,25 @@ class RealTonightProvider(
         val step = Duration.ofMinutes(3) // достаточно грубо; дальше уточняем бинарным поиском
 
         var tPrev = scanStart
-        var altPrev = sunAlt(tPrev, gp, zone)
+        var altPrev = sunAlt(tPrev, gp)
         var evening: Instant? = null
         var morning: Instant? = null
 
         var t = tPrev.plus(step)
         while (!t.isAfter(scanEnd)) {
-            val alt = sunAlt(t, gp, zone)
-            val prevAbove = altPrev >= CIVIL
-            val currAbove = alt >= CIVIL
+            val alt = sunAlt(t, gp)
+            val prevAbove = altPrev >= civil
+            val currAbove = alt >= civil
             if (prevAbove && !currAbove) {
                 // Пересечение вниз (вечер) — интересует после 12:00
-                val cross = refineCross(tPrev, t, CIVIL, gp, zone)
+                val cross = refineCross(tPrev, t, civil, gp)
                 val lt = cross.atZone(zone).toLocalTime()
                 if (lt.isAfter(LocalTime.NOON)) {
                     evening = cross
                 }
             } else if (!prevAbove && currAbove) {
                 // Пересечение вверх (утро) — интересует до 12:00
-                val cross = refineCross(tPrev, t, CIVIL, gp, zone)
+                val cross = refineCross(tPrev, t, civil, gp)
                 val lt = cross.atZone(zone).toLocalTime()
                 if (!lt.isAfter(LocalTime.NOON) && morning == null) {
                     morning = cross
@@ -420,26 +390,29 @@ class RealTonightProvider(
             altPrev = alt
             t = t.plus(step)
         }
-        if (evening != null && morning != null && evening!!.isBefore(morning)) {
-            val nightKeyUtc = evening!!.atZone(ZoneOffset.UTC).toLocalDate()
-            return NightWindow(evening!!, morning!!, nightKeyUtc)
+        val ev = evening
+        val mn = morning
+        if (ev != null && mn != null && ev.isBefore(mn)) {
+            val nightKeyUtc = ev.atZone(ZoneOffset.UTC).toLocalDate()
+            return NightWindow(ev, mn, nightKeyUtc)
         }
-        return null // не нашли валидное окно — пусть сработает фолбэк
+        // не нашли валидное окно — пусть сработает фолбэк
+        return null
     }
 
-    private fun sunAlt(t: Instant, gp: GeoPoint, zone: ZoneId): Double {
+    private fun sunAlt(t: Instant, gp: GeoPoint): Double {
         val eq = ephemeris.compute(Body.SUN, t).eq
-        return AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg, zone).altDeg
+        return AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg).altDeg
     }
 
     /** Уточняем момент пересечения высоты Солнца с порогом [levelDeg] бинарным поиском. */
-    private fun refineCross(a0: Instant, b0: Instant, levelDeg: Double, gp: GeoPoint, zone: ZoneId): Instant {
+    private fun refineCross(a0: Instant, b0: Instant, levelDeg: Double, gp: GeoPoint): Instant {
         var a = a0
         var b = b0
         repeat(14) { // ~ до нескольких секунд точности
             val mid = a.plus(Duration.between(a, b).dividedBy(2))
-            val altA = sunAlt(a, gp, zone) >= levelDeg
-            val altM = sunAlt(mid, gp, zone) >= levelDeg
+            val altA = sunAlt(a, gp) >= levelDeg
+            val altM = sunAlt(mid, gp) >= levelDeg
             if (altA != altM) b = mid else a = mid
         }
         return a.plus(Duration.between(a, b).dividedBy(2))
@@ -452,20 +425,20 @@ class RealTonightProvider(
 
     private fun buildCacheKey(nightUtcDate: LocalDate, gp: GeoPoint?): String {
         if (gp == null) return "N:$nightUtcDate@LOC:NONE"
-        val latQ = round(gp.latDeg * 4.0) / 4.0
-        val lonQ = round(gp.lonDeg * 4.0) / 4.0
-        return "N:$nightUtcDate@LAT:${"%.2f"}.format(latQ)}@LON:${"%.2f"}.format(lonQ)}"
+        // округляем координаты до 0.25° для ключа кэша
+        val latQ = (gp.latDeg / 0.25).roundToInt() * 0.25
+        val lonQ = (gp.lonDeg / 0.25).roundToInt() * 0.25
+        return "N:$nightUtcDate@LAT:${"%.2f".format(latQ)}@LON:${"%.2f".format(lonQ)}"
     }
     private fun loadStarCatalog(): StarCatalog {
         val assetProvider = object : AssetProvider {
             override fun open(path: String): InputStream = context.assets.open(path)
-            override fun exists(path: String): Boolean =
-                try {
-                    context.assets.open(path).use { /* just probe */ }
-                    true
-                } catch (_: Exception) {
-                    false
-                }
+            override fun exists(path: String): Boolean = try {
+                context.assets.open(path).use { /* just probe */ }
+                true
+            } catch (_: Exception) {
+                false
+            }
         }
         // Фолбэк — FakeStarCatalog (внутри BinaryStarCatalog.load установлен).
         return BinaryStarCatalog.load(assetProvider)
@@ -494,14 +467,16 @@ private data class CacheEntry(val model: TonightTileModel, val expiresAt: Long)
 private object TonightMemCache {
     private val map = ConcurrentHashMap<String, CacheEntry>()
     fun getIfValid(key: String): CacheEntry? = map[key]?.takeIf { it.expiresAt > System.currentTimeMillis() }
-    fun put(key: String, entry: CacheEntry) { map[key] = entry }
+    fun put(key: String, entry: CacheEntry) {
+        map[key] = entry
+    }
 }
 
 // DataStore Preferences (строковая сериализация; без внешних JSON)
 private val Context.tonightCacheDS: DataStore<Preferences> by preferencesDataStore(name = "tonight_cache_v1")
 
 private class TonightCacheStore(
-    private val context: Context
+    private val context: Context,
 ) {
     private val store: DataStore<Preferences>
         get() = context.tonightCacheDS
@@ -562,8 +537,6 @@ private class TonightCacheStore(
         return TonightTileModel(updatedAt, items)
     }
 
-    private fun b64(s: String): String =
-        Base64.encodeToString(s.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-    private fun b64d(s: String): String =
-        String(Base64.decode(s, Base64.NO_WRAP), Charsets.UTF_8)
+    private fun b64(s: String): String = Base64.encodeToString(s.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+    private fun b64d(s: String): String = String(Base64.decode(s, Base64.NO_WRAP), Charsets.UTF_8)
 }

@@ -1,15 +1,15 @@
 package dev.pointtosky.wear.tile.tonight
 
 import android.content.Context
+import androidx.wear.tiles.TileService
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import androidx.wear.tiles.TileService
+import dev.pointtosky.core.logging.LogBus
 import java.time.Instant
 import java.util.concurrent.TimeUnit
-import dev.pointtosky.core.logging.LogBus
 
 /**
  * WorkManager-воркер: дергает обновление тайла и всё.
@@ -17,7 +17,7 @@ import dev.pointtosky.core.logging.LogBus
  */
 class TonightTileRefreshWorker(
     appContext: Context,
-    params: WorkerParameters
+    params: WorkerParameters,
 ) : Worker(appContext, params) {
 
     override fun doWork(): Result {
@@ -37,7 +37,7 @@ class TonightTileRefreshWorker(
                 .build()
             LogBus.event(
                 name = "tile_request_update_scheduled",
-                payload = mapOf("atEpochMs" to at.toEpochMilli())
+                payload = mapOf("atEpochMs" to at.toEpochMilli()),
             )
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(UNIQUE_WORK, ExistingWorkPolicy.REPLACE, req)

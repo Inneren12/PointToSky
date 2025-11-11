@@ -14,8 +14,12 @@ object CrashSafeFlush {
     @JvmStatic
     fun flushAndSyncBlocking() {
         // Минимум — прибираем stdout/stderr, не мешаем крэшу завершиться.
-        try { System.out.flush() } catch (_: Throwable) { }
-        try { System.err.flush() } catch (_: Throwable) { }
+        try {
+            System.out.flush()
+        } catch (_: Throwable) { }
+        try {
+            System.err.flush()
+        } catch (_: Throwable) { }
     }
 
     /** Предпочтительный вариант: конкретный файл краш-лога. */

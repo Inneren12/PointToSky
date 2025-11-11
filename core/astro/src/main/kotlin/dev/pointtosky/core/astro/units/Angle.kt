@@ -11,7 +11,7 @@ import kotlin.math.abs
  * @receiver angle in degrees.
  * @return angle in radians.
  */
-public fun Double.degToRad(): Double = degToRad(this)
+fun Double.degToRad(): Double = degToRad(this)
 
 /**
  * Converts an angle measured in radians to decimal degrees.
@@ -19,13 +19,13 @@ public fun Double.degToRad(): Double = degToRad(this)
  * @receiver angle in radians.
  * @return angle in degrees.
  */
-public fun Double.radToDeg(): Double = radToDeg(this)
+fun Double.radToDeg(): Double = radToDeg(this)
 
 /** Constant factor multiplying degrees to obtain radians. */
-public const val DEG_TO_RAD: Double = DEG
+const val DEG_TO_RAD: Double = DEG
 
 /** Constant factor multiplying radians to obtain degrees. */
-public const val RAD_TO_DEG: Double = RAD
+const val RAD_TO_DEG: Double = RAD
 
 private const val FULL_TURN_RAD: Double = 2.0 * PI
 private const val HALF_TURN_RAD: Double = PI
@@ -42,7 +42,7 @@ private fun normalizeRadians(value: Double, period: Double): Double {
  * @receiver angle in degrees.
  * @return equivalent angle in the range [0°, 360°).
  */
-public fun Double.wrapDegrees(): Double = wrapDeg0_360(this)
+fun Double.wrapDegrees(): Double = wrapDeg0To360(this)
 
 /**
  * Normalizes an angle measured in degrees to the [-180°, +180°) interval.
@@ -50,7 +50,7 @@ public fun Double.wrapDegrees(): Double = wrapDeg0_360(this)
  * @receiver angle in degrees.
  * @return equivalent angle in the range [-180°, +180°).
  */
-public fun Double.wrapDegreesSigned(): Double = wrapDegN180_180(this)
+fun Double.wrapDegreesSigned(): Double = wrapDegMinus180To180(this)
 
 /**
  * Normalizes an angle measured in radians to the [0, 2π) interval.
@@ -58,7 +58,7 @@ public fun Double.wrapDegreesSigned(): Double = wrapDegN180_180(this)
  * @receiver angle in radians.
  * @return equivalent angle in the range [0, 2π).
  */
-public fun Double.wrapRadians(): Double = normalizeRadians(this, FULL_TURN_RAD)
+fun Double.wrapRadians(): Double = normalizeRadians(this, FULL_TURN_RAD)
 
 /**
  * Normalizes an angle measured in radians to the [-π, +π) interval.
@@ -66,7 +66,7 @@ public fun Double.wrapRadians(): Double = normalizeRadians(this, FULL_TURN_RAD)
  * @receiver angle in radians.
  * @return equivalent angle in the range [-π, +π).
  */
-public fun Double.wrapRadiansSigned(): Double {
+fun Double.wrapRadiansSigned(): Double {
     val wrapped = wrapRadians()
     return when {
         wrapped > HALF_TURN_RAD -> wrapped - FULL_TURN_RAD
@@ -83,8 +83,7 @@ public fun Double.wrapRadiansSigned(): Double {
  * @return [lowerBound] if [this] is less, [upperBound] if [this] is greater, otherwise [this].
  * @throws IllegalArgumentException if [lowerBound] is greater than [upperBound].
  */
-public fun Double.clamp(lowerBound: Double, upperBound: Double): Double =
-    clamp(this, lowerBound, upperBound)
+fun Double.clamp(lowerBound: Double, upperBound: Double): Double = clamp(this, lowerBound, upperBound)
 
 /**
  * Returns the absolute difference between two angles in degrees, wrapped into [0°, 180°].
@@ -92,7 +91,7 @@ public fun Double.clamp(lowerBound: Double, upperBound: Double): Double =
  * @param other angle in degrees.
  * @return angular separation in degrees in the range [0°, 180°].
  */
-public fun Double.angularSeparationDegrees(other: Double): Double {
+fun Double.angularSeparationDegrees(other: Double): Double {
     val diff = (this - other).wrapDegreesSigned()
     return abs(diff)
 }
@@ -103,7 +102,7 @@ public fun Double.angularSeparationDegrees(other: Double): Double {
  * @param other angle in radians.
  * @return angular separation in radians in the range [0, π].
  */
-public fun Double.angularSeparationRadians(other: Double): Double {
+fun Double.angularSeparationRadians(other: Double): Double {
     val diff = (this - other).wrapRadiansSigned()
     return abs(diff)
 }

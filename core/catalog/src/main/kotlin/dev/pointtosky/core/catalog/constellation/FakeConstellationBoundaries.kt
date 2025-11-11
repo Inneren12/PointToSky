@@ -1,11 +1,12 @@
 package dev.pointtosky.core.catalog.constellation
 
 import dev.pointtosky.core.astro.coord.Equatorial
+import dev.pointtosky.core.astro.identify.ConstellationBoundaries
 
 /**
  * Simplified rectangular boundaries used for demos and tests.
  */
-public class FakeConstellationBoundaries : ConstellationBoundaries {
+class FakeConstellationBoundaries : ConstellationBoundaries {
     private data class Box(
         val raMinDeg: Double,
         val raMaxDeg: Double,

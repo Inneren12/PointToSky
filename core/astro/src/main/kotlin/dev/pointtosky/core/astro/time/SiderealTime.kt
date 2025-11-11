@@ -1,7 +1,7 @@
 package dev.pointtosky.core.astro.time
 
 import dev.pointtosky.core.astro.coord.Sidereal
-import dev.pointtosky.core.astro.units.wrapDeg0_360
+import dev.pointtosky.core.astro.units.wrapDeg0To360
 import dev.pointtosky.core.time.instantToJulianDay
 import java.time.Instant
 
@@ -22,14 +22,14 @@ private const val JULIAN_CENTURY_DAYS = 36_525.0
  * @param julianDay Terrestrial Time expressed as a Julian day number.
  * @return Greenwich mean sidereal time normalized to the [0°, 360°) interval.
  */
-public fun gmstDeg(julianDay: Double): Double {
+fun gmstDeg(julianDay: Double): Double {
     val deltaDays = julianDay - JULIAN_DAY_AT_J2000
     val centuries = deltaDays / JULIAN_CENTURY_DAYS
     val theta = 280.460_618_37 +
         360.985_647_366_29 * deltaDays +
         0.000_387_933 * centuries * centuries -
         (centuries * centuries * centuries) / 38_710_000.0
-    return wrapDeg0_360(theta)
+    return wrapDeg0To360(theta)
 }
 
 /**
@@ -41,8 +41,7 @@ public fun gmstDeg(julianDay: Double): Double {
  * @param longitudeDeg Observer's geographic longitude in decimal degrees (east positive).
  * @return Local sidereal time at the observer's meridian in decimal degrees.
  */
-public fun lstDeg(gmstDeg: Double, longitudeDeg: Double): Double =
-    wrapDeg0_360(gmstDeg + longitudeDeg)
+fun lstDeg(gmstDeg: Double, longitudeDeg: Double): Double = wrapDeg0To360(gmstDeg + longitudeDeg)
 
 /**
  * Computes the local sidereal time for an [instant] and longitude.
@@ -51,7 +50,7 @@ public fun lstDeg(gmstDeg: Double, longitudeDeg: Double): Double =
  * @param longitudeDeg Observer's geographic longitude in decimal degrees (east positive).
  * @return [Sidereal] time at the observer's meridian, normalized to [0°, 360°).
  */
-public fun lstAt(instant: Instant, longitudeDeg: Double): Sidereal {
+fun lstAt(instant: Instant, longitudeDeg: Double): Sidereal {
     val julianDay = instantToJulianDay(instant)
     val gmst = gmstDeg(julianDay)
     val lst = lstDeg(gmst, longitudeDeg)

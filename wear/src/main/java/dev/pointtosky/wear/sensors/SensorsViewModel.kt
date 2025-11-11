@@ -11,8 +11,8 @@ import dev.pointtosky.wear.sensors.orientation.OrientationSource
 import dev.pointtosky.wear.sensors.orientation.OrientationZero
 import dev.pointtosky.wear.sensors.orientation.ScreenRotation
 import dev.pointtosky.wear.settings.SensorsSettingsDataStore
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

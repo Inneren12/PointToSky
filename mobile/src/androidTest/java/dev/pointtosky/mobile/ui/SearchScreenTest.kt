@@ -11,12 +11,12 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.pointtosky.mobile.catalog.CatalogRepositoryProvider
 import dev.pointtosky.mobile.search.SearchRoute
-import java.util.concurrent.atomic.AtomicReference
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import org.junit.Assert.assertNotNull
 import org.junit.runner.RunWith
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class SearchScreenTest {

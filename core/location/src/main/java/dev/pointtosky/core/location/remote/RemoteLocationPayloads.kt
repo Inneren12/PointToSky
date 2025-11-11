@@ -33,7 +33,7 @@ data class LocationRequestPayload(
             return runCatching {
                 val json = JSONObject(bytes.decodeToString())
                 LocationRequestPayload(
-                    freshTtlMs = json.optLong(KEY_FRESH_TTL, 0L)
+                    freshTtlMs = json.optLong(KEY_FRESH_TTL, 0L),
                 )
             }.getOrNull()
         }
