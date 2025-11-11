@@ -33,6 +33,7 @@ import dev.pointtosky.core.logging.CrashLogEntry
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.mobile.R
 import kotlinx.coroutines.launch
+import java.io.File
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -48,6 +49,7 @@ fun CrashLogRoute(onBack: () -> Unit, modifier: Modifier = Modifier) {
         onBack = onBack,
         onClear = viewModel::clearLogs,
         onCreateZip = viewModel::createZip,
+        onShareZip = { file -> CrashLogSharing.shareZip(context, file) },
         onDismissMessage = viewModel::dismissMessage,
         modifier = modifier,
     )
@@ -59,6 +61,7 @@ fun CrashLogScreen(
     onBack: () -> Unit,
     onClear: () -> Unit,
     onCreateZip: () -> Unit,
+    onShareZip: (File) -> Unit,
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -109,6 +112,13 @@ fun CrashLogScreen(
                 text = stringResource(id = R.string.crash_logs_zip_path, state.lastZip.absolutePath),
                 style = MaterialTheme.typography.bodySmall,
             )
+            OutlinedButton(
+                onClick = { onShareZip(state.lastZip) },
+                enabled = !state.isBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = stringResource(id = R.string.crash_logs_share_zip))
+            }
         }
         Spacer(modifier = Modifier.height(8.dp))
         if (lastCrash != null) {
@@ -193,6 +203,7 @@ private fun CrashLogScreenPreview() {
         onBack = {},
         onClear = {},
         onCreateZip = {},
+        onShareZip = {},
         onDismissMessage = {},
     )
 }
