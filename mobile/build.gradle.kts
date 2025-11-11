@@ -75,6 +75,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -91,10 +92,9 @@ android {
         }
     }
     lint {
-        // S9: варнинги не валят сборку, критичные чиним
+        abortOnError = true
         warningsAsErrors = false
-        abortOnError = false
-        checkReleaseBuilds = true
+        checkDependencies = true
         baseline = file("lint-baseline.xml")
     }
 }

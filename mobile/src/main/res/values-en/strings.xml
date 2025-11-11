@@ -20,4 +20,25 @@
     <string name="policy_screen_disclaimer_summary">Reminder that Point-to-Sky must not be used for navigation.</string>
     <string name="policy_document_privacy_title">Privacy policy</string>
     <string name="policy_document_disclaimer_title">Disclaimer</string>
+    <string name="crash_logs_instruction">For ANR/crash diagnostics use Play Console → Play Vitals. This screen shows local JSONL logs.</string>
+    <string name="crash_logs_message_dismiss">Dismiss message</string>
+    <string name="crash_logs_zip_path">ZIP: %1$s</string>
+    <string name="crash_logs_last_crash">Last crash</string>
+    <string name="crash_logs_last_crash_time">Time: %1$s</string>
+    <string name="crash_logs_last_crash_thread">Thread: %1$s (#%2$d)</string>
+    <string name="crash_logs_last_crash_type">Type: %1$s</string>
+    <string name="crash_logs_last_crash_message">Message: %1$s</string>
+    <string name="crash_logs_stacktrace_label">Stack trace:</string>
+    <string name="crash_logs_empty">No crashes recorded.</string>
+    <string name="crash_logs_create_zip">Create ZIP</string>
+    <string name="crash_logs_share_zip">Share ZIP</string>
+    <string name="crash_logs_clear">Clear</string>
+    <string name="crash_logs_back">Back</string>
+    <string name="crash_logs_zip_ready">ZIP saved: %1$s</string>
+    <string name="crash_logs_zip_unavailable">No logs to export.</string>
+    <string name="crash_logs_cleared">Logs cleared.</string>
+    <string name="crash_logs_operation_failed">Could not complete the action.</string>
+    <string name="crash_logs_share_title">Share crash logs</string>
+    <string name="crash_logs_share_error">No apps available to share files.</string>
+    <string name="crash_logs_share_missing">File not found.</string>
 </resources>
