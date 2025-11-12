@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -67,10 +68,13 @@ import dev.pointtosky.wear.aim.core.AimTarget.EquatorialTarget
 import dev.pointtosky.wear.aim.core.DefaultAimController
 import dev.pointtosky.wear.aim.offline.offlineStarResolver
 import dev.pointtosky.wear.datalayer.AimLaunchRequest
+import dev.pointtosky.wear.complication.AimStatusReporter
+import dev.pointtosky.wear.complication.PersistentAimStatusReporter
 import dev.pointtosky.wear.haptics.HapticEvent
 import dev.pointtosky.wear.haptics.HapticPolicy
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -99,27 +103,44 @@ fun AimRoute(
             starResolver = offlineStarResolver(context),
         )
     }
+    val aimStatusReporter = remember(context) { PersistentAimStatusReporter(context) }
     LaunchedEffect(externalAim?.seq) {
         externalAim?.let { controller.setTarget(it.target) }
+        externalAim?.let { aimStatusReporter.onTargetChanged(it.target) }
     }
-    AimScreen(aimController = controller, initialTarget = initialTarget)
+    AimScreen(
+        aimController = controller,
+        initialTarget = initialTarget,
+        aimStatusReporter = aimStatusReporter,
+    )
 }
 
 /** Экран «Найти»: стрелка/шкала, фазы, confidence, picker целей, haptics+a11y. */
 @Composable
-fun AimScreen(aimController: AimController, initialTarget: AimTarget?) {
+fun AimScreen(
+    aimController: AimController,
+    initialTarget: AimTarget?,
+    aimStatusReporter: AimStatusReporter = AimStatusReporter.NoOp,
+) {
     // lifecycle: start/stop
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(aimController, lifecycleOwner) {
+    val reporterScope = rememberCoroutineScope()
+    DisposableEffect(aimController, lifecycleOwner, aimStatusReporter) {
         val obs = LifecycleEventObserver { _, e ->
             when (e) {
                 Lifecycle.Event.ON_RESUME -> aimController.start()
-                Lifecycle.Event.ON_PAUSE -> aimController.stop()
+                Lifecycle.Event.ON_PAUSE -> {
+                    aimController.stop()
+                    reporterScope.launch { aimStatusReporter.onInactive() }
+                }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            reporterScope.launch { aimStatusReporter.onInactive() }
+        }
     }
 
     // state
@@ -130,6 +151,9 @@ fun AimScreen(aimController: AimController, initialTarget: AimTarget?) {
     LaunchedEffect(initialTarget) {
         if (!appliedInitial && initialTarget != null) {
             aimController.setTarget(initialTarget)
+            aimStatusReporter.onTargetChanged(initialTarget)
+            appliedInitial = true
+        } else if (!appliedInitial && initialTarget == null) {
             appliedInitial = true
         }
     }
@@ -139,6 +163,8 @@ fun AimScreen(aimController: AimController, initialTarget: AimTarget?) {
     val appContext = context.applicationContext
     val settings = remember(appContext) { AimIdentifySettingsDataStore(appContext) }
     val hapticEnabled by settings.aimHapticEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    val azTolerance by settings.aimAzTolFlow.collectAsStateWithLifecycle(initialValue = 3.0)
+    val altTolerance by settings.aimAltTolFlow.collectAsStateWithLifecycle(initialValue = 4.0)
     val haptics = remember(appContext) { HapticPolicy(appContext) }
     val lockText = remember { context.getString(R.string.a11y_lock_captured) } // ← НЕ @Composable
     val view = LocalView.current
@@ -158,6 +184,10 @@ fun AimScreen(aimController: AimController, initialTarget: AimTarget?) {
             }
         }
         prevPhase = state.phase
+    }
+
+    LaunchedEffect(azTolerance, altTolerance) {
+        aimStatusReporter.onToleranceChanged(azTolerance, altTolerance)
     }
 
     // visuals + a11y strings
@@ -197,12 +227,23 @@ fun AimScreen(aimController: AimController, initialTarget: AimTarget?) {
         snapshotFlow { pickerState.selectedOption }.collect { idx ->
             val opt = options[idx % options.size]
             aimController.setTarget(opt.toAim)
+            aimStatusReporter.onTargetChanged(opt.toAim, opt.label)
             // aim_target_changed {target} (UI-originated)
             LogBus.d(
                 tag = "Aim",
                 msg = "aim_target_changed",
                 payload = mapOf("target" to opt.label),
             )
+        }
+    }
+
+    LaunchedEffect(aimController, aimStatusReporter) {
+        try {
+            aimController.state.collect { state ->
+                aimStatusReporter.onState(state)
+            }
+        } finally {
+            aimStatusReporter.onInactive()
         }
     }
 

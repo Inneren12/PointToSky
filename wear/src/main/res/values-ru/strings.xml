@@ -166,8 +166,30 @@
     <string name="onboarding_continue">Продолжить</string>
     <!-- Complications -->
     <string name="comp_aim_status_label">Статус Aim</string>
-    <string name="comp_aim_status_preview_title">Aim</string>
-    <string name="comp_aim_status_preview_text">Готово</string>
-    <string name="comp_aim_status_preview_content_description">Статус Aim: готово</string>
+    <string name="comp_aim_status_preview_title">Полярная</string>
+    <string name="comp_aim_status_preview_text">→2° ↑1°</string>
+    <string name="comp_aim_status_preview_content_description">Предпросмотр статуса Aim</string>
+    <string name="comp_aim_status_title_default">Aim</string>
+    <string name="comp_aim_status_no_target">Нет цели</string>
+    <string name="comp_aim_status_phase_searching">Поиск</string>
+    <string name="comp_aim_status_phase_in_tolerance">В допуске</string>
+    <string name="comp_aim_status_phase_locked">Захват</string>
+    <string name="comp_aim_status_phase_inactive">Не активно</string>
+    <string name="comp_aim_status_content_no_target">Aim: нет активной цели</string>
+    <string name="comp_aim_status_content_active">Aim %1$s для %2$s. Горизонтальное отклонение %3$s. Вертикальное отклонение %4$s.</string>
+    <string name="comp_aim_status_offset_unknown">неизвестно</string>
+    <string name="comp_aim_status_offset_template">%1$s° %2$s</string>
+    <string name="comp_aim_status_direction_right">вправо</string>
+    <string name="comp_aim_status_direction_left">влево</string>
+    <string name="comp_aim_status_direction_center">центрировано</string>
+    <string name="comp_aim_status_direction_up">вверх</string>
+    <string name="comp_aim_status_direction_down">вниз</string>
+    <string name="comp_aim_status_direction_level">уровень</string>
+    <string name="comp_aim_status_target_sun">Солнце</string>
+    <string name="comp_aim_status_target_moon">Луна</string>
+    <string name="comp_aim_status_target_jupiter">Юпитер</string>
+    <string name="comp_aim_status_target_saturn">Сатурн</string>
+    <string name="comp_aim_status_target_star">Звезда</string>
+    <string name="comp_aim_status_target_custom">Своя цель</string>
     <string name="comp_tonight_target_label">Цель Tonight</string>
 </resources>
