@@ -22,6 +22,13 @@ adb shell cmd tile add dev.pointtosky.wear/dev.pointtosky.wear.tile.tonight.Toni
 ./gradlew :wear:connectedAndroidTest
 ```
 
+## Как гонять H9
+
+```bash
+./gradlew :mobile:testDebugUnitTest
+./gradlew :wear:testInternalDebugUnitTest :wear:testPublicDebugUnitTest
+```
+
 ## Как гонять e2e на AVD‑паре
 
 1. Создайте пару «телефон + часы» в Android Studio Device Manager (меню **Wear OS > Pair new device**). Минимально подходящие конфигурации: Pixel 7 (API 34+) и Wear OS Round (API 34+).

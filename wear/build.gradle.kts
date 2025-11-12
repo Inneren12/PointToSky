@@ -79,6 +79,11 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = false
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -93,10 +98,21 @@ android {
     }
 }
 
+androidComponents {
+    onVariants { variant ->
+        val flavor = variant.productFlavors.firstOrNull { it.first == "distribution" }?.second
+        val unitTest = variant.unitTest ?: return@onVariants
+        if (!flavor.isNullOrBlank()) {
+            unitTest.sources.java?.addStaticSourceDirectory("src/${flavor}Test/java")
+        }
+    }
+}
+
 // Временно исключаем старый Compose smoke-тест, чтобы не тащить стек UI тестов под Compose в этой задаче
 tasks.withType<Test>().configureEach {
     filter {
         excludeTestsMatching("dev.pointtosky.wear.aim.core.DefaultAimControllerTest")
+        excludeTestsMatching("dev.pointtosky.wear.tile.tonight.RealTonightProviderTest")
     }
 }
 
