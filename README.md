@@ -22,6 +22,16 @@ adb shell cmd tile add dev.pointtosky.wear/dev.pointtosky.wear.tile.tonight.Toni
 ./gradlew :wear:connectedAndroidTest
 ```
 
+## Как тестировать компликации
+
+- **Unit (Aim/Tonight):**
+  - форматирование короткого текста `AimStatusFormatter` → `AimStatusFormatterTest`,
+  - приоритезация Tonight-целей по настройкам `preferPlanets`/`magLimit` → `TonightTargetSelectorTest`.
+  Выполняются вместе с остальными JVM-тестами командой `./gradlew :wear:test`.
+- **Instrumented (AimStatusDataSourceService):**
+  - `AimStatusComplicationDataTest` через `ServiceScenario` проверяет сборку `SHORT_TEXT`, `MONOCHROMATIC_IMAGE` и `RANGED_VALUE`,
+    а также наличие `tapAction`. Требуется подключённый эмулятор/устройство и запуск `./gradlew :wear:connectedAndroidTest`.
+
 ## Как гонять H9
 
 ```bash
