@@ -268,7 +268,6 @@ private fun Reticle(modifier: Modifier = Modifier) {
 
 @Composable
 private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: () -> Unit, modifier: Modifier = Modifier) {
-    val locale = Locale.getDefault()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -278,8 +277,8 @@ private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: ()
         Text(
             text = stringResource(
                 id = R.string.ar_reticle_alt_az,
-                formatAngle(locale, overlay.reticleHorizontal.altDeg),
-                formatAngle(locale, overlay.reticleHorizontal.azDeg),
+                formatAngle(overlay.reticleHorizontal.altDeg),
+                formatAngle(overlay.reticleHorizontal.azDeg),
             ),
             color = Color.White,
             style = MaterialTheme.typography.bodyMedium,
@@ -287,8 +286,8 @@ private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: ()
         Text(
             text = stringResource(
                 id = R.string.ar_reticle_ra_dec,
-                formatAngle(locale, overlay.reticleEquatorial.raDeg),
-                formatAngle(locale, overlay.reticleEquatorial.decDeg),
+                formatAngle(overlay.reticleEquatorial.raDeg),
+                formatAngle(overlay.reticleEquatorial.decDeg),
             ),
             color = Color.White,
             style = MaterialTheme.typography.bodyMedium,
@@ -299,7 +298,7 @@ private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: ()
                 text = stringResource(
                     id = R.string.ar_nearest_object,
                     nearest.title ?: stringResource(id = R.string.ar_unknown_object),
-                    formatAngle(locale, nearest.separationDeg),
+                    formatAngle(nearest.separationDeg),
                 ),
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
@@ -458,8 +457,8 @@ private fun vectorToHorizontal(vector: FloatArray): Horizontal {
     return Horizontal(azDeg = azDeg, altDeg = altDeg)
 }
 
-private fun formatAngle(locale: Locale, value: Double): String {
-    return String.format(locale, "%.1f", value)
+private fun formatAngle(value: Double): String {
+    return String.format(Locale.ROOT, "%.1f", value)
 }
 
 private const val HORIZONTAL_FOV_DEG = 60.0

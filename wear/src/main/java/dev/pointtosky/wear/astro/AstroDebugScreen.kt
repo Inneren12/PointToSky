@@ -57,7 +57,7 @@ fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -> Unit,
     val lstHmsText = state.lstHms ?: stringResource(id = R.string.astro_debug_value_unknown)
     val bestMatchText = when (val match = state.bestMatch) {
         is AstroBestMatch.Object -> {
-            val magnitude = match.magnitude?.let { String.format(Locale.US, "%.2f", it) }
+            val magnitude = match.magnitude?.let { String.format(Locale.ROOT, "%.2f", it) }
                 ?: stringResource(id = R.string.astro_debug_value_unknown)
             val constellation = match.constellationCode
                 ?: stringResource(id = R.string.astro_debug_constellation_unknown)

@@ -424,7 +424,7 @@ private fun TurnArrow(right: Boolean, emphasized: Boolean, size: Dp) {
 }
 
 private fun formatDeg(value: Float): String {
-    val s = java.lang.String.format(java.util.Locale.US, "%.1f°", value)
+    val s = java.lang.String.format(java.util.Locale.ROOT, "%.1f°", value)
     return s.replace(".0°", "°")
 }
 

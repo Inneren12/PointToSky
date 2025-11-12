@@ -69,7 +69,7 @@ class AstroDebugViewModel(
                 _fps.value = fpsNow
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastFpsLogAt >= 1000L) {
-                    LogBus.event("astro_fps", mapOf("fps" to String.format(Locale.US, "%.1f", fpsNow)))
+                    LogBus.event("astro_fps", mapOf("fps" to String.format(Locale.ROOT, "%.1f", fpsNow)))
                     lastFpsLogAt = now
                 }
             }
@@ -193,7 +193,7 @@ class AstroDebugViewModel(
         val hours = normalizedSeconds / 3600
         val minutes = (normalizedSeconds % 3600) / 60
         val seconds = normalizedSeconds % 60
-        return String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
+        return String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds)
     }
 }
 

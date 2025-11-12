@@ -142,29 +142,35 @@ class CardViewModel(
         bestWindow: CardBestWindow?,
     ): String {
         val locale = Locale.getDefault()
+        val numberLocale = Locale.ROOT
+        val typeLabel = localizedTypeName(type, locale)
+        val (altLabel, azLabel) = horizontalLabels(locale)
         val builder = StringBuilder()
         builder.append(title)
         builder.append(" (")
-        builder.append(type.name)
+        builder.append(typeLabel)
         builder.append(')')
         if (magnitude != null) {
             builder.append("\n")
             builder.append("m = ")
-            builder.append(String.format(locale, "%.1f", magnitude))
+            builder.append(String.format(numberLocale, "%.1f", magnitude))
         }
         if (equatorial != null) {
             builder.append("\n")
             builder.append("RA = ")
-            builder.append(String.format(locale, "%.1f°", equatorial.raDeg))
+            builder.append(String.format(numberLocale, "%.1f°", equatorial.raDeg))
             builder.append(", Dec = ")
-            builder.append(String.format(locale, "%.1f°", equatorial.decDeg))
+            builder.append(String.format(numberLocale, "%.1f°", equatorial.decDeg))
         }
         if (horizontal != null) {
             builder.append("\n")
-            builder.append("Alt = ")
-            builder.append(String.format(locale, "%.1f°", horizontal.altDeg))
-            builder.append(", Az = ")
-            builder.append(String.format(locale, "%.1f°", horizontal.azDeg))
+            builder.append(altLabel)
+            builder.append(" = ")
+            builder.append(String.format(numberLocale, "%.1f°", horizontal.altDeg))
+            builder.append(", ")
+            builder.append(azLabel)
+            builder.append(" = ")
+            builder.append(String.format(numberLocale, "%.1f°", horizontal.azDeg))
         }
         val windowText = bestWindow?.let { formatWindow(it) }
         if (!windowText.isNullOrBlank()) {
@@ -188,6 +194,31 @@ class CardViewModel(
             endText != null -> endText
             else -> null
         }
+    }
+}
+
+private fun localizedTypeName(type: CardObjectType, locale: Locale): String {
+    return when (locale.language) {
+        Locale("ru").language -> when (type) {
+            CardObjectType.STAR -> "Звезда"
+            CardObjectType.PLANET -> "Планета"
+            CardObjectType.MOON -> "Луна"
+            CardObjectType.CONST -> "Созвездие"
+        }
+
+        else -> when (type) {
+            CardObjectType.STAR -> "Star"
+            CardObjectType.PLANET -> "Planet"
+            CardObjectType.MOON -> "Moon"
+            CardObjectType.CONST -> "Constellation"
+        }
+    }
+}
+
+private fun horizontalLabels(locale: Locale): Pair<String, String> {
+    return when (locale.language) {
+        Locale("ru").language -> "Высота" to "Азимут"
+        else -> "Alt" to "Az"
     }
 }
 

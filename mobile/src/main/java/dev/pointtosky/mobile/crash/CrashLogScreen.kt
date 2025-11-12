@@ -69,7 +69,7 @@ fun CrashLogScreen(
     val scope = rememberCoroutineScope()
     val zoneId = remember { ZoneId.systemDefault() }
     val formatter = remember {
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z", Locale.US)
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z", Locale.getDefault())
     }
     val lastCrash = state.lastCrash
     val timestampText = remember(lastCrash) {

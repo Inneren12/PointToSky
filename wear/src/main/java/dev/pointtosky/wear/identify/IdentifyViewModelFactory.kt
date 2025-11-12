@@ -50,9 +50,9 @@ fun buildCardRouteFrom(state: IdentifyUiState): String {
     return when (state.type) {
         IdentifyType.STAR -> {
             val name = Uri.encode(state.title)
-            val mag = state.magnitude?.let { String.format(Locale.US, "%.2f", it) }
-            val ra = state.objectEq?.raDeg?.let { String.format(Locale.US, "%.6f", it) }
-            val dec = state.objectEq?.decDeg?.let { String.format(Locale.US, "%.6f", it) }
+            val mag = state.magnitude?.let { String.format(Locale.ROOT, "%.2f", it) }
+            val ra = state.objectEq?.raDeg?.let { String.format(Locale.ROOT, "%.6f", it) }
+            val dec = state.objectEq?.decDeg?.let { String.format(Locale.ROOT, "%.6f", it) }
             listOfNotNull(
                 "type=STAR",
                 "name=$name",

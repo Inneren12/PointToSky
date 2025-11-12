@@ -95,7 +95,7 @@ fun CardRoute(
     }
 }
 
-private fun fmt(v: Double): String = String.format(Locale.US, "%.3f", v)
+private fun fmt(v: Double): String = String.format(Locale.ROOT, "%.3f", v)
 
 // --- helpers: вынесены из CardRoute для снижения Cyclomatic Complexity ---
 private fun headerFor(type: String?, name: String?, body: String?, iau: String?): String = when (type) {

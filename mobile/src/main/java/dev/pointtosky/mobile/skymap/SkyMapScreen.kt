@@ -135,7 +135,7 @@ private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modi
     var selectedId by rememberSaveable { mutableStateOf<Int?>(null) }
 
     val formatter = remember {
-        DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.US)
+        DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.getDefault())
     }
     val timeText = remember(state.instant) {
         formatter.format(state.instant.atZone(ZoneId.systemDefault()))
@@ -248,8 +248,8 @@ private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modi
                         Text(
                             text = stringResource(
                                 id = R.string.sky_map_alt_az,
-                                String.format(Locale.US, "%.1f", star.horizontal.altDeg),
-                                String.format(Locale.US, "%.1f", star.horizontal.azDeg),
+                                String.format(Locale.ROOT, "%.1f", star.horizontal.altDeg),
+                                String.format(Locale.ROOT, "%.1f", star.horizontal.azDeg),
                             ),
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -371,7 +371,7 @@ private fun formatCoordinate(value: Double, isLat: Boolean): String {
         if (value >= 0) "E" else "W"
     }
     val absValue = abs(value)
-    return String.format(Locale.US, "%.2f° %s", absValue, hemi)
+    return String.format(Locale.ROOT, "%.2f° %s", absValue, hemi)
 }
 
 private const val STAR_BASE_MAG = 4.0

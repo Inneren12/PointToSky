@@ -369,7 +369,7 @@ private fun validateLongitude(input: String): CoordinateValidation {
     }
 }
 
-private fun Double.formatCoordinate(): String = String.format(Locale.US, "%.5f", this)
+private fun Double.formatCoordinate(): String = String.format(Locale.ROOT, "%.5f", this)
 
 private fun isLocationPermissionGranted(context: Context): Boolean = ContextCompat.checkSelfPermission(
     context,

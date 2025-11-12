@@ -44,8 +44,8 @@ fun IdentifyScreen(state: IdentifyUiState, onOpenCard: ((IdentifyUiState) -> Uni
         IdentifyType.PLANET -> "PLANET"
         IdentifyType.MOON -> "MOON"
     }
-    val magText = state.magnitude?.let { java.lang.String.format(java.util.Locale.US, "m = %.1f", it) } ?: "—"
-    val sepText = state.separationDeg?.let { java.lang.String.format(java.util.Locale.US, "Δ = %.1f°", it) } ?: "—"
+    val magText = state.magnitude?.let { java.lang.String.format(java.util.Locale.ROOT, "m = %.1f", it) } ?: "—"
+    val sepText = state.separationDeg?.let { java.lang.String.format(java.util.Locale.ROOT, "Δ = %.1f°", it) } ?: "—"
 
     Column(
         modifier = modifier

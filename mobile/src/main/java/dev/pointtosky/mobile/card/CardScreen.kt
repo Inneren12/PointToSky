@@ -219,9 +219,9 @@ private fun formatEquatorial(eq: Equatorial?): String {
 }
 
 private fun formatDegree(value: Double, includeDegreeSymbol: Boolean = true, signed: Boolean = false): String {
-    val locale = Locale.getDefault()
+    val numberLocale = Locale.ROOT
     val pattern = if (signed) "%+.1f" else "%.1f"
-    val text = String.format(locale, pattern, value)
+    val text = String.format(numberLocale, pattern, value)
     return if (includeDegreeSymbol) "$text°" else text
 }
 

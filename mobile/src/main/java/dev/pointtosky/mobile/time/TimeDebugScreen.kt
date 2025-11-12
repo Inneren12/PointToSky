@@ -47,18 +47,19 @@ private fun TimeDebugContent(onBack: () -> Unit, timeSource: SystemTimeSource, z
     val tickMetrics by rememberTickMetrics(timeSource)
 
     val utcFormatter = remember { DateTimeFormatter.ISO_INSTANT }
-    val localFormatter = remember { DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.US) }
+    val localFormatter = remember { DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.getDefault()) }
 
     val instant = tickMetrics.instant
     val utcText = utcFormatter.format(instant)
     val localDateTime = instant.atZone(zoneId)
     val localText = localDateTime.format(localFormatter)
     val offset = localDateTime.offset
-    val offsetText = String.format(Locale.US, "%s (%d с)", offset.id, offset.totalSeconds)
+    val locale = Locale.getDefault()
+    val offsetText = String.format(locale, "%s (%d с)", offset.id, offset.totalSeconds)
 
-    val avgPeriodText = tickMetrics.avgPeriodMs?.let { String.format(Locale.US, "%.1f мс", it) } ?: "—"
-    val frequencyText = tickMetrics.frequencyHz?.let { String.format(Locale.US, "%.3f Гц", it) } ?: "—"
-    val currentPeriodText = String.format(Locale.US, "%d мс", periodMs)
+    val avgPeriodText = tickMetrics.avgPeriodMs?.let { String.format(locale, "%.1f мс", it) } ?: "—"
+    val frequencyText = tickMetrics.frequencyHz?.let { String.format(locale, "%.3f Гц", it) } ?: "—"
+    val currentPeriodText = String.format(locale, "%d мс", periodMs)
 
     Column(
         modifier = modifier
