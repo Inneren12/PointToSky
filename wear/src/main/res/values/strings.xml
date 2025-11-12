@@ -164,4 +164,10 @@
     <string name="onboarding_location_granted">Location permission is already granted.</string>
     <string name="onboarding_location_button">Allow location while in use</string>
     <string name="onboarding_continue">Continue</string>
+    <!-- Complications -->
+    <string name="comp_aim_status_label">Aim status</string>
+    <string name="comp_aim_status_preview_title">Aim</string>
+    <string name="comp_aim_status_preview_text">Ready</string>
+    <string name="comp_aim_status_preview_content_description">Aim status ready</string>
+    <string name="comp_tonight_target_label">Tonight target</string>
 </resources>

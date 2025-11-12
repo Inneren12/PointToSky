@@ -110,5 +110,34 @@
             android:exported="true"
             android:taskAffinity=""
             android:label="@string/tonight_targets_label" />
+
+        <service
+            android:name=".complication.AimStatusDataSourceService"
+            android:exported="true"
+            android:label="@string/comp_aim_status_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_DATA_SOURCE">
+            <meta-data
+                android:name="androidx.wear.watchface.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,MONOCHROMATIC_IMAGE,SMALL_IMAGE,RANGED_VALUE" />
+            <intent-filter>
+                <action android:name="androidx.wear.watchface.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+        </service>
+
+        <!-- Заглушка для TONIGHT. Зарегистрируем в S10.C -->
+        <!--
+        <service
+            android:name=".complication.TonightTargetDataSourceService"
+            android:exported="true"
+            android:label="@string/comp_tonight_target_label"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_DATA_SOURCE">
+            <meta-data
+                android:name="androidx.wear.watchface.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,MONOCHROMATIC_IMAGE,SMALL_IMAGE" />
+            <intent-filter>
+                <action android:name="androidx.wear.watchface.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+        </service>
+        -->
     </application>
 </manifest>

@@ -162,6 +162,9 @@ dependencies {
     implementation("androidx.compose.runtime:runtime")
     implementation(libs.play.services.wearable)
 
+    implementation("androidx.wear.watchface:watchface-complications-data-source:1.2.1")
+    implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")
+
     implementation("androidx.wear.tiles:tiles:1.3.0")
     implementation("androidx.wear.tiles:tiles-material:1.3.0")
     implementation("androidx.wear.protolayout:protolayout-expression:1.1.0")
