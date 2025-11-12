@@ -35,6 +35,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -428,7 +429,7 @@ class RealTonightProvider(
     }
 
     private fun hhmm(instant: Instant, zone: ZoneId): String {
-        val fmt = DateTimeFormatter.ofPattern("HH:mm")
+        val fmt = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
         return instant.atZone(zone).toLocalTime().format(fmt)
     }
 

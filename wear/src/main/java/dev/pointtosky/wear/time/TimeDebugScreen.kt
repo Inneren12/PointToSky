@@ -48,7 +48,7 @@ private fun TimeDebugContent(onBack: () -> Unit, timeSource: SystemTimeSource, z
     val tileDebugInfo by TonightTileDebug.state.collectAsState(initial = null)
 
     val utcFormatter = remember { DateTimeFormatter.ISO_INSTANT }
-    val localFormatter = remember { DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US) }
+    val localFormatter = remember { DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault()) }
 
     val instant = tickMetrics.instant
     val utcText = utcFormatter.format(instant)
