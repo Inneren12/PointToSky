@@ -112,9 +112,11 @@ class WearMacrobenchmark {
     @Test
     @SdkSuppress(minSdkVersion = Build.VERSION_CODES.R)
     fun aimEnergyProfile() {
-        assumeTrue("Power rails not available on device") {
+        // JUnit4: assumeTrue(message, boolean) — если false, тест будет пропущен
+        assumeTrue(
+            "Power rails not available on device",
             PowerRail.hasMetrics()
-        }
+        )
 
         benchmarkRule.measureRepeated(
             packageName = TARGET_PACKAGE,

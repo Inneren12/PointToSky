@@ -1,5 +1,3 @@
-@file:Suppress("TooManyFunctions")
-
 package dev.pointtosky.mobile.ar
 
 import android.Manifest

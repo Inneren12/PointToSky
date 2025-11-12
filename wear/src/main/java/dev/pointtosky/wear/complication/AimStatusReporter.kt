@@ -76,6 +76,11 @@ class PersistentAimStatusReporter(
             if (snapshot != cached) {
                 cached = snapshot
                 repository.write(snapshot)
+                // После успешной записи снапшота инициируем обновление осложнения.
+                // Частота вызовов естественно ограничена persistIntervalMs.
+                updater.requestUpdate(force = false)
+                // Обновляем таймстемп, чтобы следующее сохранение не случилось раньше интервала.
+                lastPersistMs = now
             }
             lastPersistMs = now
         }

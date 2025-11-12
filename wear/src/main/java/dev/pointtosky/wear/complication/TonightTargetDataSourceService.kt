@@ -149,11 +149,13 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
             aimTarget?.let { putAimTargetExtras(it) }
         }
         val requestCode = PtsComplicationKind.TONIGHT_TARGET.ordinal * 1000 + instanceId
+        // Важно: CANCEL_CURRENT гарантирует, что при переходе aimTarget → null
+        // новый PendingIntent НЕ унаследует старые EXTRA_AIM_* из предыдущего.
         return PendingIntent.getActivity(
             this,
             requestCode,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
