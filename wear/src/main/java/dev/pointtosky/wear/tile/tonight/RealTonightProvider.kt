@@ -57,63 +57,65 @@ class RealTonightProvider(
     private val computation: CoroutineDispatcher = TonightDispatchers.computation,
     private val io: CoroutineDispatcher = TonightDispatchers.io,
 ) : TonightProvider {
-
     private val cache by lazy { TonightCacheStore(context, io) }
 
-    override suspend fun getModel(now: Instant): TonightTileModel = withContext(computation) {
-        val zone = zoneRepo.current()
-        // Сначала пробуем получить локацию — она нужна для реального гражданского сумрака
-        val gp = getLastKnownLocation.invoke()
-        // Умный подбор окна ночи: civil twilight (-6°), при недоступности — фолбэк 18:00–06:00
-        val (start, end, nightKeyDateUtc) = nightWindow(now, zone, gp)
+    override suspend fun getModel(now: Instant): TonightTileModel =
+        withContext(computation) {
+            val zone = zoneRepo.current()
+            // Сначала пробуем получить локацию — она нужна для реального гражданского сумрака
+            val gp = getLastKnownLocation.invoke()
+            // Умный подбор окна ночи: civil twilight (-6°), при недоступности — фолбэк 18:00–06:00
+            val (start, end, nightKeyDateUtc) = nightWindow(now, zone, gp)
 
-        // Ключ кэша: дата старта ночи (UTC) + lat/lon округлённые до 0.25°
-        val key = buildCacheKey(nightKeyDateUtc, gp)
-        // 1) in-memory
-        TonightMemCache.getIfValid(key)?.let { return@withContext it.model }
-        // 2) persistent
-        cache.get(key)?.let { cached ->
-            // Вернём, если не протухло
-            if (cached.expiresAt > System.currentTimeMillis()) {
-                TonightMemCache.put(key, cached)
-                return@withContext cached.model
+            // Ключ кэша: дата старта ночи (UTC) + lat/lon округлённые до 0.25°
+            val key = buildCacheKey(nightKeyDateUtc, gp)
+            // 1) in-memory
+            TonightMemCache.getIfValid(key)?.let { return@withContext it.model }
+            // 2) persistent
+            cache.get(key)?.let { cached ->
+                // Вернём, если не протухло
+                if (cached.expiresAt > System.currentTimeMillis()) {
+                    TonightMemCache.put(key, cached)
+                    return@withContext cached.model
+                }
             }
-        }
 
-        // Вычисление
-        val buildStartedAt = SystemClock.elapsedRealtime()
-        val model = try {
-            pickTargets(now, start, end, gp, zone)
-        } catch (e: Throwable) {
+            // Вычисление
+            val buildStartedAt = SystemClock.elapsedRealtime()
+            val model =
+                try {
+                    pickTargets(now, start, end, gp, zone)
+                } catch (e: Throwable) {
+                    LogBus.event(
+                        name = "tile_error",
+                        payload =
+                            mapOf(
+                                "err" to e.toLogMessage(),
+                                "stage" to "build_model",
+                            ),
+                    )
+                    throw e
+                }
+            val tookMs = SystemClock.elapsedRealtime() - buildStartedAt
             LogBus.event(
-                name = "tile_error",
-                payload = mapOf(
-                    "err" to e.toLogMessage(),
-                    "stage" to "build_model",
-                ),
+                name = "tile_build_model",
+                payload =
+                    mapOf(
+                        "targetsCount" to model.items.size,
+                        "tookMs" to tookMs,
+                    ),
             )
-            throw e
-        }
-        val tookMs = SystemClock.elapsedRealtime() - buildStartedAt
-        LogBus.event(
-            name = "tile_build_model",
-            payload = mapOf(
-                "targetsCount" to model.items.size,
-                "tookMs" to tookMs,
-            ),
-        )
 
-        // TTL: до конца ночи + 5 минут
-        val ttlMs = max(System.currentTimeMillis() + 5 * 60_000L, end.toEpochMilli())
-        val entry = CacheEntry(model = model, expiresAt = ttlMs)
-        TonightMemCache.put(key, entry)
-        cache.put(key, entry)
-        model
-    }
+            // TTL: до конца ночи + 5 минут
+            val ttlMs = max(System.currentTimeMillis() + 5 * 60_000L, end.toEpochMilli())
+            val entry = CacheEntry(model = model, expiresAt = ttlMs)
+            TonightMemCache.put(key, entry)
+            cache.put(key, entry)
+            model
+        }
 
     // File-level provider for dispatchers (keeps InjectDispatcher lint happy and is testable).
     private object TonightDispatchers {
-
         @Suppress("InjectDispatcher")
         val computation: CoroutineDispatcher = Dispatchers.Default
 
@@ -123,21 +125,29 @@ class RealTonightProvider(
 
     // --- Подбор целей ---
 
-    private fun pickTargets(now: Instant, start: Instant, end: Instant, gp: GeoPoint?, zone: ZoneId): TonightTileModel {
+    private fun pickTargets(
+        now: Instant,
+        start: Instant,
+        end: Instant,
+        gp: GeoPoint?,
+        zone: ZoneId,
+    ): TonightTileModel {
         // Если локации нет — быстрый фолбэк (Moon + Vega)
         if (gp == null) {
-            val moon = TonightTarget(
-                id = "MOON",
-                title = "Moon",
-                subtitle = null,
-                icon = TonightIcon.MOON,
-            )
-            val vega = TonightTarget(
-                id = "VEGA",
-                title = "Vega",
-                subtitle = null,
-                icon = TonightIcon.STAR,
-            )
+            val moon =
+                TonightTarget(
+                    id = "MOON",
+                    title = "Moon",
+                    subtitle = null,
+                    icon = TonightIcon.MOON,
+                )
+            val vega =
+                TonightTarget(
+                    id = "VEGA",
+                    title = "Vega",
+                    subtitle = null,
+                    icon = TonightIcon.STAR,
+                )
             return TonightTileModel(updatedAt = now, items = listOf(moon, vega))
         }
 
@@ -145,50 +155,58 @@ class RealTonightProvider(
         val catalog = starCatalog ?: loadStarCatalog()
 
         // Планеты
-        val planets = listOf(Body.MOON, Body.JUPITER, Body.SATURN)
-            .mapNotNull { body -> evaluatePlanet(body, gp, start, end, now) }
+        val planets =
+            listOf(Body.MOON, Body.JUPITER, Body.SATURN)
+                .mapNotNull { body -> evaluatePlanet(body, gp, start, end, now) }
 
         // Звёзды: маг ≤ 2.5
         val brightStars: List<Star> = catalog.nearby(Equatorial(0.0, 0.0), 180.0, 2.5)
-        val stars = brightStars
-            .mapNotNull { star ->
-                evaluateStar(
-                    star.raDeg.toDouble(),
-                    star.decDeg.toDouble(),
-                    displayName(star),
-                    gp,
-                    start,
-                    end,
-                    now,
+        val stars =
+            brightStars
+                .mapNotNull { star ->
+                    evaluateStar(
+                        star.raDeg.toDouble(),
+                        star.decDeg.toDouble(),
+                        displayName(star),
+                        gp,
+                        start,
+                        end,
+                        now,
+                    )
+                }
+
+        val all =
+            (planets + stars)
+                .sortedWith(
+                    compareByDescending<Candidate> { cand -> cand.kind.priority }
+                        .thenByDescending { cand -> cand.score },
+                )
+        val top = all.take(3)
+        val targets =
+            top.map { cand ->
+                val subtitle =
+                    cand.window?.let { (ws, we) -> hhmm(ws, zone) + "–" + hhmm(we, zone) }
+                        ?: cand.altNowDeg?.let { "alt ${it.roundToInt()}°" }
+                TonightTarget(
+                    id = cand.id,
+                    title = cand.title,
+                    subtitle = subtitle,
+                    icon = cand.icon,
+                    azDeg = cand.azNowDeg,
+                    altDeg = cand.altNowDeg,
+                    windowStart = cand.window?.first,
+                    windowEnd = cand.window?.second,
                 )
             }
-
-        val all = (planets + stars)
-            .sortedWith(
-                compareByDescending<Candidate> { cand -> cand.kind.priority }
-                    .thenByDescending { cand -> cand.score },
-            )
-        val top = all.take(3)
-        val targets = top.map { cand ->
-            val subtitle = cand.window?.let { (ws, we) -> hhmm(ws, zone) + "–" + hhmm(we, zone) }
-                ?: cand.altNowDeg?.let { "alt ${it.roundToInt()}°" }
-            TonightTarget(
-                id = cand.id,
-                title = cand.title,
-                subtitle = subtitle,
-                icon = cand.icon,
-                azDeg = cand.azNowDeg,
-                altDeg = cand.altNowDeg,
-                windowStart = cand.window?.first,
-                windowEnd = cand.window?.second,
-            )
-        }
-        val limited = when {
-            targets.size >= 2 -> targets.take(3)
-            else -> targets + listOf(
-                TonightTarget(id = "VEGA", title = "Vega", subtitle = null, icon = TonightIcon.STAR),
-            )
-        }
+        val limited =
+            when {
+                targets.size >= 2 -> targets.take(3)
+                else ->
+                    targets +
+                        listOf(
+                            TonightTarget(id = "VEGA", title = "Vega", subtitle = null, icon = TonightIcon.STAR),
+                        )
+            }
         return TonightTileModel(updatedAt = now, items = limited)
     }
 
@@ -196,32 +214,42 @@ class RealTonightProvider(
         return star.name ?: star.bayer ?: star.flamsteed ?: "Star"
     }
 
-    private fun evaluatePlanet(body: Body, gp: GeoPoint, start: Instant, end: Instant, now: Instant): Candidate? {
-        val name = when (body) {
-            Body.MOON -> "Moon"
-            Body.JUPITER -> "Jupiter"
-            Body.SATURN -> "Saturn"
-            else -> return null
-        }
-        val icon = when (body) {
-            Body.MOON -> TonightIcon.MOON
-            Body.JUPITER -> TonightIcon.JUPITER
-            Body.SATURN -> TonightIcon.SATURN
-            else -> TonightIcon.STAR
-        }
+    private fun evaluatePlanet(
+        body: Body,
+        gp: GeoPoint,
+        start: Instant,
+        end: Instant,
+        now: Instant,
+    ): Candidate? {
+        val name =
+            when (body) {
+                Body.MOON -> "Moon"
+                Body.JUPITER -> "Jupiter"
+                Body.SATURN -> "Saturn"
+                else -> return null
+            }
+        val icon =
+            when (body) {
+                Body.MOON -> TonightIcon.MOON
+                Body.JUPITER -> TonightIcon.JUPITER
+                Body.SATURN -> TonightIcon.SATURN
+                else -> TonightIcon.STAR
+            }
         // Сэмплирование по окну ночи
         val stepMin = 5L
-        val samples = sampleWindow(start, end, stepMin) { t ->
-            val eq = ephemeris.compute(body, t).eq
-            val h = AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg)
-            h.altDeg
-        }
+        val samples =
+            sampleWindow(start, end, stepMin) { t ->
+                val eq = ephemeris.compute(body, t).eq
+                val h = AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg)
+                h.altDeg
+            }
         val vis = summarizeVisibility(samples, stepMin)
         // Фильтры S7.C
         if (vis.altPeakDeg < 15.0 || vis.visibleMinutes < 30) return null
-        val altNow = ephemeris.compute(body, now).eq.let { eq ->
-            AstroMath.raDecToAltAz(eq, now, gp.latDeg, gp.lonDeg)
-        }
+        val altNow =
+            ephemeris.compute(body, now).eq.let { eq ->
+                AstroMath.raDecToAltAz(eq, now, gp.latDeg, gp.lonDeg)
+            }
         val score = 0.6 * vis.altPeakDeg + 0.3 * (vis.visibleMinutes / 60.0) - 0.1 * vis.airmassAtPeak
         return Candidate(
             id = body.name,
@@ -246,9 +274,10 @@ class RealTonightProvider(
     ): Candidate? {
         val eq = Equatorial(raDeg, decDeg)
         val stepMin = 10L
-        val samples = sampleWindow(start, end, stepMin) { t ->
-            AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg).altDeg
-        }
+        val samples =
+            sampleWindow(start, end, stepMin) { t ->
+                AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg).altDeg
+            }
         val vis = summarizeVisibility(samples, stepMin)
         // Фильтры звёзд
         if (vis.altPeakDeg < 25.0 || vis.visibleMinutes < 30) return null
@@ -268,7 +297,12 @@ class RealTonightProvider(
 
     // --- Вспомогательные: выборка, видимость, окно ночи, форматирование ---
 
-    private fun sampleWindow(start: Instant, end: Instant, stepMinutes: Long, f: (Instant) -> Double): List<Pair<Instant, Double>> {
+    private fun sampleWindow(
+        start: Instant,
+        end: Instant,
+        stepMinutes: Long,
+        f: (Instant) -> Double,
+    ): List<Pair<Instant, Double>> {
         val out = ArrayList<Pair<Instant, Double>>()
         var t = start
         val step = Duration.ofMinutes(stepMinutes)
@@ -286,7 +320,10 @@ class RealTonightProvider(
         val longestWindow: Pair<Instant, Instant>?,
     )
 
-    private fun summarizeVisibility(samples: List<Pair<Instant, Double>>, stepMinutes: Long): Visibility {
+    private fun summarizeVisibility(
+        samples: List<Pair<Instant, Double>>,
+        stepMinutes: Long,
+    ): Visibility {
         var altPeak = -90.0
         var totalVisible = 0
         var longest: Pair<Instant, Instant>? = null
@@ -339,17 +376,22 @@ class RealTonightProvider(
      *  • [конец вечернего гражданского сумерка; начало утреннего гражданского сумерка] при наличии локации;
      *  • иначе фолбэк [18:00; 06:00] локального времени.
      */
-    private fun nightWindow(now: Instant, zone: ZoneId, gp: GeoPoint?): NightWindow {
+    private fun nightWindow(
+        now: Instant,
+        zone: ZoneId,
+        gp: GeoPoint?,
+    ): NightWindow {
         if (gp != null) {
             civilNightWindow(now, zone, gp)?.let { return it }
         }
         // Фолбэк: 18:00–06:00 (как раньше)
         val nowLocal = now.atZone(zone)
-        val nightDate = if (nowLocal.toLocalTime() < LocalTime.of(6, 0)) {
-            nowLocal.toLocalDate().minusDays(1)
-        } else {
-            nowLocal.toLocalDate()
-        }
+        val nightDate =
+            if (nowLocal.toLocalTime() < LocalTime.of(6, 0)) {
+                nowLocal.toLocalDate().minusDays(1)
+            } else {
+                nowLocal.toLocalDate()
+            }
         val start = ZonedDateTime.of(nightDate, LocalTime.of(18, 0), zone).toInstant()
         val end = ZonedDateTime.of(nightDate.plusDays(1), LocalTime.of(6, 0), zone).toInstant()
         val nightUtcDate = start.atZone(ZoneOffset.UTC).toLocalDate()
@@ -362,11 +404,16 @@ class RealTonightProvider(
      *  • DESC crossing (сверху вниз) после полудня — конец вечернего гражданского сумерка,
      *  • ASC crossing (снизу вверх) до полудня — начало утреннего гражданского сумерка.
      */
-    private fun civilNightWindow(now: Instant, zone: ZoneId, gp: GeoPoint): NightWindow? {
+    private fun civilNightWindow(
+        now: Instant,
+        zone: ZoneId,
+        gp: GeoPoint,
+    ): NightWindow? {
         val civil = -6.0
-        val todayLocal = now.atZone(zone).toLocalDate().let { d ->
-            if (now.atZone(zone).toLocalTime() < LocalTime.of(6, 0)) d.minusDays(1) else d
-        }
+        val todayLocal =
+            now.atZone(zone).toLocalDate().let { d ->
+                if (now.atZone(zone).toLocalTime() < LocalTime.of(6, 0)) d.minusDays(1) else d
+            }
         val scanStart = ZonedDateTime.of(todayLocal, LocalTime.NOON, zone).toInstant()
         val scanEnd = ZonedDateTime.of(todayLocal.plusDays(1), LocalTime.NOON, zone).toInstant()
         val step = Duration.ofMinutes(3) // достаточно грубо; дальше уточняем бинарным поиском
@@ -410,13 +457,21 @@ class RealTonightProvider(
         return null
     }
 
-    private fun sunAlt(t: Instant, gp: GeoPoint): Double {
+    private fun sunAlt(
+        t: Instant,
+        gp: GeoPoint,
+    ): Double {
         val eq = ephemeris.compute(Body.SUN, t).eq
         return AstroMath.raDecToAltAz(eq, t, gp.latDeg, gp.lonDeg).altDeg
     }
 
     /** Уточняем момент пересечения высоты Солнца с порогом [levelDeg] бинарным поиском. */
-    private fun refineCross(a0: Instant, b0: Instant, levelDeg: Double, gp: GeoPoint): Instant {
+    private fun refineCross(
+        a0: Instant,
+        b0: Instant,
+        levelDeg: Double,
+        gp: GeoPoint,
+    ): Instant {
         var a = a0
         var b = b0
         repeat(14) { // ~ до нескольких секунд точности
@@ -428,28 +483,38 @@ class RealTonightProvider(
         return a.plus(Duration.between(a, b).dividedBy(2))
     }
 
-    private fun hhmm(instant: Instant, zone: ZoneId): String {
+    private fun hhmm(
+        instant: Instant,
+        zone: ZoneId,
+    ): String {
         val fmt = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
         return instant.atZone(zone).toLocalTime().format(fmt)
     }
 
-    private fun buildCacheKey(nightUtcDate: LocalDate, gp: GeoPoint?): String {
+    private fun buildCacheKey(
+        nightUtcDate: LocalDate,
+        gp: GeoPoint?,
+    ): String {
         if (gp == null) return "N:$nightUtcDate@LOC:NONE"
         // округляем координаты до 0.25° для ключа кэша
         val latQ = (gp.latDeg / 0.25).roundToInt() * 0.25
         val lonQ = (gp.lonDeg / 0.25).roundToInt() * 0.25
         return "N:$nightUtcDate@LAT:${"%.2f".format(latQ)}@LON:${"%.2f".format(lonQ)}"
     }
+
     private fun loadStarCatalog(): StarCatalog {
-        val assetProvider = object : AssetProvider {
-            override fun open(path: String): InputStream = context.assets.open(path)
-            override fun exists(path: String): Boolean = try {
-                context.assets.open(path).use { /* just probe */ }
-                true
-            } catch (_: Exception) {
-                false
+        val assetProvider =
+            object : AssetProvider {
+                override fun open(path: String): InputStream = context.assets.open(path)
+
+                override fun exists(path: String): Boolean =
+                    try {
+                        context.assets.open(path).use { /* just probe */ }
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
             }
-        }
         // Фолбэк — FakeStarCatalog (внутри BinaryStarCatalog.load установлен).
         return BinaryStarCatalog.load(assetProvider)
     }
@@ -476,8 +541,13 @@ private data class CacheEntry(val model: TonightTileModel, val expiresAt: Long)
 
 private object TonightMemCache {
     private val map = ConcurrentHashMap<String, CacheEntry>()
+
     fun getIfValid(key: String): CacheEntry? = map[key]?.takeIf { it.expiresAt > System.currentTimeMillis() }
-    fun put(key: String, entry: CacheEntry) {
+
+    fun put(
+        key: String,
+        entry: CacheEntry,
+    ) {
         map[key] = entry
     }
 }
@@ -491,15 +561,20 @@ private class TonightCacheStore(
 ) {
     private val store: DataStore<Preferences>
         get() = context.tonightCacheDS
-    suspend fun get(key: String): CacheEntry? = withContext(io) {
-        val prefs = store.data.firstOrNull() ?: return@withContext null
-        val payload = prefs[stringPreferencesKey("payload_$key")] ?: return@withContext null
-        val expires = prefs[longPreferencesKey("expires_$key")] ?: return@withContext null
-        val model = decodeModel(payload) ?: return@withContext null
-        CacheEntry(model, expires)
-    }
 
-    suspend fun put(key: String, entry: CacheEntry) = withContext(io) {
+    suspend fun get(key: String): CacheEntry? =
+        withContext(io) {
+            val prefs = store.data.firstOrNull() ?: return@withContext null
+            val payload = prefs[stringPreferencesKey("payload_$key")] ?: return@withContext null
+            val expires = prefs[longPreferencesKey("expires_$key")] ?: return@withContext null
+            val model = decodeModel(payload) ?: return@withContext null
+            CacheEntry(model, expires)
+        }
+
+    suspend fun put(
+        key: String,
+        entry: CacheEntry,
+    ) = withContext(io) {
         val encoded = encodeModel(entry.model)
         store.edit { p ->
             p[stringPreferencesKey("payload_$key")] = encoded
@@ -542,17 +617,20 @@ private class TonightCacheStore(
             val icon = runCatching { TonightIcon.valueOf(fields[3]) }.getOrDefault(TonightIcon.STAR)
             val az = fields[4].toDoubleOrNull()?.takeUnless { v -> v.isNaN() }
             val alt = fields[5].toDoubleOrNull()?.takeUnless { v -> v.isNaN() }
-            val ws = fields[6].toLongOrNull()
-                ?.takeIf { secs -> secs >= 0 }
-                ?.let { secs -> Instant.ofEpochSecond(secs) }
-            val we = fields[7].toLongOrNull()
-                ?.takeIf { secs -> secs >= 0 }
-                ?.let { secs -> Instant.ofEpochSecond(secs) }
+            val ws =
+                fields[6].toLongOrNull()
+                    ?.takeIf { secs -> secs >= 0 }
+                    ?.let { secs -> Instant.ofEpochSecond(secs) }
+            val we =
+                fields[7].toLongOrNull()
+                    ?.takeIf { secs -> secs >= 0 }
+                    ?.let { secs -> Instant.ofEpochSecond(secs) }
             items += TonightTarget(id, title, subtitle, icon, az, alt, ws, we)
         }
         return TonightTileModel(updatedAt, items)
     }
 
     private fun b64(s: String): String = Base64.encodeToString(s.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+
     private fun b64d(s: String): String = String(Base64.decode(s, Base64.NO_WRAP), Charsets.UTF_8)
 }

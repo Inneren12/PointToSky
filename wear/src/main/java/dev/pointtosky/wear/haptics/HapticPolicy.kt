@@ -10,14 +10,18 @@ import androidx.core.content.getSystemService
 enum class HapticEvent { ENTER, LOCK, LOST }
 
 class HapticPolicy(private val context: Context) {
-    fun play(event: HapticEvent, enabled: Boolean = true) {
+    fun play(
+        event: HapticEvent,
+        enabled: Boolean = true,
+    ) {
         if (!enabled) return
-        val vibrator = if (Build.VERSION.SDK_INT >= 31) {
-            context.getSystemService<VibratorManager>()?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService<Vibrator>()
-        } ?: return
+        val vibrator =
+            if (Build.VERSION.SDK_INT >= 31) {
+                context.getSystemService<VibratorManager>()?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService<Vibrator>()
+            } ?: return
         if (!vibrator.hasVibrator()) return
 
         when (event) {
@@ -27,7 +31,10 @@ class HapticPolicy(private val context: Context) {
         }
     }
 
-    private fun oneShot(vibrator: Vibrator, millis: Long) {
+    private fun oneShot(
+        vibrator: Vibrator,
+        millis: Long,
+    ) {
         vibrator.vibrate(VibrationEffect.createOneShot(millis, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 

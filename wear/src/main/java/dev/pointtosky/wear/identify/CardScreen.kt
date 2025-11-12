@@ -66,21 +66,23 @@ fun CardRoute(
     val point = locationFix?.point
 
     val header = headerFor(type, name, body, iau)
-    val details = detailsFor(
-        type = type,
-        mag = mag,
-        ra = ra,
-        dec = dec,
-        body = body,
-        iau = iau,
-        point = point,
-        instant = instant,
-        ephemeris = ephemeris,
-    )
+    val details =
+        detailsFor(
+            type = type,
+            mag = mag,
+            ra = ra,
+            dec = dec,
+            body = body,
+            iau = iau,
+            point = point,
+            instant = instant,
+            ephemeris = ephemeris,
+        )
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 20.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -98,13 +100,19 @@ fun CardRoute(
 private fun fmt(v: Double): String = String.format(Locale.US, "%.3f", v)
 
 // --- helpers: вынесены из CardRoute для снижения Cyclomatic Complexity ---
-private fun headerFor(type: String?, name: String?, body: String?, iau: String?): String = when (type) {
-    "STAR" -> name ?: "Star"
-    "PLANET" -> body ?: "Planet"
-    "MOON" -> "Moon"
-    "CONST" -> iau ?: "Constellation"
-    else -> "—"
-}
+private fun headerFor(
+    type: String?,
+    name: String?,
+    body: String?,
+    iau: String?,
+): String =
+    when (type) {
+        "STAR" -> name ?: "Star"
+        "PLANET" -> body ?: "Planet"
+        "MOON" -> "Moon"
+        "CONST" -> iau ?: "Constellation"
+        else -> "—"
+    }
 
 private fun detailsFor(
     type: String?,
@@ -116,14 +124,21 @@ private fun detailsFor(
     point: GeoPoint?,
     instant: Instant,
     ephemeris: SimpleEphemerisComputer,
-): String = when (type) {
-    "STAR" -> starDetails(mag, ra, dec, point, instant)
-    "PLANET", "MOON" -> bodyDetails(type, body, point, ephemeris, instant)
-    "CONST" -> "Type: CONST\nIAU: ${iau ?: "—"}"
-    else -> "—"
-}
+): String =
+    when (type) {
+        "STAR" -> starDetails(mag, ra, dec, point, instant)
+        "PLANET", "MOON" -> bodyDetails(type, body, point, ephemeris, instant)
+        "CONST" -> "Type: CONST\nIAU: ${iau ?: "—"}"
+        else -> "—"
+    }
 
-private fun starDetails(mag: String?, ra: String?, dec: String?, point: GeoPoint?, instant: Instant): String {
+private fun starDetails(
+    mag: String?,
+    ra: String?,
+    dec: String?,
+    point: GeoPoint?,
+    instant: Instant,
+): String {
     val raDeg = ra?.toDoubleOrNull()
     val decDeg = dec?.toDoubleOrNull()
     return if (raDeg != null && decDeg != null && point != null) {
@@ -144,7 +159,13 @@ private fun starDetails(mag: String?, ra: String?, dec: String?, point: GeoPoint
     }
 }
 
-private fun bodyDetails(type: String, body: String?, point: GeoPoint?, ephemeris: SimpleEphemerisComputer, instant: Instant): String {
+private fun bodyDetails(
+    type: String,
+    body: String?,
+    point: GeoPoint?,
+    ephemeris: SimpleEphemerisComputer,
+    instant: Instant,
+): String {
     val bodyEnum = runCatching { Body.valueOf(body ?: "MOON") }.getOrNull() ?: Body.MOON
     return if (point != null) {
         val eq = ephemeris.compute(bodyEnum, instant).eq
@@ -170,45 +191,47 @@ private fun bodyDetails(type: String, body: String?, point: GeoPoint?, ephemeris
  */
 fun androidx.navigation.NavGraphBuilder.cardDestination(locationRepository: LocationRepository) {
     composable(
-        route = "card?type={type}&name={name}&mag={mag}&ra={ra}" +
-            "&dec={dec}&body={body}&iau={iau}",
-        arguments = listOf(
-            navArgument("type") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            },
-            navArgument("name") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            },
-            navArgument("mag") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            },
-            navArgument("ra") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            },
-            navArgument("dec") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            },
-            navArgument("body") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            },
-            navArgument("iau") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            },
-        ),
+        route =
+            "card?type={type}&name={name}&mag={mag}&ra={ra}" +
+                "&dec={dec}&body={body}&iau={iau}",
+        arguments =
+            listOf(
+                navArgument("type") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("name") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("mag") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("ra") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("dec") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("body") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("iau") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
     ) { backStackEntry: NavBackStackEntry ->
         val args = backStackEntry.arguments
         CardRoute(

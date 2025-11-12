@@ -32,7 +32,10 @@ import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import java.util.Locale
 
 @Composable
-fun AstroDebugRoute(factory: AstroDebugViewModelFactory, modifier: Modifier = Modifier) {
+fun AstroDebugRoute(
+    factory: AstroDebugViewModelFactory,
+    modifier: Modifier = Modifier,
+) {
     val viewModel: AstroDebugViewModel = viewModel(factory = factory)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     AstroDebugScreen(
@@ -44,43 +47,54 @@ fun AstroDebugRoute(factory: AstroDebugViewModelFactory, modifier: Modifier = Mo
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -> Unit, modifier: Modifier = Modifier) {
+fun AstroDebugScreen(
+    state: AstroDebugUiState,
+    onTargetSelected: (Body) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val az = state.horizontal.azDeg
     val alt = state.horizontal.altDeg
     val azAltText = stringResource(R.string.astro_debug_horizontal, az, alt)
-    val equatorialText = state.equatorial?.let { eq ->
-        stringResource(R.string.astro_debug_equatorial, eq.raDeg, eq.decDeg)
-    } ?: stringResource(id = R.string.astro_debug_value_unknown)
-    val lstDegText = state.lstDeg?.let { lst ->
-        stringResource(R.string.astro_debug_lst_degrees, lst)
-    } ?: stringResource(id = R.string.astro_debug_lst_unknown)
+    val equatorialText =
+        state.equatorial?.let { eq ->
+            stringResource(R.string.astro_debug_equatorial, eq.raDeg, eq.decDeg)
+        } ?: stringResource(id = R.string.astro_debug_value_unknown)
+    val lstDegText =
+        state.lstDeg?.let { lst ->
+            stringResource(R.string.astro_debug_lst_degrees, lst)
+        } ?: stringResource(id = R.string.astro_debug_lst_unknown)
     val lstHmsText = state.lstHms ?: stringResource(id = R.string.astro_debug_value_unknown)
-    val bestMatchText = when (val match = state.bestMatch) {
-        is AstroBestMatch.Object -> {
-            val magnitude = match.magnitude?.let { String.format(Locale.US, "%.2f", it) }
-                ?: stringResource(id = R.string.astro_debug_value_unknown)
-            val constellation = match.constellationCode
-                ?: stringResource(id = R.string.astro_debug_constellation_unknown)
-            stringResource(
-                id = R.string.astro_debug_best_match_object,
-                match.label ?: stringResource(id = R.string.astro_debug_best_match_unknown_label),
-                magnitude,
-                constellation,
-            )
+    val bestMatchText =
+        when (val match = state.bestMatch) {
+            is AstroBestMatch.Object -> {
+                val magnitude =
+                    match.magnitude?.let { String.format(Locale.US, "%.2f", it) }
+                        ?: stringResource(id = R.string.astro_debug_value_unknown)
+                val constellation =
+                    match.constellationCode
+                        ?: stringResource(id = R.string.astro_debug_constellation_unknown)
+                stringResource(
+                    id = R.string.astro_debug_best_match_object,
+                    match.label ?: stringResource(id = R.string.astro_debug_best_match_unknown_label),
+                    magnitude,
+                    constellation,
+                )
+            }
+            is AstroBestMatch.Constellation -> {
+                stringResource(id = R.string.astro_debug_best_match_constellation, match.code)
+            }
+            null -> stringResource(id = R.string.astro_debug_best_match_unknown)
         }
-        is AstroBestMatch.Constellation -> {
-            stringResource(id = R.string.astro_debug_best_match_constellation, match.code)
-        }
-        null -> stringResource(id = R.string.astro_debug_best_match_unknown)
-    }
-    val aimErrorText = state.aimError?.let { error ->
-        stringResource(R.string.astro_debug_aim_error, error.dAzDeg, error.dAltDeg)
-    } ?: stringResource(id = R.string.astro_debug_aim_error_unknown)
+    val aimErrorText =
+        state.aimError?.let { error ->
+            stringResource(R.string.astro_debug_aim_error, error.dAzDeg, error.dAltDeg)
+        } ?: stringResource(id = R.string.astro_debug_aim_error_unknown)
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 20.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -137,11 +151,12 @@ fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -> Unit,
             ) {
                 Body.entries.forEach { body ->
                     val selected = body == state.target
-                    val colors = if (selected) {
-                        ChipDefaults.primaryChipColors()
-                    } else {
-                        ChipDefaults.secondaryChipColors()
-                    }
+                    val colors =
+                        if (selected) {
+                            ChipDefaults.primaryChipColors()
+                        } else {
+                            ChipDefaults.secondaryChipColors()
+                        }
                     CompactChip(
                         onClick = { onTargetSelected(body) },
                         label = {
@@ -160,10 +175,11 @@ fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -> Unit,
                 }
             }
             Text(
-                text = stringResource(
-                    id = R.string.astro_debug_target_summary,
-                    stringResource(id = state.target.toLabelRes()),
-                ),
+                text =
+                    stringResource(
+                        id = R.string.astro_debug_target_summary,
+                        stringResource(id = state.target.toLabelRes()),
+                    ),
                 style = MaterialTheme.typography.caption1,
                 textAlign = TextAlign.Center,
             )
@@ -176,12 +192,13 @@ fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -> Unit,
     }
 }
 
-private fun Body.toLabelRes(): Int = when (this) {
-    Body.SUN -> R.string.astro_debug_target_sun
-    Body.MOON -> R.string.astro_debug_target_moon
-    Body.JUPITER -> R.string.astro_debug_target_jupiter
-    Body.SATURN -> R.string.astro_debug_target_saturn
-}
+private fun Body.toLabelRes(): Int =
+    when (this) {
+        Body.SUN -> R.string.astro_debug_target_sun
+        Body.MOON -> R.string.astro_debug_target_moon
+        Body.JUPITER -> R.string.astro_debug_target_jupiter
+        Body.SATURN -> R.string.astro_debug_target_saturn
+    }
 
 class AstroDebugViewModelFactory(
     private val orientationRepository: OrientationRepository,

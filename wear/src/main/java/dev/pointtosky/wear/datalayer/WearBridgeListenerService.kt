@@ -17,7 +17,10 @@ class WearBridgeListenerService : WearableListenerService() {
         val data: ByteArray = event.data // уже non-nullable
         val path = event.path
 
-        fun logError(path: String, error: Throwable) {
+        fun logError(
+            path: String,
+            error: Throwable,
+        ) {
             LogBus.event(
                 "dl_error",
                 mapOf(
@@ -27,31 +30,37 @@ class WearBridgeListenerService : WearableListenerService() {
             )
         }
 
-        fun handle(path: String, block: () -> Unit) {
+        fun handle(
+            path: String,
+            block: () -> Unit,
+        ) {
             runCatching(block).onFailure { logError(path, it) }
         }
 
         when (path) {
-            PATH_AIM_SET_TARGET -> handle(PATH_AIM_SET_TARGET) {
-                val msg = JsonCodec.decode<AimSetTargetMessage>(data)
-                if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
-                    WearBridge.handleAimSetTargetMessage(applicationContext, msg)
+            PATH_AIM_SET_TARGET ->
+                handle(PATH_AIM_SET_TARGET) {
+                    val msg = JsonCodec.decode<AimSetTargetMessage>(data)
+                    if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                        WearBridge.handleAimSetTargetMessage(applicationContext, msg)
+                    }
                 }
-            }
 
-            PATH_APP_OPEN -> handle(PATH_APP_OPEN) {
-                val msg = JsonCodec.decode<AppOpenMessage>(data)
-                if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
-                    WearBridge.handleAppOpenMessage(applicationContext, msg)
+            PATH_APP_OPEN ->
+                handle(PATH_APP_OPEN) {
+                    val msg = JsonCodec.decode<AppOpenMessage>(data)
+                    if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                        WearBridge.handleAppOpenMessage(applicationContext, msg)
+                    }
                 }
-            }
 
-            PATH_SENSOR_HEADING -> handle(PATH_SENSOR_HEADING) {
-                val msg = JsonCodec.decode<SensorHeadingMessage>(data)
-                if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
-                    PhoneHeadingBridge.updateHeading(msg.azDeg, msg.ts)
+            PATH_SENSOR_HEADING ->
+                handle(PATH_SENSOR_HEADING) {
+                    val msg = JsonCodec.decode<SensorHeadingMessage>(data)
+                    if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                        PhoneHeadingBridge.updateHeading(msg.azDeg, msg.ts)
+                    }
                 }
-            }
 
             else -> {
                 LogBus.event("dl_error", mapOf("err" to "unknown_path", "path" to path))

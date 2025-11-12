@@ -25,7 +25,11 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 
 @Composable
-fun IdentifyRoute(factory: IdentifyViewModelFactory, onOpenCard: ((IdentifyUiState) -> Unit)?, modifier: Modifier = Modifier) {
+fun IdentifyRoute(
+    factory: IdentifyViewModelFactory,
+    onOpenCard: ((IdentifyUiState) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     val viewModel: IdentifyViewModel = viewModel(factory = factory)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     IdentifyScreen(
@@ -36,21 +40,27 @@ fun IdentifyRoute(factory: IdentifyViewModelFactory, onOpenCard: ((IdentifyUiSta
 }
 
 @Composable
-fun IdentifyScreen(state: IdentifyUiState, onOpenCard: ((IdentifyUiState) -> Unit)?, modifier: Modifier = Modifier) {
+fun IdentifyScreen(
+    state: IdentifyUiState,
+    onOpenCard: ((IdentifyUiState) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     val title = state.title
-    val typeLabel = when (state.type) {
-        IdentifyType.STAR -> "STAR"
-        IdentifyType.CONST -> "CONST"
-        IdentifyType.PLANET -> "PLANET"
-        IdentifyType.MOON -> "MOON"
-    }
+    val typeLabel =
+        when (state.type) {
+            IdentifyType.STAR -> "STAR"
+            IdentifyType.CONST -> "CONST"
+            IdentifyType.PLANET -> "PLANET"
+            IdentifyType.MOON -> "MOON"
+        }
     val magText = state.magnitude?.let { java.lang.String.format(java.util.Locale.US, "m = %.1f", it) } ?: "—"
     val sepText = state.separationDeg?.let { java.lang.String.format(java.util.Locale.US, "Δ = %.1f°", it) } ?: "—"
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 20.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -93,10 +103,11 @@ fun IdentifyScreen(state: IdentifyUiState, onOpenCard: ((IdentifyUiState) -> Uni
 @Composable
 private fun LowAccuracyBadge() {
     Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0x33FFAA00))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0x33FFAA00))
+                .padding(horizontal = 10.dp, vertical = 4.dp),
     ) {
         Text(
             text = "низкая точность",

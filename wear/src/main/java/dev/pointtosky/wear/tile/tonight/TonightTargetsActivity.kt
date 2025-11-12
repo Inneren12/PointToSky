@@ -38,16 +38,17 @@ class TonightTargetsActivity : ComponentActivity() {
                 val context = LocalContext.current
 
                 // Провайдер Tonight (как в тайле): без timeSource — он его не принимает.
-                val provider = remember {
-                    RealTonightProvider(
-                        context = context,
-                        zoneRepo = ZoneRepo(context),
-                        // Локалка: берём вручную заданную точку, если есть
-                        getLastKnownLocation = {
-                            LocationPrefs.fromContext(context).manualPointFlow.first()
-                        },
-                    )
-                }
+                val provider =
+                    remember {
+                        RealTonightProvider(
+                            context = context,
+                            zoneRepo = ZoneRepo(context),
+                            // Локалка: берём вручную заданную точку, если есть
+                            getLastKnownLocation = {
+                                LocationPrefs.fromContext(context).manualPointFlow.first()
+                            },
+                        )
+                    }
 
                 // Состояние экрана: список (title/subtitle) или null, пока грузимся
                 var entries by remember { mutableStateOf<List<Pair<String, String?>>?>(null) }
@@ -74,23 +75,25 @@ class TonightTargetsActivity : ComponentActivity() {
                         null -> {
                             item {
                                 CircularProgressIndicator(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
                                 )
                             }
                             item { Text(text = context.getString(R.string.tonight_targets_loading)) }
                         }
 
-                        else -> if (list.isEmpty()) {
-                            item { Text(text = context.getString(R.string.tonight_targets_empty)) }
-                        } else {
-                            items(list.size) { idx ->
-                                val (title, subtitle) = list[idx]
-                                val line = if (subtitle.isNullOrBlank()) "• $title" else "• $title — $subtitle"
-                                Text(text = line)
+                        else ->
+                            if (list.isEmpty()) {
+                                item { Text(text = context.getString(R.string.tonight_targets_empty)) }
+                            } else {
+                                items(list.size) { idx ->
+                                    val (title, subtitle) = list[idx]
+                                    val line = if (subtitle.isNullOrBlank()) "• $title" else "• $title — $subtitle"
+                                    Text(text = line)
+                                }
                             }
-                        }
                     }
                 }
             }

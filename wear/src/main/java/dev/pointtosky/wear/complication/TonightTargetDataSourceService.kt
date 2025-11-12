@@ -37,7 +37,6 @@ import java.time.ZonedDateTime
 import kotlin.math.roundToInt
 
 class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
-
     private val zoneRepo by lazy { ZoneRepo(this) }
 
     private val locationPrefs: LocationPrefs by lazy { LocationPrefs.fromContext(this) }
@@ -106,7 +105,11 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
             else -> null
         }
 
-    private suspend fun loadTargetState(prefs: TonightPrefs, now: Instant, zone: ZoneId): TargetState? {
+    private suspend fun loadTargetState(
+        prefs: TonightPrefs,
+        now: Instant,
+        zone: ZoneId,
+    ): TargetState? {
         val location = locationPrefs.manualPointFlow.firstOrNull()
         val model = provider.getModel(now)
         val target = TonightTargetSelector.selectTargets(model.items, prefs).firstOrNull() ?: return null
@@ -124,14 +127,18 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         )
     }
 
-    private fun shortTextData(state: TargetState, tapAction: PendingIntent): ComplicationData {
-        val builder = ShortTextComplicationData.Builder(
-            text(state.target.title),
-            text(state.contentDescription),
-        )
-            .setMonochromaticImage(monochromaticImage(iconDrawable(state.target.icon)))
-            .setValidTimeRange(state.validTimeRange)
-            .setTapAction(tapAction)
+    private fun shortTextData(
+        state: TargetState,
+        tapAction: PendingIntent,
+    ): ComplicationData {
+        val builder =
+            ShortTextComplicationData.Builder(
+                text(state.target.title),
+                text(state.contentDescription),
+            )
+                .setMonochromaticImage(monochromaticImage(iconDrawable(state.target.icon)))
+                .setValidTimeRange(state.validTimeRange)
+                .setTapAction(tapAction)
         state.secondary?.let { secondary ->
             if (secondary.isNotBlank()) {
                 builder.setTitle(text(secondary))
@@ -140,7 +147,10 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         return builder.build()
     }
 
-    private fun monochromaticImageData(state: TargetState, tapAction: PendingIntent): ComplicationData {
+    private fun monochromaticImageData(
+        state: TargetState,
+        tapAction: PendingIntent,
+    ): ComplicationData {
         return MonochromaticImageComplicationData.Builder(
             monochromaticImage(iconDrawable(state.target.icon)),
             text(state.contentDescription),
@@ -150,7 +160,10 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
             .build()
     }
 
-    private fun smallImageData(state: TargetState, tapAction: PendingIntent): ComplicationData {
+    private fun smallImageData(
+        state: TargetState,
+        tapAction: PendingIntent,
+    ): ComplicationData {
         return SmallImageComplicationData.Builder(
             smallImage(iconDrawable(state.target.icon)),
             text(state.contentDescription),
@@ -164,11 +177,12 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         instanceId: Int,
         aimTarget: AimTarget?,
     ): PendingIntent {
-        val intent = mainActivityIntent(PtsComplicationKind.TONIGHT_TARGET).apply {
-            action = ACTION_OPEN_AIM
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            aimTarget?.let { putAimTargetExtras(it) }
-        }
+        val intent =
+            mainActivityIntent(PtsComplicationKind.TONIGHT_TARGET).apply {
+                action = ACTION_OPEN_AIM
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                aimTarget?.let { putAimTargetExtras(it) }
+            }
         val requestCode = PtsComplicationKind.TONIGHT_TARGET.ordinal * 1000 + instanceId
         // Важно: CANCEL_CURRENT гарантирует, что при переходе aimTarget → null
         // новый PendingIntent НЕ унаследует старые EXTRA_AIM_* из предыдущего.
@@ -180,18 +194,23 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         )
     }
 
-    private fun aimTargetFor(target: TonightTarget, location: GeoPoint?, now: Instant): AimTarget? {
+    private fun aimTargetFor(
+        target: TonightTarget,
+        location: GeoPoint?,
+        now: Instant,
+    ): AimTarget? {
         val body = runCatching { Body.valueOf(target.id) }.getOrNull()
         return when {
             body != null -> AimTarget.BodyTarget(body)
 
             location != null && target.azDeg != null && target.altDeg != null -> {
                 val lstDeg = lstAt(now, location.lonDeg).lstDeg
-                val eq = altAzToRaDec(
-                    Horizontal(azDeg = target.azDeg, altDeg = target.altDeg),
-                    lstDeg,
-                    location.latDeg,
-                )
+                val eq =
+                    altAzToRaDec(
+                        Horizontal(azDeg = target.azDeg, altDeg = target.altDeg),
+                        lstDeg,
+                        location.latDeg,
+                    )
                 AimTarget.EquatorialTarget(eq)
             }
 
@@ -199,25 +218,36 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         }
     }
 
-    private fun buildRefreshSchedule(now: Instant, target: TonightTarget, zone: ZoneId): RefreshSchedule {
+    private fun buildRefreshSchedule(
+        now: Instant,
+        target: TonightTarget,
+        zone: ZoneId,
+    ): RefreshSchedule {
         val midnight = nextMidnight(now, zone)
-        val boundaries = buildList {
-            target.windowStart?.takeIf { it.isAfter(now) }?.let { add(it) }
-            target.windowEnd?.takeIf { it.isAfter(now) }?.let { add(it) }
-            midnight.takeIf { it.isAfter(now) }?.let { add(it) }
-        }
+        val boundaries =
+            buildList {
+                target.windowStart?.takeIf { it.isAfter(now) }?.let { add(it) }
+                target.windowEnd?.takeIf { it.isAfter(now) }?.let { add(it) }
+                midnight.takeIf { it.isAfter(now) }?.let { add(it) }
+            }
         val nextBoundary = boundaries.minOrNull()
         val timeRange = nextBoundary?.let { TimeRange.before(it) }
         return RefreshSchedule(timeRange = timeRange, nextBoundary = nextBoundary)
     }
 
-    private fun nextMidnight(now: Instant, zone: ZoneId): Instant {
+    private fun nextMidnight(
+        now: Instant,
+        zone: ZoneId,
+    ): Instant {
         val zoned = ZonedDateTime.ofInstant(now, zone)
         val nextDay = zoned.toLocalDate().plusDays(1)
         return nextDay.atStartOfDay(zone).toInstant()
     }
 
-    private fun buildContentDescription(title: String, secondary: String?): String =
+    private fun buildContentDescription(
+        title: String,
+        secondary: String?,
+    ): String =
         if (secondary.isNullOrBlank()) {
             getString(R.string.comp_tonight_target_content_description, title)
         } else {
@@ -228,21 +258,23 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         val previewLabel = getString(R.string.comp_tonight_target_preview_text)
         val title = previewLabel.substringBefore('•').trim().ifEmpty { previewLabel }
         val secondary = previewLabel.substringAfter('•', "").trim().takeIf { it.isNotEmpty() }
-        val fallbackTarget = TonightTarget(
-            id = "JUPITER",
-            title = title,
-            subtitle = secondary,
-            icon = TonightIcon.JUPITER,
-        )
-        val previewTargets = listOf(
-            fallbackTarget,
+        val fallbackTarget =
             TonightTarget(
-                id = "STAR:Rigel",
-                title = "Rigel",
-                subtitle = "mag 0.1",
-                icon = TonightIcon.STAR,
-            ),
-        )
+                id = "JUPITER",
+                title = title,
+                subtitle = secondary,
+                icon = TonightIcon.JUPITER,
+            )
+        val previewTargets =
+            listOf(
+                fallbackTarget,
+                TonightTarget(
+                    id = "STAR:Rigel",
+                    title = "Rigel",
+                    subtitle = "mag 0.1",
+                    icon = TonightIcon.STAR,
+                ),
+            )
         val prefs = TonightPrefs(magLimit = 5.5f, preferPlanets = true)
         val target = selectTarget(previewTargets, prefs).firstOrNull() ?: fallbackTarget
         return TargetState(

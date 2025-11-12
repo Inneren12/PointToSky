@@ -31,35 +31,36 @@ class ArViewModel(
     /** DI-диспетчер вместо прямого Dispatchers.IO (detekt: InjectDispatcher) */
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
-
     private val staticStars = MutableStateFlow<List<ArStar>?>(null)
 
     private val manualPointFlow = locationPrefs.manualPointFlow
-    private val locationSnapshot: StateFlow<LocationSnapshot> = manualPointFlow
-        .map { manual ->
-            if (manual != null) {
-                LocationSnapshot(point = manual, resolved = true)
-            } else {
-                LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
+    private val locationSnapshot: StateFlow<LocationSnapshot> =
+        manualPointFlow
+            .map { manual ->
+                if (manual != null) {
+                    LocationSnapshot(point = manual, resolved = true)
+                } else {
+                    LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
+                }
             }
-        }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
-        )
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.Eagerly,
+                initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
+            )
 
-    val state: StateFlow<ArUiState> = staticStars
-        .filterNotNull()
-        .combine(locationSnapshot) { stars, location -> stars to location }
-        .combine(timeSource.ticks) { (stars, location), instant ->
-            buildState(stars, location, instant)
-        }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = ArUiState.Loading,
-        )
+    val state: StateFlow<ArUiState> =
+        staticStars
+            .filterNotNull()
+            .combine(locationSnapshot) { stars, location -> stars to location }
+            .combine(timeSource.ticks) { (stars, location), instant ->
+                buildState(stars, location, instant)
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = ArUiState.Loading,
+            )
 
     init {
         viewModelScope.launch(ioDispatcher) {
@@ -67,23 +68,29 @@ class ArViewModel(
         }
     }
 
-    private suspend fun loadStars(): List<ArStar> = withContext(ioDispatcher) {
-        val stars = catalogRepository.starCatalog.nearby(
-            center = Equatorial(0.0, 0.0),
-            radiusDeg = 180.0,
-            magLimit = STAR_MAG_LIMIT,
-        )
-        stars.distinctBy(Star::id).map { star ->
-            ArStar(
-                id = star.id,
-                label = resolveLabel(star),
-                magnitude = star.mag.toDouble(),
-                equatorial = Equatorial(star.raDeg.toDouble(), star.decDeg.toDouble()),
-            )
+    private suspend fun loadStars(): List<ArStar> =
+        withContext(ioDispatcher) {
+            val stars =
+                catalogRepository.starCatalog.nearby(
+                    center = Equatorial(0.0, 0.0),
+                    radiusDeg = 180.0,
+                    magLimit = STAR_MAG_LIMIT,
+                )
+            stars.distinctBy(Star::id).map { star ->
+                ArStar(
+                    id = star.id,
+                    label = resolveLabel(star),
+                    magnitude = star.mag.toDouble(),
+                    equatorial = Equatorial(star.raDeg.toDouble(), star.decDeg.toDouble()),
+                )
+            }
         }
-    }
 
-    private fun buildState(stars: List<ArStar>, location: LocationSnapshot, instant: Instant): ArUiState {
+    private fun buildState(
+        stars: List<ArStar>,
+        location: LocationSnapshot,
+        instant: Instant,
+    ): ArUiState {
         val lstDeg = lstAt(instant, location.point.lonDeg).lstDeg
         return ArUiState.Ready(
             instant = instant,

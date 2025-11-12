@@ -57,14 +57,20 @@ class AimIdentifySettingsDataStore(
 
     // Setters
     suspend fun setAimAzTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyAzTol] = value }
+
     suspend fun setAimAltTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyAltTol] = value }
+
     suspend fun setAimHoldMs(value: Long) = context.aimIdentifyPrefsDataStore.edit { it[keyHoldMs] = value }
+
     suspend fun setAimHapticEnabled(value: Boolean) = context.aimIdentifyPrefsDataStore.edit { it[keyHaptic] = value }
+
     suspend fun setIdentifyMagLimit(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyMagLimit] = value }
+
     suspend fun setIdentifyRadiusDeg(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyRadius] = value }
 
     // S7.E
-    suspend fun setTileMirroringEnabled(value: Boolean) = context.aimIdentifyPrefsDataStore.edit {
-        it[keyTileMirror] = value
-    }
+    suspend fun setTileMirroringEnabled(value: Boolean) =
+        context.aimIdentifyPrefsDataStore.edit {
+            it[keyTileMirror] = value
+        }
 }

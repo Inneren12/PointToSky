@@ -40,30 +40,37 @@ fun rememberRotationFrame(): RotationFrame? {
 
         val rotationMatrix = FloatArray(9)
 
-        val listener = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent) {
-                SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-                val worldForward = floatArrayOf(
-                    -rotationMatrix[2],
-                    -rotationMatrix[5],
-                    -rotationMatrix[8],
-                )
-                val normalizedForward = normalizeVector(worldForward)
-                frame = RotationFrame(
-                    rotationMatrix = rotationMatrix.copyOf(),
-                    forwardWorld = normalizedForward,
-                    timestampNanos = event.timestamp,
-                )
+        val listener =
+            object : SensorEventListener {
+                override fun onSensorChanged(event: SensorEvent) {
+                    SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                    val worldForward =
+                        floatArrayOf(
+                            -rotationMatrix[2],
+                            -rotationMatrix[5],
+                            -rotationMatrix[8],
+                        )
+                    val normalizedForward = normalizeVector(worldForward)
+                    frame =
+                        RotationFrame(
+                            rotationMatrix = rotationMatrix.copyOf(),
+                            forwardWorld = normalizedForward,
+                            timestampNanos = event.timestamp,
+                        )
+                }
+
+                override fun onAccuracyChanged(
+                    sensor: Sensor?,
+                    accuracy: Int,
+                ) = Unit
             }
 
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
-        }
-
-        val registered = sensorManager.registerListener(
-            listener,
-            sensor,
-            SensorManager.SENSOR_DELAY_GAME,
-        )
+        val registered =
+            sensorManager.registerListener(
+                listener,
+                sensor,
+                SensorManager.SENSOR_DELAY_GAME,
+            )
 
         onDispose {
             if (registered) {

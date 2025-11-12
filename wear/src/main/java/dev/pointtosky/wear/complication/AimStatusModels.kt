@@ -48,27 +48,31 @@ data class AimStatusTarget(
     val raDeg: Double? = null,
     val decDeg: Double? = null,
 ) {
-    fun toAimTarget(): AimTarget? = when (kind) {
-        AimStatusTargetKind.BODY -> bodyName?.let { name ->
-            runCatching { dev.pointtosky.core.astro.ephem.Body.valueOf(name) }.getOrNull()
-                ?.let { AimTarget.BodyTarget(it) }
+    fun toAimTarget(): AimTarget? =
+        when (kind) {
+            AimStatusTargetKind.BODY ->
+                bodyName?.let { name ->
+                    runCatching { dev.pointtosky.core.astro.ephem.Body.valueOf(name) }.getOrNull()
+                        ?.let { AimTarget.BodyTarget(it) }
+                }
+            AimStatusTargetKind.STAR ->
+                starId?.let { id ->
+                    val eq =
+                        if (raDeg != null && decDeg != null) {
+                            dev.pointtosky.core.astro.coord.Equatorial(raDeg = raDeg, decDeg = decDeg)
+                        } else {
+                            null
+                        }
+                    AimTarget.StarTarget(id, eq)
+                }
+            AimStatusTargetKind.EQUATORIAL ->
+                if (raDeg != null && decDeg != null) {
+                    val eq = dev.pointtosky.core.astro.coord.Equatorial(raDeg = raDeg, decDeg = decDeg)
+                    AimTarget.EquatorialTarget(eq)
+                } else {
+                    null
+                }
         }
-        AimStatusTargetKind.STAR -> starId?.let { id ->
-            val eq = if (raDeg != null && decDeg != null) {
-                dev.pointtosky.core.astro.coord.Equatorial(raDeg = raDeg, decDeg = decDeg)
-            } else {
-                null
-            }
-            AimTarget.StarTarget(id, eq)
-        }
-        AimStatusTargetKind.EQUATORIAL -> if (raDeg != null && decDeg != null) {
-            val eq = dev.pointtosky.core.astro.coord.Equatorial(raDeg = raDeg, decDeg = decDeg)
-            AimTarget.EquatorialTarget(eq)
-        } else {
-            null
-        }
-    }
 }
 
 enum class AimStatusTargetKind { BODY, STAR, EQUATORIAL }
-

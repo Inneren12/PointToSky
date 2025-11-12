@@ -16,7 +16,10 @@ const val EXTRA_AIM_STAR_ID: String = "EXTRA_AIM_STAR_ID"
 
 const val MAX_DEEP_LINK_PAYLOAD_BYTES: Int = 8 * 1024
 
-fun buildOpenAimIntent(context: Context, target: AimTarget?): Intent {
+fun buildOpenAimIntent(
+    context: Context,
+    target: AimTarget?,
+): Intent {
     return Intent(context, MainActivity::class.java).apply {
         action = ACTION_OPEN_AIM
         target?.let { putAimTargetExtras(it) }
@@ -48,7 +51,5 @@ fun Intent.putAimTargetExtras(target: AimTarget) {
                 putExtra(EXTRA_AIM_DEC_DEG, eq.decDeg)
             }
         }
+    }
 }
-
-}
-

@@ -22,38 +22,47 @@ private val Context.aimStatusDataStore: DataStore<Preferences> by preferencesDat
 class AimStatusRepository(private val context: Context) {
     private val dataStore = context.aimStatusDataStore
 
-    suspend fun read(): AimStatusSnapshot = dataStore.data
-        .catch { throwable ->
-            if (throwable is IOException) emit(emptyPreferences()) else throw throwable
-        }
-        .map { prefs ->
-            if (!prefs.contains(keyTimestamp)) {
-                AimStatusSnapshot.EMPTY
-            } else {
-                AimStatusSnapshot(
-                    timestampMs = prefs[keyTimestamp] ?: 0L,
-                    isActive = prefs[keyIsActive] ?: false,
-                    dAzDeg = prefs[keyDeltaAz],
-                    dAltDeg = prefs[keyDeltaAlt],
-                    phase = prefs[keyPhase]?.let { runCatching { dev.pointtosky.wear.aim.core.AimPhase.valueOf(it) }.getOrNull() },
-                    target = prefs[keyTargetKind]?.let { kindName ->
-                        runCatching { AimStatusTargetKind.valueOf(kindName) }.getOrNull()?.let { kind ->
-                            AimStatusTarget(
-                                kind = kind,
-                                label = prefs[keyTargetLabel],
-                                bodyName = prefs[keyTargetBody],
-                                starId = prefs[keyTargetStarId],
-                                raDeg = prefs[keyTargetRa],
-                                decDeg = prefs[keyTargetDec],
-                            )
-                        }
-                    },
-                    toleranceAzDeg = prefs[keyToleranceAz] ?: AimStatusSnapshot.EMPTY.toleranceAzDeg,
-                    toleranceAltDeg = prefs[keyToleranceAlt] ?: AimStatusSnapshot.EMPTY.toleranceAltDeg,
-                )
+    suspend fun read(): AimStatusSnapshot =
+        dataStore.data
+            .catch { throwable ->
+                if (throwable is IOException) emit(emptyPreferences()) else throw throwable
             }
-        }
-        .first()
+            .map { prefs ->
+                if (!prefs.contains(keyTimestamp)) {
+                    AimStatusSnapshot.EMPTY
+                } else {
+                    AimStatusSnapshot(
+                        timestampMs = prefs[keyTimestamp] ?: 0L,
+                        isActive = prefs[keyIsActive] ?: false,
+                        dAzDeg = prefs[keyDeltaAz],
+                        dAltDeg = prefs[keyDeltaAlt],
+                        phase =
+                            prefs[keyPhase]?.let {
+                                runCatching {
+                                    dev.pointtosky.wear.aim.core.AimPhase.valueOf(
+                                        it,
+                                    )
+                                }.getOrNull()
+                            },
+                        target =
+                            prefs[keyTargetKind]?.let { kindName ->
+                                runCatching { AimStatusTargetKind.valueOf(kindName) }.getOrNull()?.let { kind ->
+                                    AimStatusTarget(
+                                        kind = kind,
+                                        label = prefs[keyTargetLabel],
+                                        bodyName = prefs[keyTargetBody],
+                                        starId = prefs[keyTargetStarId],
+                                        raDeg = prefs[keyTargetRa],
+                                        decDeg = prefs[keyTargetDec],
+                                    )
+                                }
+                            },
+                        toleranceAzDeg = prefs[keyToleranceAz] ?: AimStatusSnapshot.EMPTY.toleranceAzDeg,
+                        toleranceAltDeg = prefs[keyToleranceAlt] ?: AimStatusSnapshot.EMPTY.toleranceAltDeg,
+                    )
+                }
+            }
+            .first()
 
     suspend fun write(snapshot: AimStatusSnapshot) {
         dataStore.edit { prefs ->
@@ -99,4 +108,3 @@ class AimStatusRepository(private val context: Context) {
         private val keyTargetDec = doublePreferencesKey("aim.status.target.dec")
     }
 }
-

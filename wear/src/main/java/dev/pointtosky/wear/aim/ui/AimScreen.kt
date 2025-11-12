@@ -67,9 +67,9 @@ import dev.pointtosky.wear.aim.core.AimTarget.BodyTarget
 import dev.pointtosky.wear.aim.core.AimTarget.EquatorialTarget
 import dev.pointtosky.wear.aim.core.DefaultAimController
 import dev.pointtosky.wear.aim.offline.offlineStarResolver
-import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import dev.pointtosky.wear.complication.AimStatusReporter
 import dev.pointtosky.wear.complication.PersistentAimStatusReporter
+import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import dev.pointtosky.wear.haptics.HapticEvent
 import dev.pointtosky.wear.haptics.HapticPolicy
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
@@ -91,18 +91,19 @@ fun AimRoute(
 ) {
     // val appContext = LocalContext.current.applicationContext
     val context = LocalContext.current.applicationContext
-    val controller = remember(orientationRepository, locationRepository) {
-        DefaultAimController(
-            orientation = orientationRepository,
-            location = locationRepository,
-            time = SystemTimeSource(),
-            ephem = SimpleEphemerisComputer(),
-            raDecToAltAz = { eq, lstDeg, latDeg ->
-                raDecToAltAz(eq, lstDeg, latDeg, applyRefraction = false)
-            },
-            starResolver = offlineStarResolver(context),
-        )
-    }
+    val controller =
+        remember(orientationRepository, locationRepository) {
+            DefaultAimController(
+                orientation = orientationRepository,
+                location = locationRepository,
+                time = SystemTimeSource(),
+                ephem = SimpleEphemerisComputer(),
+                raDecToAltAz = { eq, lstDeg, latDeg ->
+                    raDecToAltAz(eq, lstDeg, latDeg, applyRefraction = false)
+                },
+                starResolver = offlineStarResolver(context),
+            )
+        }
     val aimStatusReporter = remember(context) { PersistentAimStatusReporter(context) }
     LaunchedEffect(externalAim?.seq) {
         externalAim?.let { controller.setTarget(it.target) }
@@ -126,16 +127,17 @@ fun AimScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val reporterScope = rememberCoroutineScope()
     DisposableEffect(aimController, lifecycleOwner, aimStatusReporter) {
-        val obs = LifecycleEventObserver { _, e ->
-            when (e) {
-                Lifecycle.Event.ON_RESUME -> aimController.start()
-                Lifecycle.Event.ON_PAUSE -> {
-                    aimController.stop()
-                    reporterScope.launch { aimStatusReporter.onInactive() }
+        val obs =
+            LifecycleEventObserver { _, e ->
+                when (e) {
+                    Lifecycle.Event.ON_RESUME -> aimController.start()
+                    Lifecycle.Event.ON_PAUSE -> {
+                        aimController.stop()
+                        reporterScope.launch { aimStatusReporter.onInactive() }
+                    }
+                    else -> Unit
                 }
-                else -> Unit
             }
-        }
         lifecycleOwner.lifecycle.addObserver(obs)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(obs)
@@ -195,34 +197,38 @@ fun AimScreen(
     val altAbs = abs(state.dAltDeg).toFloat()
     val azRight = sign(state.dAzDeg).toFloat() >= 0f
     val altUp = sign(state.dAltDeg).toFloat() >= 0f
-    val arrowCd = stringResource(
-        id = R.string.a11y_aim_arrow,
-        if (azRight) stringResource(R.string.a11y_right) else stringResource(R.string.a11y_left),
-        azAbs,
-    )
-    val altCd = stringResource(
-        id = R.string.a11y_alt_scale,
-        if (altUp) stringResource(R.string.a11y_up) else stringResource(R.string.a11y_down),
-        altAbs,
-    )
+    val arrowCd =
+        stringResource(
+            id = R.string.a11y_aim_arrow,
+            if (azRight) stringResource(R.string.a11y_right) else stringResource(R.string.a11y_left),
+            azAbs,
+        )
+    val altCd =
+        stringResource(
+            id = R.string.a11y_alt_scale,
+            if (altUp) stringResource(R.string.a11y_up) else stringResource(R.string.a11y_down),
+            altAbs,
+        )
 
     // targets
     val polarisEq = Equatorial(raDeg = 37.95456067, decDeg = 89.26410897)
-    val options = remember {
-        listOf(
-            UiTarget("SUN", BodyTarget(Body.SUN)),
-            UiTarget("MOON", BodyTarget(Body.MOON)),
-            UiTarget("JUPITER", BodyTarget(Body.JUPITER)),
-            UiTarget("SATURN", BodyTarget(Body.SATURN)),
-            UiTarget("POLARIS", EquatorialTarget(polarisEq)),
-        )
-    }
+    val options =
+        remember {
+            listOf(
+                UiTarget("SUN", BodyTarget(Body.SUN)),
+                UiTarget("MOON", BodyTarget(Body.MOON)),
+                UiTarget("JUPITER", BodyTarget(Body.JUPITER)),
+                UiTarget("SATURN", BodyTarget(Body.SATURN)),
+                UiTarget("POLARIS", EquatorialTarget(polarisEq)),
+            )
+        }
     val initialIndex = remember(initialTarget) { targetIndexFor(initialTarget) }
-    val pickerState = rememberPickerState(
-        initialNumberOfOptions = options.size,
-        initiallySelectedOption = initialIndex,
-        repeatItems = true,
-    )
+    val pickerState =
+        rememberPickerState(
+            initialNumberOfOptions = options.size,
+            initiallySelectedOption = initialIndex,
+            repeatItems = true,
+        )
     LaunchedEffect(pickerState, options) {
         snapshotFlow { pickerState.selectedOption }.collect { idx ->
             val opt = options[idx % options.size]
@@ -248,16 +254,18 @@ fun AimScreen(
     }
 
     Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("AimRoot"),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .testTag("AimRoot"),
         timeText = { TimeText() },
         vignette = { Vignette(vignettePosition = VignettePosition.TopAndBottom) },
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -267,9 +275,10 @@ fun AimScreen(
             )
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -283,9 +292,10 @@ fun AimScreen(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { contentDescription = arrowCd },
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .semantics { contentDescription = arrowCd },
                 ) {
                     TurnArrow(
                         right = azRight,
@@ -316,9 +326,10 @@ fun AimScreen(
                     Text(
                         text = item.label,
                         style = MaterialTheme.typography.title3.copy(fontWeight = FontWeight.Medium),
-                        modifier = Modifier
-                            .width(180.dp)
-                            .semantics { contentDescription = "Target ${item.label}" },
+                        modifier =
+                            Modifier
+                                .width(180.dp)
+                                .semantics { contentDescription = "Target ${item.label}" },
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -330,7 +341,10 @@ fun AimScreen(
 // -------- pieces --------
 
 @Composable
-private fun TopBar(phase: AimPhase, confidence: Float) {
+private fun TopBar(
+    phase: AimPhase,
+    confidence: Float,
+) {
     val confPct = (confidence.coerceIn(0f, 1f) * 100).toInt()
     val confCd = stringResource(id = R.string.a11y_confidence, confPct)
     Row(
@@ -345,11 +359,12 @@ private fun TopBar(phase: AimPhase, confidence: Float) {
 
 @Composable
 private fun PhaseBadge(phase: AimPhase) {
-    val (bg, fg, text) = when (phase) {
-        AimPhase.SEARCHING -> Triple(Color(0x334A4A4A), Color(0xFFB0B0B0), "SEARCHING")
-        AimPhase.IN_TOLERANCE -> Triple(Color(0x33F4D03F), Color(0xFFF4D03F), "IN")
-        AimPhase.LOCKED -> Triple(Color(0x332ECC71), Color(0xFF2ECC71), "LOCKED")
-    }
+    val (bg, fg, text) =
+        when (phase) {
+            AimPhase.SEARCHING -> Triple(Color(0x334A4A4A), Color(0xFFB0B0B0), "SEARCHING")
+            AimPhase.IN_TOLERANCE -> Triple(Color(0x33F4D03F), Color(0xFFF4D03F), "IN")
+            AimPhase.LOCKED -> Triple(Color(0x332ECC71), Color(0xFF2ECC71), "LOCKED")
+        }
     Box(
         Modifier
             .clip(RoundedCornerShape(12.dp))
@@ -366,7 +381,10 @@ private fun PhaseBadge(phase: AimPhase) {
 }
 
 @Composable
-private fun ConfidenceIndicator(confidence: Float, contentDesc: String) {
+private fun ConfidenceIndicator(
+    confidence: Float,
+    contentDesc: String,
+) {
     val clamped = confidence.coerceIn(0f, 1f)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -393,7 +411,12 @@ private fun ConfidenceIndicator(confidence: Float, contentDesc: String) {
 }
 
 @Composable
-private fun AltScale(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp) {
+private fun AltScale(
+    absAltDeg: Float,
+    dirUp: Boolean,
+    height: Dp,
+    width: Dp,
+) {
     val frac = (absAltDeg / 90f).coerceIn(0f, 1f)
     val track = MaterialTheme.colors.onBackground.copy(alpha = 0.12f)
     val fill = if (dirUp) MaterialTheme.colors.secondary else MaterialTheme.colors.error
@@ -408,36 +431,49 @@ private fun AltScale(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp) {
         )
         Spacer(Modifier.height(4.dp))
         Box(
-            modifier = Modifier
-                .size(width = width, height = height)
-                .clip(RoundedCornerShape(6.dp))
-                .background(track),
+            modifier =
+                Modifier
+                    .size(width = width, height = height)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(track),
         ) {
             Box(
-                modifier = Modifier
-                    .align(if (dirUp) Alignment.TopCenter else Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .fillMaxHeight(frac)
-                    .background(fill),
+                modifier =
+                    Modifier
+                        .align(if (dirUp) Alignment.TopCenter else Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .fillMaxHeight(frac)
+                        .background(fill),
             )
         }
     }
 }
 
 @Composable
-private fun AltScaleWithA11y(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp, contentDesc: String) {
+private fun AltScaleWithA11y(
+    absAltDeg: Float,
+    dirUp: Boolean,
+    height: Dp,
+    width: Dp,
+    contentDesc: String,
+) {
     Box(Modifier.semantics { contentDescription = contentDesc }) {
         AltScale(absAltDeg, dirUp, height, width)
     }
 }
 
 @Composable
-private fun TurnArrow(right: Boolean, emphasized: Boolean, size: Dp) {
-    val color = if (emphasized) {
-        MaterialTheme.colors.primary
-    } else {
-        MaterialTheme.colors.onBackground.copy(alpha = 0.6f)
-    }
+private fun TurnArrow(
+    right: Boolean,
+    emphasized: Boolean,
+    size: Dp,
+) {
+    val color =
+        if (emphasized) {
+            MaterialTheme.colors.primary
+        } else {
+            MaterialTheme.colors.onBackground.copy(alpha = 0.6f)
+        }
     Canvas(modifier = Modifier.size(size)) {
         val w = this.size.width
         val h = this.size.height
@@ -472,13 +508,14 @@ private fun formatDeg(value: Float): String {
 private fun targetIndexFor(initial: AimTarget?): Int {
     if (initial == null) return 0
     return when (initial) {
-        is BodyTarget -> when {
-            initial.body == Body.SUN -> 0
-            initial.body == Body.MOON -> 1
-            initial.body == Body.JUPITER -> 2
-            initial.body == Body.SATURN -> 3
-            else -> 0
-        }
+        is BodyTarget ->
+            when {
+                initial.body == Body.SUN -> 0
+                initial.body == Body.MOON -> 1
+                initial.body == Body.JUPITER -> 2
+                initial.body == Body.SATURN -> 3
+                else -> 0
+            }
         is EquatorialTarget -> 4 // Polaris
         is AimTarget.StarTarget -> 4 // фолбэк: как экваториальная цель (Polaris slot)
     }

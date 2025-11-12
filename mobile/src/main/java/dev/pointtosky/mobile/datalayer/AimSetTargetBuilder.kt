@@ -13,15 +13,18 @@ import java.util.UUID
  * Сериализацию в bytes и отправку выполняйте через ваш существующий мост (например, MobileBridge).
  */
 object AimSetTargetBuilder {
-
     fun newCid(): String = UUID.randomUUID().toString()
 
     /** EQUATORIAL: RA/Dec в градусах (J2000). */
-    fun buildEquatorial(cid: String = newCid(), eq: Equatorial): AimSetTargetMessage {
-        val payload = buildJsonObject {
-            put("raDeg", eq.raDeg)
-            put("decDeg", eq.decDeg)
-        }
+    fun buildEquatorial(
+        cid: String = newCid(),
+        eq: Equatorial,
+    ): AimSetTargetMessage {
+        val payload =
+            buildJsonObject {
+                put("raDeg", eq.raDeg)
+                put("decDeg", eq.decDeg)
+            }
         return AimSetTargetMessage(
             cid = cid,
             kind = AimTargetKind.EQUATORIAL,
@@ -30,7 +33,10 @@ object AimSetTargetBuilder {
     }
 
     /** BODY: целимся на тело Солнечной системы. */
-    fun buildBody(cid: String = newCid(), body: Body): AimSetTargetMessage {
+    fun buildBody(
+        cid: String = newCid(),
+        body: Body,
+    ): AimSetTargetMessage {
         val payload = buildJsonObject { put("body", body.name) }
         return AimSetTargetMessage(
             cid = cid,
@@ -43,14 +49,19 @@ object AimSetTargetBuilder {
      * STAR: телефон присылает id + уже вычисленные координаты.
      * Если координаты неизвестны, передайте только id — часы попробуют офлайн‑резолв (если настроен).
      */
-    fun buildStar(cid: String = newCid(), starId: Int, eq: Equatorial?): AimSetTargetMessage {
-        val payload = buildJsonObject {
-            put("id", starId.toString())
-            eq?.let {
-                put("raDeg", it.raDeg)
-                put("decDeg", it.decDeg)
+    fun buildStar(
+        cid: String = newCid(),
+        starId: Int,
+        eq: Equatorial?,
+    ): AimSetTargetMessage {
+        val payload =
+            buildJsonObject {
+                put("id", starId.toString())
+                eq?.let {
+                    put("raDeg", it.raDeg)
+                    put("decDeg", it.decDeg)
+                }
             }
-        }
         return AimSetTargetMessage(
             cid = cid,
             kind = AimTargetKind.STAR,

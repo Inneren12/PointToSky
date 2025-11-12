@@ -91,11 +91,12 @@ fun LocationSetupScreen(
         },
     ) { paddingValues ->
         Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier =
+                Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
@@ -129,7 +130,10 @@ private fun PermissionSection(state: PermissionUiState) {
 }
 
 @Composable
-private fun ShareSection(shareState: PhoneLocationBridge.PhoneLocationBridgeState, onShareToggle: (Boolean) -> Unit) {
+private fun ShareSection(
+    shareState: PhoneLocationBridge.PhoneLocationBridgeState,
+    onShareToggle: (Boolean) -> Unit,
+) {
     val dateFormat = remember { DateFormat.getTimeInstance(DateFormat.SHORT) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -154,49 +158,58 @@ private fun ShareSection(shareState: PhoneLocationBridge.PhoneLocationBridgeStat
 
         shareState.lastRequest?.let { request ->
             val timeString = dateFormat.format(Date(request.timestampMs))
-            val ttlString = stringResource(
-                id = R.string.location_share_ttl_seconds,
-                (request.freshTtlMs / 1000L).coerceAtLeast(0L).toInt(),
-            )
+            val ttlString =
+                stringResource(
+                    id = R.string.location_share_ttl_seconds,
+                    (request.freshTtlMs / 1000L).coerceAtLeast(0L).toInt(),
+                )
             Text(
-                text = stringResource(
-                    id = R.string.location_share_last_request,
-                    timeString,
-                    ttlString,
-                ),
+                text =
+                    stringResource(
+                        id = R.string.location_share_last_request,
+                        timeString,
+                        ttlString,
+                    ),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
 
         shareState.lastResponse?.let { response ->
             val timeString = dateFormat.format(Date(response.timestampMs))
-            val message = when (response.status) {
-                PhoneLocationBridge.ResponseStatus.SUCCESS -> {
-                    val accuracyText = response.accuracyM?.let {
-                        stringResource(id = R.string.location_share_accuracy, it)
+            val message =
+                when (response.status) {
+                    PhoneLocationBridge.ResponseStatus.SUCCESS -> {
+                        val accuracyText =
+                            response.accuracyM?.let {
+                                stringResource(id = R.string.location_share_accuracy, it)
+                            }
+                        val info =
+                            listOfNotNull(response.provider, accuracyText)
+                                .joinToString(separator = " • ")
+                                .ifEmpty { response.provider.orEmpty() }
+                        stringResource(
+                            id = R.string.location_share_status_success,
+                            timeString,
+                            info.ifEmpty { "—" },
+                        )
                     }
-                    val info = listOfNotNull(response.provider, accuracyText)
-                        .joinToString(separator = " • ")
-                        .ifEmpty { response.provider.orEmpty() }
-                    stringResource(
-                        id = R.string.location_share_status_success,
-                        timeString,
-                        info.ifEmpty { "—" },
-                    )
+                    PhoneLocationBridge.ResponseStatus.SHARING_DISABLED ->
+                        stringResource(
+                            id = R.string.location_share_status_disabled,
+                        )
+                    PhoneLocationBridge.ResponseStatus.PERMISSION_DENIED ->
+                        stringResource(
+                            id = R.string.location_share_status_permission_denied,
+                        )
+                    PhoneLocationBridge.ResponseStatus.LOCATION_UNAVAILABLE ->
+                        stringResource(
+                            id = R.string.location_share_status_unavailable,
+                        )
+                    PhoneLocationBridge.ResponseStatus.SEND_FAILED ->
+                        stringResource(
+                            id = R.string.location_share_status_send_failed,
+                        )
                 }
-                PhoneLocationBridge.ResponseStatus.SHARING_DISABLED -> stringResource(
-                    id = R.string.location_share_status_disabled,
-                )
-                PhoneLocationBridge.ResponseStatus.PERMISSION_DENIED -> stringResource(
-                    id = R.string.location_share_status_permission_denied,
-                )
-                PhoneLocationBridge.ResponseStatus.LOCATION_UNAVAILABLE -> stringResource(
-                    id = R.string.location_share_status_unavailable,
-                )
-                PhoneLocationBridge.ResponseStatus.SEND_FAILED -> stringResource(
-                    id = R.string.location_share_status_send_failed,
-                )
-            }
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
@@ -206,7 +219,10 @@ private fun ShareSection(shareState: PhoneLocationBridge.PhoneLocationBridgeStat
 }
 
 @Composable
-private fun ManualSection(manualPoint: GeoPoint?, locationPrefs: LocationPrefs) {
+private fun ManualSection(
+    manualPoint: GeoPoint?,
+    locationPrefs: LocationPrefs,
+) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var manualEnabled by remember { mutableStateOf(manualPoint != null) }
@@ -269,10 +285,11 @@ private fun ManualSection(manualPoint: GeoPoint?, locationPrefs: LocationPrefs) 
                         Text(text = stringResource(id = latError))
                     }
                 },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Decimal,
-                    imeAction = ImeAction.Next,
-                ),
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Next,
+                    ),
             )
 
             OutlinedTextField(
@@ -287,10 +304,11 @@ private fun ManualSection(manualPoint: GeoPoint?, locationPrefs: LocationPrefs) 
                         Text(text = stringResource(id = lonError))
                     }
                 },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Decimal,
-                    imeAction = ImeAction.Done,
-                ),
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done,
+                    ),
             )
 
             Button(
@@ -339,39 +357,43 @@ private fun rememberLocationPermissionUiState(): PermissionUiState {
     var shouldOpenSettings by remember { mutableStateOf(false) }
     var hasRequested by remember { mutableStateOf(false) }
 
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        granted = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (!granted) {
-            val rationale = activity?.let {
-                ActivityCompat.shouldShowRequestPermissionRationale(
-                    it,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                )
-            } ?: false
-            shouldOpenSettings = !rationale
-        } else {
-            shouldOpenSettings = false
-        }
-    }
-
-    DisposableEffect(lifecycleOwner, context) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                val grantedNow = isLocationPermissionGranted(context)
-                granted = grantedNow
-                if (!grantedNow && hasRequested) {
-                    val rationale = activity?.let {
+    val launcher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions(),
+        ) { result ->
+            granted = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            if (!granted) {
+                val rationale =
+                    activity?.let {
                         ActivityCompat.shouldShowRequestPermissionRationale(
                             it,
                             Manifest.permission.ACCESS_COARSE_LOCATION,
                         )
                     } ?: false
-                    shouldOpenSettings = !rationale
-                }
+                shouldOpenSettings = !rationale
+            } else {
+                shouldOpenSettings = false
             }
         }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    val grantedNow = isLocationPermissionGranted(context)
+                    granted = grantedNow
+                    if (!grantedNow && hasRequested) {
+                        val rationale =
+                            activity?.let {
+                                ActivityCompat.shouldShowRequestPermissionRationale(
+                                    it,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                )
+                            } ?: false
+                        shouldOpenSettings = !rationale
+                    }
+                }
+            }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
@@ -415,21 +437,24 @@ private fun validateLongitude(input: String): CoordinateValidation {
 
 private fun Double.formatCoordinate(): String = String.format(Locale.US, "%.5f", this)
 
-private fun isLocationPermissionGranted(context: Context): Boolean = ContextCompat.checkSelfPermission(
-    context,
-    Manifest.permission.ACCESS_COARSE_LOCATION,
-) == android.content.pm.PackageManager.PERMISSION_GRANTED
+private fun isLocationPermissionGranted(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
 private fun openAppSettings(context: Context) {
-    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-        data = Uri.fromParts("package", context.packageName, null)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
+    val intent =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
     context.startActivity(intent)
 }
 
-private fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
+private fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }

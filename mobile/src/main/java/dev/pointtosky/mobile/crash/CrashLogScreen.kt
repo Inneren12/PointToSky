@@ -39,7 +39,10 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun CrashLogRoute(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun CrashLogRoute(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val application = remember(context) { context.applicationContext as Application }
     val viewModel: CrashLogViewModel = viewModel(factory = CrashLogViewModelFactory(application))
@@ -68,19 +71,22 @@ fun CrashLogScreen(
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val zoneId = remember { ZoneId.systemDefault() }
-    val formatter = remember {
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z", Locale.getDefault())
-    }
+    val formatter =
+        remember {
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z", Locale.getDefault())
+        }
     val lastCrash = state.lastCrash
-    val timestampText = remember(lastCrash) {
-        lastCrash?.timestamp?.atZone(zoneId)?.let { formatter.format(it) }
-    }
+    val timestampText =
+        remember(lastCrash) {
+            lastCrash?.timestamp?.atZone(zoneId)?.let { formatter.format(it) }
+        }
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(24.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
@@ -93,11 +99,12 @@ fun CrashLogScreen(
         )
         if (state.statusMessage != null || state.errorMessage != null) {
             val text = state.statusMessage ?: state.errorMessage.orEmpty()
-            val color = if (state.errorMessage != null) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.primary
-            }
+            val color =
+                if (state.errorMessage != null) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
             Text(
                 text = text,
                 color = color,
@@ -129,17 +136,19 @@ fun CrashLogScreen(
                 Text(text = stringResource(id = R.string.crash_logs_last_crash_time, it))
             }
             Text(
-                text = stringResource(
-                    id = R.string.crash_logs_last_crash_thread,
-                    lastCrash.threadName,
-                    lastCrash.threadId,
-                ),
+                text =
+                    stringResource(
+                        id = R.string.crash_logs_last_crash_thread,
+                        lastCrash.threadName,
+                        lastCrash.threadId,
+                    ),
             )
             Text(
-                text = stringResource(
-                    id = R.string.crash_logs_last_crash_type,
-                    lastCrash.exceptionType,
-                ),
+                text =
+                    stringResource(
+                        id = R.string.crash_logs_last_crash_type,
+                        lastCrash.exceptionType,
+                    ),
             )
             lastCrash.message?.let { message ->
                 if (message.isNotBlank()) {
@@ -195,11 +204,12 @@ fun CrashLogScreen(
 private fun CrashLogScreenPreview() {
     val entry = CrashLogEntry.from(Thread.currentThread(), RuntimeException("Boom"))
     CrashLogScreen(
-        state = CrashLogUiState(
-            lastCrash = entry,
-            hasLogs = true,
-            statusMessage = "ZIP saved",
-        ),
+        state =
+            CrashLogUiState(
+                lastCrash = entry,
+                hasLogs = true,
+                statusMessage = "ZIP saved",
+            ),
         onBack = {},
         onClear = {},
         onCreateZip = {},

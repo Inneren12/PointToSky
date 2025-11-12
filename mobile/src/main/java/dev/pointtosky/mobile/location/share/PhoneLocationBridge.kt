@@ -38,7 +38,6 @@ class PhoneLocationBridge(
     private val clock: () -> Long = System::currentTimeMillis,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : MessageClient.OnMessageReceivedListener {
-
     private val appContext = context.applicationContext
     private val messageClient: MessageClient = Wearable.getMessageClient(appContext)
     private val started = AtomicBoolean(false)
@@ -47,21 +46,22 @@ class PhoneLocationBridge(
     private val latestResponse = MutableStateFlow<ResponseSnapshot?>(null)
     private val shareEnabled = MutableStateFlow(false)
 
-    val state: StateFlow<PhoneLocationBridgeState> = combine(
-        shareEnabled,
-        latestRequest,
-        latestResponse,
-    ) { share, request, response ->
-        PhoneLocationBridgeState(
-            shareEnabled = share,
-            lastRequest = request,
-            lastResponse = response,
+    val state: StateFlow<PhoneLocationBridgeState> =
+        combine(
+            shareEnabled,
+            latestRequest,
+            latestResponse,
+        ) { share, request, response ->
+            PhoneLocationBridgeState(
+                shareEnabled = share,
+                lastRequest = request,
+                lastResponse = response,
+            )
+        }.stateIn(
+            scope,
+            SharingStarted.Eagerly,
+            PhoneLocationBridgeState.Empty,
         )
-    }.stateIn(
-        scope,
-        SharingStarted.Eagerly,
-        PhoneLocationBridgeState.Empty,
-    )
 
     init {
         scope.launch {
@@ -94,40 +94,47 @@ class PhoneLocationBridge(
         }
     }
 
-    private suspend fun handleLocationRequest(nodeId: String, payload: LocationRequestPayload) {
+    private suspend fun handleLocationRequest(
+        nodeId: String,
+        payload: LocationRequestPayload,
+    ) {
         val requestTime = clock()
-        latestRequest.value = RequestSnapshot(
-            timestampMs = requestTime,
-            freshTtlMs = payload.freshTtlMs,
-        )
+        latestRequest.value =
+            RequestSnapshot(
+                timestampMs = requestTime,
+                freshTtlMs = payload.freshTtlMs,
+            )
 
         if (!shareEnabled.value) {
-            latestResponse.value = ResponseSnapshot(
-                timestampMs = clock(),
-                status = ResponseStatus.SHARING_DISABLED,
-                provider = null,
-                accuracyM = null,
-            )
+            latestResponse.value =
+                ResponseSnapshot(
+                    timestampMs = clock(),
+                    status = ResponseStatus.SHARING_DISABLED,
+                    provider = null,
+                    accuracyM = null,
+                )
             return
         }
 
         if (!hasLocationPermission()) {
-            latestResponse.value = ResponseSnapshot(
-                timestampMs = clock(),
-                status = ResponseStatus.PERMISSION_DENIED,
-                provider = null,
-                accuracyM = null,
-            )
+            latestResponse.value =
+                ResponseSnapshot(
+                    timestampMs = clock(),
+                    status = ResponseStatus.PERMISSION_DENIED,
+                    provider = null,
+                    accuracyM = null,
+                )
             return
         }
 
         val locationResult = fetchBestLocation(payload.freshTtlMs)
         when (locationResult) {
             is FetchResult.Success -> {
-                val responsePayload = LocationResponsePayload(
-                    fix = locationResult.fix,
-                    rawProvider = locationResult.rawProvider,
-                )
+                val responsePayload =
+                    LocationResponsePayload(
+                        fix = locationResult.fix,
+                        rawProvider = locationResult.rawProvider,
+                    )
                 val responseBytes = responsePayload.toByteArray()
                 MobileLog.bridgeSend(
                     path = PATH_LOCATION_RESPONSE_ONE,
@@ -136,57 +143,62 @@ class PhoneLocationBridge(
                     attempt = 1,
                     payloadBytes = responseBytes.size,
                 )
-                val sendResult = runCatching {
-                    messageClient.sendMessage(
-                        nodeId,
-                        PATH_LOCATION_RESPONSE_ONE,
-                        responseBytes,
-                    ).await()
-                }
-                latestResponse.value = if (sendResult.isSuccess) {
-                    ResponseSnapshot(
-                        timestampMs = clock(),
-                        status = ResponseStatus.SUCCESS,
-                        provider = locationResult.rawProvider,
-                        accuracyM = locationResult.fix.accuracyM,
-                    )
-                } else {
-                    val error = sendResult.exceptionOrNull()
-                    MobileLog.bridgeError(
-                        path = PATH_LOCATION_RESPONSE_ONE,
-                        cid = null,
-                        nodeId = nodeId,
-                        error = error?.message,
-                    )
-                    ResponseSnapshot(
-                        timestampMs = clock(),
-                        status = ResponseStatus.SEND_FAILED,
-                        provider = locationResult.rawProvider,
-                        accuracyM = locationResult.fix.accuracyM,
-                    )
-                }
+                val sendResult =
+                    runCatching {
+                        messageClient.sendMessage(
+                            nodeId,
+                            PATH_LOCATION_RESPONSE_ONE,
+                            responseBytes,
+                        ).await()
+                    }
+                latestResponse.value =
+                    if (sendResult.isSuccess) {
+                        ResponseSnapshot(
+                            timestampMs = clock(),
+                            status = ResponseStatus.SUCCESS,
+                            provider = locationResult.rawProvider,
+                            accuracyM = locationResult.fix.accuracyM,
+                        )
+                    } else {
+                        val error = sendResult.exceptionOrNull()
+                        MobileLog.bridgeError(
+                            path = PATH_LOCATION_RESPONSE_ONE,
+                            cid = null,
+                            nodeId = nodeId,
+                            error = error?.message,
+                        )
+                        ResponseSnapshot(
+                            timestampMs = clock(),
+                            status = ResponseStatus.SEND_FAILED,
+                            provider = locationResult.rawProvider,
+                            accuracyM = locationResult.fix.accuracyM,
+                        )
+                    }
             }
 
             FetchResult.NotAvailable -> {
-                latestResponse.value = ResponseSnapshot(
-                    timestampMs = clock(),
-                    status = ResponseStatus.LOCATION_UNAVAILABLE,
-                    provider = null,
-                    accuracyM = null,
-                )
+                latestResponse.value =
+                    ResponseSnapshot(
+                        timestampMs = clock(),
+                        status = ResponseStatus.LOCATION_UNAVAILABLE,
+                        provider = null,
+                        accuracyM = null,
+                    )
             }
         }
     }
 
     private fun hasLocationPermission(): Boolean {
-        val coarseGranted = ContextCompat.checkSelfPermission(
-            appContext,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
-        val fineGranted = ContextCompat.checkSelfPermission(
-            appContext,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted =
+            ContextCompat.checkSelfPermission(
+                appContext,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED
+        val fineGranted =
+            ContextCompat.checkSelfPermission(
+                appContext,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED
         return coarseGranted || fineGranted
     }
 
@@ -217,17 +229,19 @@ class PhoneLocationBridge(
         return FetchResult.NotAvailable
     }
 
-    private fun ProviderType.toRawProvider(): String = when (this) {
-        ProviderType.FUSED -> "FUSED"
-        ProviderType.NETWORK -> "NETWORK"
-        ProviderType.GPS -> "GPS"
-        ProviderType.MANUAL -> "MANUAL"
-        ProviderType.REMOTE_PHONE -> "REMOTE_PHONE"
-        ProviderType.UNKNOWN -> "UNKNOWN"
-    }
+    private fun ProviderType.toRawProvider(): String =
+        when (this) {
+            ProviderType.FUSED -> "FUSED"
+            ProviderType.NETWORK -> "NETWORK"
+            ProviderType.GPS -> "GPS"
+            ProviderType.MANUAL -> "MANUAL"
+            ProviderType.REMOTE_PHONE -> "REMOTE_PHONE"
+            ProviderType.UNKNOWN -> "UNKNOWN"
+        }
 
     private sealed class FetchResult {
         data class Success(val fix: LocationFix, val rawProvider: String) : FetchResult()
+
         data object NotAvailable : FetchResult()
     }
 
@@ -237,11 +251,12 @@ class PhoneLocationBridge(
         val lastResponse: ResponseSnapshot?,
     ) {
         companion object {
-            val Empty = PhoneLocationBridgeState(
-                shareEnabled = false,
-                lastRequest = null,
-                lastResponse = null,
-            )
+            val Empty =
+                PhoneLocationBridgeState(
+                    shareEnabled = false,
+                    lastRequest = null,
+                    lastResponse = null,
+                )
         }
     }
 
@@ -270,7 +285,8 @@ class PhoneLocationBridge(
     }
 }
 
-private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
-    addOnSuccessListener { result -> cont.resume(result) }
-    addOnFailureListener { error -> cont.resumeWithException(error) }
-}
+private suspend fun <T> Task<T>.await(): T =
+    suspendCancellableCoroutine { cont ->
+        addOnSuccessListener { result -> cont.resume(result) }
+        addOnFailureListener { error -> cont.resumeWithException(error) }
+    }

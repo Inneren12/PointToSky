@@ -14,28 +14,29 @@ class PhoneHeadingOverrideRepository(
     phoneHeadingBridge: PhoneHeadingBridge = PhoneHeadingBridge,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : OrientationRepository by delegate {
-
     private val headingFlow = phoneHeadingBridge.heading()
 
-    override val frames: Flow<OrientationFrame> = combine(
-        delegate.frames,
-        headingFlow,
-        delegate.zero,
-    ) { frame, heading, zero ->
-        val override = heading ?: return@combine frame
-        val adjustedAzimuth = normalizeDeg(override.azimuthDeg - zero.azimuthOffsetDeg)
-        frame.copy(
-            azimuthDeg = adjustedAzimuth,
-            accuracy = OrientationAccuracy.MEDIUM,
-        )
-    }
+    override val frames: Flow<OrientationFrame> =
+        combine(
+            delegate.frames,
+            headingFlow,
+            delegate.zero,
+        ) { frame, heading, zero ->
+            val override = heading ?: return@combine frame
+            val adjustedAzimuth = normalizeDeg(override.azimuthDeg - zero.azimuthOffsetDeg)
+            frame.copy(
+                azimuthDeg = adjustedAzimuth,
+                accuracy = OrientationAccuracy.MEDIUM,
+            )
+        }
 
-    override val activeSource = combine(
-        delegate.activeSource,
-        headingFlow,
-    ) { source, heading ->
-        if (heading != null) OrientationSource.PHONE else source
-    }.stateIn(scope, SharingStarted.Eagerly, delegate.activeSource.value)
+    override val activeSource =
+        combine(
+            delegate.activeSource,
+            headingFlow,
+        ) { source, heading ->
+            if (heading != null) OrientationSource.PHONE else source
+        }.stateIn(scope, SharingStarted.Eagerly, delegate.activeSource.value)
 
     override val source: OrientationSource
         get() = if (headingFlow.value != null) OrientationSource.PHONE else delegate.source

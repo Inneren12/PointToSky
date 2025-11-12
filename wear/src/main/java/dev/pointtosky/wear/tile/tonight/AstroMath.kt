@@ -12,7 +12,12 @@ import kotlin.math.sin
 object AstroMath {
     data class Horizontal(val azDeg: Double, val altDeg: Double)
 
-    fun raDecToAltAz(eq: Equatorial, instant: Instant, latDeg: Double, lonDeg: Double): Horizontal {
+    fun raDecToAltAz(
+        eq: Equatorial,
+        instant: Instant,
+        latDeg: Double,
+        lonDeg: Double,
+    ): Horizontal {
         val decRad = Math.toRadians(eq.decDeg.coerceIn(-90.0, 90.0))
         val latRad = Math.toRadians(latDeg.coerceIn(-90.0, 90.0))
         val lstDeg = lstDegrees(instant, lonDeg)
@@ -36,7 +41,10 @@ object AstroMath {
         return 1.0 / (cosZ + 0.50572 * (90.0 - z + 6.07995).pow(-1.6364))
     }
 
-    private fun lstDegrees(instant: Instant, lonDeg: Double): Double {
+    private fun lstDegrees(
+        instant: Instant,
+        lonDeg: Double,
+    ): Double {
         val jd = instantToJulianDay(instant)
         val t = (jd - 2451545.0) / 36525.0
         var gmst = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * t * t - t * t * t / 38710000.0

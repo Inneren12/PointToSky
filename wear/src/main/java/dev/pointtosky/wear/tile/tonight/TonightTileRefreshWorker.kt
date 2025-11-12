@@ -21,7 +21,6 @@ class TonightTileRefreshWorker(
     appContext: Context,
     params: WorkerParameters,
 ) : Worker(appContext, params) {
-
     override fun doWork(): Result {
         // NB: API ожидает Class<? extends TileService>, а не ComponentName
         TileService.getUpdater(applicationContext).requestUpdate(TonightTileService::class.java)
@@ -31,12 +30,16 @@ class TonightTileRefreshWorker(
     companion object {
         private const val UNIQUE_WORK = "tonight_tile_refresh"
 
-        fun schedule(context: Context, at: Instant) {
+        fun schedule(
+            context: Context,
+            at: Instant,
+        ) {
             val delayMs = (at.toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0L)
-            val req = OneTimeWorkRequestBuilder<TonightTileRefreshWorker>()
-                .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
-                .addTag(UNIQUE_WORK)
-                .build()
+            val req =
+                OneTimeWorkRequestBuilder<TonightTileRefreshWorker>()
+                    .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
+                    .addTag(UNIQUE_WORK)
+                    .build()
             LogBus.event(
                 name = "tile_request_update_scheduled",
                 payload = mapOf("atEpochMs" to at.toEpochMilli()),

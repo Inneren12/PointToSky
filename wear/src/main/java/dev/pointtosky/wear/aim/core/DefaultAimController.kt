@@ -52,16 +52,17 @@ class DefaultAimController(
     /** Диспетчер для вычислений/сбора потоков (инжектируется для тестов). */
     private val dispatcher: CoroutineDispatcher = AimDispatchers.computation,
 ) : AimController {
-    private val _state = MutableStateFlow(
-        AimState(
-            current = Horizontal(azDeg = 0.0, altDeg = 0.0),
-            target = Horizontal(azDeg = 0.0, altDeg = 0.0),
-            dAzDeg = 0.0,
-            dAltDeg = 0.0,
-            phase = AimPhase.SEARCHING,
-            confidence = 0f,
-        ),
-    )
+    private val _state =
+        MutableStateFlow(
+            AimState(
+                current = Horizontal(azDeg = 0.0, altDeg = 0.0),
+                target = Horizontal(azDeg = 0.0, altDeg = 0.0),
+                dAzDeg = 0.0,
+                dAltDeg = 0.0,
+                phase = AimPhase.SEARCHING,
+                confidence = 0f,
+            ),
+        )
     override val state: StateFlow<AimState> = _state
 
     private var scope: CoroutineScope? = null
@@ -79,6 +80,7 @@ class DefaultAimController(
 
     // окно для оценки confidence
     private data class AzSample(val ts: Long, val azDeg: Double)
+
     private val azWindow: ArrayDeque<AzSample> = ArrayDeque(CONFIDENCE_WINDOW_CAPACITY)
 
     override fun setTarget(target: AimTarget) {
@@ -88,14 +90,15 @@ class DefaultAimController(
         // aim_target_changed {target}
         when (target) {
             is AimTarget.StarTarget -> {
-                val payload = buildMap<String, Any?> {
-                    put("target", "STAR")
-                    put("id", target.starId)
-                    target.eq?.let {
-                        put("raDeg", it.raDeg)
-                        put("decDeg", it.decDeg)
+                val payload =
+                    buildMap<String, Any?> {
+                        put("target", "STAR")
+                        put("id", target.starId)
+                        target.eq?.let {
+                            put("raDeg", it.raDeg)
+                            put("decDeg", it.decDeg)
+                        }
                     }
-                }
                 LogBus.d(tag = "Aim", msg = "aim_target_changed", payload = payload)
             }
             is AimTarget.BodyTarget -> {
@@ -124,21 +127,22 @@ class DefaultAimController(
         // aim_start
         LogBus.d(tag = "Aim", msg = "aim_start", payload = emptyMap())
 
-        scope = CoroutineScope(dispatcher + SupervisorJob()).also { sc ->
-            // поток локации (редко)
-            sc.launch {
-                lastFix = location.getLastKnown()
-                // допускаем, что где-то ещё у тебя есть полноценная подписка на Fixes,
-                // здесь нам достаточно lastKnown, чтобы ядро работало.
-            }
-            // поток ориентации
-            sc.launch {
-                // ktlint: require newline after '->'
-                orientation.frames.collectLatest { frame ->
-                    tick(frame)
+        scope =
+            CoroutineScope(dispatcher + SupervisorJob()).also { sc ->
+                // поток локации (редко)
+                sc.launch {
+                    lastFix = location.getLastKnown()
+                    // допускаем, что где-то ещё у тебя есть полноценная подписка на Fixes,
+                    // здесь нам достаточно lastKnown, чтобы ядро работало.
+                }
+                // поток ориентации
+                sc.launch {
+                    // ktlint: require newline after '->'
+                    orientation.frames.collectLatest { frame ->
+                        tick(frame)
+                    }
                 }
             }
-        }
     }
 
     override fun stop() {
@@ -196,56 +200,70 @@ class DefaultAimController(
             // фиксируем новую фазу, чтобы не спамить событиями на каждом тике
             lastPhase = newPhase
 
-            _state.value = AimState(
-                current = current,
-                target = targetHor,
-                dAzDeg = dAz,
-                dAltDeg = dAlt,
-                phase = newPhase,
-                confidence = conf,
-            )
+            _state.value =
+                AimState(
+                    current = current,
+                    target = targetHor,
+                    dAzDeg = dAz,
+                    dAltDeg = dAlt,
+                    phase = newPhase,
+                    confidence = conf,
+                )
         } else {
             // Цель пока не посчитана — публикуем только текущий луч.
-            _state.value = _state.value.copy(
-                current = current,
-                phase = AimPhase.SEARCHING,
-                confidence = computeConfidence(),
-            )
+            _state.value =
+                _state.value.copy(
+                    current = current,
+                    phase = AimPhase.SEARCHING,
+                    confidence = computeConfidence(),
+                )
         }
     }
 
     // --- core helpers kept in class (логическая часть) ---
-    private fun toHorizontal(frame: OrientationFrame): Horizontal = Horizontal(
-        azDeg = wrapDeg0To360(frame.azimuthDeg.toDouble()),
-        altDeg = clamp(frame.pitchDeg.toDouble(), -90.0, 90.0),
-    )
+    private fun toHorizontal(frame: OrientationFrame): Horizontal =
+        Horizontal(
+            azDeg = wrapDeg0To360(frame.azimuthDeg.toDouble()),
+            altDeg = clamp(frame.pitchDeg.toDouble(), -90.0, 90.0),
+        )
 
-    private fun computeTargetHorizontal(now: Instant, fix: LocationFix?): Horizontal? {
+    private fun computeTargetHorizontal(
+        now: Instant,
+        fix: LocationFix?,
+    ): Horizontal? {
         val lat = fix?.point?.latDeg ?: 0.0
         val lon = fix?.point?.lonDeg ?: 0.0
         val lst = lstDeg(now, lon)
-        val eqOrNull: Equatorial? = when (val t = target) {
-            is AimTarget.EquatorialTarget -> t.eq
-            is AimTarget.BodyTarget -> ephem.compute(t.body, now).eq
-            is AimTarget.StarTarget -> t.eq ?: starResolver?.invoke(t.starId) ?: resolveStar(t.starId)
-        }
+        val eqOrNull: Equatorial? =
+            when (val t = target) {
+                is AimTarget.EquatorialTarget -> t.eq
+                is AimTarget.BodyTarget -> ephem.compute(t.body, now).eq
+                is AimTarget.StarTarget -> t.eq ?: starResolver?.invoke(t.starId) ?: resolveStar(t.starId)
+            }
         return eqOrNull?.let { raDecToAltAz(it, lst, lat) }
     }
 
-    private fun computePhase(nowMs: Long, inTolerance: Boolean): AimPhase {
+    private fun computePhase(
+        nowMs: Long,
+        inTolerance: Boolean,
+    ): AimPhase {
         if (!inTolerance) {
             inTolSinceMs = null
             return AimPhase.SEARCHING
         }
-        val start = inTolSinceMs ?: run {
-            inTolSinceMs = nowMs
-            return AimPhase.IN_TOLERANCE
-        }
+        val start =
+            inTolSinceMs ?: run {
+                inTolSinceMs = nowMs
+                return AimPhase.IN_TOLERANCE
+            }
         val dt = nowMs - start
         return if (dt >= holdMs) AimPhase.LOCKED else AimPhase.IN_TOLERANCE
     }
 
-    private fun addAzSample(tsMs: Long, azDeg: Double) {
+    private fun addAzSample(
+        tsMs: Long,
+        azDeg: Double,
+    ) {
         pruneOldSamples(tsMs)
         if (azWindow.size >= CONFIDENCE_WINDOW_CAPACITY) azWindow.removeFirst()
         azWindow.addLast(AzSample(tsMs, azDeg))
@@ -295,7 +313,11 @@ class DefaultAimController(
 }
 
 // ---- Angle/Time helpers (file‑private) ----
-private fun clamp(v: Double, mn: Double, mx: Double) = max(mn, min(mx, v))
+private fun clamp(
+    v: Double,
+    mn: Double,
+    mx: Double,
+) = max(mn, min(mx, v))
 
 private fun wrapDeg0To360(d: Double): Double {
     var x = d % 360.0
@@ -310,17 +332,22 @@ private fun normalizeAzimuthDelta(delta: Double): Double {
     return d
 }
 
-private fun julianDay(instant: Instant): Double = // JD from Unix time: JD = (ms/86400000) + 2440587.5
+private fun julianDay(instant: Instant): Double =
+    // JD from Unix time: JD = (ms/86400000) + 2440587.5
     instant.toEpochMilli() / 86_400_000.0 + 2440587.5
 
 private fun gmstDeg(jd: Double): Double {
     val t = (jd - 2451545.0) / 36525.0
-    val theta = 280.46061837 + 360.98564736629 * (jd - 2451545.0) +
-        0.000387933 * t * t - (t * t * t) / 38710000.0
+    val theta =
+        280.46061837 + 360.98564736629 * (jd - 2451545.0) +
+            0.000387933 * t * t - (t * t * t) / 38710000.0
     return wrapDeg0To360(theta)
 }
 
-private fun lstDeg(instant: Instant, lonDeg: Double): Double = wrapDeg0To360(gmstDeg(julianDay(instant)) + lonDeg)
+private fun lstDeg(
+    instant: Instant,
+    lonDeg: Double,
+): Double = wrapDeg0To360(gmstDeg(julianDay(instant)) + lonDeg)
 
 // Локальный провайдер дефолтного диспетчера с подавлением линта.
 private object AimDispatchers {

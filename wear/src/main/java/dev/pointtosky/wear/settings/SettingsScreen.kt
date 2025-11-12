@@ -9,10 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -26,7 +26,11 @@ import dev.pointtosky.wear.complication.ComplicationDebug
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsRoute(settings: AimIdentifySettingsDataStore, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun SettingsRoute(
+    settings: AimIdentifySettingsDataStore,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     SettingsScreen(
         state = rememberSettingsState(settings),
         settings = settings,
@@ -58,7 +62,12 @@ private fun rememberSettingsState(settings: AimIdentifySettingsDataStore): Setti
 }
 
 @Composable
-fun SettingsScreen(state: SettingsState, settings: AimIdentifySettingsDataStore, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    state: SettingsState,
+    settings: AimIdentifySettingsDataStore,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val listState = rememberScalingLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current

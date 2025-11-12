@@ -41,7 +41,10 @@ import androidx.core.content.ContextCompat
 import dev.pointtosky.mobile.R
 
 @Composable
-fun OnboardingScreen(onComplete: () -> Unit, modifier: Modifier = Modifier) {
+fun OnboardingScreen(
+    onComplete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val packageManager = context.packageManager
 
@@ -63,21 +66,24 @@ fun OnboardingScreen(onComplete: () -> Unit, modifier: Modifier = Modifier) {
         )
     }
 
-    val locationLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        locationGranted = granted
-    }
+    val locationLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            locationGranted = granted
+        }
 
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        cameraGranted = granted
-    }
+    val cameraLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            cameraGranted = granted
+        }
 
-    val cameraSupported = remember(packageManager) {
-        packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
-    }
+    val cameraSupported =
+        remember(packageManager) {
+            packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+        }
 
     LaunchedEffect(Unit) {
         locationGranted = ContextCompat.checkSelfPermission(
@@ -97,11 +103,12 @@ fun OnboardingScreen(onComplete: () -> Unit, modifier: Modifier = Modifier) {
         },
     ) { paddingValues ->
         Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier =
+                Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(

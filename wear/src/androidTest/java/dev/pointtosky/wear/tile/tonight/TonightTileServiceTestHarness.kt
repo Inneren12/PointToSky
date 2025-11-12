@@ -14,8 +14,10 @@ class TonightTileServiceTestHarness : TonightTileService() {
         // protected у TileService/ContextWrapper — вызываем из подкласса
         super.attachBaseContext(context)
     }
-    fun callOnTileRequest(req: RequestBuilders.TileRequest): com.google.common.util.concurrent.ListenableFuture<TileBuilders.Tile> =
-        super.onTileRequest(req)
+
+    fun callOnTileRequest(
+        req: RequestBuilders.TileRequest,
+    ): com.google.common.util.concurrent.ListenableFuture<TileBuilders.Tile> = super.onTileRequest(req)
 
     fun callOnResourcesRequest(
         req: RequestBuilders.ResourcesRequest,

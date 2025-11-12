@@ -28,7 +28,10 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun TimeDebugScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun TimeDebugScreen(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val timeSource = remember { SystemTimeSource() }
     val zoneRepo = remember(context.applicationContext) { ZoneRepo(context.applicationContext) }
@@ -41,7 +44,12 @@ fun TimeDebugScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TimeDebugContent(onBack: () -> Unit, timeSource: SystemTimeSource, zoneRepo: ZoneRepo, modifier: Modifier = Modifier) {
+private fun TimeDebugContent(
+    onBack: () -> Unit,
+    timeSource: SystemTimeSource,
+    zoneRepo: ZoneRepo,
+    modifier: Modifier = Modifier,
+) {
     val zoneId by zoneRepo.zoneFlow.collectAsState(initial = zoneRepo.current())
     val periodMs by timeSource.periodMsFlow.collectAsState()
     val tickMetrics by rememberTickMetrics(timeSource)
@@ -60,11 +68,12 @@ private fun TimeDebugContent(onBack: () -> Unit, timeSource: SystemTimeSource, z
     val frequencyText = tickMetrics.frequencyHz?.let { String.format(Locale.US, "%.3f Гц", it) } ?: "—"
     val currentPeriodText = String.format(Locale.US, "%d мс", periodMs)
 
-    val tileDebugText = tileDebugInfo?.let { info ->
-        val localInstant = info.generatedAt.atZone(zoneId).format(localFormatter)
-        val topTarget = info.topTargetTitle ?: stringResource(id = R.string.tile_debug_target_unknown)
-        stringResource(id = R.string.tile_debug_last_generation, localInstant, topTarget)
-    } ?: stringResource(id = R.string.tile_debug_last_generation_unknown)
+    val tileDebugText =
+        tileDebugInfo?.let { info ->
+            val localInstant = info.generatedAt.atZone(zoneId).format(localFormatter)
+            val topTarget = info.topTargetTitle ?: stringResource(id = R.string.tile_debug_target_unknown)
+            stringResource(id = R.string.tile_debug_last_generation, localInstant, topTarget)
+        } ?: stringResource(id = R.string.tile_debug_last_generation_unknown)
 
     ScalingLazyColumn(
         modifier = modifier,
@@ -119,11 +128,12 @@ private fun rememberTickMetrics(timeSource: SystemTimeSource): State<TickMetrics
             while (samples.size > SAMPLE_WINDOW_SIZE) {
                 samples.removeFirst()
             }
-            val avgPeriod = if (samples.size >= 2) {
-                (samples.last() - samples.first()).toDouble() / (samples.size - 1)
-            } else {
-                null
-            }
+            val avgPeriod =
+                if (samples.size >= 2) {
+                    (samples.last() - samples.first()).toDouble() / (samples.size - 1)
+                } else {
+                    null
+                }
             val frequency = avgPeriod?.takeIf { it > 0 }?.let { 1_000.0 / it }
             value = TickMetrics(instant, avgPeriod, frequency)
         }

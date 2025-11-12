@@ -34,8 +34,11 @@ interface MobileSettings {
     val state: Flow<MobileSettingsState>
 
     suspend fun setMirrorEnabled(enabled: Boolean)
+
     suspend fun setArEnabled(enabled: Boolean)
+
     suspend fun setLocationMode(mode: LocationMode)
+
     suspend fun setRedactPayloads(enabled: Boolean)
 
     companion object
@@ -44,40 +47,44 @@ interface MobileSettings {
 private class MobileSettingsDataStore(
     private val dataStore: DataStore<Preferences>,
 ) : MobileSettings {
+    override val mirrorEnabledFlow: Flow<Boolean> =
+        dataStore.data
+            .handleErrors()
+            .map { preferences -> preferences[MIRROR_ENABLED_KEY] ?: false }
 
-    override val mirrorEnabledFlow: Flow<Boolean> = dataStore.data
-        .handleErrors()
-        .map { preferences -> preferences[MIRROR_ENABLED_KEY] ?: false }
+    override val arEnabledFlow: Flow<Boolean> =
+        dataStore.data
+            .handleErrors()
+            .map { preferences -> preferences[AR_ENABLED_KEY] ?: false }
 
-    override val arEnabledFlow: Flow<Boolean> = dataStore.data
-        .handleErrors()
-        .map { preferences -> preferences[AR_ENABLED_KEY] ?: false }
+    override val locationModeFlow: Flow<LocationMode> =
+        dataStore.data
+            .handleErrors()
+            .map { preferences ->
+                val raw = preferences[LOCATION_MODE_KEY]
+                raw?.let { runCatching { LocationMode.valueOf(it.uppercase()) }.getOrNull() }
+                    ?: LocationMode.AUTO
+            }
 
-    override val locationModeFlow: Flow<LocationMode> = dataStore.data
-        .handleErrors()
-        .map { preferences ->
-            val raw = preferences[LOCATION_MODE_KEY]
-            raw?.let { runCatching { LocationMode.valueOf(it.uppercase()) }.getOrNull() }
-                ?: LocationMode.AUTO
+    override val redactPayloadsFlow: Flow<Boolean> =
+        dataStore.data
+            .handleErrors()
+            .map { preferences -> preferences[REDACT_PAYLOADS_KEY] ?: true }
+
+    override val state: Flow<MobileSettingsState> =
+        combine(
+            mirrorEnabledFlow,
+            arEnabledFlow,
+            locationModeFlow,
+            redactPayloadsFlow,
+        ) { mirror, ar, mode, redact ->
+            MobileSettingsState(
+                mirrorEnabled = mirror,
+                arEnabled = ar,
+                locationMode = mode,
+                redactPayloads = redact,
+            )
         }
-
-    override val redactPayloadsFlow: Flow<Boolean> = dataStore.data
-        .handleErrors()
-        .map { preferences -> preferences[REDACT_PAYLOADS_KEY] ?: true }
-
-    override val state: Flow<MobileSettingsState> = combine(
-        mirrorEnabledFlow,
-        arEnabledFlow,
-        locationModeFlow,
-        redactPayloadsFlow,
-    ) { mirror, ar, mode, redact ->
-        MobileSettingsState(
-            mirrorEnabled = mirror,
-            arEnabled = ar,
-            locationMode = mode,
-            redactPayloads = redact,
-        )
-    }
 
     override suspend fun setMirrorEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
@@ -103,13 +110,14 @@ private class MobileSettingsDataStore(
         }
     }
 
-    private fun Flow<Preferences>.handleErrors(): Flow<Preferences> = catch { error ->
-        if (error is IOException) {
-            emit(emptyPreferences())
-        } else {
-            throw error
+    private fun Flow<Preferences>.handleErrors(): Flow<Preferences> =
+        catch { error ->
+            if (error is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw error
+            }
         }
-    }
 
     companion object {
         private val MIRROR_ENABLED_KEY = booleanPreferencesKey("mirror.enabled")

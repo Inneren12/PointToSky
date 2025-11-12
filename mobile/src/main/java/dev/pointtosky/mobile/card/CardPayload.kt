@@ -40,32 +40,37 @@ internal data class CardBestWindowPayload(
 )
 
 internal fun CardObjectPayload.toEntry(fallbackId: String?): CardRepository.Entry {
-    val normalizedId = (id ?: fallbackId)?.takeIf { it.isNotBlank() }
-        ?: return CardRepository.Entry.Invalid("missing_id")
-    val typeEnum = CardObjectType.fromRaw(type)
-        ?: return CardRepository.Entry.Invalid("unknown_type")
+    val normalizedId =
+        (id ?: fallbackId)?.takeIf { it.isNotBlank() }
+            ?: return CardRepository.Entry.Invalid("missing_id")
+    val typeEnum =
+        CardObjectType.fromRaw(type)
+            ?: return CardRepository.Entry.Invalid("unknown_type")
     val equatorial = eq?.let { Equatorial(it.raDeg, it.decDeg) }
-    val horizontal = horizontal?.let { payload ->
-        val az = payload.azDeg
-        val alt = payload.altDeg
-        if (az != null && alt != null) Horizontal(az, alt) else null
-    }
-    val window = bestWindow?.let { payload ->
-        val start = payload.startEpochMs?.let { runCatching { Instant.ofEpochMilli(it) }.getOrNull() }
-        val end = payload.endEpochMs?.let { runCatching { Instant.ofEpochMilli(it) }.getOrNull() }
-        if (start != null || end != null) CardBestWindow(start, end) else null
-    }
-    val model = CardObjectModel(
-        id = normalizedId,
-        type = typeEnum,
-        name = name,
-        body = body,
-        constellation = constellation,
-        magnitude = magnitudeValue,
-        equatorial = equatorial,
-        horizontal = horizontal,
-        bestWindow = window,
-    )
+    val horizontal =
+        horizontal?.let { payload ->
+            val az = payload.azDeg
+            val alt = payload.altDeg
+            if (az != null && alt != null) Horizontal(az, alt) else null
+        }
+    val window =
+        bestWindow?.let { payload ->
+            val start = payload.startEpochMs?.let { runCatching { Instant.ofEpochMilli(it) }.getOrNull() }
+            val end = payload.endEpochMs?.let { runCatching { Instant.ofEpochMilli(it) }.getOrNull() }
+            if (start != null || end != null) CardBestWindow(start, end) else null
+        }
+    val model =
+        CardObjectModel(
+            id = normalizedId,
+            type = typeEnum,
+            name = name,
+            body = body,
+            constellation = constellation,
+            magnitude = magnitudeValue,
+            equatorial = equatorial,
+            horizontal = horizontal,
+            bestWindow = window,
+        )
     return CardRepository.Entry.Ready(model)
 }
 

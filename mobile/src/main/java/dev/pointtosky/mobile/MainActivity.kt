@@ -118,9 +118,10 @@ class MainActivity : ComponentActivity() {
             val coroutineScope = rememberCoroutineScope()
             val aimTargets = remember { DemoAimTargets.list() }
             val appContext = this@MainActivity.applicationContext
-            val dataLayerBridge: MobileBridge.Sender = remember {
-                MobileBridge.get(appContext)
-            }
+            val dataLayerBridge: MobileBridge.Sender =
+                remember {
+                    MobileBridge.get(appContext)
+                }
             LaunchedEffect(onboardingAccepted, destination) {
                 if (!onboardingAccepted && destination != MobileDestination.Onboarding) {
                     navigationState.value = MobileDestination.Onboarding
@@ -140,123 +141,128 @@ class MainActivity : ComponentActivity() {
                 coroutineScope.launch {
                     dataLayerBridge.send(PATH_APP_OPEN) { cid ->
                         val sanitizedTarget = if (settingsState.redactPayloads) null else target
-                        val message = AppOpenMessage(
-                            cid = cid,
-                            screen = screen,
-                            target = sanitizedTarget,
-                        )
+                        val message =
+                            AppOpenMessage(
+                                cid = cid,
+                                screen = screen,
+                                target = sanitizedTarget,
+                            )
                         JsonCodec.encode(message)
                     }
                 }
             }
             PointToSkyMobileApp(
                 destination = destination,
-                deps = MobileAppDeps(
-                    locationPrefs = locationPrefs,
-                    shareState = bridgeState,
-                    catalogRepository = catalogRepository,
-                    aimTargets = aimTargets,
-                    phoneCompassEnabled = phoneCompassEnabled,
-                    settingsState = settingsState,
-                    latestCardAvailable = (latestCardId != null),
-                ),
-                actions = MobileAppActions(
-                    onNavigate = { navigationState.value = it },
-                    onOpenLatestCard = openLatestCard,
-                    onOpenSearch = { navigationState.value = MobileDestination.Search },
-                    onOpenAr = {
-                        if (settingsState.arEnabled) {
+                deps =
+                    MobileAppDeps(
+                        locationPrefs = locationPrefs,
+                        shareState = bridgeState,
+                        catalogRepository = catalogRepository,
+                        aimTargets = aimTargets,
+                        phoneCompassEnabled = phoneCompassEnabled,
+                        settingsState = settingsState,
+                        latestCardAvailable = (latestCardId != null),
+                    ),
+                actions =
+                    MobileAppActions(
+                        onNavigate = { navigationState.value = it },
+                        onOpenLatestCard = openLatestCard,
+                        onOpenSearch = { navigationState.value = MobileDestination.Search },
+                        onOpenAr = {
+                            if (settingsState.arEnabled) {
+                                navigationState.value = MobileDestination.Ar
+                            } else {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.settings_ar_disabled_toast),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                            MobileLog.arOpen()
                             navigationState.value = MobileDestination.Ar
-                        } else {
-                            Toast.makeText(
-                                this@MainActivity,
-                                getString(R.string.settings_ar_disabled_toast),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                        MobileLog.arOpen()
-                        navigationState.value = MobileDestination.Ar
-                    },
-                    onShareToggle = { enabled ->
-                        coroutineScope.launch { phoneLocationBridge.setShareEnabled(enabled) }
-                    },
-                    onSendAimTarget = { target ->
-                        coroutineScope.launch {
-                            if (settingsState.redactPayloads) {
+                        },
+                        onShareToggle = { enabled ->
+                            coroutineScope.launch { phoneLocationBridge.setShareEnabled(enabled) }
+                        },
+                        onSendAimTarget = { target ->
+                            coroutineScope.launch {
+                                if (settingsState.redactPayloads) {
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.settings_redact_payloads_blocked),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                    return@launch
+                                }
+                                MobileLog.setTargetRequest(target.id)
+                                val startElapsed = SystemClock.elapsedRealtime()
+                                val ack =
+                                    dataLayerBridge.send(PATH_AIM_SET_TARGET) { cid ->
+                                        val message = target.buildMessage(cid)
+                                        JsonCodec.encode(message)
+                                    }
+                                val duration = SystemClock.elapsedRealtime() - startElapsed
+                                MobileLog.setTargetAck(ack?.ok == true, duration)
+                                val openTarget = target.buildMessage("app-open")
+                                sendAppOpen(
+                                    AppOpenScreen.AIM,
+                                    AppOpenAimTarget(
+                                        kind = openTarget.kind,
+                                        payload = openTarget.payload,
+                                    ),
+                                )
+                                val toastText =
+                                    when {
+                                        ack == null -> getString(R.string.aim_send_queued, target.label)
+                                        ack.ok -> getString(R.string.aim_send_success, target.label)
+                                        else -> {
+                                            val reason = ack.err ?: getString(R.string.aim_send_failed_no_reason)
+                                            getString(R.string.aim_send_failed, target.label, reason)
+                                        }
+                                    }
                                 withContext(Dispatchers.Main) {
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        getString(R.string.settings_redact_payloads_blocked),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                                return@launch
-                            }
-                            MobileLog.setTargetRequest(target.id)
-                            val startElapsed = SystemClock.elapsedRealtime()
-                            val ack = dataLayerBridge.send(PATH_AIM_SET_TARGET) { cid ->
-                                val message = target.buildMessage(cid)
-                                JsonCodec.encode(message)
-                            }
-                            val duration = SystemClock.elapsedRealtime() - startElapsed
-                            MobileLog.setTargetAck(ack?.ok == true, duration)
-                            val openTarget = target.buildMessage("app-open")
-                            sendAppOpen(
-                                AppOpenScreen.AIM,
-                                AppOpenAimTarget(
-                                    kind = openTarget.kind,
-                                    payload = openTarget.payload,
-                                ),
-                            )
-                            val toastText = when {
-                                ack == null -> getString(R.string.aim_send_queued, target.label)
-                                ack.ok -> getString(R.string.aim_send_success, target.label)
-                                else -> {
-                                    val reason = ack.err ?: getString(R.string.aim_send_failed_no_reason)
-                                    getString(R.string.aim_send_failed, target.label, reason)
+                                    Toast.makeText(this@MainActivity, toastText, Toast.LENGTH_SHORT).show()
                                 }
                             }
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@MainActivity, toastText, Toast.LENGTH_SHORT).show()
+                        },
+                        onOpenAimOnWatch = { sendAppOpen(AppOpenScreen.AIM, null) },
+                        onOpenIdentifyOnWatch = { sendAppOpen(AppOpenScreen.IDENTIFY, null) },
+                        onTogglePhoneCompass = {
+                            val desired = !phoneCompassEnabled
+                            val actual = phoneCompassBridge.setEnabled(desired)
+                            if (desired && !actual) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.phone_compass_not_available),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                             }
-                        }
-                    },
-                    onOpenAimOnWatch = { sendAppOpen(AppOpenScreen.AIM, null) },
-                    onOpenIdentifyOnWatch = { sendAppOpen(AppOpenScreen.IDENTIFY, null) },
-                    onTogglePhoneCompass = {
-                        val desired = !phoneCompassEnabled
-                        val actual = phoneCompassBridge.setEnabled(desired)
-                        if (desired && !actual) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                getString(R.string.phone_compass_not_available),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    },
-                    onShareCard = { shareText -> shareCard(shareText) },
-                    onOpenSettings = { navigationState.value = MobileDestination.Settings },
-                    onToggleMirror = { enabled ->
-                        coroutineScope.launch { mobileSettings.setMirrorEnabled(enabled) }
-                    },
-                    onToggleArSetting = { enabled ->
-                        coroutineScope.launch { mobileSettings.setArEnabled(enabled) }
-                    },
-                    onChangeLocationMode = { mode ->
-                        coroutineScope.launch { mobileSettings.setLocationMode(mode) }
-                    },
-                    onToggleRedactPayloads = { enabled ->
-                        coroutineScope.launch { mobileSettings.setRedactPayloads(enabled) }
-                    },
-                    onOpenPolicy = { navigationState.value = MobileDestination.Policy },
-                    onOpenMirrorPreview = { openMirrorPreview() },
-                    onCompleteOnboarding = {
-                        coroutineScope.launch { onboardingPrefs.setAccepted(true) }
-                    },
-                    onOpenPolicyDocument = { document ->
-                        navigationState.value = MobileDestination.PolicyDocument(document)
-                    },
-                ),
+                        },
+                        onShareCard = { shareText -> shareCard(shareText) },
+                        onOpenSettings = { navigationState.value = MobileDestination.Settings },
+                        onToggleMirror = { enabled ->
+                            coroutineScope.launch { mobileSettings.setMirrorEnabled(enabled) }
+                        },
+                        onToggleArSetting = { enabled ->
+                            coroutineScope.launch { mobileSettings.setArEnabled(enabled) }
+                        },
+                        onChangeLocationMode = { mode ->
+                            coroutineScope.launch { mobileSettings.setLocationMode(mode) }
+                        },
+                        onToggleRedactPayloads = { enabled ->
+                            coroutineScope.launch { mobileSettings.setRedactPayloads(enabled) }
+                        },
+                        onOpenPolicy = { navigationState.value = MobileDestination.Policy },
+                        onOpenMirrorPreview = { openMirrorPreview() },
+                        onCompleteOnboarding = {
+                            coroutineScope.launch { onboardingPrefs.setAccepted(true) }
+                        },
+                        onOpenPolicyDocument = { document ->
+                            navigationState.value = MobileDestination.PolicyDocument(document)
+                        },
+                    ),
             )
         }
     }
@@ -291,10 +297,11 @@ class MainActivity : ComponentActivity() {
             showNotEnoughDataToast()
             return
         }
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, text)
-        }
+        val intent =
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
         val chooser = Intent.createChooser(intent, getString(R.string.card_share_chooser_title))
         try {
             startActivity(chooser)
@@ -379,123 +386,147 @@ data class MobileHomeActions(
 )
 
 @Composable
-fun PointToSkyMobileApp(destination: MobileDestination, deps: MobileAppDeps, actions: MobileAppActions) {
+fun PointToSkyMobileApp(
+    destination: MobileDestination,
+    deps: MobileAppDeps,
+    actions: MobileAppActions,
+) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             when (val current = destination) {
-                MobileDestination.Onboarding -> OnboardingScreen(
-                    onComplete = actions.onCompleteOnboarding,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                MobileDestination.Onboarding ->
+                    OnboardingScreen(
+                        onComplete = actions.onCompleteOnboarding,
+                        modifier = Modifier.fillMaxSize(),
+                    )
 
-                MobileDestination.Home -> MobileHome(
-                    props = MobileHomeProps(
-                        aimTargets = deps.aimTargets,
-                        phoneCompassEnabled = deps.phoneCompassEnabled,
-                        cardAvailable = deps.latestCardAvailable,
-                        arEnabled = deps.settingsState.arEnabled,
-                        mirrorEnabled = deps.settingsState.mirrorEnabled,
-                    ),
-                    actions = MobileHomeActions(
-                        onOpenCard = actions.onOpenLatestCard,
-                        onSkyMap = { actions.onNavigate(MobileDestination.SkyMap) },
-                        onSearch = actions.onOpenSearch,
-                        onAr = actions.onOpenAr,
-                        onLocationSetup = { actions.onNavigate(MobileDestination.LocationSetup) },
-                        onTimeDebug = { actions.onNavigate(MobileDestination.TimeDebug) },
-                        onCatalogDebug = { actions.onNavigate(MobileDestination.CatalogDebug) },
-                        onCrashLogs = { actions.onNavigate(MobileDestination.CrashLogs) },
+                MobileDestination.Home ->
+                    MobileHome(
+                        props =
+                            MobileHomeProps(
+                                aimTargets = deps.aimTargets,
+                                phoneCompassEnabled = deps.phoneCompassEnabled,
+                                cardAvailable = deps.latestCardAvailable,
+                                arEnabled = deps.settingsState.arEnabled,
+                                mirrorEnabled = deps.settingsState.mirrorEnabled,
+                            ),
+                        actions =
+                            MobileHomeActions(
+                                onOpenCard = actions.onOpenLatestCard,
+                                onSkyMap = { actions.onNavigate(MobileDestination.SkyMap) },
+                                onSearch = actions.onOpenSearch,
+                                onAr = actions.onOpenAr,
+                                onLocationSetup = { actions.onNavigate(MobileDestination.LocationSetup) },
+                                onTimeDebug = { actions.onNavigate(MobileDestination.TimeDebug) },
+                                onCatalogDebug = { actions.onNavigate(MobileDestination.CatalogDebug) },
+                                onCrashLogs = { actions.onNavigate(MobileDestination.CrashLogs) },
+                                onSendAimTarget = actions.onSendAimTarget,
+                                onOpenAimOnWatch = actions.onOpenAimOnWatch,
+                                onOpenIdentifyOnWatch = actions.onOpenIdentifyOnWatch,
+                                onTogglePhoneCompass = actions.onTogglePhoneCompass,
+                                onOpenSettings = actions.onOpenSettings,
+                                onOpenMirrorPreview = actions.onOpenMirrorPreview,
+                            ),
+                    )
+
+                MobileDestination.LocationSetup ->
+                    LocationSetupScreen(
+                        locationPrefs = deps.locationPrefs,
+                        shareState = deps.shareState,
+                        onShareToggle = actions.onShareToggle,
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                    )
+
+                MobileDestination.TimeDebug ->
+                    TimeDebugScreen(
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                    )
+
+                MobileDestination.CatalogDebug ->
+                    CatalogDebugRoute(
+                        factory = CatalogDebugViewModelFactory(deps.catalogRepository),
+                        modifier = Modifier.fillMaxSize(),
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                    )
+
+                MobileDestination.CrashLogs ->
+                    CrashLogRoute(
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                    )
+
+                MobileDestination.Ar ->
+                    ArRoute(
+                        catalogRepository = deps.catalogRepository,
+                        locationPrefs = deps.locationPrefs,
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
                         onSendAimTarget = actions.onSendAimTarget,
-                        onOpenAimOnWatch = actions.onOpenAimOnWatch,
-                        onOpenIdentifyOnWatch = actions.onOpenIdentifyOnWatch,
-                        onTogglePhoneCompass = actions.onTogglePhoneCompass,
-                        onOpenSettings = actions.onOpenSettings,
-                        onOpenMirrorPreview = actions.onOpenMirrorPreview,
-                    ),
-                )
+                    )
 
-                MobileDestination.LocationSetup -> LocationSetupScreen(
-                    locationPrefs = deps.locationPrefs,
-                    shareState = deps.shareState,
-                    onShareToggle = actions.onShareToggle,
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                )
+                MobileDestination.SkyMap ->
+                    SkyMapRoute(
+                        catalogRepository = deps.catalogRepository,
+                        locationPrefs = deps.locationPrefs,
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                        onOpenCard = actions.onOpenLatestCard,
+                        modifier = Modifier.fillMaxSize(),
+                    )
 
-                MobileDestination.TimeDebug -> TimeDebugScreen(
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                )
+                MobileDestination.Search ->
+                    SearchRoute(
+                        catalogRepository = deps.catalogRepository,
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                        onOpenCard = { cardId -> actions.onNavigate(MobileDestination.Card(cardId)) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
 
-                MobileDestination.CatalogDebug -> CatalogDebugRoute(
-                    factory = CatalogDebugViewModelFactory(deps.catalogRepository),
-                    modifier = Modifier.fillMaxSize(),
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                )
+                MobileDestination.Settings ->
+                    SettingsScreen(
+                        state = deps.settingsState,
+                        onMirrorChanged = actions.onToggleMirror,
+                        onArChanged = actions.onToggleArSetting,
+                        onLocationModeChanged = actions.onChangeLocationMode,
+                        onRedactPayloadsChanged = actions.onToggleRedactPayloads,
+                        onOpenPolicy = actions.onOpenPolicy,
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                    )
 
-                MobileDestination.CrashLogs -> CrashLogRoute(
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                )
+                MobileDestination.Policy ->
+                    PolicyScreen(
+                        onOpenDocument = actions.onOpenPolicyDocument,
+                        onBack = { actions.onNavigate(MobileDestination.Settings) },
+                    )
 
-                MobileDestination.Ar -> ArRoute(
-                    catalogRepository = deps.catalogRepository,
-                    locationPrefs = deps.locationPrefs,
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                    onSendAimTarget = actions.onSendAimTarget,
-                )
+                is MobileDestination.PolicyDocument ->
+                    PolicyDocumentScreen(
+                        document = current.document,
+                        onBack = { actions.onNavigate(MobileDestination.Policy) },
+                    )
 
-                MobileDestination.SkyMap -> SkyMapRoute(
-                    catalogRepository = deps.catalogRepository,
-                    locationPrefs = deps.locationPrefs,
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                    onOpenCard = actions.onOpenLatestCard,
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                MobileDestination.Search -> SearchRoute(
-                    catalogRepository = deps.catalogRepository,
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                    onOpenCard = { cardId -> actions.onNavigate(MobileDestination.Card(cardId)) },
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                MobileDestination.Settings -> SettingsScreen(
-                    state = deps.settingsState,
-                    onMirrorChanged = actions.onToggleMirror,
-                    onArChanged = actions.onToggleArSetting,
-                    onLocationModeChanged = actions.onChangeLocationMode,
-                    onRedactPayloadsChanged = actions.onToggleRedactPayloads,
-                    onOpenPolicy = actions.onOpenPolicy,
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                )
-
-                MobileDestination.Policy -> PolicyScreen(
-                    onOpenDocument = actions.onOpenPolicyDocument,
-                    onBack = { actions.onNavigate(MobileDestination.Settings) },
-                )
-
-                is MobileDestination.PolicyDocument -> PolicyDocumentScreen(
-                    document = current.document,
-                    onBack = { actions.onNavigate(MobileDestination.Policy) },
-                )
-
-                is MobileDestination.Card -> CardRoute(
-                    cardId = current.cardId,
-                    locationPrefs = deps.locationPrefs,
-                    onBack = { actions.onNavigate(MobileDestination.Home) },
-                    onSendAimTarget = actions.onSendAimTarget,
-                    onShare = actions.onShareCard,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                is MobileDestination.Card ->
+                    CardRoute(
+                        cardId = current.cardId,
+                        locationPrefs = deps.locationPrefs,
+                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                        onSendAimTarget = actions.onSendAimTarget,
+                        onShare = actions.onShareCard,
+                        modifier = Modifier.fillMaxSize(),
+                    )
             }
         }
     }
 }
 
 @Composable
-fun MobileHome(props: MobileHomeProps, actions: MobileHomeActions, modifier: Modifier = Modifier) {
+fun MobileHome(
+    props: MobileHomeProps,
+    actions: MobileHomeActions,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -537,11 +568,12 @@ fun MobileHome(props: MobileHomeProps, actions: MobileHomeActions, modifier: Mod
             onClick = actions.onTogglePhoneCompass,
             modifier = Modifier.padding(top = 16.dp),
         ) {
-            val label = if (props.phoneCompassEnabled) {
-                stringResource(id = R.string.use_phone_compass_on)
-            } else {
-                stringResource(id = R.string.use_phone_compass_off)
-            }
+            val label =
+                if (props.phoneCompassEnabled) {
+                    stringResource(id = R.string.use_phone_compass_on)
+                } else {
+                    stringResource(id = R.string.use_phone_compass_off)
+                }
             Text(text = label)
         }
         Button(
@@ -604,15 +636,25 @@ fun MobileHome(props: MobileHomeProps, actions: MobileHomeActions, modifier: Mod
 
 sealed interface MobileDestination {
     object Onboarding : MobileDestination
+
     object Home : MobileDestination
+
     object SkyMap : MobileDestination
+
     object Search : MobileDestination
+
     object LocationSetup : MobileDestination
+
     object TimeDebug : MobileDestination
+
     object CatalogDebug : MobileDestination
+
     object CrashLogs : MobileDestination
+
     object Ar : MobileDestination
+
     object Settings : MobileDestination
+
     object Policy : MobileDestination
 
     data class PolicyDocument(val document: dev.pointtosky.mobile.policy.PolicyDocument) : MobileDestination
@@ -624,8 +666,11 @@ private class PreviewLocationPrefs : LocationPrefs {
     override val manualPointFlow: Flow<GeoPoint?> = flowOf(null)
     override val usePhoneFallbackFlow: Flow<Boolean> = flowOf(false)
     override val shareLocationWithWatchFlow: Flow<Boolean> = flowOf(false)
+
     override suspend fun setManual(point: GeoPoint?) = Unit
+
     override suspend fun setUsePhoneFallback(usePhoneFallback: Boolean) = Unit
+
     override suspend fun setShareLocationWithWatch(share: Boolean) = Unit
 }
 
@@ -635,35 +680,37 @@ fun MobileHomePreview() {
     val context = LocalContext.current
     PointToSkyMobileApp(
         destination = MobileDestination.Home,
-        deps = MobileAppDeps(
-            locationPrefs = PreviewLocationPrefs(),
-            shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
-            catalogRepository = CatalogRepository.create(context),
-            aimTargets = emptyList(),
-            phoneCompassEnabled = false,
-            settingsState = MobileSettingsState(),
-            latestCardAvailable = true,
-        ),
-        actions = MobileAppActions(
-            onNavigate = { _ -> },
-            onOpenLatestCard = {},
-            onOpenSearch = {},
-            onOpenAr = {},
-            onShareToggle = { _ -> },
-            onSendAimTarget = { _ -> },
-            onOpenAimOnWatch = {},
-            onOpenIdentifyOnWatch = {},
-            onTogglePhoneCompass = {},
-            onShareCard = { _ -> },
-            onOpenSettings = {},
-            onToggleMirror = { _ -> },
-            onToggleArSetting = { _ -> },
-            onChangeLocationMode = { _ -> },
-            onToggleRedactPayloads = { _ -> },
-            onOpenPolicy = {},
-            onOpenMirrorPreview = {},
-            onCompleteOnboarding = {},
-            onOpenPolicyDocument = { _ -> },
-        ),
+        deps =
+            MobileAppDeps(
+                locationPrefs = PreviewLocationPrefs(),
+                shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
+                catalogRepository = CatalogRepository.create(context),
+                aimTargets = emptyList(),
+                phoneCompassEnabled = false,
+                settingsState = MobileSettingsState(),
+                latestCardAvailable = true,
+            ),
+        actions =
+            MobileAppActions(
+                onNavigate = { _ -> },
+                onOpenLatestCard = {},
+                onOpenSearch = {},
+                onOpenAr = {},
+                onShareToggle = { _ -> },
+                onSendAimTarget = { _ -> },
+                onOpenAimOnWatch = {},
+                onOpenIdentifyOnWatch = {},
+                onTogglePhoneCompass = {},
+                onShareCard = { _ -> },
+                onOpenSettings = {},
+                onToggleMirror = { _ -> },
+                onToggleArSetting = { _ -> },
+                onChangeLocationMode = { _ -> },
+                onToggleRedactPayloads = { _ -> },
+                onOpenPolicy = {},
+                onOpenMirrorPreview = {},
+                onCompleteOnboarding = {},
+                onOpenPolicyDocument = { _ -> },
+            ),
     )
 }

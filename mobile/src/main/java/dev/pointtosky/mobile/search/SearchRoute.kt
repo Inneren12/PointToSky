@@ -12,7 +12,12 @@ import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.mobile.card.CardRepository
 
 @Composable
-fun SearchRoute(catalogRepository: CatalogRepository, onBack: () -> Unit, onOpenCard: (String) -> Unit, modifier: Modifier = Modifier) {
+fun SearchRoute(
+    catalogRepository: CatalogRepository,
+    onBack: () -> Unit,
+    onOpenCard: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val factory = rememberSearchViewModelFactory(context, catalogRepository)
     val viewModel: SearchViewModel = viewModel(factory = factory)

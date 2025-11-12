@@ -17,39 +17,43 @@ import java.nio.ByteOrder
 fun offlineStarResolver(context: Context): (Int) -> Equatorial? {
     val app = context.applicationContext
     val assets = app.assets
-    val candidatePaths = listOf(
-        "catalog/stars_V1.bin",
-        "stars_V1.bin",
-        "catalog stars_V1.bin",
-    )
+    val candidatePaths =
+        listOf(
+            "catalog/stars_V1.bin",
+            "stars_V1.bin",
+            "catalog stars_V1.bin",
+        )
 
     var chosenPath: String? = null
     var bytes: ByteArray? = null
     for (p in candidatePaths) {
-        val ok = runCatching {
-            assets.open(p).use { stream -> bytes = stream.readBytes() }
-            true
-        }.getOrDefault(false)
+        val ok =
+            runCatching {
+                assets.open(p).use { stream -> bytes = stream.readBytes() }
+                true
+            }.getOrDefault(false)
         if (ok) {
             chosenPath = p
             break
         }
     }
 
-    val index: Map<Int, Equatorial> = try {
-        val data = bytes ?: ByteArray(0)
-        if (data.isEmpty()) emptyMap() else parseStarIndex(data)
-    } catch (_: Throwable) {
-        emptyMap()
-    }
+    val index: Map<Int, Equatorial> =
+        try {
+            val data = bytes ?: ByteArray(0)
+            if (data.isEmpty()) emptyMap() else parseStarIndex(data)
+        } catch (_: Throwable) {
+            emptyMap()
+        }
 
     // мини‑метрика — видим подхватился ли индекс и какой объём
-    val meta = buildMap<String, Any?> {
-        put("ok", index.isNotEmpty())
-        put("size", bytes?.size ?: 0)
-        put("count", index.size)
-        put("path", chosenPath.orEmpty())
-    }
+    val meta =
+        buildMap<String, Any?> {
+            put("ok", index.isNotEmpty())
+            put("size", bytes?.size ?: 0)
+            put("count", index.size)
+            put("path", chosenPath.orEmpty())
+        }
     LogBus.event("offline_star_index", meta)
 
     return { id -> index[id] }
@@ -62,7 +66,10 @@ private fun parseStarIndex(data: ByteArray): Map<Int, Equatorial> {
     return parseFixedStride(data)
 }
 
-private fun parseCounted(data: ByteArray, doubles: Boolean): Map<Int, Equatorial>? {
+private fun parseCounted(
+    data: ByteArray,
+    doubles: Boolean,
+): Map<Int, Equatorial>? {
     val bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
     val count = bb.int
     val recSize = if (doubles) 4 + 8 + 8 else 4 + 4 + 4

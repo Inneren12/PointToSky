@@ -7,27 +7,29 @@ import dev.pointtosky.wear.tile.tonight.TonightTarget
 import org.junit.Test
 
 class TonightTargetSelectorTest {
+    private val brightStar =
+        TonightTarget(
+            id = "STAR:VEGA",
+            title = "Vega",
+            subtitle = "mag 0.0",
+            icon = TonightIcon.STAR,
+        )
 
-    private val brightStar = TonightTarget(
-        id = "STAR:VEGA",
-        title = "Vega",
-        subtitle = "mag 0.0",
-        icon = TonightIcon.STAR,
-    )
+    private val dimStar =
+        TonightTarget(
+            id = "STAR:DIM",
+            title = "Dim Star",
+            subtitle = "mag 6.2",
+            icon = TonightIcon.STAR,
+        )
 
-    private val dimStar = TonightTarget(
-        id = "STAR:DIM",
-        title = "Dim Star",
-        subtitle = "mag 6.2",
-        icon = TonightIcon.STAR,
-    )
-
-    private val moon = TonightTarget(
-        id = "MOON",
-        title = "Moon",
-        subtitle = "mag -12.3",
-        icon = TonightIcon.MOON,
-    )
+    private val moon =
+        TonightTarget(
+            id = "MOON",
+            title = "Moon",
+            subtitle = "mag -12.3",
+            icon = TonightIcon.MOON,
+        )
 
     @Test
     fun preferPlanetsTrue_movesPlanetToTop() {

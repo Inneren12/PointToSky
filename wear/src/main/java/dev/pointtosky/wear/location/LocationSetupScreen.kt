@@ -61,7 +61,12 @@ import java.util.Locale
 import kotlin.math.abs
 
 @Composable
-fun LocationSetupScreen(locationPrefs: LocationPrefs, phoneFix: LocationFix?, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun LocationSetupScreen(
+    locationPrefs: LocationPrefs,
+    phoneFix: LocationFix?,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val permissionState = rememberPermissionUiState()
     val manualPoint by locationPrefs.manualPointFlow.collectAsState(initial = null)
@@ -175,10 +180,11 @@ fun LocationSetupScreen(locationPrefs: LocationPrefs, phoneFix: LocationFix?, on
                         onValueChange = { latitudeInput = it },
                         label = { Text(text = stringResource(id = R.string.location_setup_lat_label)) },
                         placeholder = { Text(text = stringResource(id = R.string.location_setup_lat_hint)) },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Next,
-                        ),
+                        keyboardOptions =
+                            KeyboardOptions(
+                                keyboardType = KeyboardType.Decimal,
+                                imeAction = ImeAction.Next,
+                            ),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     if (latError != null) {
@@ -199,10 +205,11 @@ fun LocationSetupScreen(locationPrefs: LocationPrefs, phoneFix: LocationFix?, on
                         onValueChange = { longitudeInput = it },
                         label = { Text(text = stringResource(id = R.string.location_setup_lon_label)) },
                         placeholder = { Text(text = stringResource(id = R.string.location_setup_lon_hint)) },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Done,
-                        ),
+                        keyboardOptions =
+                            KeyboardOptions(
+                                keyboardType = KeyboardType.Decimal,
+                                imeAction = ImeAction.Done,
+                            ),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     if (lonError != null) {
@@ -249,14 +256,16 @@ fun LocationSetupScreen(locationPrefs: LocationPrefs, phoneFix: LocationFix?, on
 
         item {
             val now = System.currentTimeMillis()
-            val isPhoneFresh = phoneFix != null &&
-                phoneFix.provider == ProviderType.REMOTE_PHONE &&
-                now - phoneFix.timeMs <= LocationConfig().freshTtlMs
-            val sourceLabel = if (isPhoneFresh) {
-                stringResource(id = R.string.location_phone_source_phone)
-            } else {
-                stringResource(id = R.string.location_phone_source_unknown)
-            }
+            val isPhoneFresh =
+                phoneFix != null &&
+                    phoneFix.provider == ProviderType.REMOTE_PHONE &&
+                    now - phoneFix.timeMs <= LocationConfig().freshTtlMs
+            val sourceLabel =
+                if (isPhoneFresh) {
+                    stringResource(id = R.string.location_phone_source_phone)
+                } else {
+                    stringResource(id = R.string.location_phone_source_unknown)
+                }
             Text(
                 text = stringResource(id = R.string.location_phone_source_label, sourceLabel),
                 style = MaterialTheme.typography.body2,
@@ -295,39 +304,43 @@ private fun rememberPermissionUiState(): PermissionUiState {
     var shouldOpenSettings by remember { mutableStateOf(false) }
     var hasRequested by remember { mutableStateOf(false) }
 
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        granted = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (!granted) {
-            val rationale = activity?.let {
-                ActivityCompat.shouldShowRequestPermissionRationale(
-                    it,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                )
-            } ?: false
-            shouldOpenSettings = !rationale
-        } else {
-            shouldOpenSettings = false
-        }
-    }
-
-    DisposableEffect(lifecycleOwner, context) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                val grantedNow = isLocationPermissionGranted(context)
-                granted = grantedNow
-                if (!grantedNow && hasRequested) {
-                    val rationale = activity?.let {
+    val launcher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions(),
+        ) { result ->
+            granted = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            if (!granted) {
+                val rationale =
+                    activity?.let {
                         ActivityCompat.shouldShowRequestPermissionRationale(
                             it,
                             Manifest.permission.ACCESS_COARSE_LOCATION,
                         )
                     } ?: false
-                    shouldOpenSettings = !rationale
-                }
+                shouldOpenSettings = !rationale
+            } else {
+                shouldOpenSettings = false
             }
         }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    val grantedNow = isLocationPermissionGranted(context)
+                    granted = grantedNow
+                    if (!grantedNow && hasRequested) {
+                        val rationale =
+                            activity?.let {
+                                ActivityCompat.shouldShowRequestPermissionRationale(
+                                    it,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                )
+                            } ?: false
+                        shouldOpenSettings = !rationale
+                    }
+                }
+            }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
@@ -371,33 +384,39 @@ private fun validateLongitude(input: String): CoordinateValidation {
 
 private fun Double.formatCoordinate(): String = String.format(Locale.US, "%.5f", this)
 
-private fun isLocationPermissionGranted(context: Context): Boolean = ContextCompat.checkSelfPermission(
-    context,
-    Manifest.permission.ACCESS_COARSE_LOCATION,
-) == android.content.pm.PackageManager.PERMISSION_GRANTED
+private fun isLocationPermissionGranted(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
 private fun openAppSettings(context: Context) {
-    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-        data = Uri.fromParts("package", context.packageName, null)
-    }
+    val intent =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+        }
     val activity = context.findActivity()
     if (activity != null) {
         activity.startActivity(intent)
     } else {
         // безопасный запуск без NEW_TASK/CLEAR_TOP
         val stack = TaskStackBuilder.create(context).addNextIntentWithParentStack(intent)
-        val pi = stack.getPendingIntent(
-            0,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val pi =
+            stack.getPendingIntent(
+                0,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
         try {
             pi?.send()
-        } catch (_: PendingIntent.CanceledException) { /* no-op */ }
+        } catch (_: PendingIntent.CanceledException) {
+            // no-op
+        }
     }
 }
 
-private fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
+private fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }

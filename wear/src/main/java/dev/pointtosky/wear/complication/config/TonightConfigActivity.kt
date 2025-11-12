@@ -29,7 +29,6 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class TonightConfigActivity : ComponentActivity() {
-
     private val prefsStore by lazy { ComplicationPrefsStore(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,9 +73,10 @@ private fun TonightConfigScreen(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.Start,
     ) {

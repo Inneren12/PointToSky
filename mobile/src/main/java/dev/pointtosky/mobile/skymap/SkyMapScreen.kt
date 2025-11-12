@@ -71,13 +71,15 @@ fun SkyMapRoute(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val viewModel: SkyMapViewModel = viewModel(
-        factory = SkyMapViewModelFactory(
-            catalogRepository = catalogRepository,
-            locationPrefs = locationPrefs,
-            context = context.applicationContext,
-        ),
-    )
+    val viewModel: SkyMapViewModel =
+        viewModel(
+            factory =
+                SkyMapViewModelFactory(
+                    catalogRepository = catalogRepository,
+                    locationPrefs = locationPrefs,
+                    context = context.applicationContext,
+                ),
+        )
     val state by viewModel.state.collectAsStateWithLifecycle()
     SkyMapScreen(
         state = state,
@@ -89,7 +91,12 @@ fun SkyMapRoute(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SkyMapScreen(state: SkyMapState, onBack: () -> Unit, onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
+private fun SkyMapScreen(
+    state: SkyMapState,
+    onBack: () -> Unit,
+    onOpenCard: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colorScheme = MaterialTheme.colorScheme
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -105,48 +112,59 @@ private fun SkyMapScreen(state: SkyMapState, onBack: () -> Unit, onOpenCard: () 
         },
     ) { padding ->
         when (state) {
-            SkyMapState.Loading -> Box(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
+            SkyMapState.Loading ->
+                Box(
+                    modifier =
+                        Modifier
+                            .padding(padding)
+                            .fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
 
-            is SkyMapState.Ready -> SkyMapContent(
-                state = state,
-                onOpenCard = onOpenCard,
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()
-                    .background(colorScheme.surface),
-            )
+            is SkyMapState.Ready ->
+                SkyMapContent(
+                    state = state,
+                    onOpenCard = onOpenCard,
+                    modifier =
+                        Modifier
+                            .padding(padding)
+                            .fillMaxSize()
+                            .background(colorScheme.surface),
+                )
         }
     }
 }
 
 @Composable
-private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modifier: Modifier = Modifier) {
+private fun SkyMapContent(
+    state: SkyMapState.Ready,
+    onOpenCard: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var scale by rememberSaveable { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var selectedId by rememberSaveable { mutableStateOf<Int?>(null) }
 
-    val formatter = remember {
-        DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.getDefault())
-    }
-    val timeText = remember(state.instant) {
-        formatter.format(state.instant.atZone(ZoneId.systemDefault()))
-    }
-
-    val starPositions = remember(state.stars, canvasSize, scale, offset) {
-        state.stars.mapNotNull { star ->
-            val position = projectToCanvas(star.horizontal, canvasSize, scale, offset)
-            if (position != null) star to position else null
+    val formatter =
+        remember {
+            DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.getDefault())
         }
-    }
+    val timeText =
+        remember(state.instant) {
+            formatter.format(state.instant.atZone(ZoneId.systemDefault()))
+        }
+
+    val starPositions =
+        remember(state.stars, canvasSize, scale, offset) {
+            state.stars.mapNotNull { star ->
+                val position = projectToCanvas(star.horizontal, canvasSize, scale, offset)
+                if (position != null) star to position else null
+            }
+        }
     val tapRadiusPx = with(density) { 24.dp.toPx() }
 
     val backgroundColor = MaterialTheme.colorScheme.surfaceVariant
@@ -159,33 +177,35 @@ private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modi
 
     Box(modifier = modifier) {
         Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
-                .onSizeChanged { canvasSize = it }
-                .pointerInput(state.stars, scale, offset) {
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        val newScale = (scale * zoom).coerceIn(0.6f, 5f)
-                        val scaleChange = newScale / scale
-                        val newOffset = (offset + centroid) * scaleChange - centroid + pan
-                        scale = newScale
-                        offset = newOffset
-                    }
-                }
-                .pointerInput(starPositions, tapRadiusPx) {
-                    detectTapGestures { tap ->
-                        val nearest = starPositions.minByOrNull { (_, position) ->
-                            (position - tap).getDistanceSquared()
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .onSizeChanged { canvasSize = it }
+                    .pointerInput(state.stars, scale, offset) {
+                        detectTransformGestures { centroid, pan, zoom, _ ->
+                            val newScale = (scale * zoom).coerceIn(0.6f, 5f)
+                            val scaleChange = newScale / scale
+                            val newOffset = (offset + centroid) * scaleChange - centroid + pan
+                            scale = newScale
+                            offset = newOffset
                         }
-                        if (nearest != null) {
-                            val distance = (nearest.second - tap).getDistance()
-                            if (distance <= tapRadiusPx) {
-                                selectedId = nearest.first.id
-                                onOpenCard()
+                    }
+                    .pointerInput(starPositions, tapRadiusPx) {
+                        detectTapGestures { tap ->
+                            val nearest =
+                                starPositions.minByOrNull { (_, position) ->
+                                    (position - tap).getDistanceSquared()
+                                }
+                            if (nearest != null) {
+                                val distance = (nearest.second - tap).getDistance()
+                                if (distance <= tapRadiusPx) {
+                                    selectedId = nearest.first.id
+                                    onOpenCard()
+                                }
                             }
                         }
-                    }
-                },
+                    },
         ) {
             drawSkyBackground(scale, offset, backgroundColor)
             drawAltitudeGrid(scale, offset, gridColor)
@@ -194,9 +214,10 @@ private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modi
         }
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Box(
@@ -206,11 +227,12 @@ private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modi
                 Surface(tonalElevation = 2.dp) {
                     val latText = formatCoordinate(state.location.latDeg, isLat = true)
                     val lonText = formatCoordinate(state.location.lonDeg, isLat = false)
-                    val resolvedText = if (state.locationResolved) {
-                        stringResource(id = R.string.sky_map_location_manual)
-                    } else {
-                        stringResource(id = R.string.sky_map_location_default)
-                    }
+                    val resolvedText =
+                        if (state.locationResolved) {
+                            stringResource(id = R.string.sky_map_location_manual)
+                        } else {
+                            stringResource(id = R.string.sky_map_location_default)
+                        }
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(text = stringResource(id = R.string.sky_map_timestamp, timeText))
                         Spacer(modifier = Modifier.size(4.dp))
@@ -246,11 +268,12 @@ private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modi
                         )
                         Spacer(modifier = Modifier.size(8.dp))
                         Text(
-                            text = stringResource(
-                                id = R.string.sky_map_alt_az,
-                                String.format(Locale.US, "%.1f", star.horizontal.altDeg),
-                                String.format(Locale.US, "%.1f", star.horizontal.azDeg),
-                            ),
+                            text =
+                                stringResource(
+                                    id = R.string.sky_map_alt_az,
+                                    String.format(Locale.US, "%.1f", star.horizontal.altDeg),
+                                    String.format(Locale.US, "%.1f", star.horizontal.azDeg),
+                                ),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -260,7 +283,11 @@ private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modi
     }
 }
 
-private fun DrawScope.drawSkyBackground(scale: Float, offset: Offset, color: Color) {
+private fun DrawScope.drawSkyBackground(
+    scale: Float,
+    offset: Offset,
+    color: Color,
+) {
     val radius = min(size.width, size.height) / 2f
     val center = Offset(size.width / 2f, size.height / 2f) + offset
     drawCircle(
@@ -270,7 +297,11 @@ private fun DrawScope.drawSkyBackground(scale: Float, offset: Offset, color: Col
     )
 }
 
-private fun DrawScope.drawAltitudeGrid(scale: Float, offset: Offset, color: Color) {
+private fun DrawScope.drawAltitudeGrid(
+    scale: Float,
+    offset: Offset,
+    color: Color,
+) {
     val radius = min(size.width, size.height) / 2f * scale
     val center = Offset(size.width / 2f, size.height / 2f) + offset
     val altitudes = listOf(0.0, 30.0, 60.0, 75.0)
@@ -286,10 +317,11 @@ private fun DrawScope.drawAltitudeGrid(scale: Float, offset: Offset, color: Colo
     val azimuthStep = 45
     for (az in 0 until 360 step azimuthStep) {
         val theta = az * PI / 180.0
-        val direction = Offset(
-            x = (sin(theta) * radius).toFloat(),
-            y = (-cos(theta) * radius).toFloat(),
-        )
+        val direction =
+            Offset(
+                x = (sin(theta) * radius).toFloat(),
+                y = (-cos(theta) * radius).toFloat(),
+            )
         drawLine(
             color = color,
             start = center,
@@ -299,7 +331,12 @@ private fun DrawScope.drawAltitudeGrid(scale: Float, offset: Offset, color: Colo
     }
 }
 
-private fun DrawScope.drawConstellations(constellations: List<ConstellationProjection>, scale: Float, offset: Offset, color: Color) {
+private fun DrawScope.drawConstellations(
+    constellations: List<ConstellationProjection>,
+    scale: Float,
+    offset: Offset,
+    color: Color,
+) {
     val path = Path()
     val stroke = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
     constellations.forEach { constellation ->
@@ -353,7 +390,12 @@ private fun DrawScope.drawStars(
     }
 }
 
-private fun projectToCanvas(horizontal: Horizontal, size: IntSize, scale: Float, offset: Offset): Offset? {
+private fun projectToCanvas(
+    horizontal: Horizontal,
+    size: IntSize,
+    scale: Float,
+    offset: Offset,
+): Offset? {
     if (size.width == 0 || size.height == 0) return null
     val radius = min(size.width, size.height) / 2f
     val azRad = Math.toRadians(horizontal.azDeg)
@@ -364,12 +406,16 @@ private fun projectToCanvas(horizontal: Horizontal, size: IntSize, scale: Float,
     return center + Offset(x, y)
 }
 
-private fun formatCoordinate(value: Double, isLat: Boolean): String {
-    val hemi = if (isLat) {
-        if (value >= 0) "N" else "S"
-    } else {
-        if (value >= 0) "E" else "W"
-    }
+private fun formatCoordinate(
+    value: Double,
+    isLat: Boolean,
+): String {
+    val hemi =
+        if (isLat) {
+            if (value >= 0) "N" else "S"
+        } else {
+            if (value >= 0) "E" else "W"
+        }
     val absValue = abs(value)
     return String.format(Locale.US, "%.2f° %s", absValue, hemi)
 }

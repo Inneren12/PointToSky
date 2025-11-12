@@ -51,9 +51,10 @@ fun CardRoute(
     onShare: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val factory = remember(cardId, locationPrefs) {
-        CardViewModelFactory(cardId = cardId, repository = CardRepository, locationPrefs = locationPrefs)
-    }
+    val factory =
+        remember(cardId, locationPrefs) {
+            CardViewModelFactory(cardId = cardId, repository = CardRepository, locationPrefs = locationPrefs)
+        }
     val viewModel: CardViewModel = viewModel(factory = factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
     CardScreen(
@@ -88,36 +89,42 @@ fun CardScreen(
         modifier = modifier.fillMaxSize(),
     ) { padding ->
         when (state) {
-            CardUiState.Loading -> Box(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
+            CardUiState.Loading ->
+                Box(
+                    modifier =
+                        Modifier
+                            .padding(padding)
+                            .fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
 
-            is CardUiState.Error -> Box(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(id = R.string.card_error_not_enough_data),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyLarge,
+            is CardUiState.Error ->
+                Box(
+                    modifier =
+                        Modifier
+                            .padding(padding)
+                            .fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.card_error_not_enough_data),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+
+            is CardUiState.Ready ->
+                CardContent(
+                    state = state,
+                    onSendAimTarget = onSendAimTarget,
+                    onShare = onShare,
+                    modifier =
+                        Modifier
+                            .padding(padding)
+                            .fillMaxSize(),
                 )
-            }
-
-            is CardUiState.Ready -> CardContent(
-                state = state,
-                onSendAimTarget = onSendAimTarget,
-                onShare = onShare,
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-            )
         }
     }
 }
@@ -131,9 +138,10 @@ private fun CardContent(
 ) {
     val scrollState = rememberScrollState()
     Column(
-        modifier = modifier
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-            .verticalScroll(scrollState),
+        modifier =
+            modifier
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -195,7 +203,10 @@ private fun CardContent(
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
+private fun DetailRow(
+    label: String,
+    value: String,
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(text = label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
         Text(text = value, style = MaterialTheme.typography.bodyLarge)
@@ -218,7 +229,11 @@ private fun formatEquatorial(eq: Equatorial?): String {
     return "$ra / $dec"
 }
 
-private fun formatDegree(value: Double, includeDegreeSymbol: Boolean = true, signed: Boolean = false): String {
+private fun formatDegree(
+    value: Double,
+    includeDegreeSymbol: Boolean = true,
+    signed: Boolean = false,
+): String {
     val locale = Locale.getDefault()
     val pattern = if (signed) "%+.1f" else "%.1f"
     val text = String.format(locale, pattern, value)
@@ -226,8 +241,9 @@ private fun formatDegree(value: Double, includeDegreeSymbol: Boolean = true, sig
 }
 
 private fun formatWindow(window: CardBestWindow): String? {
-    val formatter = DateTimeFormatter.ofPattern("dd MMM HH:mm", Locale.getDefault())
-        .withZone(ZoneId.systemDefault())
+    val formatter =
+        DateTimeFormatter.ofPattern("dd MMM HH:mm", Locale.getDefault())
+            .withZone(ZoneId.systemDefault())
     val start = window.start?.let { formatter.format(it) }
     val end = window.end?.let { formatter.format(it) }
     return when {
@@ -239,13 +255,17 @@ private fun formatWindow(window: CardBestWindow): String? {
 }
 
 @Composable
-private fun typeLabel(type: CardObjectType, body: String?): String {
-    val base = when (type) {
-        CardObjectType.STAR -> stringResource(id = R.string.card_type_star)
-        CardObjectType.PLANET -> stringResource(id = R.string.card_type_planet)
-        CardObjectType.MOON -> stringResource(id = R.string.card_type_moon)
-        CardObjectType.CONST -> stringResource(id = R.string.card_type_constellation)
-    }
+private fun typeLabel(
+    type: CardObjectType,
+    body: String?,
+): String {
+    val base =
+        when (type) {
+            CardObjectType.STAR -> stringResource(id = R.string.card_type_star)
+            CardObjectType.PLANET -> stringResource(id = R.string.card_type_planet)
+            CardObjectType.MOON -> stringResource(id = R.string.card_type_moon)
+            CardObjectType.CONST -> stringResource(id = R.string.card_type_constellation)
+        }
     return when (type) {
         CardObjectType.PLANET, CardObjectType.MOON -> {
             val suffix = body?.takeIf { it.isNotBlank() } ?: return base

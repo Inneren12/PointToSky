@@ -25,13 +25,15 @@ fun SensorsCalibrateScreen(
     onResetZero: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val accuracyText = accuracy?.let { stringResource(id = orientationAccuracyStringRes(it)) }
-        ?: stringResource(id = R.string.value_not_available)
+    val accuracyText =
+        accuracy?.let { stringResource(id = orientationAccuracyStringRes(it)) }
+            ?: stringResource(id = R.string.value_not_available)
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 24.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
@@ -40,8 +42,9 @@ fun SensorsCalibrateScreen(
             style = MaterialTheme.typography.title3,
         )
         Text(
-            text = azimuthDeg?.let { stringResource(R.string.current_azimuth_label, it) }
-                ?: stringResource(R.string.current_azimuth_unknown_label),
+            text =
+                azimuthDeg?.let { stringResource(R.string.current_azimuth_label, it) }
+                    ?: stringResource(R.string.current_azimuth_unknown_label),
             style = MaterialTheme.typography.body2,
         )
         Text(

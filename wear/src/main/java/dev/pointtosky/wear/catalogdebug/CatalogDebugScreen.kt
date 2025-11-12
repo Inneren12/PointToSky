@@ -40,7 +40,11 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun CatalogDebugRoute(factory: CatalogDebugViewModelFactory, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun CatalogDebugRoute(
+    factory: CatalogDebugViewModelFactory,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val viewModel: CatalogDebugViewModel = viewModel(factory = factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
     val listState = rememberScalingLazyListState()
@@ -74,9 +78,10 @@ fun CatalogDebugScreen(
     val starInfo = buildStarInfo(state)
     val constellationInfo = buildConstellationInfo(state)
     ScalingLazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         state = listState,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -170,10 +175,11 @@ fun CatalogDebugScreen(
                     state.lastProbeTimestamp?.let { timestamp ->
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = stringResource(
-                                id = R.string.catalog_debug_probe_timestamp,
-                                formatTimestamp(timestamp),
-                            ),
+                            text =
+                                stringResource(
+                                    id = R.string.catalog_debug_probe_timestamp,
+                                    formatTimestamp(timestamp),
+                                ),
                             style = MaterialTheme.typography.caption2,
                         )
                     }
@@ -251,8 +257,9 @@ private fun formatProbeResult(result: ProbeResultUi): String {
 
 private fun formatTimestamp(timestampMs: Long): String {
     val instant = Instant.ofEpochMilli(timestampMs)
-    val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
-        .withLocale(Locale.getDefault())
-        .withZone(ZoneId.systemDefault())
+    val formatter =
+        DateTimeFormatter.ofPattern("HH:mm:ss")
+            .withLocale(Locale.getDefault())
+            .withZone(ZoneId.systemDefault())
     return formatter.format(instant)
 }

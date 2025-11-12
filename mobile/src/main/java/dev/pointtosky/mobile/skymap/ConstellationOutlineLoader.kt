@@ -43,34 +43,37 @@ internal class ConstellationOutlineLoader(
         val computedCrc = CRC32().apply { update(payload) }.value.toInt()
         require(computedCrc == storedCrc) { "CRC mismatch" }
 
-        val directories = List(constellationCount) {
-            val codeBytes = ByteArray(4)
-            buffer.get(codeBytes)
-            val code = codeBytes
-                .takeWhile { byte -> byte != 0.toByte() }
-                .toByteArray()
-                .toString(Charsets.US_ASCII)
-                .trim()
-            val polyStart = buffer.int
-            val polyCountEntry = buffer.int
-            // Skip the directory AABB, outlines don't need the bounding boxes
-            buffer.float
-            buffer.float
-            buffer.float
-            buffer.float
-            DirectoryEntry(code, polyStart, polyCountEntry)
-        }
+        val directories =
+            List(constellationCount) {
+                val codeBytes = ByteArray(4)
+                buffer.get(codeBytes)
+                val code =
+                    codeBytes
+                        .takeWhile { byte -> byte != 0.toByte() }
+                        .toByteArray()
+                        .toString(Charsets.US_ASCII)
+                        .trim()
+                val polyStart = buffer.int
+                val polyCountEntry = buffer.int
+                // Skip the directory AABB, outlines don't need the bounding boxes
+                buffer.float
+                buffer.float
+                buffer.float
+                buffer.float
+                DirectoryEntry(code, polyStart, polyCountEntry)
+            }
 
-        val polygons = List(polygonCount) {
-            val vertexStart = buffer.int
-            val vertexCountEntry = buffer.int
-            // Skip per-polygon AABB values (8 bytes RA + 8 bytes Dec)
-            buffer.float
-            buffer.float
-            buffer.float
-            buffer.float
-            PolygonEntry(vertexStart, vertexCountEntry)
-        }
+        val polygons =
+            List(polygonCount) {
+                val vertexStart = buffer.int
+                val vertexCountEntry = buffer.int
+                // Skip per-polygon AABB values (8 bytes RA + 8 bytes Dec)
+                buffer.float
+                buffer.float
+                buffer.float
+                buffer.float
+                PolygonEntry(vertexStart, vertexCountEntry)
+            }
 
         val vertices = FloatArray(vertexCount * 2)
         for (i in 0 until vertexCount) {

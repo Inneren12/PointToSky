@@ -28,7 +28,10 @@ import androidx.wear.compose.material.ToggleChip
 import dev.pointtosky.wear.R
 
 @Composable
-fun WearOnboardingScreen(onComplete: () -> Unit, modifier: Modifier = Modifier) {
+fun WearOnboardingScreen(
+    onComplete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     var acknowledged by remember { mutableStateOf(false) }
     var locationGranted by remember {
@@ -40,11 +43,12 @@ fun WearOnboardingScreen(onComplete: () -> Unit, modifier: Modifier = Modifier) 
         )
     }
 
-    val locationLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        locationGranted = granted
-    }
+    val locationLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            locationGranted = granted
+        }
 
     LaunchedEffect(Unit) {
         locationGranted = ContextCompat.checkSelfPermission(

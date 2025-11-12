@@ -22,16 +22,20 @@ internal object CardDeepLinkLauncher {
         return Uri.parse("$CARD_SCHEME://$CARD_HOST$CARD_PATH?id=$encodedId")
     }
 
-    fun launch(context: Context, id: String) {
+    fun launch(
+        context: Context,
+        id: String,
+    ) {
         val override = overrideLauncher
         if (override != null) {
             override(context, id)
             return
         }
         val uri = buildUri(id)
-        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
+        val intent =
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
         context.startActivity(intent)
     }
 }

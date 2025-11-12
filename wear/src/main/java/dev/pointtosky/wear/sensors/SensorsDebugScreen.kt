@@ -75,22 +75,25 @@ fun SensorsDebugScreen(
         }
         item {
             Text(
-                text = frame?.azimuthDeg?.let { stringResource(R.string.current_azimuth_label, it) }
-                    ?: stringResource(R.string.current_azimuth_unknown_label),
+                text =
+                    frame?.azimuthDeg?.let { stringResource(R.string.current_azimuth_label, it) }
+                        ?: stringResource(R.string.current_azimuth_unknown_label),
                 style = MaterialTheme.typography.body2,
             )
         }
         item {
             Text(
-                text = frame?.pitchDeg?.let { stringResource(R.string.current_pitch_label, it) }
-                    ?: stringResource(R.string.value_not_available),
+                text =
+                    frame?.pitchDeg?.let { stringResource(R.string.current_pitch_label, it) }
+                        ?: stringResource(R.string.value_not_available),
                 style = MaterialTheme.typography.body2,
             )
         }
         item {
             Text(
-                text = frame?.rollDeg?.let { stringResource(R.string.current_roll_label, it) }
-                    ?: stringResource(R.string.value_not_available),
+                text =
+                    frame?.rollDeg?.let { stringResource(R.string.current_roll_label, it) }
+                        ?: stringResource(R.string.value_not_available),
                 style = MaterialTheme.typography.body2,
             )
         }
@@ -114,20 +117,22 @@ fun SensorsDebugScreen(
                 }
             } else {
                 Text(
-                    text = stringResource(
-                        id = R.string.current_accuracy_label,
-                        stringResource(id = R.string.value_not_available),
-                    ),
+                    text =
+                        stringResource(
+                            id = R.string.current_accuracy_label,
+                            stringResource(id = R.string.value_not_available),
+                        ),
                     style = MaterialTheme.typography.body2,
                 )
             }
         }
         item {
-            val sourceText = when (source) {
-                OrientationSource.ROTATION_VECTOR -> stringResource(id = R.string.source_rotation_vector)
-                OrientationSource.ACCEL_MAG -> stringResource(id = R.string.source_accel_mag)
-                OrientationSource.PHONE -> stringResource(id = R.string.source_phone)
-            }
+            val sourceText =
+                when (source) {
+                    OrientationSource.ROTATION_VECTOR -> stringResource(id = R.string.source_rotation_vector)
+                    OrientationSource.ACCEL_MAG -> stringResource(id = R.string.source_accel_mag)
+                    OrientationSource.PHONE -> stringResource(id = R.string.source_phone)
+                }
             Text(
                 text = stringResource(id = R.string.current_source_label, sourceText),
                 style = MaterialTheme.typography.body2,
@@ -135,11 +140,12 @@ fun SensorsDebugScreen(
         }
         item {
             Text(
-                text = stringResource(
-                    id = R.string.writer_stats_label,
-                    writerStats.queuedEvents,
-                    writerStats.droppedEvents,
-                ),
+                text =
+                    stringResource(
+                        id = R.string.writer_stats_label,
+                        writerStats.queuedEvents,
+                        writerStats.droppedEvents,
+                    ),
                 style = MaterialTheme.typography.body2,
             )
         }
@@ -157,11 +163,12 @@ fun SensorsDebugScreen(
             )
         }
         items(ScreenRotation.entries) { rotation ->
-            val colors = if (rotation == screenRotation) {
-                ChipDefaults.primaryChipColors()
-            } else {
-                ChipDefaults.secondaryChipColors()
-            }
+            val colors =
+                if (rotation == screenRotation) {
+                    ChipDefaults.primaryChipColors()
+                } else {
+                    ChipDefaults.secondaryChipColors()
+                }
             Chip(
                 onClick = { onScreenRotationSelected(rotation) },
                 label = {
@@ -181,20 +188,22 @@ fun SensorsDebugScreen(
             )
         }
         items(FrameTraceMode.entries) { mode ->
-            val colors = if (mode == frameTraceMode) {
-                ChipDefaults.primaryChipColors()
-            } else {
-                ChipDefaults.secondaryChipColors()
-            }
+            val colors =
+                if (mode == frameTraceMode) {
+                    ChipDefaults.primaryChipColors()
+                } else {
+                    ChipDefaults.secondaryChipColors()
+                }
             Chip(
                 onClick = { onFrameTraceModeSelected(mode) },
                 label = {
                     Text(
-                        text = when (mode) {
-                            FrameTraceMode.OFF -> stringResource(id = R.string.frame_trace_off)
-                            FrameTraceMode.SUMMARY_1HZ -> stringResource(id = R.string.frame_trace_summary)
-                            FrameTraceMode.FULL_15HZ -> stringResource(id = R.string.frame_trace_full)
-                        },
+                        text =
+                            when (mode) {
+                                FrameTraceMode.OFF -> stringResource(id = R.string.frame_trace_off)
+                                FrameTraceMode.SUMMARY_1HZ -> stringResource(id = R.string.frame_trace_summary)
+                                FrameTraceMode.FULL_15HZ -> stringResource(id = R.string.frame_trace_full)
+                            },
                         style = MaterialTheme.typography.body2,
                     )
                 },
@@ -212,39 +221,49 @@ fun SensorsDebugScreen(
 }
 
 @Composable
-private fun SensorStatusRow(isSensorActive: Boolean, fps: Float?, accuracy: OrientationAccuracy?) {
-    val statusText = if (isSensorActive) {
-        stringResource(id = R.string.sensor_status_active)
-    } else {
-        stringResource(id = R.string.sensor_status_inactive)
-    }
-    val icon = if (isSensorActive) {
-        Icons.Rounded.Sensors
-    } else {
-        Icons.Rounded.SensorsOff
-    }
-    val contentDescription = if (isSensorActive) {
-        stringResource(id = R.string.sensor_status_icon_active)
-    } else {
-        stringResource(id = R.string.sensor_status_icon_inactive)
-    }
-    val fpsText = fps?.let { value -> stringResource(id = R.string.current_fps_label, value) }
-        ?: stringResource(id = R.string.value_not_available)
-    val accuracyLabel = accuracy?.let { level ->
-        stringResource(id = orientationAccuracyStringRes(level))
-    } ?: stringResource(id = R.string.value_not_available)
+private fun SensorStatusRow(
+    isSensorActive: Boolean,
+    fps: Float?,
+    accuracy: OrientationAccuracy?,
+) {
+    val statusText =
+        if (isSensorActive) {
+            stringResource(id = R.string.sensor_status_active)
+        } else {
+            stringResource(id = R.string.sensor_status_inactive)
+        }
+    val icon =
+        if (isSensorActive) {
+            Icons.Rounded.Sensors
+        } else {
+            Icons.Rounded.SensorsOff
+        }
+    val contentDescription =
+        if (isSensorActive) {
+            stringResource(id = R.string.sensor_status_icon_active)
+        } else {
+            stringResource(id = R.string.sensor_status_icon_inactive)
+        }
+    val fpsText =
+        fps?.let { value -> stringResource(id = R.string.current_fps_label, value) }
+            ?: stringResource(id = R.string.value_not_available)
+    val accuracyLabel =
+        accuracy?.let { level ->
+            stringResource(id = orientationAccuracyStringRes(level))
+        } ?: stringResource(id = R.string.value_not_available)
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (isSensorActive) {
-                MaterialTheme.colors.primary
-            } else {
-                MaterialTheme.colors.onSurface.copy(
-                    alpha = 0.6f,
-                )
-            },
+            tint =
+                if (isSensorActive) {
+                    MaterialTheme.colors.primary
+                } else {
+                    MaterialTheme.colors.onSurface.copy(
+                        alpha = 0.6f,
+                    )
+                },
         )
         Spacer(modifier = Modifier.width(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -262,31 +281,37 @@ private fun SensorStatusRow(isSensorActive: Boolean, fps: Float?, accuracy: Orie
 }
 
 @Composable
-private fun AccuracyIndicator(accuracy: OrientationAccuracy, modifier: Modifier = Modifier) {
+private fun AccuracyIndicator(
+    accuracy: OrientationAccuracy,
+    modifier: Modifier = Modifier,
+) {
     val label = stringResource(id = orientationAccuracyStringRes(accuracy))
     val (background, content) = accuracyColors(accuracy)
     Text(
         text = label,
         style = MaterialTheme.typography.caption2,
         color = content,
-        modifier = modifier
-            .clip(MaterialTheme.shapes.small)
-            .background(background)
-            .padding(horizontal = 12.dp, vertical = 4.dp),
+        modifier =
+            modifier
+                .clip(MaterialTheme.shapes.small)
+                .background(background)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
     )
 }
 
 @Composable
 private fun accuracyColors(accuracy: OrientationAccuracy): Pair<Color, Color> {
-    val background = when (accuracy) {
-        OrientationAccuracy.HIGH -> colorResource(id = R.color.accuracy_high)
-        OrientationAccuracy.MEDIUM -> colorResource(id = R.color.accuracy_medium)
-        OrientationAccuracy.LOW -> colorResource(id = R.color.accuracy_low)
-        OrientationAccuracy.UNRELIABLE -> colorResource(id = R.color.accuracy_unreliable)
-    }
-    val content = when (accuracy) {
-        OrientationAccuracy.HIGH, OrientationAccuracy.UNRELIABLE -> Color.White
-        OrientationAccuracy.MEDIUM, OrientationAccuracy.LOW -> Color.Black
-    }
+    val background =
+        when (accuracy) {
+            OrientationAccuracy.HIGH -> colorResource(id = R.color.accuracy_high)
+            OrientationAccuracy.MEDIUM -> colorResource(id = R.color.accuracy_medium)
+            OrientationAccuracy.LOW -> colorResource(id = R.color.accuracy_low)
+            OrientationAccuracy.UNRELIABLE -> colorResource(id = R.color.accuracy_unreliable)
+        }
+    val content =
+        when (accuracy) {
+            OrientationAccuracy.HIGH, OrientationAccuracy.UNRELIABLE -> Color.White
+            OrientationAccuracy.MEDIUM, OrientationAccuracy.LOW -> Color.Black
+        }
     return background to content
 }

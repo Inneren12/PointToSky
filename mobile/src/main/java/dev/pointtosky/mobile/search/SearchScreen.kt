@@ -58,16 +58,18 @@ fun SearchScreen(
         modifier = modifier,
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
         ) {
             TextField(
                 value = state.query,
                 onValueChange = onQueryChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                 placeholder = { Text(text = stringResource(id = R.string.search_hint)) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(),
@@ -90,9 +92,10 @@ fun SearchScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = stringResource(
-                                id = R.string.search_empty,
-                            ),
+                            text =
+                                stringResource(
+                                    id = R.string.search_empty,
+                                ),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -120,7 +123,11 @@ fun SearchScreen(
 }
 
 @Composable
-private fun SearchResultRow(result: SearchViewModel.SearchResult, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun SearchResultRow(
+    result: SearchViewModel.SearchResult,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     ListItem(
         headlineContent = {
             Text(
@@ -130,28 +137,31 @@ private fun SearchResultRow(result: SearchViewModel.SearchResult, onClick: () ->
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        supportingContent = result.subtitle?.let { subtitle ->
-            {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        trailingContent = result.trailing?.let { trailing ->
-            {
-                Text(
-                    text = trailing,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        supportingContent =
+            result.subtitle?.let { subtitle ->
+                {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+        trailingContent =
+            result.trailing?.let { trailing ->
+                {
+                    Text(
+                        text = trailing,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
     )
 }

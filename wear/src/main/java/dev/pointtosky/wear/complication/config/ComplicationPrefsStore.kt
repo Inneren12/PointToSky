@@ -17,20 +17,21 @@ private object ComplicationKeys {
 }
 
 class ComplicationPrefsStore(private val context: Context) {
+    val aimFlow =
+        context.complicationPrefsDataStore.data.map { prefs ->
+            AimPrefs(
+                showDelta = prefs[ComplicationKeys.AIM_SHOW_DELTA] ?: true,
+                showPhase = prefs[ComplicationKeys.AIM_SHOW_PHASE] ?: true,
+            )
+        }
 
-    val aimFlow = context.complicationPrefsDataStore.data.map { prefs ->
-        AimPrefs(
-            showDelta = prefs[ComplicationKeys.AIM_SHOW_DELTA] ?: true,
-            showPhase = prefs[ComplicationKeys.AIM_SHOW_PHASE] ?: true,
-        )
-    }
-
-    val tonightFlow = context.complicationPrefsDataStore.data.map { prefs ->
-        TonightPrefs(
-            magLimit = prefs[ComplicationKeys.TONIGHT_MAG_LIMIT] ?: 5.5f,
-            preferPlanets = prefs[ComplicationKeys.TONIGHT_PREFER_PLANETS] ?: true,
-        )
-    }
+    val tonightFlow =
+        context.complicationPrefsDataStore.data.map { prefs ->
+            TonightPrefs(
+                magLimit = prefs[ComplicationKeys.TONIGHT_MAG_LIMIT] ?: 5.5f,
+                preferPlanets = prefs[ComplicationKeys.TONIGHT_PREFER_PLANETS] ?: true,
+            )
+        }
 
     suspend fun saveAim(prefs: AimPrefs) {
         context.complicationPrefsDataStore.edit { storage ->

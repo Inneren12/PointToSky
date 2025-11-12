@@ -29,7 +29,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import dev.pointtosky.mobile.R
 import java.util.Locale
 
-enum class PolicyDocument(@StringRes val titleRes: Int, private val baseName: String) {
+enum class PolicyDocument(
+    @StringRes val titleRes: Int,
+    private val baseName: String,
+) {
     PrivacyPolicy(R.string.policy_document_privacy_title, "policy/privacy_policy"),
     Disclaimer(R.string.policy_document_disclaimer_title, "policy/disclaimer"),
     ;
@@ -45,7 +48,11 @@ enum class PolicyDocument(@StringRes val titleRes: Int, private val baseName: St
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PolicyScreen(onOpenDocument: (PolicyDocument) -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun PolicyScreen(
+    onOpenDocument: (PolicyDocument) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -60,10 +67,11 @@ fun PolicyScreen(onOpenDocument: (PolicyDocument) -> Unit, onBack: () -> Unit, m
         },
     ) { paddingValues ->
         Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier =
+                Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
@@ -100,17 +108,22 @@ fun PolicyScreen(onOpenDocument: (PolicyDocument) -> Unit, onBack: () -> Unit, m
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PolicyDocumentScreen(document: PolicyDocument, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun PolicyDocumentScreen(
+    document: PolicyDocument,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
-    val locale = remember {
-        val configuration = context.resources.configuration
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            configuration.locales[0]
-        } else {
-            @Suppress("DEPRECATION")
-            configuration.locale
+    val locale =
+        remember {
+            val configuration = context.resources.configuration
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                configuration.locales[0]
+            } else {
+                @Suppress("DEPRECATION")
+                configuration.locale
+            }
         }
-    }
     val assetPath = remember(document, locale) { document.assetPath(locale) }
 
     Scaffold(
@@ -127,9 +140,10 @@ fun PolicyDocumentScreen(document: PolicyDocument, onBack: () -> Unit, modifier:
         },
     ) { paddingValues ->
         Surface(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize(),
+            modifier =
+                Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize(),
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),

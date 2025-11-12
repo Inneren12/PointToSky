@@ -45,7 +45,11 @@ object MobileBridge {
             fun connectedNodes(): List<Node>
 
             @Throws(Exception::class)
-            fun sendMessage(nodeId: String, path: String, payload: ByteArray)
+            fun sendMessage(
+                nodeId: String,
+                path: String,
+                payload: ByteArray,
+            )
         }
 
         private val wearTransport by lazy { WearTransport(context) }
@@ -55,16 +59,21 @@ object MobileBridge {
         /**
          * Отправляем всем подключённым нодам. Возвращаем примитивный Ack (без настоящего подтверждения).
          */
-        fun send(path: String, build: (cid: String) -> ByteArray): Ack? {
+        fun send(
+            path: String,
+            build: (cid: String) -> ByteArray,
+        ): Ack? {
             val cid = UUID.randomUUID().toString()
-            val payload = runCatching { build(cid) }.getOrElse { t ->
-                MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = t.message)
-                return Ack(ok = false, err = t.message)
-            }
-            val nodes = runCatching { transport().connectedNodes() }.getOrElse { error ->
-                MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = error.message)
-                return Ack(ok = false, err = error.message)
-            }
+            val payload =
+                runCatching { build(cid) }.getOrElse { t ->
+                    MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = t.message)
+                    return Ack(ok = false, err = t.message)
+                }
+            val nodes =
+                runCatching { transport().connectedNodes() }.getOrElse { error ->
+                    MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = error.message)
+                    return Ack(ok = false, err = error.message)
+                }
             if (nodes.isEmpty()) {
                 MobileLog.bridgeError(path = path, cid = cid, nodeId = null, error = "no_nodes")
                 return Ack(ok = false, err = "no_nodes")
@@ -77,9 +86,10 @@ object MobileBridge {
                     } else {
                         MobileLog.bridgeRetry(path, cid, node.id, attempt, payload.size)
                     }
-                    val result = runCatching {
-                        transport().sendMessage(node.id, path, payload)
-                    }
+                    val result =
+                        runCatching {
+                            transport().sendMessage(node.id, path, payload)
+                        }
                     if (result.isSuccess) {
                         break
                     }
@@ -104,7 +114,11 @@ object MobileBridge {
                 return nodes.map { node -> Transport.Node(node.id) }
             }
 
-            override fun sendMessage(nodeId: String, path: String, payload: ByteArray) {
+            override fun sendMessage(
+                nodeId: String,
+                path: String,
+                payload: ByteArray,
+            ) {
                 Tasks.await(Wearable.getMessageClient(context).sendMessage(nodeId, path, payload))
             }
         }

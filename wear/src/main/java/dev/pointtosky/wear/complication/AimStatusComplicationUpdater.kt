@@ -25,4 +25,3 @@ class AimStatusComplicationUpdater(
         private const val DEFAULT_INTERVAL_MS = 60_000L
     }
 }
-

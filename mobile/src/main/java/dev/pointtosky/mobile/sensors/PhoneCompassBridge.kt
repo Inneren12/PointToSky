@@ -27,7 +27,6 @@ class PhoneCompassBridge(
     private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : SensorEventListener {
-
     private val rotationSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     private val started = AtomicBoolean(false)
     private val registered = AtomicBoolean(false)
@@ -96,17 +95,21 @@ class PhoneCompassBridge(
         scope.launch {
             val sender = senderProvider()
             sender.send(PATH_SENSOR_HEADING) { cid ->
-                val message = SensorHeadingMessage(
-                    cid = cid,
-                    azDeg = normalized,
-                    ts = timestampMs,
-                )
+                val message =
+                    SensorHeadingMessage(
+                        cid = cid,
+                        azDeg = normalized,
+                        ts = timestampMs,
+                    )
                 JsonCodec.encode(message)
             }
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    override fun onAccuracyChanged(
+        sensor: Sensor?,
+        accuracy: Int,
+    ) = Unit
 
     companion object {
         private const val MIN_DISPATCH_INTERVAL_MS: Long = 500L

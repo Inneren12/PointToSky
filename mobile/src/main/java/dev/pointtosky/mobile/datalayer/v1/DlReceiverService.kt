@@ -64,19 +64,24 @@ class DlReceiverService : WearableListenerService() {
         }
     }
 
-    private fun handleCardOpen(data: ByteArray, fallbackCid: String?, nodeId: String) {
+    private fun handleCardOpen(
+        data: ByteArray,
+        fallbackCid: String?,
+        nodeId: String,
+    ) {
         runCatching {
             val message = JsonCodec.decode<CardOpenMessage>(data)
             if (message.v != DATA_LAYER_PROTOCOL_VERSION) return@runCatching
             val payload = JsonCodec.decodeFromElement<CardObjectPayload>(message.obj)
             val entry = payload.toEntry(message.cid.ifBlank { fallbackCid })
-            val resolvedId = when (entry) {
-                is CardRepository.Entry.Ready -> entry.model.id
-                is CardRepository.Entry.Invalid ->
-                    payload.id
-                        ?: message.cid.takeIf { it.isNotBlank() }
-                        ?: fallbackCid
-            }
+            val resolvedId =
+                when (entry) {
+                    is CardRepository.Entry.Ready -> entry.model.id
+                    is CardRepository.Entry.Invalid ->
+                        payload.id
+                            ?: message.cid.takeIf { it.isNotBlank() }
+                            ?: fallbackCid
+                }
             if (resolvedId != null) {
                 CardRepository.update(resolvedId, entry)
                 val type = (entry as? CardRepository.Entry.Ready)?.model?.type?.name

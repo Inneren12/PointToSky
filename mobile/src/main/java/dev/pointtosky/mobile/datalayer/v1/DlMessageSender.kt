@@ -10,13 +10,25 @@ internal object DlMessageSender {
     }
 
     interface Delegate {
-        fun sendMessage(context: Context, nodeId: String, path: String, payload: ByteArray, onFailure: FailureListener)
+        fun sendMessage(
+            context: Context,
+            nodeId: String,
+            path: String,
+            payload: ByteArray,
+            onFailure: FailureListener,
+        )
     }
 
     @Volatile
     private var overrideDelegate: Delegate? = null
 
-    fun sendMessage(context: Context, nodeId: String, path: String, payload: ByteArray, onFailure: (Exception) -> Unit) {
+    fun sendMessage(
+        context: Context,
+        nodeId: String,
+        path: String,
+        payload: ByteArray,
+        onFailure: (Exception) -> Unit,
+    ) {
         val delegate = overrideDelegate ?: RealDelegate
         delegate.sendMessage(context, nodeId, path, payload) { error -> onFailure(error) }
     }
@@ -27,7 +39,13 @@ internal object DlMessageSender {
     }
 
     private object RealDelegate : Delegate {
-        override fun sendMessage(context: Context, nodeId: String, path: String, payload: ByteArray, onFailure: FailureListener) {
+        override fun sendMessage(
+            context: Context,
+            nodeId: String,
+            path: String,
+            payload: ByteArray,
+            onFailure: FailureListener,
+        ) {
             Wearable.getMessageClient(context)
                 .sendMessage(nodeId, path, payload)
                 .addOnFailureListener { error -> onFailure.onFailure(error) }

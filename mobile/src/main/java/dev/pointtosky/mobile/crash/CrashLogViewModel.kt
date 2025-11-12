@@ -29,13 +29,13 @@ class CrashLogViewModel(
     private val application: Application,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
-
-    private val _state = MutableStateFlow(
-        CrashLogUiState(
-            lastCrash = runCatching { CrashLogManager.currentLastCrash() }.getOrNull(),
-            hasLogs = runCatching { CrashLogManager.hasLogs() }.getOrElse { false },
-        ),
-    )
+    private val _state =
+        MutableStateFlow(
+            CrashLogUiState(
+                lastCrash = runCatching { CrashLogManager.currentLastCrash() }.getOrNull(),
+                hasLogs = runCatching { CrashLogManager.hasLogs() }.getOrElse { false },
+            ),
+        )
     val state: StateFlow<CrashLogUiState> = _state.asStateFlow()
 
     init {
@@ -76,7 +76,7 @@ class CrashLogViewModel(
                         current.copy(
                             isBusy = false,
                             errorMessage =
-                            error.localizedMessage ?: application.getString(R.string.crash_logs_operation_failed),
+                                error.localizedMessage ?: application.getString(R.string.crash_logs_operation_failed),
                         )
                     }
                 }

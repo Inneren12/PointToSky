@@ -37,15 +37,15 @@ class SearchViewModel(
     private val clock: () -> Instant = { Instant.now() },
     private val backgroundDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
-
     private val appContext = context.applicationContext
 
-    private val planetNames = mapOf(
-        Body.SUN to appContext.getString(R.string.search_planet_sun),
-        Body.MOON to appContext.getString(R.string.search_planet_moon),
-        Body.JUPITER to appContext.getString(R.string.search_planet_jupiter),
-        Body.SATURN to appContext.getString(R.string.search_planet_saturn),
-    )
+    private val planetNames =
+        mapOf(
+            Body.SUN to appContext.getString(R.string.search_planet_sun),
+            Body.MOON to appContext.getString(R.string.search_planet_moon),
+            Body.JUPITER to appContext.getString(R.string.search_planet_jupiter),
+            Body.SATURN to appContext.getString(R.string.search_planet_saturn),
+        )
 
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
@@ -61,11 +61,12 @@ class SearchViewModel(
             val entries = buildEntries()
             index = SearchIndex(entries)
             val query = pendingQuery
-            val results = if (query.isNotBlank()) {
-                index?.search(query, MAX_RESULTS).orEmpty()
-            } else {
-                emptyList()
-            }
+            val results =
+                if (query.isNotBlank()) {
+                    index?.search(query, MAX_RESULTS).orEmpty()
+                } else {
+                    emptyList()
+                }
             _state.update { current ->
                 current.copy(
                     results = results,
@@ -79,11 +80,12 @@ class SearchViewModel(
         pendingQuery = query
         val trimmed = query.trim()
         val currentIndex = index
-        val matches = if (currentIndex != null && trimmed.isNotBlank()) {
-            currentIndex.search(trimmed, MAX_RESULTS)
-        } else {
-            emptyList()
-        }
+        val matches =
+            if (currentIndex != null && trimmed.isNotBlank()) {
+                currentIndex.search(trimmed, MAX_RESULTS)
+            } else {
+                emptyList()
+            }
         if (trimmed.isNotEmpty()) {
             MobileLog.searchQuery(trimmed, matches.size)
         }
@@ -107,17 +109,18 @@ class SearchViewModel(
         return when (val payload = result.payload) {
             is SearchPayload.Star -> {
                 val eq = Equatorial(payload.star.raDeg, payload.star.decDeg)
-                val model = CardObjectModel(
-                    id = payload.star.id.toString(),
-                    type = CardObjectType.STAR,
-                    name = result.title,
-                    body = null,
-                    constellation = payload.star.constellation,
-                    magnitude = payload.star.magnitude,
-                    equatorial = eq,
-                    horizontal = null,
-                    bestWindow = null,
-                )
+                val model =
+                    CardObjectModel(
+                        id = payload.star.id.toString(),
+                        type = CardObjectType.STAR,
+                        name = result.title,
+                        body = null,
+                        constellation = payload.star.constellation,
+                        magnitude = payload.star.magnitude,
+                        equatorial = eq,
+                        horizontal = null,
+                        bestWindow = null,
+                    )
                 cardRepository.update(model.id, CardRepository.Entry.Ready(model))
                 MobileLog.cardOpen(source = "search", id = model.id, type = model.type.name)
                 model.id
@@ -126,21 +129,23 @@ class SearchViewModel(
             is SearchPayload.Planet -> {
                 val ephemeris = ephemerisComputer.compute(payload.body, clock())
                 val constellation = catalogRepository.constellationBoundaries.findByEq(ephemeris.eq)
-                val type = when (payload.body) {
-                    Body.MOON -> CardObjectType.MOON
-                    else -> CardObjectType.PLANET
-                }
-                val model = CardObjectModel(
-                    id = payload.body.name,
-                    type = type,
-                    name = result.title,
-                    body = payload.body.name,
-                    constellation = constellation,
-                    magnitude = null,
-                    equatorial = ephemeris.eq,
-                    horizontal = null,
-                    bestWindow = null,
-                )
+                val type =
+                    when (payload.body) {
+                        Body.MOON -> CardObjectType.MOON
+                        else -> CardObjectType.PLANET
+                    }
+                val model =
+                    CardObjectModel(
+                        id = payload.body.name,
+                        type = type,
+                        name = result.title,
+                        body = payload.body.name,
+                        constellation = constellation,
+                        magnitude = null,
+                        equatorial = ephemeris.eq,
+                        horizontal = null,
+                        bestWindow = null,
+                    )
                 cardRepository.update(model.id, CardRepository.Entry.Ready(model))
                 MobileLog.cardOpen(source = "search", id = model.id, type = model.type.name)
                 model.id
@@ -150,48 +155,52 @@ class SearchViewModel(
 
     private fun buildEntries(): List<SearchEntry> {
         val stars = loadStars()
-        val starEntries = stars.map { star ->
-            val aliases = buildStarAliases(star)
-            val subtitle = buildStarSubtitle(star)
-            val trailing = star.magnitude?.let { magnitudeLabel(it) }
-            SearchEntry(
-                cardId = star.id.toString(),
-                title = star.displayName,
-                subtitle = subtitle,
-                trailing = trailing,
-                payload = SearchPayload.Star(star),
-                aliases = aliases,
-                magnitude = star.magnitude,
-                priority = STAR_PRIORITY,
-            )
-        }
-        val planetEntries = Body.values()
-            .mapNotNull { body ->
-                val name = planetNames[body] ?: return@mapNotNull null
-                val aliases = listOf(name, body.name)
-                    .mapNotNull { alias -> alias.takeIf { it.isNotBlank() } }
-                    .distinct()
-                    .map { alias -> Alias(alias, normalize(alias)) }
+        val starEntries =
+            stars.map { star ->
+                val aliases = buildStarAliases(star)
+                val subtitle = buildStarSubtitle(star)
+                val trailing = star.magnitude?.let { magnitudeLabel(it) }
                 SearchEntry(
-                    cardId = body.name,
-                    title = name,
-                    subtitle = null,
-                    trailing = null,
-                    payload = SearchPayload.Planet(body),
+                    cardId = star.id.toString(),
+                    title = star.displayName,
+                    subtitle = subtitle,
+                    trailing = trailing,
+                    payload = SearchPayload.Star(star),
                     aliases = aliases,
-                    magnitude = null,
-                    priority = PLANET_PRIORITY,
+                    magnitude = star.magnitude,
+                    priority = STAR_PRIORITY,
                 )
             }
+        val planetEntries =
+            Body.values()
+                .mapNotNull { body ->
+                    val name = planetNames[body] ?: return@mapNotNull null
+                    val aliases =
+                        listOf(name, body.name)
+                            .mapNotNull { alias -> alias.takeIf { it.isNotBlank() } }
+                            .distinct()
+                            .map { alias -> Alias(alias, normalize(alias)) }
+                    SearchEntry(
+                        cardId = body.name,
+                        title = name,
+                        subtitle = null,
+                        trailing = null,
+                        payload = SearchPayload.Planet(body),
+                        aliases = aliases,
+                        magnitude = null,
+                        priority = PLANET_PRIORITY,
+                    )
+                }
         return planetEntries + starEntries
     }
 
     private fun loadStars(): List<SearchStar> {
-        val stars = catalogRepository.starCatalog.nearby(
-            center = Equatorial(0.0, 0.0),
-            radiusDeg = 180.0,
-            magLimit = STAR_MAG_LIMIT,
-        )
+        val stars =
+            catalogRepository.starCatalog.nearby(
+                center = Equatorial(0.0, 0.0),
+                radiusDeg = 180.0,
+                magLimit = STAR_MAG_LIMIT,
+            )
         return stars
             .distinctBy(Star::id)
             .mapNotNull { star ->
@@ -264,7 +273,10 @@ class SearchViewModel(
     private class SearchIndex(
         private val entries: List<SearchEntry>,
     ) {
-        fun search(query: String, limit: Int): List<SearchResult> {
+        fun search(
+            query: String,
+            limit: Int,
+        ): List<SearchResult> {
             val normalizedQuery = normalize(query)
             if (normalizedQuery.isEmpty()) return emptyList()
             val matches = mutableListOf<SearchMatch>()
@@ -302,7 +314,10 @@ class SearchViewModel(
             return best
         }
 
-        private fun score(candidate: String, query: String): Int? {
+        private fun score(
+            candidate: String,
+            query: String,
+        ): Int? {
             val index = candidate.indexOf(query)
             if (index >= 0) {
                 return when (index) {
@@ -331,6 +346,7 @@ class SearchViewModel(
 
     sealed interface SearchPayload {
         data class Star(val star: SearchStar) : SearchPayload
+
         data class Planet(val body: Body) : SearchPayload
     }
 
@@ -373,12 +389,14 @@ class SearchViewModel(
         private const val STAR_PRIORITY = 1
         private const val PLANET_PRIORITY = 0
         private const val STAR_MAG_LIMIT = 6.0
+
         private fun normalize(input: String): String {
             if (input.isBlank()) return ""
-            val lower = input.lowercase(Locale.ROOT)
-                .replace('\u2019', '\'')
-                .replace('-', ' ')
-                .replace('_', ' ')
+            val lower =
+                input.lowercase(Locale.ROOT)
+                    .replace('\u2019', '\'')
+                    .replace('-', ' ')
+                    .replace('_', ' ')
             val decomposed = Normalizer.normalize(lower, Normalizer.Form.NFD)
             val builder = StringBuilder(decomposed.length)
             for (ch in decomposed) {
@@ -396,7 +414,10 @@ class SearchViewModel(
 
         private val WHITESPACE_REGEX = Regex("\\s+")
 
-        private fun levenshtein(a: String, b: String): Int {
+        private fun levenshtein(
+            a: String,
+            b: String,
+        ): Int {
             if (a == b) return 0
             if (a.isEmpty()) return b.length
             if (b.isEmpty()) return a.length
@@ -407,11 +428,12 @@ class SearchViewModel(
                 val ac = a[i - 1]
                 for (j in 1..b.length) {
                     val cost = if (ac == b[j - 1]) 0 else 1
-                    current[j] = minOf(
-                        previous[j] + 1,
-                        current[j - 1] + 1,
-                        previous[j - 1] + cost,
-                    )
+                    current[j] =
+                        minOf(
+                            previous[j] + 1,
+                            current[j - 1] + 1,
+                            previous[j - 1] + cost,
+                        )
                 }
                 System.arraycopy(current, 0, previous, 0, previous.size)
             }

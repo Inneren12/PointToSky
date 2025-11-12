@@ -17,5 +17,8 @@ internal object DlAcks {
         waits.remove(refCid)?.countDown()
     }
 
-    fun await(latch: CountDownLatch, timeoutMs: Long): Boolean = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+    fun await(
+        latch: CountDownLatch,
+        timeoutMs: Long,
+    ): Boolean = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
 }

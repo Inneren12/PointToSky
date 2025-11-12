@@ -34,36 +34,37 @@ class SkyMapViewModel(
     private val timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1_000L),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
-
     private val appContext = context.applicationContext
 
     private val staticData = MutableStateFlow<StaticSkyData?>(null)
 
-    private val locationSnapshot: StateFlow<LocationSnapshot> = locationPrefs.manualPointFlow
-        .map { manual ->
-            if (manual != null) {
-                LocationSnapshot(point = manual, resolved = true)
-            } else {
-                LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
+    private val locationSnapshot: StateFlow<LocationSnapshot> =
+        locationPrefs.manualPointFlow
+            .map { manual ->
+                if (manual != null) {
+                    LocationSnapshot(point = manual, resolved = true)
+                } else {
+                    LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
+                }
             }
-        }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
-        )
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.Eagerly,
+                initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
+            )
 
-    val state: StateFlow<SkyMapState> = staticData
-        .filterNotNull()
-        .combine(locationSnapshot) { data, location -> data to location }
-        .combine(timeSource.ticks) { (data, location), instant ->
-            buildState(data, location, instant)
-        }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = SkyMapState.Loading,
-        )
+    val state: StateFlow<SkyMapState> =
+        staticData
+            .filterNotNull()
+            .combine(locationSnapshot) { data, location -> data to location }
+            .combine(timeSource.ticks) { (data, location), instant ->
+                buildState(data, location, instant)
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = SkyMapState.Loading,
+            )
 
     init {
         viewModelScope.launch(ioDispatcher) {
@@ -73,47 +74,56 @@ class SkyMapViewModel(
         }
     }
 
-    private suspend fun loadStars(): List<SkyStar> = withContext(ioDispatcher) {
-        val all = catalogRepository.starCatalog.nearby(
-            center = Equatorial(0.0, 0.0),
-            radiusDeg = 180.0,
-            magLimit = STAR_MAG_LIMIT,
-        )
-        all.distinctBy(Star::id).map { star ->
-            SkyStar(
-                id = star.id,
-                name = star.name,
-                designation = starLabel(star),
-                magnitude = star.mag.toDouble(),
-                equatorial = Equatorial(star.raDeg.toDouble(), star.decDeg.toDouble()),
-                constellation = star.constellation,
-            )
+    private suspend fun loadStars(): List<SkyStar> =
+        withContext(ioDispatcher) {
+            val all =
+                catalogRepository.starCatalog.nearby(
+                    center = Equatorial(0.0, 0.0),
+                    radiusDeg = 180.0,
+                    magLimit = STAR_MAG_LIMIT,
+                )
+            all.distinctBy(Star::id).map { star ->
+                SkyStar(
+                    id = star.id,
+                    name = star.name,
+                    designation = starLabel(star),
+                    magnitude = star.mag.toDouble(),
+                    equatorial = Equatorial(star.raDeg.toDouble(), star.decDeg.toDouble()),
+                    constellation = star.constellation,
+                )
+            }
         }
-    }
 
-    private fun buildState(data: StaticSkyData, location: LocationSnapshot, instant: Instant): SkyMapState {
+    private fun buildState(
+        data: StaticSkyData,
+        location: LocationSnapshot,
+        instant: Instant,
+    ): SkyMapState {
         val lst = lstAt(instant, location.point.lonDeg).lstDeg
         val lat = location.point.latDeg
-        val projectedStars = data.stars.map { star ->
-            val horizontal = raDecToAltAz(star.equatorial, lst, lat)
-            ProjectedStar(
-                id = star.id,
-                name = star.name,
-                designation = star.designation,
-                magnitude = star.magnitude,
-                equatorial = star.equatorial,
-                horizontal = horizontal,
-                constellation = star.constellation,
-            )
-        }
-        val projectedConstellations = data.outlines.map { outline ->
-            val polygons = outline.polygons.map { polygon ->
-                polygon.map { vertex ->
-                    raDecToAltAz(vertex, lst, lat, applyRefraction = false)
-                }
+        val projectedStars =
+            data.stars.map { star ->
+                val horizontal = raDecToAltAz(star.equatorial, lst, lat)
+                ProjectedStar(
+                    id = star.id,
+                    name = star.name,
+                    designation = star.designation,
+                    magnitude = star.magnitude,
+                    equatorial = star.equatorial,
+                    horizontal = horizontal,
+                    constellation = star.constellation,
+                )
             }
-            ConstellationProjection(outline.iauCode, polygons)
-        }
+        val projectedConstellations =
+            data.outlines.map { outline ->
+                val polygons =
+                    outline.polygons.map { polygon ->
+                        polygon.map { vertex ->
+                            raDecToAltAz(vertex, lst, lat, applyRefraction = false)
+                        }
+                    }
+                ConstellationProjection(outline.iauCode, polygons)
+            }
         return SkyMapState.Ready(
             instant = instant,
             location = location.point,

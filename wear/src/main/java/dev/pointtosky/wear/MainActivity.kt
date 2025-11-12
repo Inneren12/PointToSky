@@ -43,7 +43,6 @@ import androidx.wear.tooling.preview.devices.WearDevices
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
-import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AppOpenMessage
 import dev.pointtosky.core.datalayer.AppOpenScreen
@@ -54,6 +53,7 @@ import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.location.prefs.fromContext
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.wear.aim.core.AimTarget
 import dev.pointtosky.wear.aim.ui.AimRoute
 import dev.pointtosky.wear.astro.AstroDebugRoute
@@ -66,16 +66,6 @@ import dev.pointtosky.wear.datalayer.AppOpenRequest
 import dev.pointtosky.wear.datalayer.PhoneHeadingBridge
 import dev.pointtosky.wear.datalayer.WearBridge
 import dev.pointtosky.wear.datalayer.v1.DlIntents
-import dev.pointtosky.wear.ACTION_OPEN_AIM
-import dev.pointtosky.wear.ACTION_OPEN_AIM_LEGACY
-import dev.pointtosky.wear.ACTION_OPEN_IDENTIFY
-import dev.pointtosky.wear.ACTION_OPEN_IDENTIFY_LEGACY
-import dev.pointtosky.wear.EXTRA_AIM_BODY
-import dev.pointtosky.wear.EXTRA_AIM_DEC_DEG
-import dev.pointtosky.wear.EXTRA_AIM_RA_DEG
-import dev.pointtosky.wear.EXTRA_AIM_STAR_ID
-import dev.pointtosky.wear.EXTRA_AIM_TARGET_KIND
-import dev.pointtosky.wear.MAX_DEEP_LINK_PAYLOAD_BYTES
 import dev.pointtosky.wear.identify.IdentifyRoute
 import dev.pointtosky.wear.identify.IdentifyViewModelFactory
 import dev.pointtosky.wear.identify.buildCardRouteFrom
@@ -185,39 +175,43 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         if (dlReceiver != null) return
-        dlReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                val payload = intent.getByteArrayExtra(DlIntents.EXTRA_PAYLOAD) ?: return
+        dlReceiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    context: Context,
+                    intent: Intent,
+                ) {
+                    val payload = intent.getByteArrayExtra(DlIntents.EXTRA_PAYLOAD) ?: return
 
-                // 1) SensorHeading: обновляем мост и выходим
-                runCatching { JsonCodec.decode<SensorHeadingMessage>(payload) }
-                    .onSuccess { msg ->
-                        if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
-                            PhoneHeadingBridge.updateHeading(msg.azDeg, msg.ts)
+                    // 1) SensorHeading: обновляем мост и выходим
+                    runCatching { JsonCodec.decode<SensorHeadingMessage>(payload) }
+                        .onSuccess { msg ->
+                            if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
+                                PhoneHeadingBridge.updateHeading(msg.azDeg, msg.ts)
+                                return
+                            }
+                        }
+
+                    // 2) AppOpen → мост сам разрулит, если нужно
+                    runCatching { JsonCodec.decode<AppOpenMessage>(payload) }
+                        .onSuccess {
+                            WearBridge.handleAppOpenMessage(applicationContext, it)
                             return
                         }
-                    }
 
-                // 2) AppOpen → мост сам разрулит, если нужно
-                runCatching { JsonCodec.decode<AppOpenMessage>(payload) }
-                    .onSuccess {
-                        WearBridge.handleAppOpenMessage(applicationContext, it)
-                        return
-                    }
-
-                // 3) AimSetTarget
-                runCatching { JsonCodec.decode<AimSetTargetMessage>(payload) }
-                    .onSuccess { WearBridge.handleAimSetTargetMessage(applicationContext, it) }
+                    // 3) AimSetTarget
+                    runCatching { JsonCodec.decode<AimSetTargetMessage>(payload) }
+                        .onSuccess { WearBridge.handleAimSetTargetMessage(applicationContext, it) }
+                }
             }
-        }
         ContextCompat.registerReceiver(
-            /* context = */
+            // context =
             this,
-            /* receiver = */
+            // receiver =
             dlReceiver,
-            /* filter = */
+            // filter =
             DlIntents.filter(),
-            /* flags = */
+            // flags =
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
     }
@@ -247,18 +241,19 @@ class MainActivity : ComponentActivity() {
      */
     private fun buildIntentSignature(intent: Intent?): Int? {
         intent ?: return null
-        val sb = StringBuilder()
-            .append(intent.action.orEmpty())
-            .append('|')
-            .append(intent.getStringExtra(EXTRA_AIM_TARGET_KIND).orEmpty())
-            .append('|')
-            .append(intent.getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN))
-            .append('|')
-            .append(intent.getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN))
-            .append('|')
-            .append(intent.getStringExtra(EXTRA_AIM_BODY).orEmpty())
-            .append('|')
-            .append(intent.getIntExtra(EXTRA_AIM_STAR_ID, Int.MIN_VALUE))
+        val sb =
+            StringBuilder()
+                .append(intent.action.orEmpty())
+                .append('|')
+                .append(intent.getStringExtra(EXTRA_AIM_TARGET_KIND).orEmpty())
+                .append('|')
+                .append(intent.getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN))
+                .append('|')
+                .append(intent.getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN))
+                .append('|')
+                .append(intent.getStringExtra(EXTRA_AIM_BODY).orEmpty())
+                .append('|')
+                .append(intent.getIntExtra(EXTRA_AIM_STAR_ID, Int.MIN_VALUE))
         return sb.toString().hashCode()
     }
 
@@ -321,11 +316,12 @@ class MainActivity : ComponentActivity() {
                 } else {
                     val ra = getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN)
                     val dec = getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN)
-                    val eq = if (ra.isFinite() && dec.isFinite()) {
-                        Equatorial(raDeg = ra, decDeg = dec)
-                    } else {
-                        null
-                    }
+                    val eq =
+                        if (ra.isFinite() && dec.isFinite()) {
+                            Equatorial(raDeg = ra, decDeg = dec)
+                        } else {
+                            null
+                        }
                     AimTarget.StarTarget(starId, eq)
                 }
             }
@@ -395,12 +391,13 @@ fun PointToSkyWearApp(
     val coroutineScope = rememberCoroutineScope()
     val onboardingAccepted by onboardingPrefs.acceptedFlow.collectAsStateWithLifecycle(initialValue = false)
 
-    val viewModelFactory = remember(orientationRepository, appContext) {
-        SensorsViewModelFactory(
-            appContext = appContext,
-            orientationRepository = orientationRepository,
-        )
-    }
+    val viewModelFactory =
+        remember(orientationRepository, appContext) {
+            SensorsViewModelFactory(
+                appContext = appContext,
+                orientationRepository = orientationRepository,
+            )
+        }
     val sensorsViewModel: SensorsViewModel = viewModel(factory = viewModelFactory)
 
     val latestAim = remember { mutableStateOf<AimLaunchRequest?>(null) }
@@ -452,14 +449,15 @@ fun PointToSkyWearApp(
                 }
                 composable(ROUTE_IDENTIFY) {
                     // Экран Identify (S6.C) с реальным каталогом и ориентацией
-                    val factory = remember(orientationRepository, locationRepository, catalogRepository, settings) {
-                        IdentifyViewModelFactory(
-                            orientationRepository = orientationRepository,
-                            locationRepository = locationRepository,
-                            catalogRepository = catalogRepository,
-                            settings = settings,
-                        )
-                    }
+                    val factory =
+                        remember(orientationRepository, locationRepository, catalogRepository, settings) {
+                            IdentifyViewModelFactory(
+                                orientationRepository = orientationRepository,
+                                locationRepository = locationRepository,
+                                catalogRepository = catalogRepository,
+                                settings = settings,
+                            )
+                        }
                     IdentifyRoute(
                         factory = factory,
                         onOpenCard = { state -> navController.navigate(buildCardRouteFrom(state)) },
@@ -474,21 +472,23 @@ fun PointToSkyWearApp(
                 // Параметризованный экран карточки (S6.D)
                 cardDestination(locationRepository = locationRepository)
                 composable(ROUTE_ASTRO_DEBUG) {
-                    val factory = remember(orientationRepository, locationRepository, catalogRepository) {
-                        AstroDebugViewModelFactory(
-                            orientationRepository = orientationRepository,
-                            locationRepository = locationRepository,
-                            catalogRepository = catalogRepository,
-                        )
-                    }
+                    val factory =
+                        remember(orientationRepository, locationRepository, catalogRepository) {
+                            AstroDebugViewModelFactory(
+                                orientationRepository = orientationRepository,
+                                locationRepository = locationRepository,
+                                catalogRepository = catalogRepository,
+                            )
+                        }
                     AstroDebugRoute(
                         factory = factory,
                     )
                 }
                 composable(ROUTE_CATALOG_DEBUG) {
-                    val factory: CatalogDebugViewModelFactory = remember(catalogRepository) {
-                        CatalogDebugViewModelFactory(catalogRepository)
-                    }
+                    val factory: CatalogDebugViewModelFactory =
+                        remember(catalogRepository) {
+                            CatalogDebugViewModelFactory(catalogRepository)
+                        }
                     CatalogDebugRoute(
                         factory = factory,
                         onBack = { navController.popBackStack() },
@@ -589,9 +589,10 @@ fun HomeScreen(
     onSettingsClick: () -> Unit = {},
 ) {
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 24.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
     ) {
@@ -664,9 +665,10 @@ fun HomeScreen(
 @Composable
 fun AimScreen(modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -677,9 +679,10 @@ fun AimScreen(modifier: Modifier = Modifier) {
 @Composable
 fun IdentifyScreen(modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

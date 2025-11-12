@@ -46,10 +46,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import dev.pointtosky.mobile.R
 
-private val LOCATION_PERMISSIONS = arrayOf(
-    Manifest.permission.ACCESS_FINE_LOCATION,
-    Manifest.permission.ACCESS_COARSE_LOCATION,
-)
+private val LOCATION_PERMISSIONS =
+    arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,26 +68,29 @@ fun SettingsScreen(
     var cameraGranted by remember { mutableStateOf(isCameraPermissionGranted(context)) }
     var locationGranted by remember { mutableStateOf(isLocationPermissionGranted(context)) }
 
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        cameraGranted = granted
-    }
+    val cameraLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            cameraGranted = granted
+        }
 
-    val locationLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        locationGranted = result.values.any { it }
-    }
+    val locationLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions(),
+        ) { result ->
+            locationGranted = result.values.any { it }
+        }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                cameraGranted = isCameraPermissionGranted(context)
-                locationGranted = isLocationPermissionGranted(context)
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    cameraGranted = isCameraPermissionGranted(context)
+                    locationGranted = isLocationPermissionGranted(context)
+                }
             }
-        }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
@@ -110,11 +114,12 @@ fun SettingsScreen(
         },
     ) { paddingValues ->
         Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier =
+                Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -187,10 +192,11 @@ fun SettingsScreen(
                 )
                 Text(
                     text = stringResource(id = R.string.settings_policy_link),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.primary,
-                        textDecoration = TextDecoration.Underline,
-                    ),
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.primary,
+                            textDecoration = TextDecoration.Underline,
+                        ),
                     modifier = Modifier.clickable(onClick = onOpenPolicy),
                 )
             }
@@ -199,7 +205,12 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsToggleRow(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SettingsToggleRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -224,12 +235,18 @@ private fun SettingsToggleRow(title: String, description: String, checked: Boole
 }
 
 @Composable
-private fun LocationModeOption(title: String, description: String, selected: Boolean, onSelect: () -> Unit) {
+private fun LocationModeOption(
+    title: String,
+    description: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onSelect)
-            .padding(vertical = 4.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onSelect)
+                .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = onSelect)
@@ -245,7 +262,11 @@ private fun LocationModeOption(title: String, description: String, selected: Boo
 }
 
 @Composable
-private fun PermissionRow(title: String, granted: Boolean, onRequest: () -> Unit) {
+private fun PermissionRow(
+    title: String,
+    granted: Boolean,
+    onRequest: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -253,11 +274,12 @@ private fun PermissionRow(title: String, granted: Boolean, onRequest: () -> Unit
         Column(modifier = Modifier.weight(1f)) {
             Text(text = title, style = MaterialTheme.typography.titleSmall)
             Text(
-                text = if (granted) {
-                    stringResource(id = R.string.settings_permission_granted)
-                } else {
-                    stringResource(id = R.string.settings_permission_not_granted)
-                },
+                text =
+                    if (granted) {
+                        stringResource(id = R.string.settings_permission_granted)
+                    } else {
+                        stringResource(id = R.string.settings_permission_not_granted)
+                    },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

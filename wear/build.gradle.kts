@@ -92,6 +92,17 @@ android {
         abortOnError = true
         warningsAsErrors = false
         checkDependencies = true
+
+        // ВКЛЮЧИТЬ текстовый отчёт и отправить его в stdout:
+        textReport = true
+        // Для Kotlin DSL специальное значение "stdout":
+        textOutput = file("stdout")
+
+        // Чтобы не дублировать отчёты (по желанию):
+        htmlReport = false
+        xmlReport = false
+        sarifReport = false
+
         baseline = file("lint-baseline.xml")
     }
 }

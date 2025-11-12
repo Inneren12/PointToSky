@@ -14,21 +14,26 @@ import java.time.Instant
 object CardRepository {
     sealed class Entry {
         data class Ready(val model: CardObjectModel) : Entry()
+
         data class Invalid(val reason: String? = null) : Entry()
     }
 
     private val entries = MutableStateFlow<Map<String, Entry>>(emptyMap())
     private val latestIdState = MutableStateFlow<String?>(null)
 
-    fun observe(id: String): Flow<Entry?> = entries
-        .map { it[id] }
-        .distinctUntilChanged()
+    fun observe(id: String): Flow<Entry?> =
+        entries
+            .map { it[id] }
+            .distinctUntilChanged()
 
     fun latestCardIdFlow(): StateFlow<String?> = latestIdState.asStateFlow()
 
     fun latestCardId(): String? = latestIdState.value
 
-    fun update(id: String, entry: Entry) {
+    fun update(
+        id: String,
+        entry: Entry,
+    ) {
         entries.update { current ->
             val mutable = if (current.isEmpty()) mutableMapOf() else current.toMutableMap()
             mutable[id] = entry

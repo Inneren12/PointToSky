@@ -34,31 +34,33 @@ import org.json.JSONObject
 import java.time.Instant
 
 open class TonightTileService : TileService() {
-
     companion object {
         // Инкремент при изменении набора ресурсов (иконки, имена id и т.п.)
         private const val RES_VER = "tonight_v2"
+
         @Suppress("unused")
         const val EXTRA_TARGET_ID = "targetId"
         private const val PATH_PUSH = "/tile/tonight/push_model"
 
-        private fun iconResIdString(icon: TonightIcon): String = when (icon) {
-            TonightIcon.SUN -> "ic_tonight_sun"
-            TonightIcon.MOON -> "ic_tonight_moon"
-            TonightIcon.JUPITER -> "ic_tonight_jupiter"
-            TonightIcon.SATURN -> "ic_tonight_saturn"
-            TonightIcon.STAR -> "ic_tonight_star"
-            TonightIcon.CONST -> "ic_tonight_const"
-        }
+        private fun iconResIdString(icon: TonightIcon): String =
+            when (icon) {
+                TonightIcon.SUN -> "ic_tonight_sun"
+                TonightIcon.MOON -> "ic_tonight_moon"
+                TonightIcon.JUPITER -> "ic_tonight_jupiter"
+                TonightIcon.SATURN -> "ic_tonight_saturn"
+                TonightIcon.STAR -> "ic_tonight_star"
+                TonightIcon.CONST -> "ic_tonight_const"
+            }
 
-        private fun iconAndroidRes(icon: TonightIcon): Int = when (icon) {
-            TonightIcon.SUN -> R.drawable.ic_tonight_sun
-            TonightIcon.MOON -> R.drawable.ic_tonight_moon
-            TonightIcon.JUPITER -> R.drawable.ic_tonight_jupiter
-            TonightIcon.SATURN -> R.drawable.ic_tonight_saturn
-            TonightIcon.STAR -> R.drawable.ic_tonight_star
-            TonightIcon.CONST -> R.drawable.ic_tonight_const
-        }
+        private fun iconAndroidRes(icon: TonightIcon): Int =
+            when (icon) {
+                TonightIcon.SUN -> R.drawable.ic_tonight_sun
+                TonightIcon.MOON -> R.drawable.ic_tonight_moon
+                TonightIcon.JUPITER -> R.drawable.ic_tonight_jupiter
+                TonightIcon.SATURN -> R.drawable.ic_tonight_saturn
+                TonightIcon.STAR -> R.drawable.ic_tonight_star
+                TonightIcon.CONST -> R.drawable.ic_tonight_const
+            }
     }
 
     // S7.C: реальный офлайн‑провайдер с кэшем.
@@ -101,21 +103,23 @@ open class TonightTileService : TileService() {
                     }.onFailure { e ->
                         LogBus.event(
                             name = "tile_error",
-                            payload = mapOf(
-                                "err" to e.toLogMessage(),
-                                "stage" to "push_model",
-                            ),
+                            payload =
+                                mapOf(
+                                    "err" to e.toLogMessage(),
+                                    "stage" to "push_model",
+                                ),
                         )
                     }
                 }
             }
 
             // S7.B: используем Material PrimaryLayout с учётом форм-фактора
-            val root = buildPrimaryLayoutRoot(
-                context = this,
-                model = model,
-                deviceParams = requestParams.deviceParameters,
-            )
+            val root =
+                buildPrimaryLayoutRoot(
+                    context = this,
+                    model = model,
+                    deviceParams = requestParams.deviceParameters,
+                )
             val layout = LayoutElementBuilders.Layout.Builder().setRoot(root).build()
             val entry = TimelineBuilders.TimelineEntry.Builder().setLayout(layout).build()
             val timeline = TimelineBuilders.Timeline.Builder().addTimelineEntry(entry).build()
@@ -130,28 +134,31 @@ open class TonightTileService : TileService() {
         } catch (e: JSONException) {
             LogBus.event(
                 name = "tile_error",
-                payload = mapOf(
-                    "err" to e.toLogMessage(),
-                    "stage" to "on_tile_request_json",
-                ),
+                payload =
+                    mapOf(
+                        "err" to e.toLogMessage(),
+                        "stage" to "on_tile_request_json",
+                    ),
             )
             throw e
         } catch (e: SecurityException) {
             LogBus.event(
                 name = "tile_error",
-                payload = mapOf(
-                    "err" to e.toLogMessage(),
-                    "stage" to "on_tile_request_security",
-                ),
+                payload =
+                    mapOf(
+                        "err" to e.toLogMessage(),
+                        "stage" to "on_tile_request_security",
+                    ),
             )
             throw e
         } catch (e: IllegalStateException) {
             LogBus.event(
                 name = "tile_error",
-                payload = mapOf(
-                    "err" to e.toLogMessage(),
-                    "stage" to "on_tile_request_state",
-                ),
+                payload =
+                    mapOf(
+                        "err" to e.toLogMessage(),
+                        "stage" to "on_tile_request_state",
+                    ),
             )
             throw e
         } finally {
@@ -161,7 +168,9 @@ open class TonightTileService : TileService() {
     }
 
     @Deprecated("Tiles v1 API; kept for backward compatibility. Consider migrating to ProtoLayout.")
-    override fun onResourcesRequest(requestParams: RequestBuilders.ResourcesRequest): ListenableFuture<ResourceBuilders.Resources> {
+    override fun onResourcesRequest(
+        requestParams: RequestBuilders.ResourcesRequest,
+    ): ListenableFuture<ResourceBuilders.Resources> {
         val res = ResourceBuilders.Resources.Builder().setVersion(RES_VER)
         listOf(
             TonightIcon.SUN,
@@ -197,9 +206,10 @@ open class TonightTileService : TileService() {
         deviceParams: DeviceParametersBuilders.DeviceParameters?,
     ): LayoutElementBuilders.LayoutElement {
         // список элементов
-        val listColumn = LayoutElementBuilders.Column.Builder()
-            .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
-            .setHeight(DimensionBuilders.WrappedDimensionProp.Builder().build())
+        val listColumn =
+            LayoutElementBuilders.Column.Builder()
+                .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
+                .setHeight(DimensionBuilders.WrappedDimensionProp.Builder().build())
 
         model.items.forEachIndexed { idx, item ->
             if (idx > 0) {
@@ -219,12 +229,13 @@ open class TonightTileService : TileService() {
         }
 
         val moreClickable = clickableOpenTargetsActivity(context)
-        val moreChip = CompactChip.Builder(
-            context,
-            getString(R.string.tile_more),
-            moreClickable,
-            dp,
-        ).build()
+        val moreChip =
+            CompactChip.Builder(
+                context,
+                getString(R.string.tile_more),
+                moreClickable,
+                dp,
+            ).build()
 
         val title = Text.Builder(context, getString(R.string.tile_tonight_label)).build()
 
@@ -239,14 +250,18 @@ open class TonightTileService : TileService() {
      * Один элемент списка: иконка + два текста.
      * Делает строку кликабельной (по желанию можно перевести на no-op).
      */
-    private fun buildTargetRow(context: Context, item: TonightTarget): LayoutElementBuilders.LayoutElement {
+    private fun buildTargetRow(
+        context: Context,
+        item: TonightTarget,
+    ): LayoutElementBuilders.LayoutElement {
         val click = clickableOpenAim(context, item.id)
         val subtitle = item.subtitle ?: formatAzAlt(item.azDeg, item.altDeg)
 
-        val row = LayoutElementBuilders.Row.Builder()
-            .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
-            .setHeight(DimensionBuilders.WrappedDimensionProp.Builder().build())
-            .setModifiers(ModifiersBuilders.Modifiers.Builder().setClickable(click).build())
+        val row =
+            LayoutElementBuilders.Row.Builder()
+                .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
+                .setHeight(DimensionBuilders.WrappedDimensionProp.Builder().build())
+                .setModifiers(ModifiersBuilders.Modifiers.Builder().setClickable(click).build())
 
         // Иконка
         row.addContent(
@@ -263,8 +278,9 @@ open class TonightTileService : TileService() {
                 .build(),
         )
         // Тексты
-        val textCol = LayoutElementBuilders.Column.Builder()
-            .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
+        val textCol =
+            LayoutElementBuilders.Column.Builder()
+                .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
         // Primary (Material Text)
         textCol.addContent(
             Text.Builder(context, item.title).build(),
@@ -279,7 +295,10 @@ open class TonightTileService : TileService() {
     }
 
     /** Клик на цель AIM (использует константу ACTION_OPEN_AIM). */
-    private fun clickableOpenAim(context: Context, targetId: String?): ModifiersBuilders.Clickable {
+    private fun clickableOpenAim(
+        context: Context,
+        targetId: String?,
+    ): ModifiersBuilders.Clickable {
         val activity: ActionBuilders.AndroidActivity =
             ActionBuilders.AndroidActivity.Builder()
                 .setPackageName(context.packageName)
@@ -313,8 +332,12 @@ open class TonightTileService : TileService() {
             .build()
     }
 
-    private fun formatAzAlt(az: Double?, alt: Double?): String? {
+    private fun formatAzAlt(
+        az: Double?,
+        alt: Double?,
+    ): String? {
         if (az == null || alt == null) return null
+
         fun fmt(x: Double) = "%1$.0f°".format(x)
         return "Az ${fmt(az)} • Alt ${fmt(alt)}"
     }

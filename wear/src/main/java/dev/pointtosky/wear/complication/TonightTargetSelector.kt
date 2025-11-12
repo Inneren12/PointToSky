@@ -9,13 +9,16 @@ import dev.pointtosky.wear.tile.tonight.TonightTarget
  * Helper that applies complication preferences to the Tonight target list.
  */
 internal object TonightTargetSelector {
-
-    fun selectTargets(items: List<TonightTarget>, prefs: TonightPrefs): List<TonightTarget> {
+    fun selectTargets(
+        items: List<TonightTarget>,
+        prefs: TonightPrefs,
+    ): List<TonightTarget> {
         val limit = prefs.magLimit.toDouble()
-        val filtered = items.filter { target ->
-            val magnitude = parseMagnitude(target)
-            magnitude?.let { it <= limit } ?: true
-        }
+        val filtered =
+            items.filter { target ->
+                val magnitude = parseMagnitude(target)
+                magnitude?.let { it <= limit } ?: true
+            }
         if (!prefs.preferPlanets) {
             return filtered
         }
@@ -29,13 +32,15 @@ internal object TonightTargetSelector {
     }
 
     @VisibleForTesting
-    internal fun isPlanet(target: TonightTarget): Boolean = when (target.icon) {
-        TonightIcon.SUN,
-        TonightIcon.MOON,
-        TonightIcon.JUPITER,
-        TonightIcon.SATURN -> true
-        else -> false
-    }
+    internal fun isPlanet(target: TonightTarget): Boolean =
+        when (target.icon) {
+            TonightIcon.SUN,
+            TonightIcon.MOON,
+            TonightIcon.JUPITER,
+            TonightIcon.SATURN,
+            -> true
+            else -> false
+        }
 
     private fun parseMagnitude(target: TonightTarget): Double? {
         val regex = Regex("mag\\s*(-?\\d+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE)

@@ -26,22 +26,24 @@ class CardScreenTest {
     @get:Rule
     val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
-    private val targetPayload = AimTargetOption(
-        id = "vega",
-        label = "Vega",
-        buildMessage = { cid ->
-            dev.pointtosky.core.datalayer.AimSetTargetMessage(
-                cid = cid,
-                kind = AimTargetKind.EQUATORIAL,
-                payload = JsonCodec.encodeToElement(
-                    AimTargetEquatorialPayload(
-                        raDeg = 279.23473479,
-                        decDeg = 38.78368896,
-                    ),
-                ),
-            )
-        },
-    )
+    private val targetPayload =
+        AimTargetOption(
+            id = "vega",
+            label = "Vega",
+            buildMessage = { cid ->
+                dev.pointtosky.core.datalayer.AimSetTargetMessage(
+                    cid = cid,
+                    kind = AimTargetKind.EQUATORIAL,
+                    payload =
+                        JsonCodec.encodeToElement(
+                            AimTargetEquatorialPayload(
+                                raDeg = 279.23473479,
+                                decDeg = 38.78368896,
+                            ),
+                        ),
+                )
+            },
+        )
 
     private var sentTargetId: String? = null
 
@@ -52,22 +54,24 @@ class CardScreenTest {
 
     @Test
     fun cardScreenRendersAndSendsTarget() {
-        val state = CardUiState.Ready(
-            id = "vega",
-            title = "Vega",
-            type = CardObjectType.STAR,
-            magnitude = 0.03,
-            constellation = "LYR",
-            body = null,
-            equatorial = dev.pointtosky.core.astro.coord.Equatorial(279.23473479, 38.78368896),
-            horizontal = null,
-            bestWindow = CardBestWindow(
-                start = Instant.ofEpochSecond(1_700_000_000),
-                end = Instant.ofEpochSecond(1_700_003_600),
-            ),
-            targetOption = targetPayload,
-            shareText = "",
-        )
+        val state =
+            CardUiState.Ready(
+                id = "vega",
+                title = "Vega",
+                type = CardObjectType.STAR,
+                magnitude = 0.03,
+                constellation = "LYR",
+                body = null,
+                equatorial = dev.pointtosky.core.astro.coord.Equatorial(279.23473479, 38.78368896),
+                horizontal = null,
+                bestWindow =
+                    CardBestWindow(
+                        start = Instant.ofEpochSecond(1_700_000_000),
+                        end = Instant.ofEpochSecond(1_700_003_600),
+                    ),
+                targetOption = targetPayload,
+                shareText = "",
+            )
 
         composeTestRule.setContent {
             CardScreen(
@@ -79,7 +83,9 @@ class CardScreenTest {
         }
 
         composeTestRule.onNodeWithText("Vega").assertIsDisplayed()
-        composeTestRule.onNodeWithText(composeTestRule.activity.getString(dev.pointtosky.mobile.R.string.card_set_target_button))
+        composeTestRule.onNodeWithText(
+            composeTestRule.activity.getString(dev.pointtosky.mobile.R.string.card_set_target_button),
+        )
             .performClick()
 
         assertEquals("vega", sentTargetId)

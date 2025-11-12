@@ -38,7 +38,11 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun CatalogDebugRoute(factory: CatalogDebugViewModelFactory, modifier: Modifier = Modifier, onBack: () -> Unit) {
+fun CatalogDebugRoute(
+    factory: CatalogDebugViewModelFactory,
+    modifier: Modifier = Modifier,
+    onBack: () -> Unit,
+) {
     val viewModel: CatalogDebugViewModel = viewModel(factory = factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
     CatalogDebugScreen(
@@ -151,10 +155,11 @@ fun CatalogDebugScreen(
                         }
                         state.lastProbeTimestamp?.let { timestamp ->
                             Text(
-                                text = stringResource(
-                                    id = R.string.catalog_debug_probe_timestamp,
-                                    formatTimestamp(timestamp),
-                                ),
+                                text =
+                                    stringResource(
+                                        id = R.string.catalog_debug_probe_timestamp,
+                                        formatTimestamp(timestamp),
+                                    ),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -219,8 +224,9 @@ private fun formatProbeResult(result: ProbeResultUi): String {
 
 private fun formatTimestamp(timestampMs: Long): String {
     val instant = Instant.ofEpochMilli(timestampMs)
-    val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
-        .withLocale(Locale.getDefault())
-        .withZone(ZoneId.systemDefault())
+    val formatter =
+        DateTimeFormatter.ofPattern("HH:mm:ss")
+            .withLocale(Locale.getDefault())
+            .withZone(ZoneId.systemDefault())
     return formatter.format(instant)
 }

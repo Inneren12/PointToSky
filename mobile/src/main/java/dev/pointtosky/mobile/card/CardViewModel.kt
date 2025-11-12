@@ -30,37 +30,43 @@ class CardViewModel(
     private val locationPrefs: LocationPrefs,
     private val clock: () -> Instant = { Instant.now() },
 ) : ViewModel() {
+    val state: StateFlow<CardUiState> =
+        combine(
+            repository.observe(cardId),
+            locationPrefs.manualPointFlow,
+        ) { entry, manualPoint ->
+            buildState(entry, manualPoint)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = CardUiState.Loading,
+        )
 
-    val state: StateFlow<CardUiState> = combine(
-        repository.observe(cardId),
-        locationPrefs.manualPointFlow,
-    ) { entry, manualPoint ->
-        buildState(entry, manualPoint)
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = CardUiState.Loading,
-    )
-
-    private fun buildState(entry: CardRepository.Entry?, manualPoint: GeoPoint?): CardUiState {
-        val readyEntry = (entry as? CardRepository.Entry.Ready)?.model
-            ?: return CardUiState.Error(CardErrorReason.NOT_ENOUGH_DATA)
+    private fun buildState(
+        entry: CardRepository.Entry?,
+        manualPoint: GeoPoint?,
+    ): CardUiState {
+        val readyEntry =
+            (entry as? CardRepository.Entry.Ready)?.model
+                ?: return CardUiState.Error(CardErrorReason.NOT_ENOUGH_DATA)
         val equatorial = readyEntry.equatorial
-        val computedHorizontal: Horizontal? = if (equatorial != null && manualPoint != null) {
-            computeHorizontal(equatorial, manualPoint)
-        } else {
-            null
-        }
+        val computedHorizontal: Horizontal? =
+            if (equatorial != null && manualPoint != null) {
+                computeHorizontal(equatorial, manualPoint)
+            } else {
+                null
+            }
         val horizontal = computedHorizontal ?: readyEntry.horizontal
         val title = titleFor(readyEntry)
-        val shareText = buildShareText(
-            title = title,
-            type = readyEntry.type,
-            magnitude = readyEntry.magnitude,
-            equatorial = equatorial,
-            horizontal = horizontal,
-            bestWindow = readyEntry.bestWindow,
-        )
+        val shareText =
+            buildShareText(
+                title = title,
+                type = readyEntry.type,
+                magnitude = readyEntry.magnitude,
+                equatorial = equatorial,
+                horizontal = horizontal,
+                bestWindow = readyEntry.bestWindow,
+            )
         val targetOption = buildTargetOption(readyEntry, title, equatorial)
         return CardUiState.Ready(
             id = readyEntry.id,
@@ -77,7 +83,10 @@ class CardViewModel(
         )
     }
 
-    private fun computeHorizontal(eq: Equatorial, point: GeoPoint): Horizontal? {
+    private fun computeHorizontal(
+        eq: Equatorial,
+        point: GeoPoint,
+    ): Horizontal? {
         return runCatching {
             val instant = clock()
             val lst = lstAt(instant, point.lonDeg).lstDeg
@@ -94,41 +103,49 @@ class CardViewModel(
         }
     }
 
-    private fun buildTargetOption(model: CardObjectModel, label: String, equatorial: Equatorial?): AimTargetOption? {
+    private fun buildTargetOption(
+        model: CardObjectModel,
+        label: String,
+        equatorial: Equatorial?,
+    ): AimTargetOption? {
         return when (model.type) {
-            CardObjectType.STAR -> equatorial?.let { eq ->
-                AimTargetOption(
-                    id = model.id,
-                    label = label,
-                    buildMessage = { cid ->
-                        AimSetTargetMessage(
-                            cid = cid,
-                            kind = AimTargetKind.EQUATORIAL,
-                            payload = JsonCodec.encodeToElement(
-                                AimTargetEquatorialPayload(
-                                    raDeg = eq.raDeg,
-                                    decDeg = eq.decDeg,
-                                ),
-                            ),
-                        )
-                    },
-                )
-            }
-            CardObjectType.PLANET, CardObjectType.MOON -> model.body?.let { body ->
-                AimTargetOption(
-                    id = model.id,
-                    label = label,
-                    buildMessage = { cid ->
-                        AimSetTargetMessage(
-                            cid = cid,
-                            kind = AimTargetKind.BODY,
-                            payload = JsonCodec.encodeToElement(
-                                AimTargetBodyPayload(body = body),
-                            ),
-                        )
-                    },
-                )
-            }
+            CardObjectType.STAR ->
+                equatorial?.let { eq ->
+                    AimTargetOption(
+                        id = model.id,
+                        label = label,
+                        buildMessage = { cid ->
+                            AimSetTargetMessage(
+                                cid = cid,
+                                kind = AimTargetKind.EQUATORIAL,
+                                payload =
+                                    JsonCodec.encodeToElement(
+                                        AimTargetEquatorialPayload(
+                                            raDeg = eq.raDeg,
+                                            decDeg = eq.decDeg,
+                                        ),
+                                    ),
+                            )
+                        },
+                    )
+                }
+            CardObjectType.PLANET, CardObjectType.MOON ->
+                model.body?.let { body ->
+                    AimTargetOption(
+                        id = model.id,
+                        label = label,
+                        buildMessage = { cid ->
+                            AimSetTargetMessage(
+                                cid = cid,
+                                kind = AimTargetKind.BODY,
+                                payload =
+                                    JsonCodec.encodeToElement(
+                                        AimTargetBodyPayload(body = body),
+                                    ),
+                            )
+                        },
+                    )
+                }
             CardObjectType.CONST -> null
         }
     }
@@ -178,8 +195,9 @@ class CardViewModel(
         val start = window.start
         val end = window.end
         if (start == null && end == null) return null
-        val formatter = DateTimeFormatter.ofPattern("dd MMM HH:mm", Locale.getDefault())
-            .withZone(ZoneId.systemDefault())
+        val formatter =
+            DateTimeFormatter.ofPattern("dd MMM HH:mm", Locale.getDefault())
+                .withZone(ZoneId.systemDefault())
         val startText = start?.let { formatter.format(it) }
         val endText = end?.let { formatter.format(it) }
         return when {
@@ -211,7 +229,9 @@ class CardViewModelFactory(
 
 sealed interface CardUiState {
     object Loading : CardUiState
+
     data class Error(val reason: CardErrorReason) : CardUiState
+
     data class Ready(
         val id: String,
         val title: String,

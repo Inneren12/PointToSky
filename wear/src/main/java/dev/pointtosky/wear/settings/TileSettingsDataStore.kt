@@ -46,8 +46,11 @@ class TileSettingsDataStore(
 
     // Mutators
     suspend fun setMagLimit(value: Double) = context.tilePrefsDataStore.edit { it[keyMagLimit] = value }
+
     suspend fun setMinAltDeg(value: Double) = context.tilePrefsDataStore.edit { it[keyMinAlt] = value }
+
     suspend fun setMaxItems(value: Int) = context.tilePrefsDataStore.edit { it[keyMaxItems] = value }
+
     suspend fun setPreferPlanets(value: Boolean) = context.tilePrefsDataStore.edit { it[keyPrefPlan] = value }
 
     // Снимок конфигурации для провайдера

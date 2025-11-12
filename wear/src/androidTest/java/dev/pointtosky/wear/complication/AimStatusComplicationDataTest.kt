@@ -14,42 +14,45 @@ import com.google.common.truth.Truth.assertThat
 import dev.pointtosky.wear.aim.core.AimPhase
 import dev.pointtosky.wear.complication.config.AimPrefs
 import dev.pointtosky.wear.complication.config.ComplicationPrefsStore
-import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.Instant
 
 @RunWith(AndroidJUnit4::class)
 class AimStatusComplicationDataTest {
-
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val repository = AimStatusRepository(context)
     private val prefsStore = ComplicationPrefsStore(context)
 
-    private val snapshot = AimStatusSnapshot(
-        timestampMs = 42L,
-        isActive = true,
-        dAzDeg = 1.2,
-        dAltDeg = 0.4,
-        phase = AimPhase.IN_TOLERANCE,
-        target = AimStatusTarget(
-            kind = AimStatusTargetKind.STAR,
-            label = "Vega",
-        ),
-    )
+    private val snapshot =
+        AimStatusSnapshot(
+            timestampMs = 42L,
+            isActive = true,
+            dAzDeg = 1.2,
+            dAltDeg = 0.4,
+            phase = AimPhase.IN_TOLERANCE,
+            target =
+                AimStatusTarget(
+                    kind = AimStatusTargetKind.STAR,
+                    label = "Vega",
+                ),
+        )
 
     @Before
-    fun setUp() = runBlocking {
-        repository.write(snapshot)
-        prefsStore.saveAim(AimPrefs(showDelta = true, showPhase = true))
-    }
+    fun setUp() =
+        runBlocking {
+            repository.write(snapshot)
+            prefsStore.saveAim(AimPrefs(showDelta = true, showPhase = true))
+        }
 
     @After
-    fun tearDown() = runBlocking {
-        repository.write(AimStatusSnapshot.EMPTY)
-    }
+    fun tearDown() =
+        runBlocking {
+            repository.write(AimStatusSnapshot.EMPTY)
+        }
 
     @Test
     fun shortTextData_containsPhaseAndOffsets() {
@@ -85,14 +88,16 @@ class AimStatusComplicationDataTest {
         var result: ComplicationData? = null
         val scenario = ServiceScenario.launch(AimStatusDataSourceService::class.java)
         scenario.onService { service ->
-            result = runBlocking {
-                service.onComplicationRequest(
-                    ComplicationRequest(
-                        /* complicationInstanceId = */ 101,
-                        type,
-                    ),
-                )
-            }
+            result =
+                runBlocking {
+                    service.onComplicationRequest(
+                        ComplicationRequest(
+                            // complicationInstanceId =
+                            101,
+                            type,
+                        ),
+                    )
+                }
         }
         scenario.close()
         return result

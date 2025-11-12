@@ -3,15 +3,14 @@ package dev.pointtosky.wear.complication
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import java.util.Locale
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.Locale
 
 @RunWith(RobolectricTestRunner::class)
 class AimStatusFormatterTest {
-
     private lateinit var context: Context
     private lateinit var formatter: AimStatusFormatter
 

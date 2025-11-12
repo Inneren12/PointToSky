@@ -8,6 +8,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+
 /**
  * Инструментальные тесты построения тайла с помощью Tiles API (и tiles-testing в classpath).
  * Проверяем, что:
@@ -19,15 +20,15 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class TonightTileServiceRenderTest {
-
     @Test
     fun resources_haveVersion() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val service = TonightTileServiceTestHarness()
         service.initForTest(ctx)
-        val req = RequestBuilders.ResourcesRequest.Builder()
-            .setVersion("test")
-            .build()
+        val req =
+            RequestBuilders.ResourcesRequest.Builder()
+                .setVersion("test")
+                .build()
         val res = service.callOnResourcesRequest(req).get()
         // Версия ресурсов должна быть та, что задаёт сервис (RES_VER)
         // Smoke: версия ресурсов есть (конкретное значение может меняться)
@@ -41,14 +42,16 @@ class TonightTileServiceRenderTest {
         val service = TonightTileServiceTestHarness()
         service.initForTest(ctx)
 
-        val dp = DeviceParametersBuilders.DeviceParameters.Builder()
-            .setScreenWidthDp(192)
-            .setScreenHeightDp(192)
-            .setScreenDensity(320f)
-            .build()
-        val req = RequestBuilders.TileRequest.Builder()
-            .setDeviceParameters(dp)
-            .build()
+        val dp =
+            DeviceParametersBuilders.DeviceParameters.Builder()
+                .setScreenWidthDp(192)
+                .setScreenHeightDp(192)
+                .setScreenDensity(320f)
+                .build()
+        val req =
+            RequestBuilders.TileRequest.Builder()
+                .setDeviceParameters(dp)
+                .build()
 
         val tile = service.callOnTileRequest(req).get()
         // Smoke: версия ресурсов есть

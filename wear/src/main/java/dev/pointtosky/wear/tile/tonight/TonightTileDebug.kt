@@ -13,10 +13,11 @@ object TonightTileDebug {
     val state: StateFlow<TileGenerationInfo?> = _state.asStateFlow()
 
     fun update(model: TonightTileModel) {
-        _state.value = TileGenerationInfo(
-            generatedAt = model.updatedAt,
-            topTargetTitle = model.items.firstOrNull()?.title,
-        )
+        _state.value =
+            TileGenerationInfo(
+                generatedAt = model.updatedAt,
+                topTargetTitle = model.items.firstOrNull()?.title,
+            )
     }
 }
 

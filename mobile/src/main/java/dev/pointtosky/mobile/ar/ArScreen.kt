@@ -76,34 +76,38 @@ fun ArRoute(
     onSendAimTarget: (AimTargetOption) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val viewModel: ArViewModel = viewModel(
-        factory = ArViewModelFactory(
-            catalogRepository = catalogRepository,
-            locationPrefs = locationPrefs,
-        ),
-    )
+    val viewModel: ArViewModel =
+        viewModel(
+            factory =
+                ArViewModelFactory(
+                    catalogRepository = catalogRepository,
+                    locationPrefs = locationPrefs,
+                ),
+        )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     ArScreen(
         state = state,
         onBack = onBack,
         onSetTarget = { target ->
-            val option = AimTargetOption(
-                id = "ar-target",
-                label = target.label,
-                buildMessage = { cid ->
-                    AimSetTargetMessage(
-                        cid = cid,
-                        kind = AimTargetKind.EQUATORIAL,
-                        payload = JsonCodec.encodeToElement(
-                            AimTargetEquatorialPayload(
-                                raDeg = target.raDeg,
-                                decDeg = target.decDeg,
-                            ),
-                        ),
-                    )
-                },
-            )
+            val option =
+                AimTargetOption(
+                    id = "ar-target",
+                    label = target.label,
+                    buildMessage = { cid ->
+                        AimSetTargetMessage(
+                            cid = cid,
+                            kind = AimTargetKind.EQUATORIAL,
+                            payload =
+                                JsonCodec.encodeToElement(
+                                    AimTargetEquatorialPayload(
+                                        raDeg = target.raDeg,
+                                        decDeg = target.decDeg,
+                                    ),
+                                ),
+                        )
+                    },
+                )
             onSendAimTarget(option)
         },
         modifier = modifier,
@@ -117,7 +121,12 @@ data class ArTarget(
 )
 
 @Composable
-fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Unit, modifier: Modifier = Modifier) {
+fun ArScreen(
+    state: ArUiState,
+    onBack: () -> Unit,
+    onSetTarget: (ArTarget) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val permission = Manifest.permission.CAMERA
     var hasPermission by remember {
@@ -125,9 +134,10 @@ fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Un
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED,
         )
     }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasPermission = granted
-    }
+    val launcher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            hasPermission = granted
+        }
     LaunchedEffect(Unit) {
         if (!hasPermission) {
             launcher.launch(permission)
@@ -138,10 +148,11 @@ fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Un
     var overlaySize by remember { mutableStateOf(IntSize.Zero) }
 
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .onSizeChanged { overlaySize = it },
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .onSizeChanged { overlaySize = it },
     ) {
         if (hasPermission) {
             CameraPreview(modifier = Modifier.fillMaxSize())
@@ -151,10 +162,11 @@ fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Un
 
         IconButton(
             onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(16.dp)
-                .background(color = Color(0x66000000), shape = CircleShape),
+            modifier =
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(16.dp)
+                    .background(color = Color(0x66000000), shape = CircleShape),
         ) {
             Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
         }
@@ -168,13 +180,14 @@ fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Un
             }
 
             is ArUiState.Ready -> {
-                val overlay = remember(state, rotationFrame, overlaySize) {
-                    if (rotationFrame != null && overlaySize != IntSize.Zero) {
-                        calculateOverlay(state, rotationFrame, overlaySize)
-                    } else {
-                        null
+                val overlay =
+                    remember(state, rotationFrame, overlaySize) {
+                        if (rotationFrame != null && overlaySize != IntSize.Zero) {
+                            calculateOverlay(state, rotationFrame, overlaySize)
+                        } else {
+                            null
+                        }
                     }
-                }
 
                 Reticle(modifier = Modifier.align(Alignment.Center))
 
@@ -185,25 +198,28 @@ fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Un
                     )
                 }
 
-                val targetLabel = overlay?.nearestLabel?.title
-                    ?: stringResource(id = R.string.ar_target_fallback_label)
+                val targetLabel =
+                    overlay?.nearestLabel?.title
+                        ?: stringResource(id = R.string.ar_target_fallback_label)
 
-                val target = overlay?.let {
-                    ArTarget(
-                        raDeg = it.reticleEquatorial.raDeg,
-                        decDeg = it.reticleEquatorial.decDeg,
-                        label = targetLabel,
-                    )
-                }
+                val target =
+                    overlay?.let {
+                        ArTarget(
+                            raDeg = it.reticleEquatorial.raDeg,
+                            decDeg = it.reticleEquatorial.decDeg,
+                            label = targetLabel,
+                        )
+                    }
 
                 if (overlay != null) {
                     InfoPanel(
                         overlay = overlay,
                         targetLabel = targetLabel,
                         onSetTarget = { target?.let(onSetTarget) },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(16.dp),
+                        modifier =
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(16.dp),
                     )
                 }
             }
@@ -214,10 +230,11 @@ fun ArScreen(state: ArUiState, onBack: () -> Unit, onSetTarget: (ArTarget) -> Un
 @Composable
 private fun PermissionRequest(onRequest: () -> Unit) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.8f))
-            .padding(24.dp),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.8f))
+                .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -241,8 +258,9 @@ private fun PermissionRequest(onRequest: () -> Unit) {
 private fun Reticle(modifier: Modifier = Modifier) {
     val strokeWidth = 2.dp
     Canvas(
-        modifier = modifier
-            .size(96.dp),
+        modifier =
+            modifier
+                .size(96.dp),
     ) {
         drawCircle(
             color = Color.White.copy(alpha = 0.6f),
@@ -265,40 +283,49 @@ private fun Reticle(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: () -> Unit, modifier: Modifier = Modifier) {
+private fun InfoPanel(
+    overlay: OverlayData,
+    targetLabel: String,
+    onSetTarget: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val locale = Locale.getDefault()
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(color = Color(0x99000000), shape = RoundedCornerShape(16.dp))
-            .padding(16.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .background(color = Color(0x99000000), shape = RoundedCornerShape(16.dp))
+                .padding(16.dp),
     ) {
         Text(
-            text = stringResource(
-                id = R.string.ar_reticle_alt_az,
-                formatAngle(locale, overlay.reticleHorizontal.altDeg),
-                formatAngle(locale, overlay.reticleHorizontal.azDeg),
-            ),
+            text =
+                stringResource(
+                    id = R.string.ar_reticle_alt_az,
+                    formatAngle(locale, overlay.reticleHorizontal.altDeg),
+                    formatAngle(locale, overlay.reticleHorizontal.azDeg),
+                ),
             color = Color.White,
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
-            text = stringResource(
-                id = R.string.ar_reticle_ra_dec,
-                formatAngle(locale, overlay.reticleEquatorial.raDeg),
-                formatAngle(locale, overlay.reticleEquatorial.decDeg),
-            ),
+            text =
+                stringResource(
+                    id = R.string.ar_reticle_ra_dec,
+                    formatAngle(locale, overlay.reticleEquatorial.raDeg),
+                    formatAngle(locale, overlay.reticleEquatorial.decDeg),
+                ),
             color = Color.White,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 4.dp),
         )
         overlay.nearestLabel?.let { nearest ->
             Text(
-                text = stringResource(
-                    id = R.string.ar_nearest_object,
-                    nearest.title ?: stringResource(id = R.string.ar_unknown_object),
-                    formatAngle(locale, nearest.separationDeg),
-                ),
+                text =
+                    stringResource(
+                        id = R.string.ar_nearest_object,
+                        nearest.title ?: stringResource(id = R.string.ar_unknown_object),
+                        formatAngle(locale, nearest.separationDeg),
+                    ),
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 8.dp),
@@ -306,9 +333,10 @@ private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: ()
         }
         Button(
             onClick = onSetTarget,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
         ) {
             Text(text = stringResource(id = R.string.ar_set_target_button, targetLabel))
         }
@@ -316,21 +344,26 @@ private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: ()
 }
 
 @Composable
-private fun ArObjectLabel(data: OverlayObject, modifier: Modifier = Modifier) {
+private fun ArObjectLabel(
+    data: OverlayObject,
+    modifier: Modifier = Modifier,
+) {
     val density = LocalDensity.current
-    val offset = remember(data.position, density) {
-        val anchorX = with(density) { 80.dp.toPx() }
-        val anchorY = with(density) { 48.dp.toPx() }
-        IntOffset(
-            x = (data.position.x - anchorX).roundToInt(),
-            y = (data.position.y - anchorY).roundToInt(),
-        )
-    }
+    val offset =
+        remember(data.position, density) {
+            val anchorX = with(density) { 80.dp.toPx() }
+            val anchorY = with(density) { 48.dp.toPx() }
+            IntOffset(
+                x = (data.position.x - anchorX).roundToInt(),
+                y = (data.position.y - anchorY).roundToInt(),
+            )
+        }
     Column(
-        modifier = modifier
-            .offset { offset }
-            .background(color = Color(0x99000000), shape = RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier =
+            modifier
+                .offset { offset }
+                .background(color = Color(0x99000000), shape = RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Text(
             text = data.title ?: stringResource(id = R.string.ar_unknown_object),
@@ -338,11 +371,12 @@ private fun ArObjectLabel(data: OverlayObject, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
         )
         Text(
-            text = stringResource(
-                id = R.string.ar_label_meta,
-                data.magnitude,
-                data.separationDeg,
-            ),
+            text =
+                stringResource(
+                    id = R.string.ar_label_meta,
+                    data.magnitude,
+                    data.separationDeg,
+                ),
             color = Color.White.copy(alpha = 0.9f),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 4.dp),
@@ -350,15 +384,20 @@ private fun ArObjectLabel(data: OverlayObject, modifier: Modifier = Modifier) {
     }
 }
 
-private fun calculateOverlay(state: ArUiState.Ready, frame: RotationFrame, viewport: IntSize): OverlayData? {
+private fun calculateOverlay(
+    state: ArUiState.Ready,
+    frame: RotationFrame,
+    viewport: IntSize,
+): OverlayData? {
     if (viewport.width == 0 || viewport.height == 0) return null
 
     val reticleHorizontal = vectorToHorizontal(frame.forwardWorld)
-    val reticleEquatorial = altAzToRaDec(
-        reticleHorizontal,
-        lstDeg = state.lstDeg,
-        latDeg = state.location.latDeg,
-    )
+    val reticleEquatorial =
+        altAzToRaDec(
+            reticleHorizontal,
+            lstDeg = state.lstDeg,
+            latDeg = state.location.latDeg,
+        )
     val worldToDevice = transpose(frame.rotationMatrix)
     val width = viewport.width.toFloat()
     val height = viewport.height.toFloat()
@@ -367,33 +406,35 @@ private fun calculateOverlay(state: ArUiState.Ready, frame: RotationFrame, viewp
     val tanHFov = tan(Math.toRadians(HORIZONTAL_FOV_DEG / 2.0))
     val tanVFov = tan(Math.toRadians(VERTICAL_FOV_DEG / 2.0))
 
-    val objects = state.stars.mapNotNull { star ->
-        val horizontal = raDecToAltAz(
-            star.equatorial,
-            lstDeg = state.lstDeg,
-            latDeg = state.location.latDeg,
-            applyRefraction = false,
-        )
-        if (horizontal.altDeg < 0.0) return@mapNotNull null
-        val worldVec = horizontalToVector(horizontal)
-        val deviceVec = multiply(worldToDevice, worldVec)
-        if (deviceVec[2] >= -0.01f) return@mapNotNull null
-        val ndcX = (deviceVec[0] / -deviceVec[2]) / tanHFov
-        val ndcY = (deviceVec[1] / -deviceVec[2]) / tanVFov
-        val distance = sqrt(ndcX * ndcX + ndcY * ndcY)
-        if (distance > MAX_SCREEN_DISTANCE) return@mapNotNull null
-        val screenX = halfWidth * (1f + ndcX.toFloat())
-        val screenY = halfHeight * (1f - ndcY.toFloat())
-        val separation = angularSeparationDeg(reticleEquatorial, star.equatorial)
-        OverlayObject(
-            title = star.label,
-            magnitude = star.magnitude,
-            position = Offset(screenX, screenY),
-            distance = distance,
-            separationDeg = separation,
-        )
-    }.sortedBy { it.distance }
-        .take(MAX_LABELS)
+    val objects =
+        state.stars.mapNotNull { star ->
+            val horizontal =
+                raDecToAltAz(
+                    star.equatorial,
+                    lstDeg = state.lstDeg,
+                    latDeg = state.location.latDeg,
+                    applyRefraction = false,
+                )
+            if (horizontal.altDeg < 0.0) return@mapNotNull null
+            val worldVec = horizontalToVector(horizontal)
+            val deviceVec = multiply(worldToDevice, worldVec)
+            if (deviceVec[2] >= -0.01f) return@mapNotNull null
+            val ndcX = (deviceVec[0] / -deviceVec[2]) / tanHFov
+            val ndcY = (deviceVec[1] / -deviceVec[2]) / tanVFov
+            val distance = sqrt(ndcX * ndcX + ndcY * ndcY)
+            if (distance > MAX_SCREEN_DISTANCE) return@mapNotNull null
+            val screenX = halfWidth * (1f + ndcX.toFloat())
+            val screenY = halfHeight * (1f - ndcY.toFloat())
+            val separation = angularSeparationDeg(reticleEquatorial, star.equatorial)
+            OverlayObject(
+                title = star.label,
+                magnitude = star.magnitude,
+                position = Offset(screenX, screenY),
+                distance = distance,
+                separationDeg = separation,
+            )
+        }.sortedBy { it.distance }
+            .take(MAX_LABELS)
 
     return OverlayData(
         reticleHorizontal = reticleHorizontal,
@@ -428,7 +469,10 @@ private fun transpose(matrix: FloatArray): FloatArray {
     return result
 }
 
-private fun multiply(matrix: FloatArray, vector: FloatArray): FloatArray {
+private fun multiply(
+    matrix: FloatArray,
+    vector: FloatArray,
+): FloatArray {
     val x = matrix[0] * vector[0] + matrix[1] * vector[1] + matrix[2] * vector[2]
     val y = matrix[3] * vector[0] + matrix[4] * vector[1] + matrix[5] * vector[2]
     val z = matrix[6] * vector[0] + matrix[7] * vector[1] + matrix[8] * vector[2]
@@ -456,7 +500,10 @@ private fun vectorToHorizontal(vector: FloatArray): Horizontal {
     return Horizontal(azDeg = azDeg, altDeg = altDeg)
 }
 
-private fun formatAngle(locale: Locale, value: Double): String {
+private fun formatAngle(
+    locale: Locale,
+    value: Double,
+): String {
     return String.format(locale, "%.1f", value)
 }
 

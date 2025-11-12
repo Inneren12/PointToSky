@@ -29,7 +29,10 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun CrashLogRoute(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun CrashLogRoute(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val application = remember(context) { context.applicationContext as Application }
     val viewModel: CrashLogViewModel = viewModel(factory = CrashLogViewModelFactory(application))
@@ -57,9 +60,10 @@ fun CrashLogScreen(
     val formatter = remember { DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault()) }
     val scope = rememberCoroutineScope()
     val lastCrash = state.lastCrash
-    val timestampText = remember(lastCrash) {
-        lastCrash?.timestamp?.atZone(zoneId)?.let { formatter.format(it) }
-    }
+    val timestampText =
+        remember(lastCrash) {
+            lastCrash?.timestamp?.atZone(zoneId)?.let { formatter.format(it) }
+        }
 
     ScalingLazyColumn(
         modifier = modifier,
@@ -79,11 +83,12 @@ fun CrashLogScreen(
         if (state.statusMessage != null || state.errorMessage != null) {
             item {
                 val text = (state.statusMessage ?: state.errorMessage).orEmpty()
-                val color = if (state.errorMessage != null) {
-                    MaterialTheme.colors.error
-                } else {
-                    MaterialTheme.colors.primary
-                }
+                val color =
+                    if (state.errorMessage != null) {
+                        MaterialTheme.colors.error
+                    } else {
+                        MaterialTheme.colors.primary
+                    }
                 Text(
                     text = text,
                     color = color,
@@ -121,11 +126,12 @@ fun CrashLogScreen(
             }
             item {
                 Text(
-                    text = stringResource(
-                        id = R.string.crash_logs_last_crash_thread,
-                        lastCrash.threadName,
-                        lastCrash.threadId,
-                    ),
+                    text =
+                        stringResource(
+                            id = R.string.crash_logs_last_crash_thread,
+                            lastCrash.threadName,
+                            lastCrash.threadId,
+                        ),
                 )
             }
             item {

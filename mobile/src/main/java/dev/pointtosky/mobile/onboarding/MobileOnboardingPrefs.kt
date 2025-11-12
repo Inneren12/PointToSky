@@ -23,16 +23,16 @@ interface MobileOnboardingPrefs {
 private class MobileOnboardingPrefsDataStore(
     private val dataStore: DataStore<Preferences>,
 ) : MobileOnboardingPrefs {
-
-    override val acceptedFlow: Flow<Boolean> = dataStore.data
-        .catch { error ->
-            if (error is IOException) {
-                emit(emptyPreferences())
-            } else {
-                throw error
+    override val acceptedFlow: Flow<Boolean> =
+        dataStore.data
+            .catch { error ->
+                if (error is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw error
+                }
             }
-        }
-        .map { preferences -> preferences[ACCEPTED_KEY] ?: false }
+            .map { preferences -> preferences[ACCEPTED_KEY] ?: false }
 
     override suspend fun setAccepted(accepted: Boolean) {
         dataStore.edit { preferences ->

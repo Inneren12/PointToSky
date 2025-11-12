@@ -24,17 +24,22 @@ object PhoneHeadingBridge {
 
     fun heading(): StateFlow<PhoneHeading?> = headingState.asStateFlow()
 
-    fun updateHeading(azDeg: Double, timestampMs: Long) {
+    fun updateHeading(
+        azDeg: Double,
+        timestampMs: Long,
+    ) {
         val normalized = normalizeDeg(azDeg.toFloat())
-        headingState.value = PhoneHeading(
-            azimuthDeg = normalized,
-            timestampMs = timestampMs,
-        )
+        headingState.value =
+            PhoneHeading(
+                azimuthDeg = normalized,
+                timestampMs = timestampMs,
+            )
         expiryJob?.cancel()
-        expiryJob = scope.launch {
-            delay(STALE_AFTER_MS)
-            headingState.value = null
-        }
+        expiryJob =
+            scope.launch {
+                delay(STALE_AFTER_MS)
+                headingState.value = null
+            }
     }
 
     private fun normalizeDeg(value: Float): Float {

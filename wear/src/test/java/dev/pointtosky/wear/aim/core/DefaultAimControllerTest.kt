@@ -30,99 +30,108 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class DefaultAimControllerTest {
+    @Test
+    fun `dAz wraps across 0-360`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val targetHorizontal = Horizontal(1.0, 0.0)
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> targetHorizontal },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.start()
+
+            location.emit(
+                LocationFix(
+                    point = GeoPoint(0.0, 0.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.MANUAL,
+                ),
+            )
+
+            val frame = orientationFrame(timestampMs = 0L, azDeg = 359.0, altDeg = 0.0)
+            orientation.emit(frame)
+
+            val state =
+                withTimeout(1_000) {
+                    controller.state.filter { it.current.azDeg != 0.0 }.first()
+                }
+
+            assertEquals(359.0, state.current.azDeg, 1e-3)
+            assertEquals(1.0, state.target.azDeg, 1e-6)
+            assertEquals(2.0, state.dAzDeg, 1e-6)
+            controller.stop()
+        }
 
     @Test
-    fun `dAz wraps across 0-360`() = runBlocking {
-        val orientation = FakeOrientationRepository()
-        val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
-        val timeSource = FakeTimeSource(Instant.EPOCH)
-        val ephem = FakeEphemerisComputer()
-        val targetHorizontal = Horizontal(1.0, 0.0)
-        val controller = DefaultAimController(
-            orientation = orientation,
-            location = location,
-            time = timeSource,
-            ephem = ephem,
-            raDecToAltAz = { _, _, _ -> targetHorizontal },
-        )
+    fun `locks after hold duration and resets when out of tolerance`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val targetHorizontal = Horizontal(0.0, 0.0)
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> targetHorizontal },
+                )
 
-        controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
-        controller.start()
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(500)
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+            controller.start()
 
-        location.emit(
-            LocationFix(
-                point = GeoPoint(0.0, 0.0),
-                timeMs = 0,
-                accuracyM = null,
-                provider = ProviderType.MANUAL,
-            ),
-        )
+            location.emit(
+                LocationFix(
+                    point = GeoPoint(0.0, 0.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.MANUAL,
+                ),
+            )
 
-        val frame = orientationFrame(timestampMs = 0L, azDeg = 359.0, altDeg = 0.0)
-        orientation.emit(frame)
+            orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 0.0, altDeg = 0.0))
 
-        val state = withTimeout(1_000) {
-            controller.state.filter { it.current.azDeg != 0.0 }.first()
+            withTimeout(1_000) {
+                controller.state.filter { it.phase == AimPhase.IN_TOLERANCE }.first()
+            }
+
+            orientation.emit(orientationFrame(timestampMs = 700L, azDeg = 0.0, altDeg = 0.0))
+
+            withTimeout(1_000) {
+                controller.state.filter { it.phase == AimPhase.LOCKED }.first()
+            }
+
+            orientation.emit(orientationFrame(timestampMs = 1_400L, azDeg = 20.0, altDeg = 0.0))
+
+            val state =
+                withTimeout(1_000) {
+                    controller.state.filter { it.phase == AimPhase.SEARCHING }.first()
+                }
+
+            assertTrue { kotlin.math.abs(state.dAzDeg) >= 5.0 }
+            controller.stop()
         }
 
-        assertEquals(359.0, state.current.azDeg, 1e-3)
-        assertEquals(1.0, state.target.azDeg, 1e-6)
-        assertEquals(2.0, state.dAzDeg, 1e-6)
-        controller.stop()
-    }
-
-    @Test
-    fun `locks after hold duration and resets when out of tolerance`() = runBlocking {
-        val orientation = FakeOrientationRepository()
-        val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
-        val timeSource = FakeTimeSource(Instant.EPOCH)
-        val ephem = FakeEphemerisComputer()
-        val targetHorizontal = Horizontal(0.0, 0.0)
-        val controller = DefaultAimController(
-            orientation = orientation,
-            location = location,
-            time = timeSource,
-            ephem = ephem,
-            raDecToAltAz = { _, _, _ -> targetHorizontal },
-        )
-
-        controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
-        controller.setHoldToLockMs(500)
-        controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
-        controller.start()
-
-        location.emit(
-            LocationFix(
-                point = GeoPoint(0.0, 0.0),
-                timeMs = 0,
-                accuracyM = null,
-                provider = ProviderType.MANUAL,
-            ),
-        )
-
-        orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 0.0, altDeg = 0.0))
-
-        withTimeout(1_000) {
-            controller.state.filter { it.phase == AimPhase.IN_TOLERANCE }.first()
-        }
-
-        orientation.emit(orientationFrame(timestampMs = 700L, azDeg = 0.0, altDeg = 0.0))
-
-        withTimeout(1_000) {
-            controller.state.filter { it.phase == AimPhase.LOCKED }.first()
-        }
-
-        orientation.emit(orientationFrame(timestampMs = 1_400L, azDeg = 20.0, altDeg = 0.0))
-
-        val state = withTimeout(1_000) {
-            controller.state.filter { it.phase == AimPhase.SEARCHING }.first()
-        }
-
-        assertTrue { kotlin.math.abs(state.dAzDeg) >= 5.0 }
-        controller.stop()
-    }
-
-    private fun orientationFrame(timestampMs: Long, azDeg: Double, altDeg: Double): OrientationFrame {
+    private fun orientationFrame(
+        timestampMs: Long,
+        azDeg: Double,
+        altDeg: Double,
+    ): OrientationFrame {
         val azRad = Math.toRadians(azDeg)
         val altRad = Math.toRadians(altDeg)
         val cosAlt = kotlin.math.cos(altRad)
@@ -164,9 +173,10 @@ class DefaultAimControllerTest {
 
     private class FakeLocationOrchestrator(initial: GeoPoint?) : LocationOrchestrator {
         private val _fixes = MutableSharedFlow<LocationFix>(extraBufferCapacity = 4)
-        private var lastFix: LocationFix? = initial?.let {
-            LocationFix(point = it, timeMs = 0, accuracyM = null, provider = ProviderType.MANUAL)
-        }
+        private var lastFix: LocationFix? =
+            initial?.let {
+                LocationFix(point = it, timeMs = 0, accuracyM = null, provider = ProviderType.MANUAL)
+            }
 
         override val fixes: Flow<LocationFix> = _fixes
 
@@ -199,7 +209,10 @@ class DefaultAimControllerTest {
     }
 
     private class FakeEphemerisComputer : EphemerisComputer {
-        override fun compute(body: Body, instant: Instant): Ephemeris {
+        override fun compute(
+            body: Body,
+            instant: Instant,
+        ): Ephemeris {
             return Ephemeris(eq = Equatorial(0.0, 0.0))
         }
     }

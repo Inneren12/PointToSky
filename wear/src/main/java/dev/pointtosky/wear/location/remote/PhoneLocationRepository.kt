@@ -45,7 +45,6 @@ class PhoneLocationRepository(
     private val clock: () -> Long = System::currentTimeMillis,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : LocationRepository, MessageClient.OnMessageReceivedListener, OnDataChangedListener {
-
     private val appContext = context.applicationContext
     private val messageClient: MessageClient = Wearable.getMessageClient(appContext)
     private val dataClient: DataClient = Wearable.getDataClient(appContext)
@@ -98,11 +97,12 @@ class PhoneLocationRepository(
         handleIncomingFix(payload.fix)
     }
 
-    override fun onDataChanged(dataEvents: DataEventBuffer) = dataEvents.use { buffer ->
-        buffer.forEach { event ->
-            event.toLastFix()?.let(::handleIncomingFix)
+    override fun onDataChanged(dataEvents: DataEventBuffer) =
+        dataEvents.use { buffer ->
+            buffer.forEach { event ->
+                event.toLastFix()?.let(::handleIncomingFix)
+            }
         }
-    }
 
     private suspend fun ensureFreshFix(force: Boolean) {
         val ttlMs = configRef.get().freshTtlMs
@@ -137,9 +137,10 @@ class PhoneLocationRepository(
             return pendingRequest.get()?.await()
         }
 
-        val targetNode = runCatching {
-            nodeClient.connectedNodes.await()
-        }.getOrNull()?.firstOrNull()
+        val targetNode =
+            runCatching {
+                nodeClient.connectedNodes.await()
+            }.getOrNull()?.firstOrNull()
 
         if (targetNode == null) {
             pendingRequest.compareAndSet(deferred, null)
@@ -148,13 +149,14 @@ class PhoneLocationRepository(
         }
 
         val payload = LocationRequestPayload(freshTtlMs = freshTtlMs).toByteArray()
-        val sendResult = runCatching {
-            messageClient.sendMessage(
-                targetNode.id,
-                PATH_LOCATION_REQUEST_ONE,
-                payload,
-            ).await()
-        }
+        val sendResult =
+            runCatching {
+                messageClient.sendMessage(
+                    targetNode.id,
+                    PATH_LOCATION_REQUEST_ONE,
+                    payload,
+                ).await()
+            }
 
         if (sendResult.isFailure) {
             pendingRequest.compareAndSet(deferred, null)
@@ -200,7 +202,8 @@ private fun DataEvent.toLastFix(): LocationFix? {
     return payload.fix
 }
 
-private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
-    addOnSuccessListener { result -> cont.resume(result) }
-    addOnFailureListener { error -> cont.resumeWithException(error) }
-}
+private suspend fun <T> Task<T>.await(): T =
+    suspendCancellableCoroutine { cont ->
+        addOnSuccessListener { result -> cont.resume(result) }
+        addOnFailureListener { error -> cont.resumeWithException(error) }
+    }

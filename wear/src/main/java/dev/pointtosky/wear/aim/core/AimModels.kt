@@ -19,6 +19,7 @@ data class AimState(
 
 sealed interface AimTarget {
     data class EquatorialTarget(val eq: Equatorial) : AimTarget
+
     data class BodyTarget(val body: Body) : AimTarget
 
     /**

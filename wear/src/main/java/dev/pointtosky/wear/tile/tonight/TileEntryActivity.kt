@@ -25,9 +25,10 @@ class TileEntryActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         // S7.E: извлечь ID клика и отправить "/tile/tonight/open" {id} на телефон
-        val clickId = intent?.getStringExtra("androidx.wear.tiles.extra.TILE_CLICK_ID")
-            ?: intent?.getStringExtra("androidx.wear.tiles.extra.CLICKABLE_ID")
-            ?: intent?.action
+        val clickId =
+            intent?.getStringExtra("androidx.wear.tiles.extra.TILE_CLICK_ID")
+                ?: intent?.getStringExtra("androidx.wear.tiles.extra.CLICKABLE_ID")
+                ?: intent?.action
         val targetId = clickId?.substringAfter(':', missingDelimiterValue = "")?.takeIf { it.isNotBlank() }
         if (targetId != null) {
             LogBus.event("tile_tap_target", mapOf("id" to targetId))
@@ -41,10 +42,11 @@ class TileEntryActivity : Activity() {
                 }.onFailure { e ->
                     LogBus.event(
                         name = "tile_error",
-                        payload = mapOf(
-                            "err" to e.toLogMessage(),
-                            "stage" to "tap_forward",
-                        ),
+                        payload =
+                            mapOf(
+                                "err" to e.toLogMessage(),
+                                "stage" to "tap_forward",
+                            ),
                     )
                 }
             }
@@ -53,17 +55,20 @@ class TileEntryActivity : Activity() {
         }
 
         val incoming = intent
-        val forward = Intent(this, MainActivity::class.java).apply {
-            // сохраняем action/extras — при желании обработаем в MainActivity (onNewIntent)
-            action = when (incoming?.action) {
-                ACTION_OPEN_AIM_LEGACY -> ACTION_OPEN_AIM
-                ACTION_OPEN_IDENTIFY_LEGACY -> ACTION_OPEN_IDENTIFY
-                else -> incoming?.action ?: run {
-                    if (incoming?.hasExtra(EXTRA_AIM_TARGET_KIND) == true) ACTION_OPEN_AIM else null
-                }
+        val forward =
+            Intent(this, MainActivity::class.java).apply {
+                // сохраняем action/extras — при желании обработаем в MainActivity (onNewIntent)
+                action =
+                    when (incoming?.action) {
+                        ACTION_OPEN_AIM_LEGACY -> ACTION_OPEN_AIM
+                        ACTION_OPEN_IDENTIFY_LEGACY -> ACTION_OPEN_IDENTIFY
+                        else ->
+                            incoming?.action ?: run {
+                                if (incoming?.hasExtra(EXTRA_AIM_TARGET_KIND) == true) ACTION_OPEN_AIM else null
+                            }
+                    }
+                replaceExtras(incoming ?: Intent())
             }
-            replaceExtras(incoming ?: Intent())
-        }
         startActivity(forward) // мы уже в Activity — флаги не нужны
         finish()
     }

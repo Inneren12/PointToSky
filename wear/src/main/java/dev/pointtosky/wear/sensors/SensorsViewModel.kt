@@ -23,7 +23,6 @@ class SensorsViewModel(
     private val orientationRepository: OrientationRepository,
     private val settingsDataStore: SensorsSettingsDataStore,
 ) : ViewModel() {
-
     val frames: Flow<OrientationFrame> = orientationRepository.frames
     val zero: StateFlow<OrientationZero> = orientationRepository.zero
     val fps: StateFlow<Float?> = orientationRepository.fps

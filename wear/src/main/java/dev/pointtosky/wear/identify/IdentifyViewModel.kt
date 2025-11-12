@@ -62,17 +62,18 @@ data class IdentifyUiState(
     val constellationIau: String? = null,
 ) {
     companion object {
-        val Empty = IdentifyUiState(
-            title = "—",
-            type = IdentifyType.CONST,
-            magnitude = null,
-            separationDeg = null,
-            lowAccuracy = true,
-            objectId = null,
-            objectEq = null,
-            body = null,
-            constellationIau = null,
-        )
+        val Empty =
+            IdentifyUiState(
+                title = "—",
+                type = IdentifyType.CONST,
+                magnitude = null,
+                separationDeg = null,
+                lowAccuracy = true,
+                objectId = null,
+                objectEq = null,
+                body = null,
+                constellationIau = null,
+            )
     }
 }
 
@@ -88,17 +89,17 @@ class IdentifyViewModel(
     @Suppress("unused")
     private val settings: AimIdentifySettingsDataStore,
 ) : ViewModel() {
-
     private val locationState = MutableStateFlow<LocationFix?>(null)
 
     @OptIn(FlowPreview::class)
-    private val orientationState: StateFlow<OrientationFrame> = orientationRepository.frames
-        .sample(ORIENTATION_SAMPLE_MS)
-        .stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
-            OrientationFrameDefaults.EMPTY,
-        )
+    private val orientationState: StateFlow<OrientationFrame> =
+        orientationRepository.frames
+            .sample(ORIENTATION_SAMPLE_MS)
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
+                OrientationFrameDefaults.EMPTY,
+            )
 
     init {
         viewModelScope.launch {
@@ -109,19 +110,20 @@ class IdentifyViewModel(
         }
     }
 
-    val uiState: StateFlow<IdentifyUiState> = combine(
-        orientationState,
-        locationState,
-        timeSource.ticks,
-        settings.identifyMagLimitFlow,
-        settings.identifyRadiusDegFlow,
-    ) { frame, locationFix, instant, magLimit, radiusDeg ->
-        computeState(frame, locationFix, instant, magLimit, radiusDeg)
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
-        IdentifyUiState.Empty,
-    )
+    val uiState: StateFlow<IdentifyUiState> =
+        combine(
+            orientationState,
+            locationState,
+            timeSource.ticks,
+            settings.identifyMagLimitFlow,
+            settings.identifyRadiusDegFlow,
+        ) { frame, locationFix, instant, magLimit, radiusDeg ->
+            computeState(frame, locationFix, instant, magLimit, radiusDeg)
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
+            IdentifyUiState.Empty,
+        )
 
     // Лог результатов распознавания с антиспамом (distinct по сигнатуре)
     init {
@@ -139,6 +141,7 @@ class IdentifyViewModel(
             }
             .launchIn(viewModelScope)
     }
+
     private fun computeState(
         frame: OrientationFrame,
         locationFix: LocationFix?,
@@ -146,8 +149,9 @@ class IdentifyViewModel(
         magLimit: Double,
         radiusDeg: Double,
     ): IdentifyUiState {
-        val lowAccuracy = frame.accuracy == OrientationAccuracy.UNRELIABLE ||
-            frame.accuracy == OrientationAccuracy.LOW
+        val lowAccuracy =
+            frame.accuracy == OrientationAccuracy.UNRELIABLE ||
+                frame.accuracy == OrientationAccuracy.LOW
         val locationPoint = locationFix?.point ?: return missingLocationState()
 
         val horizontal = frame.toHorizontal()
@@ -173,7 +177,9 @@ class IdentifyViewModel(
         val mag: Double,
         val sep: Double,
     )
+
     private data class BodyCandidate(val body: Body, val eq: Equatorial, val sep: Double)
+
     private enum class Winner { STAR, BODY, CONST }
 
     private fun starCandidateFromResult(
@@ -181,21 +187,25 @@ class IdentifyViewModel(
         eq: Equatorial,
         magLimit: Double,
         radiusDeg: Double,
-    ): StarCandidate? = when (result) {
-        is SkyObjectOrConstellation.Object -> {
-            val obj = result.obj
-            val mag = obj.mag ?: return null
-            val sep = separationDeg(eq, obj.eq)
-            if (mag <= magLimit && sep <= radiusDeg) {
-                StarCandidate(label = obj.name ?: obj.id, id = obj.id, eq = obj.eq, mag = mag, sep = sep)
-            } else {
-                null
+    ): StarCandidate? =
+        when (result) {
+            is SkyObjectOrConstellation.Object -> {
+                val obj = result.obj
+                val mag = obj.mag ?: return null
+                val sep = separationDeg(eq, obj.eq)
+                if (mag <= magLimit && sep <= radiusDeg) {
+                    StarCandidate(label = obj.name ?: obj.id, id = obj.id, eq = obj.eq, mag = mag, sep = sep)
+                } else {
+                    null
+                }
             }
+            is SkyObjectOrConstellation.Constellation -> null
         }
-        is SkyObjectOrConstellation.Constellation -> null
-    }
 
-    private fun nearestBody(eq: Equatorial, instant: Instant): BodyCandidate? =
+    private fun nearestBody(
+        eq: Equatorial,
+        instant: Instant,
+    ): BodyCandidate? =
         listOf(Body.MOON, Body.JUPITER, Body.SATURN).minByOrNull { body ->
             val bEq = ephemeris.compute(body, instant).eq
             separationDeg(eq, bEq)
@@ -204,14 +214,21 @@ class IdentifyViewModel(
             BodyCandidate(body = body, eq = bEq, sep = separationDeg(eq, bEq))
         }
 
-    private fun pickWinner(star: StarCandidate?, body: BodyCandidate?): Winner = when {
-        star != null && body != null -> if (body.sep < star.sep) Winner.BODY else Winner.STAR
-        star != null -> Winner.STAR
-        body != null -> Winner.BODY
-        else -> Winner.CONST
-    }
+    private fun pickWinner(
+        star: StarCandidate?,
+        body: BodyCandidate?,
+    ): Winner =
+        when {
+            star != null && body != null -> if (body.sep < star.sep) Winner.BODY else Winner.STAR
+            star != null -> Winner.STAR
+            body != null -> Winner.BODY
+            else -> Winner.CONST
+        }
 
-    private fun stateForStar(s: StarCandidate, lowAccuracy: Boolean) = IdentifyUiState(
+    private fun stateForStar(
+        s: StarCandidate,
+        lowAccuracy: Boolean,
+    ) = IdentifyUiState(
         title = s.label,
         type = IdentifyType.STAR,
         magnitude = s.mag,
@@ -223,7 +240,10 @@ class IdentifyViewModel(
         constellationIau = null,
     )
 
-    private fun stateForBody(b: BodyCandidate, lowAccuracy: Boolean): IdentifyUiState {
+    private fun stateForBody(
+        b: BodyCandidate,
+        lowAccuracy: Boolean,
+    ): IdentifyUiState {
         val t = if (b.body == Body.MOON) IdentifyType.MOON else IdentifyType.PLANET
         return IdentifyUiState(
             title = b.body.name,
@@ -238,7 +258,10 @@ class IdentifyViewModel(
         )
     }
 
-    private fun stateForConst(eq: Equatorial, lowAccuracy: Boolean): IdentifyUiState {
+    private fun stateForConst(
+        eq: Equatorial,
+        lowAccuracy: Boolean,
+    ): IdentifyUiState {
         val iau = constellations.findByEq(eq)
         return IdentifyUiState(
             title = iau ?: "—",
@@ -253,41 +276,45 @@ class IdentifyViewModel(
         )
     }
 
-    private fun missingLocationState() = IdentifyUiState(
-        title = "—",
-        type = IdentifyType.CONST,
-        magnitude = null,
-        separationDeg = null,
-        lowAccuracy = true,
-        objectId = null,
-        objectEq = null,
-        body = null,
-        constellationIau = null,
-    )
+    private fun missingLocationState() =
+        IdentifyUiState(
+            title = "—",
+            type = IdentifyType.CONST,
+            magnitude = null,
+            separationDeg = null,
+            lowAccuracy = true,
+            objectId = null,
+            objectEq = null,
+            body = null,
+            constellationIau = null,
+        )
 
     // --- helpers for logging ---
     private fun IdentifyUiState.toLogPayloadOrNull(): Map<String, Any?>? {
-        val typeStr = when (type) {
-            IdentifyType.STAR -> "STAR"
-            IdentifyType.PLANET -> "PLANET"
-            IdentifyType.MOON -> "MOON"
-            IdentifyType.CONST -> "CONST"
-        }
-        val idOrName: String? = when (type) {
-            IdentifyType.STAR -> objectId // для звезды ждём ID
-            IdentifyType.PLANET -> body?.name // планеты/луна — имя тела
-            IdentifyType.MOON -> body?.name
-            IdentifyType.CONST ->
-                constellationIau
-                    ?: title.takeUnless { it.isBlank() || it == "—" } // пропустить заглушку
-        }
+        val typeStr =
+            when (type) {
+                IdentifyType.STAR -> "STAR"
+                IdentifyType.PLANET -> "PLANET"
+                IdentifyType.MOON -> "MOON"
+                IdentifyType.CONST -> "CONST"
+            }
+        val idOrName: String? =
+            when (type) {
+                IdentifyType.STAR -> objectId // для звезды ждём ID
+                IdentifyType.PLANET -> body?.name // планеты/луна — имя тела
+                IdentifyType.MOON -> body?.name
+                IdentifyType.CONST ->
+                    constellationIau
+                        ?: title.takeUnless { it.isBlank() || it == "—" } // пропустить заглушку
+            }
         if (idOrName == null) return null
-        val payload = mutableMapOf<String, Any?>(
-            "id" to idOrName,
-            "type" to typeStr,
-            "name" to title,
-            "sepDeg" to separationDeg,
-        )
+        val payload =
+            mutableMapOf<String, Any?>(
+                "id" to idOrName,
+                "type" to typeStr,
+                "name" to title,
+                "sepDeg" to separationDeg,
+            )
         if (magnitude != null) payload["mag"] = magnitude
         return payload
     }
@@ -307,7 +334,10 @@ private fun OrientationFrame.toHorizontal(): Horizontal {
     return Horizontal(azimuthDeg, altitudeDeg)
 }
 
-private fun separationDeg(a: Equatorial, b: Equatorial): Double {
+private fun separationDeg(
+    a: Equatorial,
+    b: Equatorial,
+): Double {
     // Большая окружность по сферической косинусной теореме
     val ra1 = degToRad(a.raDeg)
     val ra2 = degToRad(b.raDeg)
@@ -320,7 +350,10 @@ private fun separationDeg(a: Equatorial, b: Equatorial): Double {
 }
 
 @Suppress("unused")
-private fun separationDeg(h1: Horizontal, h2: Horizontal): Double {
+private fun separationDeg(
+    h1: Horizontal,
+    h2: Horizontal,
+): Double {
     // Альтернативный расчёт через горизонтальные координаты (не используется сейчас)
     val az1 = degToRad(h1.azDeg)
     val alt1 = degToRad(h1.altDeg)

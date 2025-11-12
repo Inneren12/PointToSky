@@ -35,7 +35,10 @@ class IdentifyViewModelFactory(
 }
 
 @Suppress("unused")
-fun NavGraphBuilder.identifyDestination(factory: IdentifyViewModelFactory, onOpenCard: ((IdentifyUiState) -> Unit)?) {
+fun NavGraphBuilder.identifyDestination(
+    factory: IdentifyViewModelFactory,
+    onOpenCard: ((IdentifyUiState) -> Unit)?,
+) {
     composable("identify") {
         IdentifyRoute(factory = factory, onOpenCard = onOpenCard)
     }

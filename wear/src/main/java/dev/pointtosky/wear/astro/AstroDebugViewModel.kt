@@ -61,25 +61,26 @@ class AstroDebugViewModel(
     private val targetState = MutableStateFlow(Body.SUN)
 
     @OptIn(FlowPreview::class)
-    private val orientationState = orientationRepository.frames
-        // Считаем FPS на каждом входящем кадре, сохраняем в стейт и логируем не чаще 1/с
-        .onEach {
-            val fpsNow = fpsAverager.add(System.nanoTime())
-            if (fpsNow != null) {
-                _fps.value = fpsNow
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastFpsLogAt >= 1000L) {
-                    LogBus.event("astro_fps", mapOf("fps" to String.format(Locale.US, "%.1f", fpsNow)))
-                    lastFpsLogAt = now
+    private val orientationState =
+        orientationRepository.frames
+            // Считаем FPS на каждом входящем кадре, сохраняем в стейт и логируем не чаще 1/с
+            .onEach {
+                val fpsNow = fpsAverager.add(System.nanoTime())
+                if (fpsNow != null) {
+                    _fps.value = fpsNow
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastFpsLogAt >= 1000L) {
+                        LogBus.event("astro_fps", mapOf("fps" to String.format(Locale.US, "%.1f", fpsNow)))
+                        lastFpsLogAt = now
+                    }
                 }
             }
-        }
-        .sample(ORIENTATION_SAMPLE_MS)
-        .stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
-            OrientationFrameDefaults.EMPTY,
-        )
+            .sample(ORIENTATION_SAMPLE_MS)
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
+                OrientationFrameDefaults.EMPTY,
+            )
 
     override fun onCleared() {
         fpsAverager.reset() // чтобы метод был «реально использован»
@@ -99,19 +100,20 @@ class AstroDebugViewModel(
         }
     }
 
-    val uiState: StateFlow<AstroDebugUiState> = combine(
-        orientationState,
-        locationState,
-        timeSource.ticks,
-        targetState,
-        fps,
-    ) { frame, locationFix, instant, target, fpsValue ->
-        computeState(frame, locationFix, instant, target, fpsValue)
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
-        AstroDebugUiState.Empty,
-    )
+    val uiState: StateFlow<AstroDebugUiState> =
+        combine(
+            orientationState,
+            locationState,
+            timeSource.ticks,
+            targetState,
+            fps,
+        ) { frame, locationFix, instant, target, fpsValue ->
+            computeState(frame, locationFix, instant, target, fpsValue)
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
+            AstroDebugUiState.Empty,
+        )
 
     fun selectTarget(body: Body) {
         targetState.value = body
@@ -208,16 +210,17 @@ data class AstroDebugUiState(
     val fps: Float?,
 ) {
     companion object {
-        val Empty = AstroDebugUiState(
-            lstDeg = null,
-            lstHms = null,
-            horizontal = Horizontal(0.0, 0.0),
-            equatorial = null,
-            bestMatch = null,
-            target = Body.SUN,
-            aimError = null,
-            fps = null,
-        )
+        val Empty =
+            AstroDebugUiState(
+                lstDeg = null,
+                lstHms = null,
+                horizontal = Horizontal(0.0, 0.0),
+                equatorial = null,
+                bestMatch = null,
+                target = Body.SUN,
+                aimError = null,
+                fps = null,
+            )
     }
 }
 
