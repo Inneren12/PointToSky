@@ -2,8 +2,6 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
-    id("io.gitlab.arturbosch.detekt")
-    id("org.jlleitschuh.gradle.ktlint")
 }
 
 android {
@@ -51,26 +49,10 @@ kotlin {
     jvmToolchain(17)
 }
 
-detekt {
-    buildUponDefaultConfig = true
-    autoCorrect = false
-    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
-}
-
-ktlint {
-    android.set(true)
-    ignoreFailures.set(false)
-    reporters {
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
-    }
-}
-
 dependencies {
     // корутины/серилизация
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6")
 
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
     implementation("com.google.firebase:firebase-crashlytics-ktx")

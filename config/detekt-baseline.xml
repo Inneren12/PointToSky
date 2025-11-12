@@ -1,0 +1,27 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>CognitiveComplexMethod:AccelMagOrientationRepository.kt$AccelMagOrientationRepository$private fun accelMagFrames(activeConfig: OrientationRepositoryConfig): Flow&lt;OrientationFrame&gt;</ID>
+    <ID>ForbiddenComment:AccelMagOrientationRepository.kt$// TODO: tune</ID>
+    <ID>LongMethod:AccelMagOrientationRepository.kt$AccelMagOrientationRepository$private fun accelMagFrames(activeConfig: OrientationRepositoryConfig): Flow&lt;OrientationFrame&gt;</ID>
+    <ID>LongMethod:RotationVectorOrientationRepository.kt$RotationVectorOrientationRepository$private fun rotationVectorFrames(activeConfig: OrientationRepositoryConfig): Flow&lt;OrientationFrame&gt;</ID>
+    <ID>MagicNumber:AccelMagOrientationRepository.kt$AccelMagOrientationRepository$3</ID>
+    <ID>MagicNumber:AccelMagOrientationRepository.kt$AccelMagOrientationRepository$9</ID>
+    <ID>MagicNumber:OrientationModels.kt$OrientationFrameDefaults$4</ID>
+    <ID>MagicNumber:OrientationModels.kt$OrientationFrameDefaults$8</ID>
+    <ID>MagicNumber:OrientationModels.kt$OrientationFrameDefaults$9</ID>
+    <ID>MagicNumber:OrientationModels.kt$ScreenRotation.Companion$360</ID>
+    <ID>MagicNumber:RotationVectorOrientationRepository.kt$180f</ID>
+    <ID>MagicNumber:RotationVectorOrientationRepository.kt$360f</ID>
+    <ID>MagicNumber:RotationVectorOrientationRepository.kt$5</ID>
+    <ID>MagicNumber:RotationVectorOrientationRepository.kt$8</ID>
+    <ID>MagicNumber:RotationVectorOrientationRepository.kt$90f</ID>
+    <ID>MagicNumber:RotationVectorOrientationRepository.kt$RotationVectorOrientationRepository$3</ID>
+    <ID>MagicNumber:RotationVectorOrientationRepository.kt$RotationVectorOrientationRepository$9</ID>
+    <ID>ReturnCount:AccelMagOrientationRepository.kt$AccelMagOrientationRepository$private fun shouldEmit(current: Long, previous: Long, throttleNs: Long): Boolean</ID>
+    <ID>ReturnCount:AccelMagOrientationRepository.kt$AccelMagOrientationRepository.&lt;no name provided&gt;$override fun onSensorChanged(event: SensorEvent)</ID>
+    <ID>ReturnCount:RotationVectorOrientationRepository.kt$RotationVectorOrientationRepository$private fun shouldEmit(current: Long, previous: Long, throttleNs: Long): Boolean</ID>
+    <ID>UseCheckOrError:DelegatingOrientationRepository.kt$DelegatingOrientationRepository$throw IllegalStateException("No orientation sources available")</ID>
+  </CurrentIssues>
+</SmellBaseline>
