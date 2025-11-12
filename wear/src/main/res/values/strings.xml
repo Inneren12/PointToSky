@@ -166,8 +166,30 @@
     <string name="onboarding_continue">Continue</string>
     <!-- Complications -->
     <string name="comp_aim_status_label">Aim status</string>
-    <string name="comp_aim_status_preview_title">Aim</string>
-    <string name="comp_aim_status_preview_text">Ready</string>
-    <string name="comp_aim_status_preview_content_description">Aim status ready</string>
+    <string name="comp_aim_status_preview_title">Polaris</string>
+    <string name="comp_aim_status_preview_text">→2° ↑1°</string>
+    <string name="comp_aim_status_preview_content_description">Aim status preview</string>
+    <string name="comp_aim_status_title_default">Aim</string>
+    <string name="comp_aim_status_no_target">No target</string>
+    <string name="comp_aim_status_phase_searching">Searching</string>
+    <string name="comp_aim_status_phase_in_tolerance">In tolerance</string>
+    <string name="comp_aim_status_phase_locked">Locked</string>
+    <string name="comp_aim_status_phase_inactive">Inactive</string>
+    <string name="comp_aim_status_content_no_target">Aim status inactive</string>
+    <string name="comp_aim_status_content_active">Aim status %1$s for %2$s. Horizontal offset %3$s. Vertical offset %4$s.</string>
+    <string name="comp_aim_status_offset_unknown">unknown</string>
+    <string name="comp_aim_status_offset_template">%1$s° %2$s</string>
+    <string name="comp_aim_status_direction_right">right</string>
+    <string name="comp_aim_status_direction_left">left</string>
+    <string name="comp_aim_status_direction_center">centered</string>
+    <string name="comp_aim_status_direction_up">up</string>
+    <string name="comp_aim_status_direction_down">down</string>
+    <string name="comp_aim_status_direction_level">level</string>
+    <string name="comp_aim_status_target_sun">Sun</string>
+    <string name="comp_aim_status_target_moon">Moon</string>
+    <string name="comp_aim_status_target_jupiter">Jupiter</string>
+    <string name="comp_aim_status_target_saturn">Saturn</string>
+    <string name="comp_aim_status_target_star">Star</string>
+    <string name="comp_aim_status_target_custom">Custom</string>
     <string name="comp_tonight_target_label">Tonight target</string>
 </resources>
