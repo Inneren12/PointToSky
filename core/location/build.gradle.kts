@@ -1,8 +1,6 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
-    id("io.gitlab.arturbosch.detekt")
-    id("org.jlleitschuh.gradle.ktlint")
 }
 
 android {
@@ -34,21 +32,6 @@ kotlin {
     jvmToolchain(17)
 }
 
-detekt {
-    buildUponDefaultConfig = true
-    autoCorrect = false
-    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
-}
-
-ktlint {
-    android.set(true)
-    ignoreFailures.set(false)
-    reporters {
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
-    }
-}
-
 // Глобально включаем preview/experimental API корутин,
 // чтобы убрать варнинги вида "This declaration needs opt-in"
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
@@ -65,5 +48,4 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6")
 }

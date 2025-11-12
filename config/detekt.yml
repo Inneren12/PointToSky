@@ -1,0 +1,62 @@
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+
+# Дубли со стилем/форматированием отключаем — это зона ответственности ktlint
+style:
+  active: true
+  WildcardImport:
+    active: false
+  MaxLineLength:
+    active: false
+
+# Основные полезные наборы правил
+potential-bugs:
+  active: true
+
+performance:
+  active: true
+  ForEachOnRange:
+    active: true
+  SpreadOperator:
+    active: true
+
+exceptions:
+  active: true
+  TooGenericExceptionCaught:
+    active: true
+  ThrowingExceptionsWithoutMessageOrCause:
+    active: true
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+  TopLevelPropertyNaming:
+    active: true
+
+complexity:
+  active: true
+  LongParameterList:
+    active: true
+    threshold: 7
+  LongMethod:
+    active: true
+    threshold: 60
+  ComplexMethod:
+    active: true
+    threshold: 15
+  CognitiveComplexMethod:
+    active: true
+    threshold: 15
+  NestedBlockDepth:
+    active: true
+    threshold: 4
+  TooManyFunctions:
+    active: true
+    thresholdInClasses: 20
+    thresholdInInterfaces: 20
+    thresholdInObjects: 20
+    thresholdInFiles: 30

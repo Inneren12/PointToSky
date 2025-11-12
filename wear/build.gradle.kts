@@ -10,8 +10,6 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.license.report)
-    id("io.gitlab.arturbosch.detekt") version "1.23.6"
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.0"
 }
 
 android {
@@ -129,28 +127,6 @@ kotlin {
     jvmToolchain(17)
 }
 
-detekt {
-    buildUponDefaultConfig = true
-    allRules = false
-    config = files("$rootDir/config/detekt/detekt.yml")
-    baseline = file("$projectDir/detekt-baseline.xml")
-    autoCorrect = false
-}
-
-ktlint {
-    android.set(true)
-    ignoreFailures.set(false)
-    baseline.set(file("$projectDir/.ktlint-baseline.xml"))
-    reporters {
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
-    }
-    filter {
-        exclude("**/build/**")
-        exclude("**/generated/**")
-    }
-}
-
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation("androidx.compose.material3:material3")
@@ -175,7 +151,6 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:18.1.0")
     // S8A: типы kotlinx.serialization.json (JsonElement) используются из core в WearBridge
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6")
     implementation(libs.compose.material.icons.extended)
 
     // для @Preview(device = WearDevices.SMALL_ROUND)

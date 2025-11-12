@@ -10,8 +10,6 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.license.report)
-    id("io.gitlab.arturbosch.detekt") version "1.23.6"
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.0"
 }
 
 android {
@@ -116,28 +114,6 @@ kotlin {
     jvmToolchain(17)
 }
 
-detekt {
-    buildUponDefaultConfig = true
-    allRules = false
-    config = files("$rootDir/config/detekt/detekt.yml")
-    baseline = file("$projectDir/detekt-baseline.xml")
-    autoCorrect = false
-}
-
-ktlint {
-    android.set(true)
-    ignoreFailures.set(false)
-    baseline.set(file("$projectDir/.ktlint-baseline.xml"))
-    reporters {
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
-        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
-    }
-    filter {
-        exclude("**/build/**")
-        exclude("**/generated/**")
-    }
-}
-
 dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
@@ -149,7 +125,6 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit-ktx:1.1.5")
     androidTestImplementation("androidx.test:runner:1.5.2")
     androidTestImplementation("androidx.test:rules:1.5.0")
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6")
 
     implementation(platform(libs.compose.bom))
 

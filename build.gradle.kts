@@ -1,23 +1,87 @@
+import io.gitlab.arturbosch.detekt.Detekt
+import io.gitlab.arturbosch.detekt.extensions.DetektExtension
+import org.gradle.api.JavaVersion
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
+import org.gradle.kotlin.dsl.getByType
+import org.jlleitschuh.gradle.ktlint.KtlintExtension
+
 plugins {
-    id("com.android.application") version "8.7.2" apply false
-    id("com.android.library") version "8.7.2" apply false
-    id("org.jetbrains.kotlin.android") version "2.0.20" apply false
-    id("org.jetbrains.kotlin.multiplatform") version "2.0.20" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
-    id("org.jetbrains.kotlin.jvm") version "2.0.20" apply false
-    id("io.gitlab.arturbosch.detekt") version "1.23.6" apply false
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.0" apply false
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.detekt) apply false
+    alias(libs.plugins.ktlint) apply false
 }
 
 // Агрегатор: подтягиваем задачи из подключённых модулей динамически
 // build.gradle.kts (root)
 val staticCheck = tasks.register("staticCheck")
 
-subprojects {
-    plugins.withId("io.gitlab.arturbosch.detekt") {
-        dependencies {
-            add("detektPlugins", "io.gitlab.arturbosch.detekt:detekt-formatting:1.23.6")
+val strict: Boolean = System.getenv("CI") == "true" || project.hasProperty("strict")
+fun Project.configureStaticAnalysis(isAndroidModule: Boolean, strictMode: Boolean) {
+    val configuredKey = "staticAnalysisConfigured"
+    val androidKey = "staticAnalysisAndroid"
+    val javaToolchains = extensions.getByType<JavaToolchainService>()
+    val currentJavaVersion = JavaVersion.current().majorVersion.toInt()
+
+    if (!extensions.extraProperties.has(configuredKey)) {
+        extensions.extraProperties[configuredKey] = true
+        extensions.extraProperties[androidKey] = isAndroidModule
+
+        plugins.apply("org.jlleitschuh.gradle.ktlint")
+        plugins.apply("io.gitlab.arturbosch.detekt")
+
+        extensions.configure<KtlintExtension> {
+            android.set(isAndroidModule)
+            ignoreFailures.set(!strictMode)
+            filter {
+                exclude("**/build/**")
+                exclude("**/generated/**")
+            }
         }
+
+        extensions.configure<DetektExtension> {
+            buildUponDefaultConfig = true
+            allRules = false
+            autoCorrect = false
+            parallel = true
+            config.setFrom(files("$rootDir/config/detekt.yml"))
+            baseline = file("$rootDir/config/detekt-baseline.xml")
+        }
+
+        tasks.matching { it.name == "detekt" }.configureEach { mustRunAfter("ktlintFormat") }
+        tasks.matching { it.name == "check" }.configureEach { dependsOn("ktlintCheck", "detekt") }
+        tasks.withType<Detekt>().configureEach {
+            ignoreFailures = !strictMode
+            jvmTarget = currentJavaVersion.toString()
+            val launcher = javaToolchains.launcherFor {
+                languageVersion.set(JavaLanguageVersion.of(currentJavaVersion))
+            }.get()
+            jdkHome.set(launcher.metadata.installationPath.asFile)
+        }
+    } else if (isAndroidModule && !(extensions.extraProperties[androidKey] as Boolean)) {
+        extensions.extraProperties[androidKey] = true
+        extensions.configure<KtlintExtension> { android.set(true) }
+    }
+}
+
+subprojects {
+    pluginManager.withPlugin("com.android.application") {
+        configureStaticAnalysis(isAndroidModule = true, strictMode = strict)
+    }
+    pluginManager.withPlugin("com.android.library") {
+        configureStaticAnalysis(isAndroidModule = true, strictMode = strict)
+    }
+    pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+        configureStaticAnalysis(isAndroidModule = false, strictMode = strict)
+    }
+    pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+        val isAndroidModule = plugins.hasPlugin("com.android.application") || plugins.hasPlugin("com.android.library")
+        configureStaticAnalysis(isAndroidModule = isAndroidModule, strictMode = strict)
     }
 }
 
