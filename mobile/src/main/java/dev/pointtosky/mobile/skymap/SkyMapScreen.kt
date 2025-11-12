@@ -135,7 +135,7 @@ private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -> Unit, modi
     var selectedId by rememberSaveable { mutableStateOf<Int?>(null) }
 
     val formatter = remember {
-        DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.US)
+        DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss", Locale.getDefault())
     }
     val timeText = remember(state.instant) {
         formatter.format(state.instant.atZone(ZoneId.systemDefault()))
