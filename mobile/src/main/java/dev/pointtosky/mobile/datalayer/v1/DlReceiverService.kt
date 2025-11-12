@@ -20,51 +20,54 @@ import dev.pointtosky.mobile.logging.MobileLog
 class DlReceiverService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
         val path = event.path
-        val data = event.data ?: ByteArray(0)
-        if (path == DlPaths.ACK) {
-            // Телефон тоже может ждать ACK для своих исходящих сообщений — на будущее.
-            val (refCid, ok) = DlJson.parseAck(data)
-            MobileLog.bridgeRecv(path = path, cid = refCid, nodeId = event.sourceNodeId)
-            if (!refCid.isNullOrBlank()) {
-                LogBus.event("dl_ack", mapOf("refCid" to refCid, "ok" to (ok ?: true)))
-            }
-            return
-        }
-        val cid = DlJson.parseCid(data)
-        MobileLog.bridgeRecv(path = path, cid = cid, nodeId = event.sourceNodeId)
-        if (!cid.isNullOrBlank()) {
-            val ack = DlJson.buildAck(cid, ok = true)
-            MobileLog.bridgeSend(
-                path = DlPaths.ACK,
-                cid = cid,
-                nodeId = event.sourceNodeId,
-                attempt = 1,
-                payloadBytes = ack.size,
-            )
-            DlMessageSender.sendMessage(
-                context = this,
-                nodeId = event.sourceNodeId,
-                path = DlPaths.ACK,
-                payload = ack,
-            ) { error ->
-                MobileLog.bridgeError(
-                    path = DlPaths.ACK,
-                    cid = cid,
-                    nodeId = event.sourceNodeId,
-                    error = error.message,
-                )
-            }
-        }
-        LogBus.event("dl_recv", mapOf("path" to path))
+        val data = event.data
         when (path) {
-            PATH_CARD_OPEN -> handleCardOpen(data, cid, event.sourceNodeId)
+            DlPaths.ACK -> {
+                // Телефон тоже может ждать ACK для своих исходящих сообщений — на будущее.
+                val (refCid, ok) = DlJson.parseAck(data)
+                MobileLog.bridgeRecv(path = path, cid = refCid, nodeId = event.sourceNodeId)
+                if (!refCid.isNullOrBlank()) {
+                    LogBus.event("dl_ack", mapOf("refCid" to refCid, "ok" to (ok ?: true)))
+                }
+            }
+            else -> {
+                val cid = DlJson.parseCid(data)
+                MobileLog.bridgeRecv(path = path, cid = cid, nodeId = event.sourceNodeId)
+                if (!cid.isNullOrBlank()) {
+                    val ack = DlJson.buildAck(cid, ok = true)
+                    MobileLog.bridgeSend(
+                        path = DlPaths.ACK,
+                        cid = cid,
+                        nodeId = event.sourceNodeId,
+                        attempt = 1,
+                        payloadBytes = ack.size,
+                    )
+                    DlMessageSender.sendMessage(
+                        context = this,
+                        nodeId = event.sourceNodeId,
+                        path = DlPaths.ACK,
+                        payload = ack,
+                    ) { error ->
+                        MobileLog.bridgeError(
+                            path = DlPaths.ACK,
+                            cid = cid,
+                            nodeId = event.sourceNodeId,
+                            error = error.message,
+                        )
+                    }
+                }
+                LogBus.event("dl_recv", mapOf("path" to path))
+                if (path == PATH_CARD_OPEN) {
+                    handleCardOpen(data, cid, event.sourceNodeId)
+                }
+            }
         }
     }
 
     private fun handleCardOpen(data: ByteArray, fallbackCid: String?, nodeId: String) {
         runCatching {
             val message = JsonCodec.decode<CardOpenMessage>(data)
-            if (message.v != DATA_LAYER_PROTOCOL_VERSION) return
+            if (message.v != DATA_LAYER_PROTOCOL_VERSION) return@runCatching
             val payload = JsonCodec.decodeFromElement<CardObjectPayload>(message.obj)
             val entry = payload.toEntry(message.cid.ifBlank { fallbackCid })
             val resolvedId = when (entry) {

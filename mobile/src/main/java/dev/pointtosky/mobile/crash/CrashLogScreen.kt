@@ -92,7 +92,7 @@ fun CrashLogScreen(
             style = MaterialTheme.typography.bodyMedium,
         )
         if (state.statusMessage != null || state.errorMessage != null) {
-            val text = state.statusMessage ?: state.errorMessage ?: ""
+            val text = state.statusMessage ?: state.errorMessage.orEmpty()
             val color = if (state.errorMessage != null) {
                 MaterialTheme.colorScheme.error
             } else {

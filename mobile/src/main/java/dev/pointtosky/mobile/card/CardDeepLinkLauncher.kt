@@ -42,5 +42,5 @@ internal fun parseCardIdFromIntent(intent: Intent?): String? {
     if (!data.scheme.equals(CARD_SCHEME, ignoreCase = true)) return null
     if (!data.host.equals(CARD_HOST, ignoreCase = true)) return null
     if (data.path != CARD_PATH) return null
-    return data.getQueryParameter("id") ?: ""
+    return data.getQueryParameter("id").orEmpty()
 }

@@ -1,0 +1,190 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>ArgumentListWrapping:DlJson.kt$(name)</ID>
+    <ID>CyclomaticComplexMethod:AstroDebugScreen.kt$@OptIn(ExperimentalLayoutApi::class) @Composable fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>CyclomaticComplexMethod:LocationSetupScreen.kt$@Composable fun LocationSetupScreen(locationPrefs: LocationPrefs, phoneFix: LocationFix?, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>CyclomaticComplexMethod:RealTonightProvider.kt$RealTonightProvider$private fun summarizeVisibility(samples: List&lt;Pair&lt;Instant, Double&gt;&gt;, stepMinutes: Long): Visibility</ID>
+    <ID>CyclomaticComplexMethod:SensorsDebugScreen.kt$@Composable fun SensorsDebugScreen( frame: OrientationFrame?, zero: OrientationZero, screenRotation: ScreenRotation, frameTraceMode: FrameTraceMode, fps: Float?, source: OrientationSource, writerStats: LogWriterStats, isSensorActive: Boolean, onFrameTraceModeSelected: (FrameTraceMode) -&gt; Unit, onScreenRotationSelected: (ScreenRotation) -&gt; Unit, onNavigateToCalibrate: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:AimScreen.kt$@Composable fun AimRoute( orientationRepository: OrientationRepository, locationRepository: DefaultLocationOrchestrator, externalAim: AimLaunchRequest? = null, initialTarget: AimTarget? = null, )</ID>
+    <ID>FunctionNaming:AimScreen.kt$@Composable fun AimScreen(aimController: AimController, initialTarget: AimTarget?)</ID>
+    <ID>FunctionNaming:AimScreen.kt$@Composable private fun AltScale(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp)</ID>
+    <ID>FunctionNaming:AimScreen.kt$@Composable private fun AltScaleWithA11y(absAltDeg: Float, dirUp: Boolean, height: Dp, width: Dp, contentDesc: String)</ID>
+    <ID>FunctionNaming:AimScreen.kt$@Composable private fun ConfidenceIndicator(confidence: Float, contentDesc: String)</ID>
+    <ID>FunctionNaming:AimScreen.kt$@Composable private fun PhaseBadge(phase: AimPhase)</ID>
+    <ID>FunctionNaming:AimScreen.kt$@Composable private fun TopBar(phase: AimPhase, confidence: Float)</ID>
+    <ID>FunctionNaming:AimScreen.kt$@Composable private fun TurnArrow(right: Boolean, emphasized: Boolean, size: Dp)</ID>
+    <ID>FunctionNaming:AstroDebugScreen.kt$@Composable fun AstroDebugRoute(factory: AstroDebugViewModelFactory, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:AstroDebugScreen.kt$@OptIn(ExperimentalLayoutApi::class) @Composable fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:CardScreen.kt$@Composable fun CardRoute( type: String?, name: String?, mag: String?, ra: String?, dec: String?, body: String?, iau: String?, locationRepository: LocationRepository, modifier: Modifier = Modifier, ephemeris: SimpleEphemerisComputer = SimpleEphemerisComputer(), timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1000L), )</ID>
+    <ID>FunctionNaming:CatalogDebugScreen.kt$@Composable fun CatalogDebugRoute(factory: CatalogDebugViewModelFactory, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:CatalogDebugScreen.kt$@Composable fun CatalogDebugScreen( state: CatalogDebugUiState, listState: ScalingLazyListState, onRaChange: (String) -&gt; Unit, onDecChange: (String) -&gt; Unit, onRadiusChange: (String) -&gt; Unit, onMagLimitChange: (String) -&gt; Unit, onRunProbe: () -&gt; Unit, onRunSelfTest: () -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:CrashLogScreen.kt$@Composable fun CrashLogRoute(onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:CrashLogScreen.kt$@Composable fun CrashLogScreen( state: CrashLogUiState, onBack: () -&gt; Unit, onClear: () -&gt; Unit, onCreateZip: () -&gt; Unit, onDismissMessage: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:IdentifyScreen.kt$@Composable fun IdentifyRoute(factory: IdentifyViewModelFactory, onOpenCard: ((IdentifyUiState) -&gt; Unit)?, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:IdentifyScreen.kt$@Composable fun IdentifyScreen(state: IdentifyUiState, onOpenCard: ((IdentifyUiState) -&gt; Unit)?, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:IdentifyScreen.kt$@Composable private fun LowAccuracyBadge()</ID>
+    <ID>FunctionNaming:LocationSetupScreen.kt$@Composable fun LocationSetupScreen(locationPrefs: LocationPrefs, phoneFix: LocationFix?, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable fun AimScreen(modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable fun HomeScreen( onAimClick: () -&gt; Unit, onIdentifyClick: () -&gt; Unit, onAstroDebugClick: () -&gt; Unit, onCatalogDebugClick: () -&gt; Unit, onSensorsDebugClick: () -&gt; Unit, onLocationClick: () -&gt; Unit, onTimeDebugClick: () -&gt; Unit, onCrashLogsClick: () -&gt; Unit, modifier: Modifier = Modifier, // дефолт для старых вызовов onSettingsClick: () -&gt; Unit = {}, )</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable fun IdentifyScreen(modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable fun PointToSkyWearApp( orientationRepository: OrientationRepository, locationPrefs: LocationPrefs, phoneLocationRepository: PhoneLocationRepository, locationRepository: DefaultLocationOrchestrator, aimLaunches: Flow&lt;AimLaunchRequest&gt;, appOpens: Flow&lt;AppOpenRequest&gt;, onboardingPrefs: WearOnboardingPrefs, )</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true) @Composable fun AimScreenPreview()</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true) @Composable fun HomeScreenPreview()</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true) @Composable fun IdentifyScreenPreview()</ID>
+    <ID>FunctionNaming:SensorsCalibrateScreen.kt$@Composable fun SensorsCalibrateScreen( azimuthDeg: Float?, accuracy: OrientationAccuracy?, onSetZero: (Float) -&gt; Unit, onResetZero: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:SensorsDebugScreen.kt$@Composable fun SensorsDebugScreen( frame: OrientationFrame?, zero: OrientationZero, screenRotation: ScreenRotation, frameTraceMode: FrameTraceMode, fps: Float?, source: OrientationSource, writerStats: LogWriterStats, isSensorActive: Boolean, onFrameTraceModeSelected: (FrameTraceMode) -&gt; Unit, onScreenRotationSelected: (ScreenRotation) -&gt; Unit, onNavigateToCalibrate: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:SensorsDebugScreen.kt$@Composable private fun AccuracyIndicator(accuracy: OrientationAccuracy, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:SensorsDebugScreen.kt$@Composable private fun SensorStatusRow(isSensorActive: Boolean, fps: Float?, accuracy: OrientationAccuracy?)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable fun SettingsRoute(settings: AimIdentifySettingsDataStore, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable fun SettingsScreen(state: SettingsState, settings: AimIdentifySettingsDataStore, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:TimeDebugScreen.kt$@Composable fun TimeDebugScreen(onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:TimeDebugScreen.kt$@Composable private fun TimeDebugContent(onBack: () -&gt; Unit, timeSource: SystemTimeSource, zoneRepo: ZoneRepo, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:WearOnboardingScreen.kt$@Composable fun WearOnboardingScreen(onComplete: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:AimScreen.kt$@Composable fun AimScreen(aimController: AimController, initialTarget: AimTarget?)</ID>
+    <ID>LongMethod:AstroDebugScreen.kt$@OptIn(ExperimentalLayoutApi::class) @Composable fun AstroDebugScreen(state: AstroDebugUiState, onTargetSelected: (Body) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:CatalogDebugScreen.kt$@Composable fun CatalogDebugScreen( state: CatalogDebugUiState, listState: ScalingLazyListState, onRaChange: (String) -&gt; Unit, onDecChange: (String) -&gt; Unit, onRadiusChange: (String) -&gt; Unit, onMagLimitChange: (String) -&gt; Unit, onRunProbe: () -&gt; Unit, onRunSelfTest: () -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:CrashLogScreen.kt$@Composable fun CrashLogScreen( state: CrashLogUiState, onBack: () -&gt; Unit, onClear: () -&gt; Unit, onCreateZip: () -&gt; Unit, onDismissMessage: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:LocationSetupScreen.kt$@Composable fun LocationSetupScreen(locationPrefs: LocationPrefs, phoneFix: LocationFix?, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:MainActivity.kt$@Composable fun HomeScreen( onAimClick: () -&gt; Unit, onIdentifyClick: () -&gt; Unit, onAstroDebugClick: () -&gt; Unit, onCatalogDebugClick: () -&gt; Unit, onSensorsDebugClick: () -&gt; Unit, onLocationClick: () -&gt; Unit, onTimeDebugClick: () -&gt; Unit, onCrashLogsClick: () -&gt; Unit, modifier: Modifier = Modifier, // дефолт для старых вызовов onSettingsClick: () -&gt; Unit = {}, )</ID>
+    <ID>LongMethod:MainActivity.kt$@Composable fun PointToSkyWearApp( orientationRepository: OrientationRepository, locationPrefs: LocationPrefs, phoneLocationRepository: PhoneLocationRepository, locationRepository: DefaultLocationOrchestrator, aimLaunches: Flow&lt;AimLaunchRequest&gt;, appOpens: Flow&lt;AppOpenRequest&gt;, onboardingPrefs: WearOnboardingPrefs, )</ID>
+    <ID>LongMethod:RealTonightProvider.kt$RealTonightProvider$private fun pickTargets(now: Instant, start: Instant, end: Instant, gp: GeoPoint?, zone: ZoneId): TonightTileModel</ID>
+    <ID>LongMethod:SensorsDebugScreen.kt$@Composable fun SensorsDebugScreen( frame: OrientationFrame?, zero: OrientationZero, screenRotation: ScreenRotation, frameTraceMode: FrameTraceMode, fps: Float?, source: OrientationSource, writerStats: LogWriterStats, isSensorActive: Boolean, onFrameTraceModeSelected: (FrameTraceMode) -&gt; Unit, onScreenRotationSelected: (ScreenRotation) -&gt; Unit, onNavigateToCalibrate: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:SettingsScreen.kt$@Composable fun SettingsScreen(state: SettingsState, settings: AimIdentifySettingsDataStore, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:TimeDebugScreen.kt$@Composable private fun TimeDebugContent(onBack: () -&gt; Unit, timeSource: SystemTimeSource, zoneRepo: ZoneRepo, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:TonightTileService.kt$TonightTileService$override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture&lt;TileBuilders.Tile&gt;</ID>
+    <ID>LongMethod:WearOnboardingScreen.kt$@Composable fun WearOnboardingScreen(onComplete: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>MagicNumber:AimScreen.kt$0.35f</ID>
+    <ID>MagicNumber:AimScreen.kt$0.8f</ID>
+    <ID>MagicNumber:AimScreen.kt$0x332ECC71</ID>
+    <ID>MagicNumber:AimScreen.kt$0x334A4A4A</ID>
+    <ID>MagicNumber:AimScreen.kt$0x33F4D03F</ID>
+    <ID>MagicNumber:AimScreen.kt$0xFF2ECC71</ID>
+    <ID>MagicNumber:AimScreen.kt$0xFFB0B0B0</ID>
+    <ID>MagicNumber:AimScreen.kt$0xFFF4D03F</ID>
+    <ID>MagicNumber:AimScreen.kt$3</ID>
+    <ID>MagicNumber:AimScreen.kt$4</ID>
+    <ID>MagicNumber:AimScreen.kt$90f</ID>
+    <ID>MagicNumber:AstroDebugViewModel.kt$AstroDebugViewModel$15.0</ID>
+    <ID>MagicNumber:AstroDebugViewModel.kt$AstroDebugViewModel$3600</ID>
+    <ID>MagicNumber:AstroDebugViewModel.kt$AstroDebugViewModel$3600.0</ID>
+    <ID>MagicNumber:AstroDebugViewModel.kt$AstroDebugViewModel$60</ID>
+    <ID>MagicNumber:AstroDebugViewModel.kt$AstroDebugViewModel$86400</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$0.000387933</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$0.50572</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$1.6364</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$2451545.0</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$280.46061837</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$360.0</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$360.98564736629</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$36525.0</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$38710000.0</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$6.07995</ID>
+    <ID>MagicNumber:AstroMath.kt$AstroMath$90.0</ID>
+    <ID>MagicNumber:CatalogDebugScreen.kt$16</ID>
+    <ID>MagicNumber:DefaultAimController.kt$0.000387933</ID>
+    <ID>MagicNumber:DefaultAimController.kt$180.0</ID>
+    <ID>MagicNumber:DefaultAimController.kt$2440587.5</ID>
+    <ID>MagicNumber:DefaultAimController.kt$2451545.0</ID>
+    <ID>MagicNumber:DefaultAimController.kt$280.46061837</ID>
+    <ID>MagicNumber:DefaultAimController.kt$360.0</ID>
+    <ID>MagicNumber:DefaultAimController.kt$360.98564736629</ID>
+    <ID>MagicNumber:DefaultAimController.kt$36525.0</ID>
+    <ID>MagicNumber:DefaultAimController.kt$38710000.0</ID>
+    <ID>MagicNumber:DefaultAimController.kt$86_400_000.0</ID>
+    <ID>MagicNumber:DefaultAimController.kt$DefaultAimController$180.0</ID>
+    <ID>MagicNumber:DefaultAimController.kt$DefaultAimController$2.0</ID>
+    <ID>MagicNumber:DefaultAimController.kt$DefaultAimController$3</ID>
+    <ID>MagicNumber:DefaultAimController.kt$DefaultAimController$90.0</ID>
+    <ID>MagicNumber:DefaultAimControllerTest.kt$DefaultAimControllerTest$1e-3</ID>
+    <ID>MagicNumber:DefaultAimControllerTest.kt$DefaultAimControllerTest$1e-6</ID>
+    <ID>MagicNumber:DefaultAimControllerTest.kt$DefaultAimControllerTest$359.0</ID>
+    <ID>MagicNumber:DefaultAimControllerTest.kt$DefaultAimControllerTest$5.0</ID>
+    <ID>MagicNumber:DefaultAimControllerTest.kt$DefaultAimControllerTest$500</ID>
+    <ID>MagicNumber:DefaultAimControllerTest.kt$DefaultAimControllerTest$9</ID>
+    <ID>MagicNumber:HapticPolicy.kt$HapticPolicy$120</ID>
+    <ID>MagicNumber:HapticPolicy.kt$HapticPolicy$130</ID>
+    <ID>MagicNumber:HapticPolicy.kt$HapticPolicy$180</ID>
+    <ID>MagicNumber:HapticPolicy.kt$HapticPolicy$255</ID>
+    <ID>MagicNumber:HapticPolicy.kt$HapticPolicy$31</ID>
+    <ID>MagicNumber:HapticPolicy.kt$HapticPolicy$50</ID>
+    <ID>MagicNumber:HapticPolicy.kt$HapticPolicy$60</ID>
+    <ID>MagicNumber:IdentifyScreen.kt$0x33FFAA00</ID>
+    <ID>MagicNumber:IdentifyScreen.kt$0xFFFFAA00</ID>
+    <ID>MagicNumber:LocationSetupScreen.kt$180.0</ID>
+    <ID>MagicNumber:LocationSetupScreen.kt$90.0</ID>
+    <ID>MagicNumber:OfflineStarResolver.kt$16</ID>
+    <ID>MagicNumber:OfflineStarResolver.kt$20</ID>
+    <ID>MagicNumber:OfflineStarResolver.kt$4</ID>
+    <ID>MagicNumber:OfflineStarResolver.kt$8</ID>
+    <ID>MagicNumber:PhoneHeadingBridge.kt$PhoneHeadingBridge$360f</ID>
+    <ID>MagicNumber:PhoneHeadingOverrideRepository.kt$PhoneHeadingOverrideRepository$360f</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$0.1</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$0.25</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$0.3</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$0.6</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$10L</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$14</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$15.0</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$18</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$180.0</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$2.5</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$25.0</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$3</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$30</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$5</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$5L</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$6</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$6.0</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$60.0</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$60_000L</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$RealTonightProvider$90.0</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$TonightCacheStore$3</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$TonightCacheStore$4</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$TonightCacheStore$5</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$TonightCacheStore$6</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$TonightCacheStore$7</ID>
+    <ID>MagicNumber:RealTonightProvider.kt$TonightCacheStore$8</ID>
+    <ID>MagicNumber:RealTonightProviderTest.kt$RealTonightProviderTest$3</ID>
+    <ID>MagicNumber:SensorsViewModel.kt$360f</ID>
+    <ID>MagicNumber:SettingsScreen.kt$0.5</ID>
+    <ID>MagicNumber:SettingsScreen.kt$10.0</ID>
+    <ID>MagicNumber:SettingsScreen.kt$200L</ID>
+    <ID>MagicNumber:SettingsScreen.kt$3000L</ID>
+    <ID>MagicNumber:SettingsScreen.kt$9.0</ID>
+    <ID>MagicNumber:TonightConfig.kt$TonightConfig$3</ID>
+    <ID>MagicNumber:TonightTileService.kt$TonightTileService$20f</ID>
+    <ID>MagicNumber:TonightTileService.kt$TonightTileService$45L</ID>
+    <ID>MagicNumber:TonightTileService.kt$TonightTileService$60_000L</ID>
+    <ID>MagicNumber:TonightTileService.kt$TonightTileService$6f</ID>
+    <ID>MagicNumber:TonightTileService.kt$TonightTileService$8f</ID>
+    <ID>MaximumLineLength:CardScreen.kt$private</ID>
+    <ID>MaximumLineLength:DlJson.kt$private</ID>
+    <ID>MaximumLineLength:IdentifyScreen.kt$fun</ID>
+    <ID>MaximumLineLength:LocationSetupScreen.kt$fun</ID>
+    <ID>MaximumLineLength:RealTonightProvider.kt$RealTonightProvider$ </ID>
+    <ID>MaximumLineLength:SettingsScreen.kt$fun</ID>
+    <ID>MaximumLineLength:TimeDebugScreen.kt$private</ID>
+    <ID>MaximumLineLength:TonightTileService.kt$TonightTileService$ </ID>
+    <ID>NestedBlockDepth:RealTonightProvider.kt$RealTonightProvider$private fun summarizeVisibility(samples: List&lt;Pair&lt;Instant, Double&gt;&gt;, stepMinutes: Long): Visibility</ID>
+    <ID>ParameterListWrapping:DlJson.kt$(name: String)</ID>
+    <ID>ParameterListWrapping:IdentifyScreen.kt$(IdentifyUiState)</ID>
+    <ID>ParameterListWrapping:IdentifyScreen.kt$(factory: IdentifyViewModelFactory, onOpenCard: ((IdentifyUiState) -&gt; Unit)?, modifier: Modifier = Modifier)</ID>
+    <ID>ParameterListWrapping:LocationSetupScreen.kt$(locationPrefs: LocationPrefs, phoneFix: LocationFix?, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>ParameterListWrapping:SettingsScreen.kt$(state: SettingsState, settings: AimIdentifySettingsDataStore, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>ParameterListWrapping:TimeDebugScreen.kt$(onBack: () -&gt; Unit, timeSource: SystemTimeSource, zoneRepo: ZoneRepo, modifier: Modifier = Modifier)</ID>
+    <ID>ParameterListWrapping:TonightTileService.kt$TonightTileService$(requestParams: RequestBuilders.ResourcesRequest)</ID>
+    <ID>ReturnCount:DefaultAimController.kt$DefaultAimController$private fun computePhase(nowMs: Long, inTolerance: Boolean): AimPhase</ID>
+    <ID>ReturnCount:FrameRateAverager.kt$FrameRateAverager$fun add(timestampNanos: Long): Float?</ID>
+    <ID>ReturnCount:HapticPolicy.kt$HapticPolicy$fun play(event: HapticEvent, enabled: Boolean = true)</ID>
+    <ID>ReturnCount:MainActivity.kt$MainActivity$private fun handleAimIntent(intent: Intent)</ID>
+    <ID>ReturnCount:MainActivity.kt$MainActivity.&lt;no name provided&gt;$override fun onReceive(context: Context, intent: Intent)</ID>
+    <ID>ReturnCount:OfflineStarResolver.kt$private fun parseStarIndex(data: ByteArray): Map&lt;Int, Equatorial&gt;</ID>
+    <ID>ReturnCount:PhoneLocationRepository.kt$PhoneLocationRepository$private suspend fun requestFix(freshTtlMs: Long): LocationFix?</ID>
+    <ID>ReturnCount:PhoneLocationRepository.kt$private fun DataEvent.toLastFix(): LocationFix?</ID>
+    <ID>ReturnCount:RealTonightProvider.kt$RealTonightProvider$private fun evaluatePlanet(body: Body, gp: GeoPoint, start: Instant, end: Instant, now: Instant): Candidate?</ID>
+    <ID>ReturnCount:RealTonightProvider.kt$TonightCacheStore$private fun decodeModel(s: String): TonightTileModel?</ID>
+    <ID>ReturnCount:WearBridge.kt$WearBridge$private fun parseAimTarget(kind: AimTargetKind, payload: kotlinx.serialization.json.JsonElement): AimTarget?</ID>
+  </CurrentIssues>
+</SmellBaseline>

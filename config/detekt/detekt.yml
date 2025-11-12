@@ -3,11 +3,9 @@ config:
 
 build:
   maxIssues: 0
+  excludeCorrectable: false
 
 processors:
-  active: true
-
-console-reports:
   active: true
 
 comments:
@@ -17,64 +15,54 @@ comments:
     active: false
 
 style:
-  ReturnCount:
-    max: 6
-    excludedFunctions:
-      - 'equals'
-    excludeLabeled: true
-    excludeReturnFromLambda: true
-    excludeGuardClauses: true
-  UnusedPrivateMember:
-    ignoreAnnotated:
-      - 'Preview'
   MagicNumber:
-    active: false
+    active: true
+    ignoreAnnotation: true
+    ignoreEnums: true
+    ignoreHashCodeFunction: true
+    ignorePropertyDeclaration: true
+    ignoreLocalVariableDeclaration: false
+    excludes:
+      - '/test/'
+      - '/androidTest/'
+    ignoreNumbers:
+      - '-1'
+      - '0'
+      - '1'
+      - '2'
+      - '100'
+      - '1000'
   WildcardImport:
     active: true
   MaxLineLength:
+    active: false
+
+exceptions:
+  SwallowedException:
     active: true
-    maxLineLength: 140
+  TooGenericExceptionCaught:
+    active: true
+    exceptionNames: [ 'Throwable', 'Exception', 'RuntimeException' ]
 
-complexity:
-  TooManyFunctions:
-    thresholdInFiles: 20
-    thresholdInClasses: 16
-    thresholdInObjects: 16
-    thresholdInInterfaces: 16
-    thresholdInEnums: 16
-  LongParameterList:
-    functionThreshold: 12
-    constructorThreshold: 10
-    ignoreDefaultParameters: true
-  LongMethod:
-    active: false
-  LargeClass:
-    active: false
-  CyclomaticComplexMethod:
-    threshold: 30
-  NestedBlockDepth:
-    threshold: 6
-
-naming:
-  FunctionNaming:
-      # Разрешаем PascalCase для @Composable
-    ignoreAnnotated:
-      - 'Composable'
-
-coroutines:
-  active: true
+empty-blocks:
+  EmptyCatchBlock:
+    active: true
+    allowedExceptionNameRegex: '_|(ignore|expected).*'
 
 potential-bugs:
+  UnsafeCallOnNullableType:
+    active: true # запрещаем '!!'
   LateinitUsage:
     active: false
 
-formatting:
-  active: true
-  android: true
-  Indentation:
+complexity:
+  LongParameterList:
     active: false
-  ImportOrdering:
+  TooManyFunctions:
     active: false
-  MaxLineLength:
+
+naming:
+  PackageNaming:
     active: true
-    maxLineLength: 140
+  TopLevelPropertyNaming:
+    active: false

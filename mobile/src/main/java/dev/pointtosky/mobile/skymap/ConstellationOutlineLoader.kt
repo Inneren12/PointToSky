@@ -47,7 +47,7 @@ internal class ConstellationOutlineLoader(
             val codeBytes = ByteArray(4)
             buffer.get(codeBytes)
             val code = codeBytes
-                .takeWhile { it != 0.toByte() }
+                .takeWhile { byte -> byte != 0.toByte() }
                 .toByteArray()
                 .toString(Charsets.US_ASCII)
                 .trim()

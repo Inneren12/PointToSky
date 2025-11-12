@@ -177,7 +177,7 @@ private fun ShareSection(shareState: PhoneLocationBridge.PhoneLocationBridgeStat
                     }
                     val info = listOfNotNull(response.provider, accuracyText)
                         .joinToString(separator = " • ")
-                        .ifEmpty { response.provider ?: "" }
+                        .ifEmpty { response.provider.orEmpty() }
                     stringResource(
                         id = R.string.location_share_status_success,
                         timeString,

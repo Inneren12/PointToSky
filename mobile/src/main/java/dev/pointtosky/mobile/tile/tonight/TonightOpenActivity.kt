@@ -14,7 +14,7 @@ import org.json.JSONObject
 class TonightOpenActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val payload = intent?.getStringExtra("payload") ?: ""
+        val payload = intent?.getStringExtra("payload").orEmpty()
         val parsed = runCatching { JSONObject(payload) }.getOrNull()
         val cardId = parsed?.optString("id")?.takeIf { it.isNotBlank() }
         val cardType = parsed?.optString("type")?.takeIf { it.isNotBlank() }

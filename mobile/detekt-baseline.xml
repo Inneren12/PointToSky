@@ -1,0 +1,117 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
+    <ID>FunctionNaming:ArScreen.kt$@Composable fun ArRoute( catalogRepository: CatalogRepository, locationPrefs: LocationPrefs, onBack: () -&gt; Unit, onSendAimTarget: (AimTargetOption) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:ArScreen.kt$@Composable fun ArScreen(state: ArUiState, onBack: () -&gt; Unit, onSetTarget: (ArTarget) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:ArScreen.kt$@Composable private fun ArObjectLabel(data: OverlayObject, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:ArScreen.kt$@Composable private fun InfoPanel(overlay: OverlayData, targetLabel: String, onSetTarget: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:ArScreen.kt$@Composable private fun PermissionRequest(onRequest: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:ArScreen.kt$@Composable private fun Reticle(modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:CameraPreview.kt$@Composable fun CameraPreview(modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:CardScreen.kt$@Composable fun CardRoute( cardId: String, locationPrefs: LocationPrefs, onBack: () -&gt; Unit, onSendAimTarget: (AimTargetOption) -&gt; Unit, onShare: (String) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:CardScreen.kt$@Composable private fun CardContent( state: CardUiState.Ready, onSendAimTarget: (AimTargetOption) -&gt; Unit, onShare: (String) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:CardScreen.kt$@Composable private fun DetailRow(label: String, value: String)</ID>
+    <ID>FunctionNaming:CardScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun CardScreen( state: CardUiState, onBack: () -&gt; Unit, onSendAimTarget: (AimTargetOption) -&gt; Unit, onShare: (String) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:CatalogDebugScreen.kt$@Composable fun CatalogDebugRoute(factory: CatalogDebugViewModelFactory, modifier: Modifier = Modifier, onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:CatalogDebugScreen.kt$@Composable fun CatalogDebugScreen( state: CatalogDebugUiState, onRaChange: (String) -&gt; Unit, onDecChange: (String) -&gt; Unit, onRadiusChange: (String) -&gt; Unit, onMagLimitChange: (String) -&gt; Unit, onRunProbe: () -&gt; Unit, onRunSelfTest: () -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:CrashLogScreen.kt$@Composable fun CrashLogRoute(onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:CrashLogScreen.kt$@Composable fun CrashLogScreen( state: CrashLogUiState, onBack: () -&gt; Unit, onClear: () -&gt; Unit, onCreateZip: () -&gt; Unit, onShareZip: (File) -&gt; Unit, onDismissMessage: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:CrashLogScreen.kt$@Preview @Composable private fun CrashLogScreenPreview()</ID>
+    <ID>FunctionNaming:LocationSetupScreen.kt$@Composable private fun ManualSection(manualPoint: GeoPoint?, locationPrefs: LocationPrefs)</ID>
+    <ID>FunctionNaming:LocationSetupScreen.kt$@Composable private fun PermissionSection(state: PermissionUiState)</ID>
+    <ID>FunctionNaming:LocationSetupScreen.kt$@Composable private fun ShareSection(shareState: PhoneLocationBridge.PhoneLocationBridgeState, onShareToggle: (Boolean) -&gt; Unit)</ID>
+    <ID>FunctionNaming:LocationSetupScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun LocationSetupScreen( locationPrefs: LocationPrefs, shareState: PhoneLocationBridge.PhoneLocationBridgeState, onShareToggle: (Boolean) -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable fun MobileHome(props: MobileHomeProps, actions: MobileHomeActions, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable fun PointToSkyMobileApp(destination: MobileDestination, deps: MobileAppDeps, actions: MobileAppActions)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Preview(showSystemUi = true) @Composable fun MobileHomePreview()</ID>
+    <ID>FunctionNaming:OnboardingScreen.kt$@Composable fun OnboardingScreen(onComplete: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:PolicyDocument.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun PolicyDocumentScreen(document: PolicyDocument, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:PolicyDocument.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun PolicyScreen(onOpenDocument: (PolicyDocument) -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:SearchRoute.kt$@Composable fun SearchRoute(catalogRepository: CatalogRepository, onBack: () -&gt; Unit, onOpenCard: (String) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:SearchScreen.kt$@Composable private fun SearchResultRow(result: SearchViewModel.SearchResult, onClick: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:SearchScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SearchScreen( state: SearchViewModel.SearchUiState, onQueryChange: (String) -&gt; Unit, onResultClick: (SearchViewModel.SearchResult) -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun LocationModeOption(title: String, description: String, selected: Boolean, onSelect: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun PermissionRow(title: String, granted: Boolean, onRequest: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun SettingsToggleRow(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -&gt; Unit)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( state: MobileSettingsState, onMirrorChanged: (Boolean) -&gt; Unit, onArChanged: (Boolean) -&gt; Unit, onLocationModeChanged: (LocationMode) -&gt; Unit, onRedactPayloadsChanged: (Boolean) -&gt; Unit, onOpenPolicy: () -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:SkyMapScreen.kt$@Composable fun SkyMapRoute( catalogRepository: CatalogRepository, locationPrefs: LocationPrefs, onBack: () -&gt; Unit, onOpenCard: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>FunctionNaming:SkyMapScreen.kt$@Composable private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:SkyMapScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun SkyMapScreen(state: SkyMapState, onBack: () -&gt; Unit, onOpenCard: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:TimeDebugScreen.kt$@Composable fun TimeDebugScreen(onBack: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:TimeDebugScreen.kt$@Composable private fun TimeDebugContent(onBack: () -&gt; Unit, timeSource: SystemTimeSource, zoneRepo: ZoneRepo, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:ArScreen.kt$@Composable fun ArScreen(state: ArUiState, onBack: () -&gt; Unit, onSetTarget: (ArTarget) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:CardScreen.kt$@Composable private fun CardContent( state: CardUiState.Ready, onSendAimTarget: (AimTargetOption) -&gt; Unit, onShare: (String) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:CatalogDebugScreen.kt$@Composable fun CatalogDebugScreen( state: CatalogDebugUiState, onRaChange: (String) -&gt; Unit, onDecChange: (String) -&gt; Unit, onRadiusChange: (String) -&gt; Unit, onMagLimitChange: (String) -&gt; Unit, onRunProbe: () -&gt; Unit, onRunSelfTest: () -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:ConstellationOutlineLoader.kt$ConstellationOutlineLoader$private fun parse(bytes: ByteArray): List&lt;ConstellationOutline&gt;</ID>
+    <ID>LongMethod:CrashLogScreen.kt$@Composable fun CrashLogScreen( state: CrashLogUiState, onBack: () -&gt; Unit, onClear: () -&gt; Unit, onCreateZip: () -&gt; Unit, onShareZip: (File) -&gt; Unit, onDismissMessage: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:LocationSetupScreen.kt$@Composable private fun ManualSection(manualPoint: GeoPoint?, locationPrefs: LocationPrefs)</ID>
+    <ID>LongMethod:LocationSetupScreen.kt$@Composable private fun ShareSection(shareState: PhoneLocationBridge.PhoneLocationBridgeState, onShareToggle: (Boolean) -&gt; Unit)</ID>
+    <ID>LongMethod:MainActivity.kt$@Composable fun MobileHome(props: MobileHomeProps, actions: MobileHomeActions, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:MainActivity.kt$@Composable fun PointToSkyMobileApp(destination: MobileDestination, deps: MobileAppDeps, actions: MobileAppActions)</ID>
+    <ID>LongMethod:MainActivity.kt$MainActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
+    <ID>LongMethod:OnboardingScreen.kt$@Composable fun OnboardingScreen(onComplete: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:PhoneLocationBridge.kt$PhoneLocationBridge$private suspend fun handleLocationRequest(nodeId: String, payload: LocationRequestPayload)</ID>
+    <ID>LongMethod:SearchScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SearchScreen( state: SearchViewModel.SearchUiState, onQueryChange: (String) -&gt; Unit, onResultClick: (SearchViewModel.SearchResult) -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( state: MobileSettingsState, onMirrorChanged: (Boolean) -&gt; Unit, onArChanged: (Boolean) -&gt; Unit, onLocationModeChanged: (LocationMode) -&gt; Unit, onRedactPayloadsChanged: (Boolean) -&gt; Unit, onOpenPolicy: () -&gt; Unit, onBack: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:SkyMapScreen.kt$@Composable private fun SkyMapContent(state: SkyMapState.Ready, onOpenCard: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>MagicNumber:ArScreen.kt$0.01f</ID>
+    <ID>MagicNumber:ArScreen.kt$0x66000000</ID>
+    <ID>MagicNumber:ArScreen.kt$0x99000000</ID>
+    <ID>MagicNumber:ArScreen.kt$3</ID>
+    <ID>MagicNumber:ArScreen.kt$360.0</ID>
+    <ID>MagicNumber:ArScreen.kt$4</ID>
+    <ID>MagicNumber:ArScreen.kt$5</ID>
+    <ID>MagicNumber:ArScreen.kt$6</ID>
+    <ID>MagicNumber:ArScreen.kt$7</ID>
+    <ID>MagicNumber:ArScreen.kt$8</ID>
+    <ID>MagicNumber:ArScreen.kt$9</ID>
+    <ID>MagicNumber:CatalogDebugScreen.kt$16</ID>
+    <ID>MagicNumber:ConstellationOutlineLoader.kt$ConstellationOutlineLoader$0xFFFF</ID>
+    <ID>MagicNumber:ConstellationOutlineLoader.kt$ConstellationOutlineLoader$4</ID>
+    <ID>MagicNumber:ConstellationOutlineLoader.kt$ConstellationOutlineLoader$8</ID>
+    <ID>MagicNumber:LocationSetupScreen.kt$180.0</ID>
+    <ID>MagicNumber:LocationSetupScreen.kt$90.0</ID>
+    <ID>MagicNumber:PhoneCompassBridge.kt$360.0</ID>
+    <ID>MagicNumber:RotationFrame.kt$9</ID>
+    <ID>MagicNumber:RotationFrame.kt$&lt;no name provided&gt;$5</ID>
+    <ID>MagicNumber:RotationFrame.kt$&lt;no name provided&gt;$8</ID>
+    <ID>MagicNumber:SearchViewModel.kt$SearchViewModel.SearchIndex$10</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$0.3f</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$0.4f</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$0.6f</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$180.0</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$30.0</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$360</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$45</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$5f</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$60.0</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$75.0</ID>
+    <ID>MagicNumber:SkyMapScreen.kt$90.0</ID>
+    <ID>MaximumLineLength:ArScreen.kt$private</ID>
+    <ID>MaximumLineLength:DlMessageSender.kt$DlMessageSender$ </ID>
+    <ID>MaximumLineLength:DlMessageSender.kt$DlMessageSender.RealDelegate$ </ID>
+    <ID>MaximumLineLength:SearchRoute.kt$fun</ID>
+    <ID>MaximumLineLength:SettingsScreen.kt$private</ID>
+    <ID>MaximumLineLength:SkyMapScreen.kt$private</ID>
+    <ID>MaximumLineLength:TimeDebugScreen.kt$private</ID>
+    <ID>NestedBlockDepth:SkyMapScreen.kt$private fun DrawScope.drawConstellations(constellations: List&lt;ConstellationProjection&gt;, scale: Float, offset: Offset, color: Color)</ID>
+    <ID>ParameterListWrapping:ArScreen.kt$(overlay: OverlayData, targetLabel: String, onSetTarget: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>ParameterListWrapping:DlMessageSender.kt$DlMessageSender.RealDelegate$(context: Context, nodeId: String, path: String, payload: ByteArray, onFailure: FailureListener)</ID>
+    <ID>ParameterListWrapping:SearchRoute.kt$(String)</ID>
+    <ID>ParameterListWrapping:SearchRoute.kt$(catalogRepository: CatalogRepository, onBack: () -&gt; Unit, onOpenCard: (String) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>ParameterListWrapping:SettingsScreen.kt$(Boolean)</ID>
+    <ID>ParameterListWrapping:SettingsScreen.kt$(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -&gt; Unit)</ID>
+    <ID>ParameterListWrapping:SkyMapScreen.kt$(state: SkyMapState, onBack: () -&gt; Unit, onOpenCard: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>ParameterListWrapping:TimeDebugScreen.kt$(onBack: () -&gt; Unit, timeSource: SystemTimeSource, zoneRepo: ZoneRepo, modifier: Modifier = Modifier)</ID>
+    <ID>ReturnCount:ArViewModel.kt$private fun resolveLabel(star: Star): String?</ID>
+    <ID>ReturnCount:CardDeepLinkLauncher.kt$internal fun parseCardIdFromIntent(intent: Intent?): String?</ID>
+    <ID>ReturnCount:CardPayload.kt$internal fun CardObjectPayload.toEntry(fallbackId: String?): CardRepository.Entry</ID>
+    <ID>ReturnCount:MobileBridge.kt$MobileBridge.Sender$fun send(path: String, build: (cid: String) -&gt; ByteArray): Ack?</ID>
+    <ID>ReturnCount:PhoneLocationBridge.kt$PhoneLocationBridge$private suspend fun fetchBestLocation(freshTtlMs: Long): FetchResult</ID>
+    <ID>ReturnCount:SearchViewModel.kt$SearchViewModel.Companion$private fun levenshtein(a: String, b: String): Int</ID>
+    <ID>ReturnCount:SkyMapViewModel.kt$private fun starLabel(star: Star): String?</ID>
+    <ID>UnusedPrivateMember:CrashLogScreen.kt$@Preview @Composable private fun CrashLogScreenPreview()</ID>
+  </CurrentIssues>
+</SmellBaseline>
