@@ -4,6 +4,11 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import dev.pointtosky.core.logging.LogBus
+import dev.pointtosky.wear.ACTION_OPEN_AIM
+import dev.pointtosky.wear.ACTION_OPEN_AIM_LEGACY
+import dev.pointtosky.wear.ACTION_OPEN_IDENTIFY
+import dev.pointtosky.wear.ACTION_OPEN_IDENTIFY_LEGACY
+import dev.pointtosky.wear.EXTRA_AIM_TARGET_KIND
 import dev.pointtosky.wear.MainActivity
 import dev.pointtosky.wear.datalayer.WearMessageBridge
 import kotlinx.coroutines.CoroutineDispatcher
@@ -47,10 +52,17 @@ class TileEntryActivity : Activity() {
             LogBus.event("tile_tap_more")
         }
 
+        val incoming = intent
         val forward = Intent(this, MainActivity::class.java).apply {
             // сохраняем action/extras — при желании обработаем в MainActivity (onNewIntent)
-            action = intent?.action
-            replaceExtras(intent ?: Intent())
+            action = when (incoming?.action) {
+                ACTION_OPEN_AIM_LEGACY -> ACTION_OPEN_AIM
+                ACTION_OPEN_IDENTIFY_LEGACY -> ACTION_OPEN_IDENTIFY
+                else -> incoming?.action ?: run {
+                    if (incoming?.hasExtra(EXTRA_AIM_TARGET_KIND) == true) ACTION_OPEN_AIM else null
+                }
+            }
+            replaceExtras(incoming ?: Intent())
         }
         startActivity(forward) // мы уже в Activity — флаги не нужны
         finish()

@@ -73,6 +73,18 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="dev.pointtosky.action.OPEN_AIM" />
+                <action android:name="dev.pointtosky.ACTION_OPEN_AIM" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="dev.pointtosky.action.OPEN_IDENTIFY" />
+                <action android:name="dev.pointtosky.ACTION_OPEN_IDENTIFY" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <service

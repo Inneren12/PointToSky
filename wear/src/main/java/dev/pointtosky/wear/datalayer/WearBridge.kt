@@ -17,17 +17,11 @@ import dev.pointtosky.core.datalayer.AppOpenScreen
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
 import dev.pointtosky.core.logging.LogBus
-import dev.pointtosky.wear.ACTION_OPEN_AIM
-import dev.pointtosky.wear.ACTION_OPEN_IDENTIFY
-import dev.pointtosky.wear.EXTRA_AIM_BODY
-import dev.pointtosky.wear.EXTRA_AIM_DEC_DEG
-import dev.pointtosky.wear.EXTRA_AIM_RA_DEG
-import dev.pointtosky.wear.EXTRA_AIM_STAR_ID
-import dev.pointtosky.wear.EXTRA_AIM_TARGET_KIND
-import dev.pointtosky.wear.MainActivity
 import dev.pointtosky.wear.aim.core.AimTarget
 import dev.pointtosky.wear.datalayer.WearBridge.handleAimSetTargetJson
 import dev.pointtosky.wear.tile.tonight.TonightTargetsActivity
+import dev.pointtosky.wear.buildOpenAimIntent
+import dev.pointtosky.wear.buildOpenIdentifyIntent
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -145,39 +139,17 @@ object WearBridge {
     }
 
     fun launchAim(context: Context, target: AimTarget) {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            action = ACTION_OPEN_AIM
-            when (target) {
-                is AimTarget.EquatorialTarget -> {
-                    putExtra(EXTRA_AIM_TARGET_KIND, "equatorial")
-                    putExtra(EXTRA_AIM_RA_DEG, target.eq.raDeg)
-                    putExtra(EXTRA_AIM_DEC_DEG, target.eq.decDeg)
-                }
-                is AimTarget.BodyTarget -> {
-                    putExtra(EXTRA_AIM_TARGET_KIND, "body")
-                    putExtra(EXTRA_AIM_BODY, target.body.name)
-                }
-                is AimTarget.StarTarget -> {
-                    putExtra(EXTRA_AIM_TARGET_KIND, "star")
-                    putExtra(EXTRA_AIM_STAR_ID, target.starId)
-                    // Если координаты уже даны — продублируем как экваториальные (UI сможет ими сразу пользоваться)
-                    target.eq?.let {
-                        putExtra(EXTRA_AIM_RA_DEG, it.raDeg)
-                        putExtra(EXTRA_AIM_DEC_DEG, it.decDeg)
-                    }
-                }
-            }
-        }
+        val intent = buildOpenAimIntent(context, target)
         startActivitySafe(context, intent)
     }
 
     private fun openAim(context: Context) {
-        val intent = Intent(context, MainActivity::class.java).apply { action = ACTION_OPEN_AIM }
+        val intent = buildOpenAimIntent(context, null)
         startActivitySafe(context, intent)
     }
 
     private fun openIdentify(context: Context) {
-        val intent = Intent(context, MainActivity::class.java).apply { action = ACTION_OPEN_IDENTIFY }
+        val intent = buildOpenIdentifyIntent(context)
         startActivitySafe(context, intent)
     }
 

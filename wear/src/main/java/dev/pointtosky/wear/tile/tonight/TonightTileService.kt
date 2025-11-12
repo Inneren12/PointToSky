@@ -22,6 +22,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.ZoneRepo
+import dev.pointtosky.wear.ACTION_OPEN_AIM
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.datalayer.WearMessageBridge
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
@@ -37,11 +38,6 @@ open class TonightTileService : TileService() {
     companion object {
         // Инкремент при изменении набора ресурсов (иконки, имена id и т.п.)
         private const val RES_VER = "tonight_v2"
-        const val ACTION_OPEN_AIM = "dev.pointtosky.ACTION_OPEN_AIM"
-
-        @Suppress("unused")
-        const val ACTION_OPEN_IDENTIFY = "dev.pointtosky.ACTION_OPEN_IDENTIFY"
-
         @Suppress("unused")
         const val EXTRA_TARGET_ID = "targetId"
         private const val PATH_PUSH = "/tile/tonight/push_model"
@@ -288,6 +284,7 @@ open class TonightTileService : TileService() {
             ActionBuilders.AndroidActivity.Builder()
                 .setPackageName(context.packageName)
                 .setClassName("dev.pointtosky.wear.tile.tonight.TileEntryActivity")
+                .setAction(ACTION_OPEN_AIM)
                 .build()
         val launch: ActionBuilders.LaunchAction =
             ActionBuilders.LaunchAction.Builder()
