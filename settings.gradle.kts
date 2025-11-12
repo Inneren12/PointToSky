@@ -20,6 +20,7 @@ rootProject.name = "PointToSky"
 // Bootstrap S5
 include(
   ":wear",
+  ":wear:benchmark",
   ":wear:sensors",
   ":mobile",
   ":core:common",
