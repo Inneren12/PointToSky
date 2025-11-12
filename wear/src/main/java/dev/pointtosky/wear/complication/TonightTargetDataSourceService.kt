@@ -109,7 +109,7 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
     private suspend fun loadTargetState(prefs: TonightPrefs, now: Instant, zone: ZoneId): TargetState? {
         val location = locationPrefs.manualPointFlow.firstOrNull()
         val model = provider.getModel(now)
-        val target = selectTarget(model.items, prefs).firstOrNull() ?: return null
+        val target = TonightTargetSelector.selectTargets(model.items, prefs).firstOrNull() ?: return null
         val secondary = target.subtitle ?: target.altDeg?.let { "alt ${it.roundToInt()}°" }
         val contentDescription = buildContentDescription(target.title, secondary)
         val refresh = buildRefreshSchedule(now, target, zone)
@@ -223,43 +223,6 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         } else {
             getString(R.string.comp_tonight_target_content_description_with_secondary, title, secondary)
         }
-
-    private fun selectTarget(items: List<TonightTarget>, prefs: TonightPrefs): List<TonightTarget> {
-        val limit = prefs.magLimit.toDouble()
-        val filtered = items.filter { target ->
-            val magnitude = parseMagnitude(target)
-            magnitude?.let { it <= limit } ?: true
-        }
-        if (!prefs.preferPlanets) {
-            return filtered
-        }
-        return filtered.withIndex()
-            .sortedWith(
-                compareByDescending<IndexedValue<TonightTarget>> { indexed ->
-                    if (isPlanet(indexed.value)) 1 else 0
-                }.thenBy { indexed -> indexed.index },
-            )
-            .map { it.value }
-    }
-
-    private fun isPlanet(target: TonightTarget): Boolean =
-        when (target.icon) {
-            TonightIcon.SUN,
-            TonightIcon.MOON,
-            TonightIcon.JUPITER,
-            TonightIcon.SATURN -> true
-            else -> false
-        }
-
-    private fun parseMagnitude(target: TonightTarget): Double? {
-        val regex = Regex("mag\\s*(-?\\d+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE)
-        return sequenceOf(target.subtitle, target.title, target.id)
-            .filterNotNull()
-            .mapNotNull { value ->
-                regex.find(value)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
-            }
-            .firstOrNull()
-    }
 
     private fun previewState(): TargetState {
         val previewLabel = getString(R.string.comp_tonight_target_preview_text)

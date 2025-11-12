@@ -191,6 +191,8 @@ dependencies {
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test:core:1.6.1")
 
+    androidTestImplementation("androidx.wear.watchface:complications-testing:1.2.1")
+
     // для проверки построения тайла (присутствует в classpath; используем API сервисов напрямую)
     androidTestImplementation("androidx.wear.tiles:tiles-testing:1.3.0")
     // Нужен для ServiceScenario, ActivityScenario и пр.
