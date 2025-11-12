@@ -6,6 +6,7 @@ import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.os.Parcel
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +43,7 @@ import androidx.wear.tooling.preview.devices.WearDevices
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
+import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AppOpenMessage
 import dev.pointtosky.core.datalayer.AppOpenScreen
@@ -64,6 +66,16 @@ import dev.pointtosky.wear.datalayer.AppOpenRequest
 import dev.pointtosky.wear.datalayer.PhoneHeadingBridge
 import dev.pointtosky.wear.datalayer.WearBridge
 import dev.pointtosky.wear.datalayer.v1.DlIntents
+import dev.pointtosky.wear.ACTION_OPEN_AIM
+import dev.pointtosky.wear.ACTION_OPEN_AIM_LEGACY
+import dev.pointtosky.wear.ACTION_OPEN_IDENTIFY
+import dev.pointtosky.wear.ACTION_OPEN_IDENTIFY_LEGACY
+import dev.pointtosky.wear.EXTRA_AIM_BODY
+import dev.pointtosky.wear.EXTRA_AIM_DEC_DEG
+import dev.pointtosky.wear.EXTRA_AIM_RA_DEG
+import dev.pointtosky.wear.EXTRA_AIM_STAR_ID
+import dev.pointtosky.wear.EXTRA_AIM_TARGET_KIND
+import dev.pointtosky.wear.MAX_DEEP_LINK_PAYLOAD_BYTES
 import dev.pointtosky.wear.identify.IdentifyRoute
 import dev.pointtosky.wear.identify.IdentifyViewModelFactory
 import dev.pointtosky.wear.identify.buildCardRouteFrom
@@ -223,7 +235,7 @@ class MainActivity : ComponentActivity() {
         if (sig != null && sig == lastIntentSignature) return
         lastIntentSignature = sig
         when (intent.action) {
-            ACTION_OPEN_AIM -> handleAimIntent(intent)
+            ACTION_OPEN_AIM, ACTION_OPEN_AIM_LEGACY -> handleAimIntent(intent)
             ACTION_OPEN_IDENTIFY, ACTION_OPEN_IDENTIFY_LEGACY ->
                 WearBridge.emitAppOpen(AppOpenScreen.IDENTIFY, null)
         }
@@ -245,43 +257,111 @@ class MainActivity : ComponentActivity() {
             .append(intent.getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN))
             .append('|')
             .append(intent.getStringExtra(EXTRA_AIM_BODY).orEmpty())
+            .append('|')
+            .append(intent.getIntExtra(EXTRA_AIM_STAR_ID, Int.MIN_VALUE))
         return sb.toString().hashCode()
     }
 
     private fun handleAimIntent(intent: Intent) {
-        val target = when (intent.getStringExtra(EXTRA_AIM_TARGET_KIND)) {
+        val target = intent.extractAimTarget()
+        if (target != null) {
+            WearBridge.emitAimTarget(target)
+        } else {
+            WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
+        }
+    }
+
+    private fun Intent.extractAimTarget(): AimTarget? {
+        val extrasSize = extrasSizeBytes() ?: return null
+        if (extrasSize > MAX_DEEP_LINK_PAYLOAD_BYTES) {
+            LogBus.event(
+                "deeplink_rejected",
+                mapOf("reason" to "extras_too_large", "bytes" to extrasSize),
+            )
+            return null
+        }
+
+        val kindRaw = getStringExtra(EXTRA_AIM_TARGET_KIND)
+        val kind = kindRaw?.lowercase()?.trim()
+        return when (kind) {
             "equatorial" -> {
-                val ra = intent.getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN)
-                val dec = intent.getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN)
-                if (ra.isNaN() || dec.isNaN()) {
-                    WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
-                    return
+                val ra = getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN)
+                val dec = getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN)
+                if (!ra.isFinite() || !dec.isFinite()) {
+                    LogBus.event(
+                        "deeplink_rejected",
+                        mapOf("reason" to "invalid_equatorial", "ra" to ra, "dec" to dec),
+                    )
+                    null
+                } else {
+                    AimTarget.EquatorialTarget(Equatorial(raDeg = ra, decDeg = dec))
                 }
-                AimTarget.EquatorialTarget(Equatorial(raDeg = ra, decDeg = dec))
             }
+
             "body" -> {
-                val bodyName = intent.getStringExtra(EXTRA_AIM_BODY)
-                if (bodyName.isNullOrBlank()) {
-                    WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
-                    return
-                }
-                val body = runCatching { Body.valueOf(bodyName) }.getOrNull()
+                val bodyName = getStringExtra(EXTRA_AIM_BODY)?.takeIf { it.isNotBlank() }
+                val body = bodyName?.let { runCatching { Body.valueOf(it) }.getOrNull() }
                 if (body == null) {
-                    WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
-                    return
+                    LogBus.event(
+                        "deeplink_rejected",
+                        mapOf("reason" to "invalid_body", "body" to (bodyName ?: "")),
+                    )
+                    null
+                } else {
+                    AimTarget.BodyTarget(body)
                 }
-                AimTarget.BodyTarget(body)
             }
+
+            "star" -> {
+                val hasId = hasExtra(EXTRA_AIM_STAR_ID)
+                val starId = if (hasId) getIntExtra(EXTRA_AIM_STAR_ID, Int.MIN_VALUE) else Int.MIN_VALUE
+                if (starId == Int.MIN_VALUE) {
+                    LogBus.event("deeplink_rejected", mapOf("reason" to "invalid_star_id"))
+                    null
+                } else {
+                    val ra = getDoubleExtra(EXTRA_AIM_RA_DEG, Double.NaN)
+                    val dec = getDoubleExtra(EXTRA_AIM_DEC_DEG, Double.NaN)
+                    val eq = if (ra.isFinite() && dec.isFinite()) {
+                        Equatorial(raDeg = ra, decDeg = dec)
+                    } else {
+                        null
+                    }
+                    AimTarget.StarTarget(starId, eq)
+                }
+            }
+
             null -> {
-                WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
-                return
+                LogBus.event("deeplink_rejected", mapOf("reason" to "missing_kind"))
+                null
             }
+
             else -> {
-                WearBridge.emitAppOpen(AppOpenScreen.AIM, null)
-                return
+                LogBus.event(
+                    "deeplink_rejected",
+                    mapOf("reason" to "unknown_kind", "kind" to kindRaw),
+                )
+                null
             }
         }
-        WearBridge.emitAimTarget(target)
+    }
+
+    private fun Intent.extrasSizeBytes(): Int? {
+        val extras = extras ?: return 0
+        return try {
+            val parcel = Parcel.obtain()
+            try {
+                parcel.writeBundle(extras)
+                parcel.dataSize()
+            } finally {
+                parcel.recycle()
+            }
+        } catch (t: Throwable) {
+            LogBus.event(
+                "deeplink_rejected",
+                mapOf("reason" to "extras_serialize_fail", "err" to (t.message ?: t::class.java.simpleName)),
+            )
+            null
+        }
     }
 }
 
@@ -296,13 +376,6 @@ private const val ROUTE_TIME_DEBUG = "time_debug"
 private const val ROUTE_CATALOG_DEBUG = "catalog_debug"
 private const val ROUTE_CRASH_LOGS = "crash_logs"
 private const val ROUTE_SETTINGS = "settings"
-const val ACTION_OPEN_AIM = "dev.pointtosky.action.OPEN_AIM"
-const val ACTION_OPEN_IDENTIFY = "dev.pointtosky.ACTION_OPEN_IDENTIFY"
-const val ACTION_OPEN_IDENTIFY_LEGACY = "dev.pointtosky.action.OPEN_IDENTIFY"
-const val EXTRA_AIM_TARGET_KIND = "extra_aim_target_kind"
-const val EXTRA_AIM_RA_DEG = "extra_aim_ra_deg"
-const val EXTRA_AIM_DEC_DEG = "extra_aim_dec_deg"
-const val EXTRA_AIM_BODY = "extra_aim_body"
 
 @Composable
 fun PointToSkyWearApp(
@@ -374,6 +447,7 @@ fun PointToSkyWearApp(
                         orientationRepository = orientationRepository,
                         locationRepository = locationRepository,
                         externalAim = aimRequest,
+                        initialTarget = appOpenRequest?.target,
                     )
                 }
                 composable(ROUTE_IDENTIFY) {
