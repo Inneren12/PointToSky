@@ -1,8 +1,9 @@
 import org.gradle.api.Project
 
-fun Project.resolveConfigProperty(key: String): String? = providers.gradleProperty(key)
-    .orElse(providers.environmentVariable(key))
-    .orNull
+fun Project.resolveConfigProperty(key: String): String? =
+    providers.gradleProperty(key)
+        .orElse(providers.environmentVariable(key))
+        .orNull
 
 plugins {
     alias(libs.plugins.android.application)
@@ -10,7 +11,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.license.report)
     id("io.gitlab.arturbosch.detekt") version "1.23.6"
-    id("org.jlleitschuh.gradle.ktlint")
+    id("org.jlleitschuh.gradle.ktlint") version "12.1.0"
 }
 
 android {
@@ -123,9 +124,14 @@ detekt {
 ktlint {
     android.set(true)
     ignoreFailures.set(false)
+    baseline.set(file("$projectDir/.ktlint-baseline.xml"))
     reporters {
         reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
         reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
+    }
+    filter {
+        exclude("**/build/**")
+        exclude("**/generated/**")
     }
 }
 
@@ -226,12 +232,17 @@ licenseReport {
 // Select flavor via -Pptswear.flavor=internal|public (default: internal)
 run {
     val flavorProp = project.resolveConfigProperty("ptswear.flavor")?.lowercase() ?: "internal"
-    val flavor = when (flavorProp) {
-        "internal" -> "Internal"
-        "public" -> "Public"
-        else -> error("ptswear.flavor must be 'internal' or 'public' (got '$flavorProp')")
-    }
-    fun alias(name: String, target: String) = tasks.register(name) {
+    val flavor =
+        when (flavorProp) {
+            "internal" -> "Internal"
+            "public" -> "Public"
+            else -> error("ptswear.flavor must be 'internal' or 'public' (got '$flavorProp')")
+        }
+
+    fun alias(
+        name: String,
+        target: String,
+    ) = tasks.register(name) {
         group = "ptswear"
         description = "Runs $target (default flavor=$flavorProp)"
         dependsOn(target)

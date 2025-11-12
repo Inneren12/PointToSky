@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/main/java/dev/pointtosky/wear/MainActivity.kt">
+        <error line="314" column="5" source="standard:function-naming" />
+        <error line="514" column="5" source="standard:function-naming" />
+        <error line="602" column="5" source="standard:function-naming" />
+        <error line="616" column="5" source="standard:function-naming" />
+        <error line="631" column="5" source="standard:function-naming" />
+        <error line="648" column="5" source="standard:function-naming" />
+        <error line="656" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/aim/ui/AimScreen.kt">
+        <error line="82" column="5" source="standard:function-naming" />
+        <error line="111" column="5" source="standard:function-naming" />
+        <error line="306" column="13" source="standard:function-naming" />
+        <error line="323" column="13" source="standard:function-naming" />
+        <error line="346" column="13" source="standard:function-naming" />
+        <error line="376" column="13" source="standard:function-naming" />
+        <error line="415" column="13" source="standard:function-naming" />
+        <error line="428" column="13" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/astro/AstroDebugScreen.kt">
+        <error line="35" column="5" source="standard:function-naming" />
+        <error line="50" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/catalogdebug/CatalogDebugScreen.kt">
+        <error line="43" column="5" source="standard:function-naming" />
+        <error line="66" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/crash/CrashLogScreen.kt">
+        <error line="32" column="5" source="standard:function-naming" />
+        <error line="51" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/datalayer/WearMessageBridge.kt">
+        <error line="13" column="5" source="standard:no-consecutive-comments" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/identify/CardScreen.kt">
+        <error line="44" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/identify/IdentifyScreen.kt">
+        <error line="28" column="5" source="standard:function-naming" />
+        <error line="43" column="5" source="standard:function-naming" />
+        <error line="104" column="13" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/location/LocationSetupScreen.kt">
+        <error line="64" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/onboarding/WearOnboardingScreen.kt">
+        <error line="31" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/sensors/SensorsCalibrateScreen.kt">
+        <error line="21" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/sensors/SensorsDebugScreen.kt">
+        <error line="41" column="5" source="standard:function-naming" />
+        <error line="224" column="13" source="standard:function-naming" />
+        <error line="284" column="13" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/settings/SettingsScreen.kt">
+        <error line="27" column="5" source="standard:function-naming" />
+        <error line="63" column="5" source="standard:function-naming" />
+    </file>
+    <file name="src/main/java/dev/pointtosky/wear/time/TimeDebugScreen.kt">
+        <error line="31" column="5" source="standard:function-naming" />
+        <error line="47" column="13" source="standard:function-naming" />
+    </file>
+</baseline>

@@ -1,8 +1,9 @@
 import org.gradle.api.Project
 
-fun Project.resolveConfigProperty(key: String): String? = providers.gradleProperty(key)
-    .orElse(providers.environmentVariable(key))
-    .orNull
+fun Project.resolveConfigProperty(key: String): String? =
+    providers.gradleProperty(key)
+        .orElse(providers.environmentVariable(key))
+        .orNull
 
 plugins {
     alias(libs.plugins.android.application)
@@ -10,7 +11,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.license.report)
     id("io.gitlab.arturbosch.detekt") version "1.23.6"
-    id("org.jlleitschuh.gradle.ktlint")
+    id("org.jlleitschuh.gradle.ktlint") version "12.1.0"
 }
 
 android {
@@ -84,10 +85,11 @@ android {
         }
         jniLibs {
             // не стричь эти .so → предупреждение “Unable to strip …” уйдёт
-            keepDebugSymbols += listOf(
-                "**/libandroidx.graphics.path.so",
-                "**/libdatastore_shared_counter.so",
-                "**/libimage_processing_util_jni.so",
+            keepDebugSymbols +=
+                listOf(
+                    "**/libandroidx.graphics.path.so",
+                    "**/libdatastore_shared_counter.so",
+                    "**/libimage_processing_util_jni.so",
                 )
         }
     }
@@ -114,9 +116,14 @@ detekt {
 ktlint {
     android.set(true)
     ignoreFailures.set(false)
+    baseline.set(file("$projectDir/.ktlint-baseline.xml"))
     reporters {
         reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
         reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.CHECKSTYLE)
+    }
+    filter {
+        exclude("**/build/**")
+        exclude("**/generated/**")
     }
 }
 
