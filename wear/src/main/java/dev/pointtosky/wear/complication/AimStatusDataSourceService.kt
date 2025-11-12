@@ -12,35 +12,42 @@ import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.WearIntents.putAimTargetExtras
 import dev.pointtosky.wear.aim.core.AimPhase
+import dev.pointtosky.wear.complication.config.AimPrefs
+import dev.pointtosky.wear.complication.config.ComplicationPrefsStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 class AimStatusDataSourceService : BaseComplicationDataSourceService() {
 
     private val repository by lazy { AimStatusRepository(applicationContext) }
     private val formatter by lazy { AimStatusFormatter(this) }
+    private val prefsStore by lazy { ComplicationPrefsStore(applicationContext) }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         val snapshot = repository.read()
-        return dataForType(request.complicationType, snapshot)
+        val prefs = withContext(Dispatchers.IO) { prefsStore.aimFlow.first() }
+        return dataForType(request.complicationType, snapshot, prefs)
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? =
-        dataForType(type, previewSnapshot())
+        dataForType(type, previewSnapshot(), AimPrefs(showDelta = true, showPhase = true))
 
-    private fun dataForType(type: ComplicationType, snapshot: AimStatusSnapshot): ComplicationData? =
+    private fun dataForType(
+        type: ComplicationType,
+        snapshot: AimStatusSnapshot,
+        prefs: AimPrefs,
+    ): ComplicationData? =
         when (type) {
-            ComplicationType.SHORT_TEXT -> shortTextData(snapshot)
+            ComplicationType.SHORT_TEXT -> shortTextData(snapshot, prefs)
             ComplicationType.MONOCHROMATIC_IMAGE -> monochromaticImageData(snapshot)
             ComplicationType.SMALL_IMAGE -> smallImageData(snapshot)
             ComplicationType.RANGED_VALUE -> rangedValueData(snapshot)
             else -> null
         }
 
-    private fun shortTextData(snapshot: AimStatusSnapshot): ComplicationData {
-        val textValue = when {
-            !snapshot.isActive -> getString(R.string.comp_aim_status_no_target)
-            else -> formatter.shortText(snapshot.dAzDeg, snapshot.dAltDeg)
-                ?: formatter.phaseLabel(snapshot.phase)
-        }
+    private fun shortTextData(snapshot: AimStatusSnapshot, prefs: AimPrefs): ComplicationData {
+        val textValue = buildShortText(snapshot, prefs)
         val title = if (snapshot.isActive) {
             snapshot.displayTitle(getString(R.string.comp_aim_status_title_default))
         } else {
@@ -52,8 +59,24 @@ class AimStatusDataSourceService : BaseComplicationDataSourceService() {
         )
             .setTitle(text(title))
             .setTapAction(aimTapAction(snapshot))
-        builder.setMonochromaticImage(monochromaticImage(iconFor(snapshot)))
+        if (prefs.showPhase) {
+            builder.setMonochromaticImage(monochromaticImage(iconFor(snapshot)))
+        }
         return builder.build()
+    }
+
+    private fun buildShortText(snapshot: AimStatusSnapshot, prefs: AimPrefs): String {
+        if (!snapshot.isActive) {
+            return getString(R.string.comp_aim_status_no_target)
+        }
+        val parts = mutableListOf<String>()
+        parts += formatter.phaseLabel(snapshot.phase)
+        if (prefs.showDelta) {
+            formatter.shortText(snapshot.dAzDeg, snapshot.dAltDeg)
+                ?.replace(' ', '/')
+                ?.let { parts += it }
+        }
+        return parts.joinToString(separator = " ")
     }
 
     private fun monochromaticImageData(snapshot: AimStatusSnapshot): ComplicationData =
