@@ -23,18 +23,20 @@ class TonightPreviewActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 val model by TonightMirrorStore.model.collectAsState(initial = null)
-                if (model == null) {
+                val currentModel = model
+                if (currentModel == null) {
                     Text(
                         text = "No data",
                         modifier = Modifier.padding(16.dp),
                     )
                 } else {
                     Column(Modifier.fillMaxSize().padding(16.dp)) {
-                        Text(text = "Updated: ${model!!.updatedAt}")
+                        Text(text = "Updated: ${currentModel.updatedAt}")
                         Spacer(Modifier.height(8.dp))
                         LazyColumn {
-                            items(model!!.items) { item ->
-                                Text(text = "${item.title}${item.subtitle?.let { " — $it" } ?: ""}")
+                            items(currentModel.items) { item ->
+                                val subtitleSuffix = item.subtitle?.let { " — $it" }.orEmpty()
+                                Text(text = "${item.title}$subtitleSuffix")
                                 Spacer(Modifier.height(6.dp))
                             }
                         }

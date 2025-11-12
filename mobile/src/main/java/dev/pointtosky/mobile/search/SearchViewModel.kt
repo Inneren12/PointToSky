@@ -62,7 +62,7 @@ class SearchViewModel(
             index = SearchIndex(entries)
             val query = pendingQuery
             val results = if (query.isNotBlank()) {
-                index!!.search(query, MAX_RESULTS)
+                index?.search(query, MAX_RESULTS).orEmpty()
             } else {
                 emptyList()
             }
@@ -168,7 +168,7 @@ class SearchViewModel(
         val planetEntries = Body.values()
             .mapNotNull { body ->
                 val name = planetNames[body] ?: return@mapNotNull null
-                val aliases = listOfNotNull(name, body.name)
+                val aliases = listOf(name, body.name)
                     .mapNotNull { alias -> alias.takeIf { it.isNotBlank() } }
                     .distinct()
                     .map { alias -> Alias(alias, normalize(alias)) }
@@ -295,8 +295,8 @@ class SearchViewModel(
                 val candidate = alias.normalized
                 if (candidate.isEmpty()) continue
                 val score = score(candidate, query)
-                if (score != null && (best == null || score < best!!)) {
-                    best = score
+                if (score != null) {
+                    best = best?.let { kotlin.math.min(it, score) } ?: score
                 }
             }
             return best

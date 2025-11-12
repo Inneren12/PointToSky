@@ -9,7 +9,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.license.report)
-    id("io.gitlab.arturbosch.detekt")
+    id("io.gitlab.arturbosch.detekt") version "1.23.6"
     id("org.jlleitschuh.gradle.ktlint")
 }
 
@@ -105,9 +105,10 @@ kotlin {
 
 detekt {
     buildUponDefaultConfig = true
+    allRules = false
+    config = files("$rootDir/config/detekt/detekt.yml")
+    baseline = file("$projectDir/detekt-baseline.xml")
     autoCorrect = false
-    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
-    baseline = file("detekt-baseline.xml")
 }
 
 ktlint {

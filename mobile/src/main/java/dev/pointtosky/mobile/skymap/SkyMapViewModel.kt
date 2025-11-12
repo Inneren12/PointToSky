@@ -13,6 +13,7 @@ import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -31,6 +32,7 @@ class SkyMapViewModel(
     private val locationPrefs: LocationPrefs,
     context: Context,
     private val timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1_000L),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val appContext = context.applicationContext
@@ -64,14 +66,14 @@ class SkyMapViewModel(
         )
 
     init {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             val stars = loadStars()
             val outlines = ConstellationOutlineLoader(appContext.assets).load()
             staticData.value = StaticSkyData(stars = stars, outlines = outlines)
         }
     }
 
-    private suspend fun loadStars(): List<SkyStar> = withContext(Dispatchers.IO) {
+    private suspend fun loadStars(): List<SkyStar> = withContext(ioDispatcher) {
         val all = catalogRepository.starCatalog.nearby(
             center = Equatorial(0.0, 0.0),
             radiusDeg = 180.0,
@@ -177,13 +179,17 @@ data class ConstellationProjection(
 )
 
 private fun starLabel(star: Star): String? {
-    return when {
-        !star.name.isNullOrBlank() -> star.name
-        !star.bayer.isNullOrBlank() && !star.constellation.isNullOrBlank() ->
-            "${star.bayer!!.uppercase(Locale.ROOT)} ${star.constellation!!.uppercase(Locale.ROOT)}"
-        !star.flamsteed.isNullOrBlank() -> star.flamsteed
-        else -> null
+    val primaryName = star.name?.takeIf { it.isNotBlank() }
+    if (primaryName != null) return primaryName
+
+    val bayer = star.bayer?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
+    val constellation = star.constellation?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
+    if (bayer != null && constellation != null) {
+        return "$bayer $constellation"
     }
+
+    val flamsteed = star.flamsteed?.takeIf { it.isNotBlank() }
+    return flamsteed
 }
 
 class SkyMapViewModelFactory(

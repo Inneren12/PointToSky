@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.logging.CrashLogEntry
 import dev.pointtosky.core.logging.CrashLogManager
 import dev.pointtosky.mobile.R
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,7 @@ data class CrashLogUiState(
 
 class CrashLogViewModel(
     private val application: Application,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -54,7 +56,7 @@ class CrashLogViewModel(
     }
 
     fun clearLogs() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             _state.update { it.copy(isBusy = true, statusMessage = null, errorMessage = null, lastZip = null) }
             runCatching { CrashLogManager.clear() }
                 .onSuccess {
@@ -82,7 +84,7 @@ class CrashLogViewModel(
     }
 
     fun createZip() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             _state.update { it.copy(isBusy = true, statusMessage = null, errorMessage = null) }
             val targetDirectory = File(application.filesDir, "crash")
             val result = runCatching { CrashLogManager.createZip(targetDirectory) }
