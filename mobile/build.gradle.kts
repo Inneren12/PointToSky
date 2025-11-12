@@ -79,6 +79,11 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = false
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -99,6 +104,12 @@ android {
         checkDependencies = true
         baseline = file("lint-baseline.xml")
     }
+}
+
+tasks.register("testDebugUnitTest") {
+    group = "verification"
+    description = "Runs all Debug unit tests for every flavor."
+    dependsOn("testInternalDebugUnitTest", "testPublicDebugUnitTest")
 }
 
 kotlin {
@@ -128,6 +139,9 @@ ktlint {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+
 // AndroidX Test для инструментальных тестов (ServiceScenario и пр.)
     androidTestImplementation("androidx.test:core:1.5.0")
     androidTestImplementation("androidx.test:core-ktx:1.5.0")
