@@ -20,6 +20,8 @@ import dev.pointtosky.core.time.ZoneRepo
 import dev.pointtosky.wear.ACTION_OPEN_AIM
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.aim.core.AimTarget
+import dev.pointtosky.wear.complication.config.ComplicationPrefsStore
+import dev.pointtosky.wear.complication.config.TonightPrefs
 import dev.pointtosky.wear.putAimTargetExtras
 import dev.pointtosky.wear.tile.tonight.RealTonightProvider
 import dev.pointtosky.wear.tile.tonight.TonightIcon
@@ -29,13 +31,18 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.withContext
 
 class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
 
     private val zoneRepo by lazy { ZoneRepo(this) }
 
     private val locationPrefs: LocationPrefs by lazy { LocationPrefs.fromContext(this) }
+
+    private val prefsStore by lazy { ComplicationPrefsStore(applicationContext) }
 
     private val provider: TonightProvider by lazy {
         RealTonightProvider(
@@ -46,7 +53,8 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
-        val state = runCatching { loadTargetState() }.getOrNull() ?: return null
+        val prefs = withContext(Dispatchers.IO) { prefsStore.tonightFlow.first() }
+        val state = runCatching { loadTargetState(prefs) }.getOrNull() ?: return null
 
         val tapAction = tapActionForTarget(request.complicationInstanceId, state.aimTarget)
 
@@ -67,13 +75,7 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
     override fun getPreviewData(type: ComplicationType): ComplicationData? =
         when (type) {
             ComplicationType.SHORT_TEXT ->
-                ShortTextComplicationData.Builder(
-                    text(R.string.comp_tonight_target_preview_text),
-                    contentDescription(R.string.comp_tonight_target_preview_content_description),
-                )
-                    .setMonochromaticImage(monochromaticImage(R.drawable.ic_tonight_jupiter))
-                    .setTapAction(tapAction(PtsComplicationKind.TONIGHT_TARGET))
-                    .build()
+                shortTextData(previewState(), tapAction(PtsComplicationKind.TONIGHT_TARGET))
 
             ComplicationType.MONOCHROMATIC_IMAGE ->
                 MonochromaticImageComplicationData.Builder(
@@ -94,11 +96,11 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
             else -> null
         }
 
-    private suspend fun loadTargetState(): TargetState? {
+    private suspend fun loadTargetState(prefs: TonightPrefs): TargetState? {
         val now = Instant.now()
         val location = locationPrefs.manualPointFlow.firstOrNull()
         val model = provider.getModel(now)
-        val target = model.items.firstOrNull() ?: return null
+        val target = selectTarget(model.items, prefs).firstOrNull() ?: return null
         val secondary = target.subtitle ?: target.altDeg?.let { "alt ${it.roundToInt()}°" }
         val contentDescription = buildContentDescription(target.title, secondary)
         val zone = zoneRepo.current()
@@ -108,15 +110,19 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
     }
 
     private fun shortTextData(state: TargetState, tapAction: PendingIntent): ComplicationData {
-        val text = buildPrimaryText(state.target.title, state.secondary)
-        return ShortTextComplicationData.Builder(
-            text(text),
+        val builder = ShortTextComplicationData.Builder(
+            text(state.target.title),
             text(state.contentDescription),
         )
             .setMonochromaticImage(monochromaticImage(iconDrawable(state.target.icon)))
             .setValidTimeRange(state.validTimeRange)
             .setTapAction(tapAction)
-            .build()
+        state.secondary?.let { secondary ->
+            if (secondary.isNotBlank()) {
+                builder.setTitle(text(secondary))
+            }
+        }
+        return builder.build()
     }
 
     private fun monochromaticImageData(state: TargetState, tapAction: PendingIntent): ComplicationData {
@@ -195,15 +201,79 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         return nextDay.atStartOfDay(zone).toInstant()
     }
 
-    private fun buildPrimaryText(title: String, secondary: String?): String =
-        listOfNotNull(title, secondary).joinToString(separator = " • ")
-
     private fun buildContentDescription(title: String, secondary: String?): String =
         if (secondary.isNullOrBlank()) {
             getString(R.string.comp_tonight_target_content_description, title)
         } else {
             getString(R.string.comp_tonight_target_content_description_with_secondary, title, secondary)
         }
+
+    private fun selectTarget(items: List<TonightTarget>, prefs: TonightPrefs): List<TonightTarget> {
+        val limit = prefs.magLimit.toDouble()
+        val filtered = items.filter { target ->
+            val magnitude = parseMagnitude(target)
+            magnitude?.let { it <= limit } ?: true
+        }
+        if (!prefs.preferPlanets) {
+            return filtered
+        }
+        return filtered.withIndex()
+            .sortedWith(
+                compareByDescending<IndexedValue<TonightTarget>> { indexed ->
+                    if (isPlanet(indexed.value)) 1 else 0
+                }.thenBy { indexed -> indexed.index },
+            )
+            .map { it.value }
+    }
+
+    private fun isPlanet(target: TonightTarget): Boolean =
+        when (target.icon) {
+            TonightIcon.SUN,
+            TonightIcon.MOON,
+            TonightIcon.JUPITER,
+            TonightIcon.SATURN -> true
+            else -> false
+        }
+
+    private fun parseMagnitude(target: TonightTarget): Double? {
+        val regex = Regex("mag\\s*(-?\\d+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE)
+        return sequenceOf(target.subtitle, target.title, target.id)
+            .filterNotNull()
+            .mapNotNull { value ->
+                regex.find(value)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+            }
+            .firstOrNull()
+    }
+
+    private fun previewState(): TargetState {
+        val previewLabel = getString(R.string.comp_tonight_target_preview_text)
+        val title = previewLabel.substringBefore('•').trim().ifEmpty { previewLabel }
+        val secondary = previewLabel.substringAfter('•', "").trim().takeIf { it.isNotEmpty() }
+        val fallbackTarget = TonightTarget(
+            id = "JUPITER",
+            title = title,
+            subtitle = secondary,
+            icon = TonightIcon.JUPITER,
+        )
+        val previewTargets = listOf(
+            fallbackTarget,
+            TonightTarget(
+                id = "STAR:Rigel",
+                title = "Rigel",
+                subtitle = "mag 0.1",
+                icon = TonightIcon.STAR,
+            ),
+        )
+        val prefs = TonightPrefs(magLimit = 5.5f, preferPlanets = true)
+        val target = selectTarget(previewTargets, prefs).firstOrNull() ?: fallbackTarget
+        return TargetState(
+            target = target,
+            secondary = target.subtitle,
+            contentDescription = getString(R.string.comp_tonight_target_preview_content_description),
+            validTimeRange = null,
+            aimTarget = null,
+        )
+    }
 
     private fun iconDrawable(icon: TonightIcon): Int =
         when (icon) {
