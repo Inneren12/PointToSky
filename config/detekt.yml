@@ -1,5 +1,6 @@
 build:
   maxIssues: 0
+  excludeCorrectable: false
 
 config:
   validation: true
@@ -11,10 +12,35 @@ style:
     active: false
   MaxLineLength:
     active: false
+  ReturnCount:
+    active: true
+    max: 4
+    excludeGuardClauses: true
+    excludeLabeled: true
+    excludeReturnFromFinally: true
+    excludedFunctions: ['equals']
+    excludes: ['**/test/**', '**/androidTest/**', '**/generated/**']
+  MagicNumber:
+    active: true
+    excludes: ['**/test/**', '**/androidTest/**', '**/generated/**']
+    ignoreAnnotation: true
+    ignoreEnums: true
+    ignoreHashCodeFunction: true
+    ignorePropertyDeclaration: true
+    ignoreConstantDeclaration: false
+    ignoreCompanionObjectPropertyDeclaration: false
+    ignoreNamedArgument: true
+    ignoreRanges: true
+    ignoreNumbers: [
+      -1,0,1,2,3,4,5,8,10,12,15,20,25,30,33,40,45,50,60,80,90,100,120,150,160,180,200,250,300,330,360,
+      400,500,600,700,800,900,1000,1200,1500,1800,2000,3000,5000,10000
+    ]
 
 # Основные полезные наборы правил
 potential-bugs:
   active: true
+  UnsafeCallOnNullableType:
+    active: true
 
 performance:
   active: true
@@ -25,7 +51,13 @@ performance:
 
 exceptions:
   active: true
+  EmptyCatchBlock:
+    active: true
+    allowedExceptionNameRegex: '_|(ignore|expected).*'
   TooGenericExceptionCaught:
+    active: true
+    exceptionNames: ['Throwable', 'Exception', 'RuntimeException']
+  SwallowedException:
     active: true
   ThrowingExceptionsWithoutMessageOrCause:
     active: true
@@ -34,29 +66,48 @@ naming:
   active: true
   FunctionNaming:
     active: true
+  FunctionMaxLength:
+    active: false
   TopLevelPropertyNaming:
     active: true
 
 complexity:
   active: true
-  LongParameterList:
-    active: true
-    threshold: 7
   LongMethod:
     active: true
-    threshold: 60
+    threshold: 120
+    ignoreAnnotated: ['Composable', 'Preview']
+    ignoreSimpleWhenEntries: true
+    ignoreLabeled: true
+    excludes: ['**/test/**', '**/androidTest/**', '**/generated/**']
+  LongParameterList:
+    active: true
+    threshold: 8
+    ignoreDefaultParameters: true
+    ignoreDataClasses: true
+    ignoreAnnotated: ['Composable', 'Preview']
+    excludes: ['**/test/**', '**/androidTest/**', '**/generated/**']
   ComplexMethod:
     active: true
     threshold: 15
+    ignoreAnnotated: ['Composable', 'Preview']
+    excludes: ['**/test/**', '**/androidTest/**', '**/generated/**']
   CognitiveComplexMethod:
     active: true
     threshold: 15
+    ignoreAnnotated: ['Composable', 'Preview']
+    excludes: ['**/test/**', '**/androidTest/**', '**/generated/**']
   NestedBlockDepth:
     active: true
     threshold: 4
+    ignoreAnnotated: ['Composable', 'Preview']
+    excludes: ['**/test/**', '**/androidTest/**', '**/generated/**']
   TooManyFunctions:
     active: true
-    thresholdInClasses: 20
-    thresholdInInterfaces: 20
-    thresholdInObjects: 20
-    thresholdInFiles: 30
+    thresholdInClasses: 30
+    thresholdInObjects: 30
+    thresholdInInterfaces: 30
+    ignoreOverridden: true
+    excludes: ['**/test/**', '**/androidTest/**', '**/generated/**']
+processors:
+  active: true
