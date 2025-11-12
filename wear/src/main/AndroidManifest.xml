@@ -131,13 +131,14 @@
             <meta-data
                 android:name="androidx.wear.watchface.complications.SUPPORTED_TYPES"
                 android:value="SHORT_TEXT,MONOCHROMATIC_IMAGE,SMALL_IMAGE,RANGED_VALUE" />
+            <meta-data
+                android:name="android.support.wearable.complications.PROVIDER_CONFIG_ACTION"
+                android:value="dev.pointtosky.wear.ACTION_CONFIG_AIM_STATUS" />
             <intent-filter>
                 <action android:name="androidx.wear.watchface.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
             </intent-filter>
         </service>
 
-        <!-- Заглушка для TONIGHT. Зарегистрируем в S10.C -->
-        <!--
         <service
             android:name=".complication.TonightTargetDataSourceService"
             android:exported="true"
@@ -146,10 +147,28 @@
             <meta-data
                 android:name="androidx.wear.watchface.complications.SUPPORTED_TYPES"
                 android:value="SHORT_TEXT,MONOCHROMATIC_IMAGE,SMALL_IMAGE" />
+            <meta-data
+                android:name="android.support.wearable.complications.PROVIDER_CONFIG_ACTION"
+                android:value="dev.pointtosky.wear.ACTION_CONFIG_TONIGHT" />
             <intent-filter>
                 <action android:name="androidx.wear.watchface.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
             </intent-filter>
         </service>
-        -->
+
+        <activity
+            android:name="dev.pointtosky.wear.complication.config.AimStatusConfigActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.pointtosky.wear.ACTION_CONFIG_AIM_STATUS" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="dev.pointtosky.wear.complication.config.TonightConfigActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.pointtosky.wear.ACTION_CONFIG_TONIGHT" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
