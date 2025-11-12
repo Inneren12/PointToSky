@@ -170,4 +170,8 @@
     <string name="comp_aim_status_preview_text">Ready</string>
     <string name="comp_aim_status_preview_content_description">Aim status ready</string>
     <string name="comp_tonight_target_label">Tonight target</string>
+    <string name="comp_tonight_target_preview_text">Jupiter • 22:10–01:30</string>
+    <string name="comp_tonight_target_preview_content_description">Tonight target Jupiter from 22:10 to 01:30</string>
+    <string name="comp_tonight_target_content_description">Tonight target %1$s</string>
+    <string name="comp_tonight_target_content_description_with_secondary">Tonight target %1$s, %2$s</string>
 </resources>
