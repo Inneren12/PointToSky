@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -21,6 +22,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChip
 import dev.pointtosky.wear.R
+import dev.pointtosky.wear.complication.ComplicationDebug
 import kotlinx.coroutines.launch
 
 @Composable
@@ -59,6 +61,7 @@ private fun rememberSettingsState(settings: AimIdentifySettingsDataStore): Setti
 fun SettingsScreen(state: SettingsState, settings: AimIdentifySettingsDataStore, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val listState = rememberScalingLazyListState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     ScalingLazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -261,6 +264,19 @@ fun SettingsScreen(state: SettingsState, settings: AimIdentifySettingsDataStore,
                 checked = state.tileMirror,
                 onCheckedChange = { enabled -> scope.launch { settings.setTileMirroringEnabled(enabled) } },
                 label = { Text(text = stringResource(id = R.string.settings_tile_mirroring_title)) },
+                toggleControl = {},
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // Debug: force refresh complications
+        item {
+            ToggleChip(
+                checked = false,
+                onCheckedChange = {
+                    ComplicationDebug.forceRefresh(context)
+                },
+                label = { Text(text = stringResource(id = R.string.settings_force_refresh_complication)) },
                 toggleControl = {},
                 modifier = Modifier.fillMaxWidth(),
             )
