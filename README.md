@@ -51,6 +51,10 @@ adb shell cmd tile add dev.pointtosky.wear/dev.pointtosky.wear.tile.tonight.Toni
    Gradle автоматически выполнит mobile UI и data-layer проверки на телефоне, а также confirm-сценарии на часах.
 5. После завершения тестов можно выгрузить логи `adb logcat` для диагностики, если какая-либо проверка упала.
 
+## Интеграция циферблатов Watch Face Studio
+
+Инструкция по настройке тап-области для открытия Aim из циферблатов WFS, а также SVG-иконки для кнопки «Открыть указку», находятся в файле [`docs/wfs_integration.md`](docs/wfs_integration.md).
+
 ## Что проверяют тесты
 
 - **Unit (RealTonightProvider):**
