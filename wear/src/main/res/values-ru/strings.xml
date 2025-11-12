@@ -164,4 +164,10 @@
     <string name="onboarding_location_granted">Разрешение на локацию уже выдано.</string>
     <string name="onboarding_location_button">Разрешить локацию во время использования</string>
     <string name="onboarding_continue">Продолжить</string>
+    <!-- Complications -->
+    <string name="comp_aim_status_label">Статус Aim</string>
+    <string name="comp_aim_status_preview_title">Aim</string>
+    <string name="comp_aim_status_preview_text">Готово</string>
+    <string name="comp_aim_status_preview_content_description">Статус Aim: готово</string>
+    <string name="comp_tonight_target_label">Цель Tonight</string>
 </resources>
