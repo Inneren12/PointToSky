@@ -48,7 +48,7 @@ class PersistentAimStatusReporter(
             if (snapshot != cached) {
                 cached = snapshot
                 repository.write(snapshot)
-                updater.requestUpdate()
+                updater.requestUpdate(force = true)
             }
         }
     }
@@ -58,6 +58,11 @@ class PersistentAimStatusReporter(
             val previousPhase = lastPhase
             if (state.phase == AimPhase.LOCKED && previousPhase != AimPhase.LOCKED) {
                 updater.requestUpdate(force = true)
+            }
+            if (previousPhase == AimPhase.LOCKED && state.phase != AimPhase.LOCKED) {
+                updater.requestUpdate(force = true)
+            } else if (previousPhase != state.phase && state.phase != AimPhase.LOCKED) {
+                updater.requestUpdate(force = false)
             }
             lastPhase = state.phase
 
@@ -76,11 +81,6 @@ class PersistentAimStatusReporter(
             if (snapshot != cached) {
                 cached = snapshot
                 repository.write(snapshot)
-                // После успешной записи снапшота инициируем обновление осложнения.
-                // Частота вызовов естественно ограничена persistIntervalMs.
-                updater.requestUpdate(force = false)
-                // Обновляем таймстемп, чтобы следующее сохранение не случилось раньше интервала.
-                lastPersistMs = now
             }
             lastPersistMs = now
         }

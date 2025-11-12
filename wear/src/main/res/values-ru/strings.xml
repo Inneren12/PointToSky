@@ -147,6 +147,7 @@
     <!-- S7.E -->
     <string name="settings_tile_mirroring_title">Дублирование на телефон</string>
     <string name="settings_tile_mirroring_desc">Отправлять предпросмотр тайла Tonight на телефон</string>
+    <string name="settings_force_refresh_complication">Принудительно обновить компликации</string>
     <!-- Tile (S7.F) -->
     <string name="tile_section_title">Тайл</string>
     <string name="tile_mag_limit_label">Звёзды: m ≤ %1$.1f</string>

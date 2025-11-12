@@ -147,6 +147,7 @@
     <!-- S7.E -->
     <string name="settings_tile_mirroring_title">Mirroring to phone</string>
     <string name="settings_tile_mirroring_desc">Send Tonight tile preview to phone</string>
+    <string name="settings_force_refresh_complication">Force refresh complications</string>
     <!-- Tile (S7.F) -->
     <string name="tile_section_title">Tile</string>
     <string name="tile_mag_limit_label">Stars: mag ≤ %1$.1f</string>

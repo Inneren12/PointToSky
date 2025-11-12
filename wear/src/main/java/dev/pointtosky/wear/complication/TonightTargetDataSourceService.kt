@@ -27,14 +27,14 @@ import dev.pointtosky.wear.tile.tonight.RealTonightProvider
 import dev.pointtosky.wear.tile.tonight.TonightIcon
 import dev.pointtosky.wear.tile.tonight.TonightProvider
 import dev.pointtosky.wear.tile.tonight.TonightTarget
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import kotlin.math.roundToInt
 
 class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
 
@@ -43,6 +43,8 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
     private val locationPrefs: LocationPrefs by lazy { LocationPrefs.fromContext(this) }
 
     private val prefsStore by lazy { ComplicationPrefsStore(applicationContext) }
+
+    private val complicationUpdater by lazy { TonightTargetComplicationUpdater(applicationContext) }
 
     private val provider: TonightProvider by lazy {
         RealTonightProvider(
@@ -54,7 +56,15 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         val prefs = withContext(Dispatchers.IO) { prefsStore.tonightFlow.first() }
-        val state = runCatching { loadTargetState(prefs) }.getOrNull() ?: return null
+        val now = Instant.now()
+        val zone = zoneRepo.current()
+        val state = runCatching { loadTargetState(prefs, now, zone) }.getOrNull()
+        if (state == null) {
+            complicationUpdater.schedule(nextMidnight(now, zone))
+            return null
+        }
+
+        state.nextRefreshAt?.let { complicationUpdater.schedule(it) }
 
         val tapAction = tapActionForTarget(request.complicationInstanceId, state.aimTarget)
 
@@ -96,17 +106,22 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
             else -> null
         }
 
-    private suspend fun loadTargetState(prefs: TonightPrefs): TargetState? {
-        val now = Instant.now()
+    private suspend fun loadTargetState(prefs: TonightPrefs, now: Instant, zone: ZoneId): TargetState? {
         val location = locationPrefs.manualPointFlow.firstOrNull()
         val model = provider.getModel(now)
         val target = selectTarget(model.items, prefs).firstOrNull() ?: return null
         val secondary = target.subtitle ?: target.altDeg?.let { "alt ${it.roundToInt()}°" }
         val contentDescription = buildContentDescription(target.title, secondary)
-        val zone = zoneRepo.current()
-        val validity = buildValidTimeRange(now, target, zone)
+        val refresh = buildRefreshSchedule(now, target, zone)
         val aimTarget = aimTargetFor(target, location, now)
-        return TargetState(target, secondary, contentDescription, validity, aimTarget)
+        return TargetState(
+            target = target,
+            secondary = secondary,
+            contentDescription = contentDescription,
+            validTimeRange = refresh.timeRange,
+            aimTarget = aimTarget,
+            nextRefreshAt = refresh.nextBoundary,
+        )
     }
 
     private fun shortTextData(state: TargetState, tapAction: PendingIntent): ComplicationData {
@@ -184,15 +199,16 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         }
     }
 
-    private fun buildValidTimeRange(now: Instant, target: TonightTarget, zone: ZoneId): TimeRange? {
+    private fun buildRefreshSchedule(now: Instant, target: TonightTarget, zone: ZoneId): RefreshSchedule {
         val midnight = nextMidnight(now, zone)
         val boundaries = buildList {
             target.windowStart?.takeIf { it.isAfter(now) }?.let { add(it) }
             target.windowEnd?.takeIf { it.isAfter(now) }?.let { add(it) }
             midnight.takeIf { it.isAfter(now) }?.let { add(it) }
         }
-        val nextBoundary = boundaries.minOrNull() ?: return null
-        return TimeRange.before(nextBoundary)
+        val nextBoundary = boundaries.minOrNull()
+        val timeRange = nextBoundary?.let { TimeRange.before(it) }
+        return RefreshSchedule(timeRange = timeRange, nextBoundary = nextBoundary)
     }
 
     private fun nextMidnight(now: Instant, zone: ZoneId): Instant {
@@ -272,6 +288,7 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
             contentDescription = getString(R.string.comp_tonight_target_preview_content_description),
             validTimeRange = null,
             aimTarget = null,
+            nextRefreshAt = null,
         )
     }
 
@@ -291,5 +308,11 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         val contentDescription: String,
         val validTimeRange: TimeRange?,
         val aimTarget: AimTarget?,
+        val nextRefreshAt: Instant?,
+    )
+
+    private data class RefreshSchedule(
+        val timeRange: TimeRange?,
+        val nextBoundary: Instant?,
     )
 }
