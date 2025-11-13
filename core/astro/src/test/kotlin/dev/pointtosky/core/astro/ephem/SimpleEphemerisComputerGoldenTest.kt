@@ -1,10 +1,10 @@
 package dev.pointtosky.core.astro.ephem
 
-import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.testkit.Angles.angularSeparationDeg
 import dev.pointtosky.core.astro.testkit.Tolerance.EPHEM_MAX_ERR_DEG
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -54,8 +54,7 @@ class SimpleEphemerisComputerGoldenTest {
 
         val expectedDistance = sample.expectedDistanceAu
         if (expectedDistance != null) {
-            val actual = ephemeris.distanceAu
-            assertNotNull(actual, "${sample.body} distance should be reported")
+            val actual = ephemeris.distanceAu ?: fail("${sample.body} distance should be reported")
             val delta = abs(actual - expectedDistance)
             val expectedTolerance = DISTANCE_TOLERANCES.getValue(sample.body)
             assertTrue(
@@ -66,8 +65,7 @@ class SimpleEphemerisComputerGoldenTest {
 
         val expectedPhase = sample.expectedPhase
         if (expectedPhase != null) {
-            val phase = ephemeris.phase
-            assertNotNull(phase, "${sample.body} phase must be reported")
+            val phase = ephemeris.phase ?: fail("${sample.body} phase must be reported")
             val delta = abs(phase - expectedPhase)
             assertTrue(delta <= PHASE_TOLERANCE, "${sample.body} phase differs by $delta")
         }
@@ -104,12 +102,4 @@ class SimpleEphemerisComputerGoldenTest {
         @JvmStatic
         fun goldenSamples(): java.util.stream.Stream<GoldenSample> = GOLDEN_DATA.toSamples().stream()
     }
-
-    data class GoldenSample(
-        val body: Body,
-        val instant: Instant,
-        val expected: Equatorial,
-        val expectedDistanceAu: Double?,
-        val expectedPhase: Double?,
-    )
 }

@@ -28,7 +28,10 @@ internal fun writeGolden(golden: EphemGolden) {
     val output = goldenOutputPath()
     Files.createDirectories(output.parent)
     val rendered = json.encodeToString(EphemGoldenFileDto.serializer(), dto)
-    Files.writeString(output, "$rendered\n")
+    Files.newBufferedWriter(output).use { writer ->
+        writer.write(rendered)
+        writer.newLine()
+    }
 }
 
 private fun goldenResourceStream(): InputStream {
