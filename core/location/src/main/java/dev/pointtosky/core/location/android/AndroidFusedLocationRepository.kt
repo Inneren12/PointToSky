@@ -44,16 +44,20 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import android.annotation.SuppressLint
 
 class AndroidFusedLocationRepository(
     context: Context,
-    private val io: CoroutineDispatcher = Dispatchers.IO,
+    io: CoroutineDispatcher = Dispatchers.IO,
     private val timeProvider: () -> Long = System::currentTimeMillis,
     private val delegate: FusedClientDelegate = RealFusedClientDelegate(
         LocationServices.getFusedLocationProviderClient(context.applicationContext),
     ),
 ) : LocationRepository {
 
+    private val appContext: Context = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + io)
     private val mutex = Mutex()
     private val throttleMs = MutableStateFlow<Long?>(null)
@@ -75,25 +79,22 @@ class AndroidFusedLocationRepository(
     private var updatesJob: Job? = null
     private var started = false
 
-    @RequiresPermission(
-        anyOf = [
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-        ],
-    )
+    @SuppressLint("MissingPermission")
     override suspend fun start(config: LocationConfig) {
+        // 1) Явно проверяем право: если его нет — тихо выходим (никаких вызовов Fused)
+        if (!appContext.hasLocationPermission()) return
         mutex.withLock {
             throttleMs.value = config.throttleMs
             if (started) return
             started = true
 
             // Явно используем GMS Builder с приоритетом и базовым интервалом
-            val request = com.google.android.gms.location.LocationRequest.Builder(
+            val request = LocationRequest.Builder(
                 Priority.PRIORITY_BALANCED_POWER_ACCURACY,
                 config.minUpdateIntervalMs.coerceAtLeast(0L),
             )
                 .setMinUpdateIntervalMillis(config.minUpdateIntervalMs.coerceAtLeast(0L))
-                .setMinUpdateDistanceMeters(config.minDistanceM.toFloat())
+                .setMinUpdateDistanceMeters(config.minDistanceM)
                 .setGranularity(Granularity.GRANULARITY_PERMISSION_LEVEL)
                 .build()
 
@@ -130,13 +131,9 @@ class AndroidFusedLocationRepository(
         }
     }
 
-    @RequiresPermission(
-        anyOf = [
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-        ],
-    )
+    @SuppressLint("MissingPermission") // явная проверка прав ниже
     override suspend fun getLastKnown(): LocationFix? {
+        if (!appContext.hasLocationPermission()) return null
         latestFix.get()?.let { return it }
         return runCatching { fetchLastKnown() }.getOrNull()
     }
@@ -148,6 +145,7 @@ class AndroidFusedLocationRepository(
         ],
     )
     suspend fun getCurrentLocation(timeoutMs: Long, priority: LocationPriority = LocationPriority.BALANCED): LocationFix? {
+        if (!appContext.hasLocationPermission()) return null
         val fusedPriority = when (priority) {
             LocationPriority.PASSIVE -> Priority.PRIORITY_PASSIVE
             LocationPriority.BALANCED -> Priority.PRIORITY_BALANCED_POWER_ACCURACY
@@ -160,12 +158,14 @@ class AndroidFusedLocationRepository(
         }
     }
 
+    @RequiresPermission(anyOf = [Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION])
     private suspend fun fetchFreshLastKnown(ttlMs: Long): LocationFix? {
         val fix = runCatching { fetchLastKnown() }.getOrNull() ?: return null
         val isFresh = timeProvider.invoke() - fix.timeMs <= ttlMs
         return if (isFresh) fix else null
     }
 
+    @RequiresPermission(anyOf = [Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION])
     private suspend fun fetchLastKnown(): LocationFix? {
         val location = delegate.lastLocation() ?: return null
         return location.toLocationFix()
@@ -238,7 +238,7 @@ class AndroidFusedLocationRepository(
         override suspend fun lastLocation(): Location? {
             return try {
                 withTimeoutOrNull(LAST_LOCATION_TIMEOUT_MS) {
-                    suspendCancellableCoroutine<Location?> { cont ->
+                    suspendCancellableCoroutine { cont ->
                         val task = client.lastLocation
                         task.addOnSuccessListener { cont.resume(it) }
                         task.addOnFailureListener { err -> cont.resumeWithException(err) }
@@ -259,7 +259,7 @@ class AndroidFusedLocationRepository(
         override suspend fun currentLocation(timeoutMs: Long, priority: Int): Location? {
             return try {
                 withTimeoutOrNull(timeoutMs) {
-                    suspendCancellableCoroutine<Location?> { cont ->
+                    suspendCancellableCoroutine { cont ->
                         val tokenSource = CancellationTokenSource()
                         val task = client.getCurrentLocation(priority, tokenSource.token)
                         task.addOnSuccessListener { location ->
@@ -294,3 +294,11 @@ private fun String?.toProviderType(): ProviderType = when (this?.lowercase(Local
     "fused" -> ProviderType.FUSED
     else -> ProviderType.UNKNOWN
 }
+
+/** Реальная проверка наличия хотя бы одного разрешения на локацию */
+private fun Context.hasLocationPermission(): Boolean {
+    val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    return fine || coarse
+}
+
