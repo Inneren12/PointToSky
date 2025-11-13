@@ -44,7 +44,9 @@ class PhoneLocationRepository(
     context: Context,
     private val clock: () -> Long = System::currentTimeMillis,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-) : LocationRepository, MessageClient.OnMessageReceivedListener, OnDataChangedListener {
+) : LocationRepository,
+    MessageClient.OnMessageReceivedListener,
+    OnDataChangedListener {
     private val appContext = context.applicationContext
     private val messageClient: MessageClient = Wearable.getMessageClient(appContext)
     private val dataClient: DataClient = Wearable.getDataClient(appContext)
@@ -151,11 +153,12 @@ class PhoneLocationRepository(
         val payload = LocationRequestPayload(freshTtlMs = freshTtlMs).toByteArray()
         val sendResult =
             runCatching {
-                messageClient.sendMessage(
-                    targetNode.id,
-                    PATH_LOCATION_REQUEST_ONE,
-                    payload,
-                ).await()
+                messageClient
+                    .sendMessage(
+                        targetNode.id,
+                        PATH_LOCATION_REQUEST_ONE,
+                        payload,
+                    ).await()
             }
 
         if (sendResult.isFailure) {

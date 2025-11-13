@@ -13,9 +13,13 @@ import java.time.Instant
 
 object CardRepository {
     sealed class Entry {
-        data class Ready(val model: CardObjectModel) : Entry()
+        data class Ready(
+            val model: CardObjectModel,
+        ) : Entry()
 
-        data class Invalid(val reason: String? = null) : Entry()
+        data class Invalid(
+            val reason: String? = null,
+        ) : Entry()
     }
 
     private val entries = MutableStateFlow<Map<String, Entry>>(emptyMap())

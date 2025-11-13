@@ -74,8 +74,7 @@ class AstroDebugViewModel(
                         lastFpsLogAt = now
                     }
                 }
-            }
-            .sample(ORIENTATION_SAMPLE_MS)
+            }.sample(ORIENTATION_SAMPLE_MS)
             .stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(stopTimeoutMillis = UI_IDLE_STOP_TIMEOUT_MS),
@@ -173,8 +172,8 @@ class AstroDebugViewModel(
         return Horizontal(azimuthDeg, altitudeDeg)
     }
 
-    private fun computeBestMatch(equatorial: Equatorial): AstroBestMatch? {
-        return when (val result = identifySolver.findBest(equatorial)) {
+    private fun computeBestMatch(equatorial: Equatorial): AstroBestMatch? =
+        when (val result = identifySolver.findBest(equatorial)) {
             is SkyObjectOrConstellation.Object -> {
                 val obj = result.obj
                 AstroBestMatch.Object(
@@ -187,7 +186,6 @@ class AstroDebugViewModel(
                 AstroBestMatch.Constellation(result.iauCode)
             }
         }
-    }
 
     private fun formatSiderealAsHms(lstDeg: Double): String {
         val totalSeconds = ((lstDeg / 15.0) * 3600.0).roundToInt() % 86400
@@ -231,5 +229,7 @@ sealed interface AstroBestMatch {
         val constellationCode: String?,
     ) : AstroBestMatch
 
-    data class Constellation(val code: String) : AstroBestMatch
+    data class Constellation(
+        val code: String,
+    ) : AstroBestMatch
 }

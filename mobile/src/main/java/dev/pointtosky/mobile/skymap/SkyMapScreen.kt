@@ -190,8 +190,7 @@ private fun SkyMapContent(
                             scale = newScale
                             offset = newOffset
                         }
-                    }
-                    .pointerInput(starPositions, tapRadiusPx) {
+                    }.pointerInput(starPositions, tapRadiusPx) {
                         detectTapGestures { tap ->
                             val nearest =
                                 starPositions.minByOrNull { (_, position) ->

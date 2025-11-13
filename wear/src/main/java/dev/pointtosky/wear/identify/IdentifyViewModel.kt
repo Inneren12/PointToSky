@@ -85,7 +85,8 @@ class IdentifyViewModel(
     private val ephemeris: SimpleEphemerisComputer = SimpleEphemerisComputer(),
     @Suppress("unused")
     private val timeSource: dev.pointtosky.core.time.SystemTimeSource =
-        dev.pointtosky.core.time.SystemTimeSource(periodMs = 200L),
+        dev.pointtosky.core.time
+            .SystemTimeSource(periodMs = 200L),
     @Suppress("unused")
     private val settings: AimIdentifySettingsDataStore,
 ) : ViewModel() {
@@ -138,8 +139,7 @@ class IdentifyViewModel(
                         payload = payload,
                     )
                 }
-            }
-            .launchIn(viewModelScope)
+            }.launchIn(viewModelScope)
     }
 
     private fun computeState(
@@ -178,7 +178,11 @@ class IdentifyViewModel(
         val sep: Double,
     )
 
-    private data class BodyCandidate(val body: Body, val eq: Equatorial, val sep: Double)
+    private data class BodyCandidate(
+        val body: Body,
+        val eq: Equatorial,
+        val sep: Double,
+    )
 
     private enum class Winner { STAR, BODY, CONST }
 
@@ -206,13 +210,14 @@ class IdentifyViewModel(
         eq: Equatorial,
         instant: Instant,
     ): BodyCandidate? =
-        listOf(Body.MOON, Body.JUPITER, Body.SATURN).minByOrNull { body ->
-            val bEq = ephemeris.compute(body, instant).eq
-            separationDeg(eq, bEq)
-        }?.let { body ->
-            val bEq = ephemeris.compute(body, instant).eq
-            BodyCandidate(body = body, eq = bEq, sep = separationDeg(eq, bEq))
-        }
+        listOf(Body.MOON, Body.JUPITER, Body.SATURN)
+            .minByOrNull { body ->
+                val bEq = ephemeris.compute(body, instant).eq
+                separationDeg(eq, bEq)
+            }?.let { body ->
+                val bEq = ephemeris.compute(body, instant).eq
+                BodyCandidate(body = body, eq = bEq, sep = separationDeg(eq, bEq))
+            }
 
     private fun pickWinner(
         star: StarCandidate?,

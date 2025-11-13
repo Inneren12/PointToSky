@@ -120,11 +120,24 @@ open class TonightTileService : TileService() {
                     model = model,
                     deviceParams = requestParams.deviceParameters,
                 )
-            val layout = LayoutElementBuilders.Layout.Builder().setRoot(root).build()
-            val entry = TimelineBuilders.TimelineEntry.Builder().setLayout(layout).build()
-            val timeline = TimelineBuilders.Timeline.Builder().addTimelineEntry(entry).build()
+            val layout =
+                LayoutElementBuilders.Layout
+                    .Builder()
+                    .setRoot(root)
+                    .build()
+            val entry =
+                TimelineBuilders.TimelineEntry
+                    .Builder()
+                    .setLayout(layout)
+                    .build()
+            val timeline =
+                TimelineBuilders.Timeline
+                    .Builder()
+                    .addTimelineEntry(entry)
+                    .build()
             Futures.immediateFuture(
-                TileBuilders.Tile.Builder()
+                TileBuilders.Tile
+                    .Builder()
                     .setResourcesVersion(RES_VER)
                     // Резервный периодический апдейт от платформы (на случай промаха воркера)
                     .setFreshnessIntervalMillis(45L * 60_000L)
@@ -179,18 +192,19 @@ open class TonightTileService : TileService() {
             TonightIcon.SATURN,
             TonightIcon.STAR,
             TonightIcon.CONST,
-        )
-            .forEach { icon ->
-                res.addIdToImageMapping(
-                    iconResIdString(icon),
-                    ResourceBuilders.ImageResource.Builder()
-                        .setAndroidResourceByResId(
-                            ResourceBuilders.AndroidImageResourceByResId.Builder()
-                                .setResourceId(iconAndroidRes(icon))
-                                .build(),
-                        ).build(),
-                )
-            }
+        ).forEach { icon ->
+            res.addIdToImageMapping(
+                iconResIdString(icon),
+                ResourceBuilders.ImageResource
+                    .Builder()
+                    .setAndroidResourceByResId(
+                        ResourceBuilders.AndroidImageResourceByResId
+                            .Builder()
+                            .setResourceId(iconAndroidRes(icon))
+                            .build(),
+                    ).build(),
+            )
+        }
         return Futures.immediateFuture(res.build())
     }
 
@@ -207,16 +221,22 @@ open class TonightTileService : TileService() {
     ): LayoutElementBuilders.LayoutElement {
         // список элементов
         val listColumn =
-            LayoutElementBuilders.Column.Builder()
+            LayoutElementBuilders.Column
+                .Builder()
                 .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
                 .setHeight(DimensionBuilders.WrappedDimensionProp.Builder().build())
 
         model.items.forEachIndexed { idx, item ->
             if (idx > 0) {
                 listColumn.addContent(
-                    LayoutElementBuilders.Spacer.Builder()
-                        .setHeight(DimensionBuilders.DpProp.Builder().setValue(6f).build())
-                        .build(),
+                    LayoutElementBuilders.Spacer
+                        .Builder()
+                        .setHeight(
+                            DimensionBuilders.DpProp
+                                .Builder()
+                                .setValue(6f)
+                                .build(),
+                        ).build(),
                 )
             }
             listColumn.addContent(buildTargetRow(context, item))
@@ -230,16 +250,18 @@ open class TonightTileService : TileService() {
 
         val moreClickable = clickableOpenTargetsActivity(context)
         val moreChip =
-            CompactChip.Builder(
-                context,
-                getString(R.string.tile_more),
-                moreClickable,
-                dp,
-            ).build()
+            CompactChip
+                .Builder(
+                    context,
+                    getString(R.string.tile_more),
+                    moreClickable,
+                    dp,
+                ).build()
 
         val title = Text.Builder(context, getString(R.string.tile_tonight_label)).build()
 
-        return PrimaryLayout.Builder(dp)
+        return PrimaryLayout
+            .Builder(dp)
             .setPrimaryLabelTextContent(title)
             .setContent(listColumn.build())
             .setPrimaryChipContent(moreChip)
@@ -258,28 +280,49 @@ open class TonightTileService : TileService() {
         val subtitle = item.subtitle ?: formatAzAlt(item.azDeg, item.altDeg)
 
         val row =
-            LayoutElementBuilders.Row.Builder()
+            LayoutElementBuilders.Row
+                .Builder()
                 .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
                 .setHeight(DimensionBuilders.WrappedDimensionProp.Builder().build())
-                .setModifiers(ModifiersBuilders.Modifiers.Builder().setClickable(click).build())
+                .setModifiers(
+                    ModifiersBuilders.Modifiers
+                        .Builder()
+                        .setClickable(click)
+                        .build(),
+                )
 
         // Иконка
         row.addContent(
-            LayoutElementBuilders.Image.Builder()
+            LayoutElementBuilders.Image
+                .Builder()
                 .setResourceId(iconResIdString(item.icon))
-                .setWidth(DimensionBuilders.DpProp.Builder().setValue(20f).build())
-                .setHeight(DimensionBuilders.DpProp.Builder().setValue(20f).build())
-                .build(),
+                .setWidth(
+                    DimensionBuilders.DpProp
+                        .Builder()
+                        .setValue(20f)
+                        .build(),
+                ).setHeight(
+                    DimensionBuilders.DpProp
+                        .Builder()
+                        .setValue(20f)
+                        .build(),
+                ).build(),
         )
         // Отступ
         row.addContent(
-            LayoutElementBuilders.Spacer.Builder()
-                .setWidth(DimensionBuilders.DpProp.Builder().setValue(8f).build())
-                .build(),
+            LayoutElementBuilders.Spacer
+                .Builder()
+                .setWidth(
+                    DimensionBuilders.DpProp
+                        .Builder()
+                        .setValue(8f)
+                        .build(),
+                ).build(),
         )
         // Тексты
         val textCol =
-            LayoutElementBuilders.Column.Builder()
+            LayoutElementBuilders.Column
+                .Builder()
                 .setWidth(DimensionBuilders.ExpandedDimensionProp.Builder().build())
         // Primary (Material Text)
         textCol.addContent(
@@ -300,15 +343,18 @@ open class TonightTileService : TileService() {
         targetId: String?,
     ): ModifiersBuilders.Clickable {
         val activity: ActionBuilders.AndroidActivity =
-            ActionBuilders.AndroidActivity.Builder()
+            ActionBuilders.AndroidActivity
+                .Builder()
                 .setPackageName(context.packageName)
                 .setClassName("dev.pointtosky.wear.tile.tonight.TileEntryActivity")
                 .build()
         val launch: ActionBuilders.LaunchAction =
-            ActionBuilders.LaunchAction.Builder()
+            ActionBuilders.LaunchAction
+                .Builder()
                 .setAndroidActivity(activity)
                 .build()
-        return ModifiersBuilders.Clickable.Builder()
+        return ModifiersBuilders.Clickable
+            .Builder()
             .setOnClick(launch)
             .setId(targetId?.let { "$ACTION_OPEN_AIM:$it" } ?: ACTION_OPEN_AIM)
             .build()
@@ -317,15 +363,18 @@ open class TonightTileService : TileService() {
     /** Клик, открывающий список целей TonightTargetsActivity. */
     private fun clickableOpenTargetsActivity(context: Context): ModifiersBuilders.Clickable {
         val activity: ActionBuilders.AndroidActivity =
-            ActionBuilders.AndroidActivity.Builder()
+            ActionBuilders.AndroidActivity
+                .Builder()
                 .setPackageName(context.packageName)
                 .setClassName("dev.pointtosky.wear.tile.tonight.TonightTargetsActivity")
                 .build()
         val launch: ActionBuilders.LaunchAction =
-            ActionBuilders.LaunchAction.Builder()
+            ActionBuilders.LaunchAction
+                .Builder()
                 .setAndroidActivity(activity)
                 .build()
-        return ModifiersBuilders.Clickable.Builder()
+        return ModifiersBuilders.Clickable
+            .Builder()
             .setId("open_tonight_list")
             .setOnClick(launch)
             .build()

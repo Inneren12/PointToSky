@@ -46,7 +46,8 @@ internal object DlMessageSender {
             payload: ByteArray,
             onFailure: FailureListener,
         ) {
-            Wearable.getMessageClient(context)
+            Wearable
+                .getMessageClient(context)
                 .sendMessage(nodeId, path, payload)
                 .addOnFailureListener { error -> onFailure.onFailure(error) }
         }

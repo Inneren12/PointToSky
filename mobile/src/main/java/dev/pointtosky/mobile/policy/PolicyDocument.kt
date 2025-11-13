@@ -37,13 +37,12 @@ enum class PolicyDocument(
     Disclaimer(R.string.policy_document_disclaimer_title, "policy/disclaimer"),
     ;
 
-    fun assetPath(locale: Locale): String {
-        return if (locale.language.equals("ru", ignoreCase = true)) {
+    fun assetPath(locale: Locale): String =
+        if (locale.language.equals("ru", ignoreCase = true)) {
             "${baseName}_ru.html"
         } else {
             "${baseName}_en.html"
         }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

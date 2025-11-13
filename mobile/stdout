@@ -1,0 +1,92 @@
+C:\B\PointToSky\PointToSky\mobile\lint-baseline.xml: Information: 127 errors and 60 warnings were filtered out because they are listed in the baseline file, lint-baseline.xml [LintBaseline]
+C:\B\PointToSky\PointToSky\mobile\lint-baseline.xml: Information: 21 errors/warnings were listed in the baseline file (lint-baseline.xml) but not found in the project; perhaps they have been fixed? Unmatched issue types: GradleDependency, MissingTranslation (17), UseTomlInstead (2), WearableBindListener [LintBaselineFixed]
+
+   Explanation for issues of type "LintBaselineFixed":
+   If a lint baseline describes a problem which is no longer reported, then
+   the problem has either been fixed, or perhaps the issue type has been
+   disabled. In any case, the entry can be removed from the baseline (such
+   that if the issue is reintroduced at some point, lint will complain rather
+   than just silently starting to match the old baseline entry again.)
+
+C:\B\PointToSky\PointToSky\core\catalog\src\main\kotlin\dev\pointtosky\core\catalog\runtime\debug\CatalogDebugViewModel.kt:128: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
+fun formatMagnitude(value: Double): String = String.format("%.2f", value)
+                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\core\catalog\src\main\kotlin\dev\pointtosky\core\catalog\runtime\debug\CatalogDebugViewModel.kt:129: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
+fun formatDegrees(value: Double): String = String.format("%.2f°", value)
+                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "DefaultLocale":
+   Calling String#toLowerCase() or #toUpperCase() without specifying an
+   explicit locale is a common source of bugs. The reason for that is that
+   those methods will use the current locale on the user's device, and even
+   though the code appears to work correctly when you are developing the app,
+   it will fail in some locales. For example, in the Turkish locale, the
+   uppercase replacement for i is not I.
+
+   If you want the methods to just perform ASCII replacement, for example to
+   convert an enum name, call String#toUpperCase(Locale.ROOT) instead. If you
+   really want to use the current locale, call
+   String#toUpperCase(Locale.getDefault()) instead.
+
+   https://developer.android.com/reference/java/util/Locale.html#default_locale
+
+C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:2: Warning: A newer version of com.android.library than 8.7.2 is available: 8.13.1. (There is also a newer version of 8.7.𝑥 available, if upgrading to 8.13.1 is difficult: 8.7.3) [AndroidGradlePluginVersion]
+    id("com.android.library") version "8.7.2"
+                                      ~~~~~~~
+
+   Explanation for issues of type "AndroidGradlePluginVersion":
+   This detector looks for usage of the Android Gradle Plugin where the
+   version you are using is not the current stable release. Using older
+   versions is fine, and there are cases where you deliberately want to stick
+   with an older version. However, you may simply not be aware that a more
+   recent version is available, and that is what this lint check helps find.
+
+C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:3: Warning: A newer version of org.jetbrains.kotlin.android than 2.0.20 is available: 2.0.21 [GradleDependency]
+    id("org.jetbrains.kotlin.android") version "2.0.20"
+                                               ~~~~~~~~
+C:\B\PointToSky\PointToSky\core\location\build.gradle.kts:48: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-core than 1.8.1 is available: 1.9.0 [GradleDependency]
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\core\logging\build.gradle.kts:57: Warning: A newer version of com.google.firebase:firebase-bom than 33.5.1 is available: 34.5.0 [GradleDependency]
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\core\logging\build.gradle.kts:62: Warning: A newer version of androidx.core:core-ktx than 1.13.1 is available: 1.17.0 [GradleDependency]
+    implementation("androidx.core:core-ktx:1.13.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:67: Warning: A newer version of androidx.lifecycle:lifecycle-viewmodel-ktx than 2.8.6 is available: 2.9.4 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:68: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-core than 1.8.1 is available: 1.9.0 [GradleDependency]
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:149: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-test than 1.8.1 is available: 1.9.0 [GradleDependency]
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:165: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-serialization-json than 1.6.3 is available: 1.7.3 [GradleDependency]
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "GradleDependency":
+   This detector looks for usages of libraries where the version you are using
+   is not the current stable release. Using older versions is fine, and there
+   are cases where you deliberately want to stick with an older version.
+   However, you may simply not be aware that a more recent version is
+   available, and that is what this lint check helps find.
+
+C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:210: Warning: Use the existing version catalog reference (libs.androidx.test.ext.junit) instead [UseTomlInstead]
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:211: Warning: Use the existing version catalog reference (libs.androidx.test.runner) instead [UseTomlInstead]
+    androidTestImplementation("androidx.test:runner:1.6.2")
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:222: Warning: Use the existing version catalog reference (libs.androidx.test.ext.junit) instead [UseTomlInstead]
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UseTomlInstead":
+   If your project is using a libs.versions.toml file, you should place all
+   Gradle dependencies in the TOML file. This lint check looks for version
+   declarations outside of the TOML file and suggests moving them (and in the
+   IDE, provides a quickfix to performing the operation automatically).
+
+0 errors, 14 warnings (127 errors, 60 warnings filtered by baseline lint-baseline.xml)

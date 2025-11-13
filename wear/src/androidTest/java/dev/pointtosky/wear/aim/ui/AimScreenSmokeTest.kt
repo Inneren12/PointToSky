@@ -25,8 +25,12 @@ class AimScreenSmokeTest {
                 override val state: StateFlow<AimState> =
                     MutableStateFlow(
                         AimState(
-                            current = dev.pointtosky.core.astro.coord.Horizontal(0.0, 0.0),
-                            target = dev.pointtosky.core.astro.coord.Horizontal(0.0, 0.0),
+                            current =
+                                dev.pointtosky.core.astro.coord
+                                    .Horizontal(0.0, 0.0),
+                            target =
+                                dev.pointtosky.core.astro.coord
+                                    .Horizontal(0.0, 0.0),
                             dAzDeg = 10.0,
                             dAltDeg = -5.0,
                             phase = AimPhase.SEARCHING,

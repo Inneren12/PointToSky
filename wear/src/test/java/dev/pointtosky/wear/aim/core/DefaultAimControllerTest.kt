@@ -171,7 +171,9 @@ class DefaultAimControllerTest {
         }
     }
 
-    private class FakeLocationOrchestrator(initial: GeoPoint?) : LocationOrchestrator {
+    private class FakeLocationOrchestrator(
+        initial: GeoPoint?,
+    ) : LocationOrchestrator {
         private val _fixes = MutableSharedFlow<LocationFix>(extraBufferCapacity = 4)
         private var lastFix: LocationFix? =
             initial?.let {
@@ -198,7 +200,9 @@ class DefaultAimControllerTest {
         }
     }
 
-    private class FakeTimeSource(private var instant: Instant) : TimeSource {
+    private class FakeTimeSource(
+        private var instant: Instant,
+    ) : TimeSource {
         override fun now(): Instant = instant
 
         override val ticks: Flow<Instant> = MutableSharedFlow(extraBufferCapacity = 1)
@@ -212,8 +216,6 @@ class DefaultAimControllerTest {
         override fun compute(
             body: Body,
             instant: Instant,
-        ): Ephemeris {
-            return Ephemeris(eq = Equatorial(0.0, 0.0))
-        }
+        ): Ephemeris = Ephemeris(eq = Equatorial(0.0, 0.0))
     }
 }

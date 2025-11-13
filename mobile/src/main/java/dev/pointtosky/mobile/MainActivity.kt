@@ -172,11 +172,12 @@ class MainActivity : ComponentActivity() {
                             if (settingsState.arEnabled) {
                                 navigationState.value = MobileDestination.Ar
                             } else {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    getString(R.string.settings_ar_disabled_toast),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                Toast
+                                    .makeText(
+                                        this@MainActivity,
+                                        getString(R.string.settings_ar_disabled_toast),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
                             }
                             MobileLog.arOpen()
                             navigationState.value = MobileDestination.Ar
@@ -188,11 +189,12 @@ class MainActivity : ComponentActivity() {
                             coroutineScope.launch {
                                 if (settingsState.redactPayloads) {
                                     withContext(Dispatchers.Main) {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            getString(R.string.settings_redact_payloads_blocked),
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
+                                        Toast
+                                            .makeText(
+                                                this@MainActivity,
+                                                getString(R.string.settings_redact_payloads_blocked),
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
                                     }
                                     return@launch
                                 }
@@ -233,11 +235,12 @@ class MainActivity : ComponentActivity() {
                             val desired = !phoneCompassEnabled
                             val actual = phoneCompassBridge.setEnabled(desired)
                             if (desired && !actual) {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    getString(R.string.phone_compass_not_available),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                Toast
+                                    .makeText(
+                                        this@MainActivity,
+                                        getString(R.string.phone_compass_not_available),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
                             }
                         },
                         onShareCard = { shareText -> shareCard(shareText) },
@@ -657,9 +660,13 @@ sealed interface MobileDestination {
 
     object Policy : MobileDestination
 
-    data class PolicyDocument(val document: dev.pointtosky.mobile.policy.PolicyDocument) : MobileDestination
+    data class PolicyDocument(
+        val document: dev.pointtosky.mobile.policy.PolicyDocument,
+    ) : MobileDestination
 
-    data class Card(val cardId: String) : MobileDestination
+    data class Card(
+        val cardId: String,
+    ) : MobileDestination
 }
 
 private class PreviewLocationPrefs : LocationPrefs {

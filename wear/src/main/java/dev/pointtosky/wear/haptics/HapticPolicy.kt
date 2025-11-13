@@ -9,7 +9,9 @@ import androidx.core.content.getSystemService
 
 enum class HapticEvent { ENTER, LOCK, LOST }
 
-class HapticPolicy(private val context: Context) {
+class HapticPolicy(
+    private val context: Context,
+) {
     fun play(
         event: HapticEvent,
         enabled: Boolean = true,

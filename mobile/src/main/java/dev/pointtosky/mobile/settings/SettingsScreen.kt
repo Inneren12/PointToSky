@@ -290,12 +290,10 @@ private fun PermissionRow(
     }
 }
 
-private fun isCameraPermissionGranted(context: Context): Boolean {
-    return ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-}
+private fun isCameraPermissionGranted(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
-private fun isLocationPermissionGranted(context: Context): Boolean {
-    return LOCATION_PERMISSIONS.any { permission ->
+private fun isLocationPermissionGranted(context: Context): Boolean =
+    LOCATION_PERMISSIONS.any { permission ->
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
-}

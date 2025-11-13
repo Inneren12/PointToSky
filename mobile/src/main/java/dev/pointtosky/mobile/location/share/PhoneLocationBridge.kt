@@ -145,11 +145,12 @@ class PhoneLocationBridge(
                 )
                 val sendResult =
                     runCatching {
-                        messageClient.sendMessage(
-                            nodeId,
-                            PATH_LOCATION_RESPONSE_ONE,
-                            responseBytes,
-                        ).await()
+                        messageClient
+                            .sendMessage(
+                                nodeId,
+                                PATH_LOCATION_RESPONSE_ONE,
+                                responseBytes,
+                            ).await()
                     }
                 latestResponse.value =
                     if (sendResult.isSuccess) {
@@ -240,7 +241,10 @@ class PhoneLocationBridge(
         }
 
     private sealed class FetchResult {
-        data class Success(val fix: LocationFix, val rawProvider: String) : FetchResult()
+        data class Success(
+            val fix: LocationFix,
+            val rawProvider: String,
+        ) : FetchResult()
 
         data object NotAvailable : FetchResult()
     }

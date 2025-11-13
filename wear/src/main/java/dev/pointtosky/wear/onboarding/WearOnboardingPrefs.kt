@@ -31,8 +31,7 @@ private class WearOnboardingPrefsDataStore(
                 } else {
                     throw error
                 }
-            }
-            .map { preferences -> preferences[ACCEPTED_KEY] ?: false }
+            }.map { preferences -> preferences[ACCEPTED_KEY] ?: false }
 
     override suspend fun setAccepted(accepted: Boolean) {
         dataStore.edit { preferences ->
@@ -49,6 +48,5 @@ private val Context.wearOnboardingDataStore: DataStore<Preferences> by preferenc
     name = "wear_onboarding",
 )
 
-fun WearOnboardingPrefs.Companion.from(context: Context): WearOnboardingPrefs {
-    return WearOnboardingPrefsDataStore(context.applicationContext.wearOnboardingDataStore)
-}
+fun WearOnboardingPrefs.Companion.from(context: Context): WearOnboardingPrefs =
+    WearOnboardingPrefsDataStore(context.applicationContext.wearOnboardingDataStore)

@@ -197,7 +197,10 @@ class PersistentAimStatusReporter(
                     Body.MOON -> context.getString(R.string.comp_aim_status_target_moon)
                     Body.JUPITER -> context.getString(R.string.comp_aim_status_target_jupiter)
                     Body.SATURN -> context.getString(R.string.comp_aim_status_target_saturn)
-                    else -> target.body.name.lowercase().replaceFirstChar { it.uppercase() }
+                    else ->
+                        target.body.name
+                            .lowercase()
+                            .replaceFirstChar { it.uppercase() }
                 }
             is AimTarget.StarTarget -> context.getString(R.string.comp_aim_status_target_star)
             is AimTarget.EquatorialTarget -> context.getString(R.string.comp_aim_status_target_custom)

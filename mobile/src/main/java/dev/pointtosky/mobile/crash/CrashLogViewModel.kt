@@ -70,8 +70,7 @@ class CrashLogViewModel(
                             lastCrash = null,
                         )
                     }
-                }
-                .onFailure { error ->
+                }.onFailure { error ->
                     _state.update { current ->
                         current.copy(
                             isBusy = false,
@@ -89,19 +88,30 @@ class CrashLogViewModel(
             val targetDirectory = File(application.filesDir, "crash")
             val result = runCatching { CrashLogManager.createZip(targetDirectory) }
             val hasLogs = runCatching { CrashLogManager.hasLogs() }.getOrElse { false }
-            result.onSuccess { file ->
-                if (file != null) {
-                    val message = application.getString(R.string.crash_logs_zip_ready, file.absolutePath)
-                    _state.update { current ->
-                        current.copy(
-                            isBusy = false,
-                            statusMessage = message,
-                            lastZip = file,
-                            hasLogs = hasLogs,
-                        )
+            result
+                .onSuccess { file ->
+                    if (file != null) {
+                        val message = application.getString(R.string.crash_logs_zip_ready, file.absolutePath)
+                        _state.update { current ->
+                            current.copy(
+                                isBusy = false,
+                                statusMessage = message,
+                                lastZip = file,
+                                hasLogs = hasLogs,
+                            )
+                        }
+                    } else {
+                        val message = application.getString(R.string.crash_logs_zip_unavailable)
+                        _state.update { current ->
+                            current.copy(
+                                isBusy = false,
+                                errorMessage = message,
+                                hasLogs = hasLogs,
+                            )
+                        }
                     }
-                } else {
-                    val message = application.getString(R.string.crash_logs_zip_unavailable)
+                }.onFailure { error ->
+                    val message = error.localizedMessage ?: application.getString(R.string.crash_logs_zip_unavailable)
                     _state.update { current ->
                         current.copy(
                             isBusy = false,
@@ -110,16 +120,6 @@ class CrashLogViewModel(
                         )
                     }
                 }
-            }.onFailure { error ->
-                val message = error.localizedMessage ?: application.getString(R.string.crash_logs_zip_unavailable)
-                _state.update { current ->
-                    current.copy(
-                        isBusy = false,
-                        errorMessage = message,
-                        hasLogs = hasLogs,
-                    )
-                }
-            }
         }
     }
 

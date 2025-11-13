@@ -62,7 +62,9 @@ class CardScreenTest {
                 magnitude = 0.03,
                 constellation = "LYR",
                 body = null,
-                equatorial = dev.pointtosky.core.astro.coord.Equatorial(279.23473479, 38.78368896),
+                equatorial =
+                    dev.pointtosky.core.astro.coord
+                        .Equatorial(279.23473479, 38.78368896),
                 horizontal = null,
                 bestWindow =
                     CardBestWindow(
@@ -83,10 +85,10 @@ class CardScreenTest {
         }
 
         composeTestRule.onNodeWithText("Vega").assertIsDisplayed()
-        composeTestRule.onNodeWithText(
-            composeTestRule.activity.getString(dev.pointtosky.mobile.R.string.card_set_target_button),
-        )
-            .performClick()
+        composeTestRule
+            .onNodeWithText(
+                composeTestRule.activity.getString(dev.pointtosky.mobile.R.string.card_set_target_button),
+            ).performClick()
 
         assertEquals("vega", sentTargetId)
     }

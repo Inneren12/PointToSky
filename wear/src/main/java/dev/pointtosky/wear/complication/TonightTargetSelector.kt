@@ -22,13 +22,13 @@ internal object TonightTargetSelector {
         if (!prefs.preferPlanets) {
             return filtered
         }
-        return filtered.withIndex()
+        return filtered
+            .withIndex()
             .sortedWith(
                 compareByDescending<IndexedValue<TonightTarget>> { indexed ->
                     if (isPlanet(indexed.value)) 1 else 0
                 }.thenBy { indexed -> indexed.index },
-            )
-            .map { it.value }
+            ).map { it.value }
     }
 
     @VisibleForTesting
@@ -47,8 +47,11 @@ internal object TonightTargetSelector {
         return sequenceOf(target.subtitle, target.title, target.id)
             .filterNotNull()
             .mapNotNull { value ->
-                regex.find(value)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
-            }
-            .firstOrNull()
+                regex
+                    .find(value)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.toDoubleOrNull()
+            }.firstOrNull()
     }
 }

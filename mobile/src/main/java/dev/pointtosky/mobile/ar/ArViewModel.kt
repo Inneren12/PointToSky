@@ -42,8 +42,7 @@ class ArViewModel(
                 } else {
                     LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
                 }
-            }
-            .stateIn(
+            }.stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.Eagerly,
                 initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
@@ -55,8 +54,7 @@ class ArViewModel(
             .combine(locationSnapshot) { stars, location -> stars to location }
             .combine(timeSource.ticks) { (stars, location), instant ->
                 buildState(stars, location, instant)
-            }
-            .stateIn(
+            }.stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = ArUiState.Loading,

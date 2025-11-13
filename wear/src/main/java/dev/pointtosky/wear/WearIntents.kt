@@ -19,18 +19,16 @@ const val MAX_DEEP_LINK_PAYLOAD_BYTES: Int = 8 * 1024
 fun buildOpenAimIntent(
     context: Context,
     target: AimTarget?,
-): Intent {
-    return Intent(context, MainActivity::class.java).apply {
+): Intent =
+    Intent(context, MainActivity::class.java).apply {
         action = ACTION_OPEN_AIM
         target?.let { putAimTargetExtras(it) }
     }
-}
 
-fun buildOpenIdentifyIntent(context: Context): Intent {
-    return Intent(context, MainActivity::class.java).apply {
+fun buildOpenIdentifyIntent(context: Context): Intent =
+    Intent(context, MainActivity::class.java).apply {
         action = ACTION_OPEN_IDENTIFY
     }
-}
 
 fun Intent.putAimTargetExtras(target: AimTarget) {
     when (target) {

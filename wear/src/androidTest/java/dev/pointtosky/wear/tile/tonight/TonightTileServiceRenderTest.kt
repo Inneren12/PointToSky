@@ -26,7 +26,8 @@ class TonightTileServiceRenderTest {
         val service = TonightTileServiceTestHarness()
         service.initForTest(ctx)
         val req =
-            RequestBuilders.ResourcesRequest.Builder()
+            RequestBuilders.ResourcesRequest
+                .Builder()
                 .setVersion("test")
                 .build()
         val res = service.callOnResourcesRequest(req).get()
@@ -43,13 +44,15 @@ class TonightTileServiceRenderTest {
         service.initForTest(ctx)
 
         val dp =
-            DeviceParametersBuilders.DeviceParameters.Builder()
+            DeviceParametersBuilders.DeviceParameters
+                .Builder()
                 .setScreenWidthDp(192)
                 .setScreenHeightDp(192)
                 .setScreenDensity(320f)
                 .build()
         val req =
-            RequestBuilders.TileRequest.Builder()
+            RequestBuilders.TileRequest
+                .Builder()
                 .setDeviceParameters(dp)
                 .build()
 

@@ -225,7 +225,8 @@ private fun formatProbeResult(result: ProbeResultUi): String {
 private fun formatTimestamp(timestampMs: Long): String {
     val instant = Instant.ofEpochMilli(timestampMs)
     val formatter =
-        DateTimeFormatter.ofPattern("HH:mm:ss")
+        DateTimeFormatter
+            .ofPattern("HH:mm:ss")
             .withLocale(Locale.getDefault())
             .withZone(ZoneId.systemDefault())
     return formatter.format(instant)

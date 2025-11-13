@@ -325,11 +325,12 @@ private fun ManualSection(
                                 ),
                             )
                         }
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.location_setup_saved_toast),
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        Toast
+                            .makeText(
+                                context,
+                                context.getString(R.string.location_setup_saved_toast),
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         showValidationErrors = false
                     }
                 },

@@ -52,14 +52,18 @@ data class AimStatusTarget(
         when (kind) {
             AimStatusTargetKind.BODY ->
                 bodyName?.let { name ->
-                    runCatching { dev.pointtosky.core.astro.ephem.Body.valueOf(name) }.getOrNull()
+                    runCatching {
+                        dev.pointtosky.core.astro.ephem.Body
+                            .valueOf(name)
+                    }.getOrNull()
                         ?.let { AimTarget.BodyTarget(it) }
                 }
             AimStatusTargetKind.STAR ->
                 starId?.let { id ->
                     val eq =
                         if (raDeg != null && decDeg != null) {
-                            dev.pointtosky.core.astro.coord.Equatorial(raDeg = raDeg, decDeg = decDeg)
+                            dev.pointtosky.core.astro.coord
+                                .Equatorial(raDeg = raDeg, decDeg = decDeg)
                         } else {
                             null
                         }
@@ -67,7 +71,9 @@ data class AimStatusTarget(
                 }
             AimStatusTargetKind.EQUATORIAL ->
                 if (raDeg != null && decDeg != null) {
-                    val eq = dev.pointtosky.core.astro.coord.Equatorial(raDeg = raDeg, decDeg = decDeg)
+                    val eq =
+                        dev.pointtosky.core.astro.coord
+                            .Equatorial(raDeg = raDeg, decDeg = decDeg)
                     AimTarget.EquatorialTarget(eq)
                 } else {
                     null

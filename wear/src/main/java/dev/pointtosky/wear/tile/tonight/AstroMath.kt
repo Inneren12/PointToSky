@@ -10,7 +10,10 @@ import kotlin.math.pow
 import kotlin.math.sin
 
 object AstroMath {
-    data class Horizontal(val azDeg: Double, val altDeg: Double)
+    data class Horizontal(
+        val azDeg: Double,
+        val altDeg: Double,
+    )
 
     fun raDecToAltAz(
         eq: Equatorial,

@@ -9,8 +9,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -18,15 +18,16 @@ import java.io.IOException
 
 private val Context.aimStatusDataStore: DataStore<Preferences> by preferencesDataStore(name = "aim_status")
 
-class AimStatusRepository(private val context: Context) {
+class AimStatusRepository(
+    private val context: Context,
+) {
     private val dataStore = context.aimStatusDataStore
 
     suspend fun read(): AimStatusSnapshot =
         dataStore.data
             .catch { throwable ->
                 if (throwable is IOException) emit(emptyPreferences()) else throw throwable
-            }
-            .map { prefs ->
+            }.map { prefs ->
                 if (!prefs.contains(keyTimestamp)) {
                     AimStatusSnapshot.EMPTY
                 } else {
@@ -60,8 +61,7 @@ class AimStatusRepository(private val context: Context) {
                         toleranceAltDeg = prefs[keyToleranceAlt] ?: AimStatusSnapshot.EMPTY.toleranceAltDeg,
                     )
                 }
-            }
-            .first()
+            }.first()
 
     suspend fun write(snapshot: AimStatusSnapshot) {
         dataStore.edit { prefs ->

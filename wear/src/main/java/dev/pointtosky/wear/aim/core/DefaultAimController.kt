@@ -79,7 +79,10 @@ class DefaultAimController(
     private var lastPhase: AimPhase = AimPhase.SEARCHING
 
     // окно для оценки confidence
-    private data class AzSample(val ts: Long, val azDeg: Double)
+    private data class AzSample(
+        val ts: Long,
+        val azDeg: Double,
+    )
 
     private val azWindow: ArrayDeque<AzSample> = ArrayDeque(CONFIDENCE_WINDOW_CAPACITY)
 

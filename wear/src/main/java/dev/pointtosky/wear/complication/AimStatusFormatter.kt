@@ -7,7 +7,9 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 
-class AimStatusFormatter(context: Context) {
+class AimStatusFormatter(
+    context: Context,
+) {
     private val resources = context.resources
     private val locale: Locale = resources.configuration.locales[0]
     private val degreeFormat: NumberFormat =
@@ -34,8 +36,8 @@ class AimStatusFormatter(context: Context) {
             null -> resources.getString(R.string.comp_aim_status_phase_inactive)
         }
 
-    fun contentDescription(snapshot: AimStatusSnapshot): String {
-        return if (!snapshot.isActive) {
+    fun contentDescription(snapshot: AimStatusSnapshot): String =
+        if (!snapshot.isActive) {
             resources.getString(R.string.comp_aim_status_content_no_target)
         } else {
             val phaseText = phaseLabel(snapshot.phase)
@@ -50,7 +52,6 @@ class AimStatusFormatter(context: Context) {
                 vertical ?: resources.getString(R.string.comp_aim_status_offset_unknown),
             )
         }
-    }
 
     fun descriptionComponent(
         deltaDeg: Double?,

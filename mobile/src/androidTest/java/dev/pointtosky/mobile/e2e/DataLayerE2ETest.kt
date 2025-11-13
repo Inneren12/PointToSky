@@ -179,13 +179,16 @@ class DataLayerE2ETest {
         }
 
     private class RecordingTransport : MobileBridge.Sender.Transport {
-        data class Message(val nodeId: String, val path: String, val payload: ByteArray)
+        data class Message(
+            val nodeId: String,
+            val path: String,
+            val payload: ByteArray,
+        )
 
         val messages = CopyOnWriteArrayList<Message>()
 
-        override fun connectedNodes(): List<MobileBridge.Sender.Transport.Node> {
-            return listOf(MobileBridge.Sender.Transport.Node("wear"))
-        }
+        override fun connectedNodes(): List<MobileBridge.Sender.Transport.Node> =
+            listOf(MobileBridge.Sender.Transport.Node("wear"))
 
         override fun sendMessage(
             nodeId: String,

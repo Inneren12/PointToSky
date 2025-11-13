@@ -46,8 +46,7 @@ class SkyMapViewModel(
                 } else {
                     LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
                 }
-            }
-            .stateIn(
+            }.stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.Eagerly,
                 initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
@@ -59,8 +58,7 @@ class SkyMapViewModel(
             .combine(locationSnapshot) { data, location -> data to location }
             .combine(timeSource.ticks) { (data, location), instant ->
                 buildState(data, location, instant)
-            }
-            .stateIn(
+            }.stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = SkyMapState.Loading,

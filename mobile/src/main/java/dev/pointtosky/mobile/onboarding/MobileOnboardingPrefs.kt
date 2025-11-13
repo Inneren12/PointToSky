@@ -31,8 +31,7 @@ private class MobileOnboardingPrefsDataStore(
                 } else {
                     throw error
                 }
-            }
-            .map { preferences -> preferences[ACCEPTED_KEY] ?: false }
+            }.map { preferences -> preferences[ACCEPTED_KEY] ?: false }
 
     override suspend fun setAccepted(accepted: Boolean) {
         dataStore.edit { preferences ->
@@ -49,6 +48,5 @@ private val Context.mobileOnboardingDataStore: DataStore<Preferences> by prefere
     name = "mobile_onboarding",
 )
 
-fun MobileOnboardingPrefs.Companion.from(context: Context): MobileOnboardingPrefs {
-    return MobileOnboardingPrefsDataStore(context.applicationContext.mobileOnboardingDataStore)
-}
+fun MobileOnboardingPrefs.Companion.from(context: Context): MobileOnboardingPrefs =
+    MobileOnboardingPrefsDataStore(context.applicationContext.mobileOnboardingDataStore)

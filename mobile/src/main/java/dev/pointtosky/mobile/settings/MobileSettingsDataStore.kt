@@ -131,6 +131,5 @@ private val Context.mobileSettingsDataStore: DataStore<Preferences> by preferenc
     name = "mobile_settings",
 )
 
-fun MobileSettings.Companion.from(context: Context): MobileSettings {
-    return MobileSettingsDataStore(context.applicationContext.mobileSettingsDataStore)
-}
+fun MobileSettings.Companion.from(context: Context): MobileSettings =
+    MobileSettingsDataStore(context.applicationContext.mobileSettingsDataStore)

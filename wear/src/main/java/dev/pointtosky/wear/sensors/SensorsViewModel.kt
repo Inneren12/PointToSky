@@ -86,6 +86,4 @@ class SensorsViewModel(
     }
 }
 
-private fun normalizeDeg(d: Float): Float {
-    return ((d % 360f) + 360f) % 360f
-}
+private fun normalizeDeg(d: Float): Float = ((d % 360f) + 360f) % 360f

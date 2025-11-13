@@ -242,7 +242,8 @@ private fun formatDegree(
 
 private fun formatWindow(window: CardBestWindow): String? {
     val formatter =
-        DateTimeFormatter.ofPattern("dd MMM HH:mm", Locale.getDefault())
+        DateTimeFormatter
+            .ofPattern("dd MMM HH:mm", Locale.getDefault())
             .withZone(ZoneId.systemDefault())
     val start = window.start?.let { formatter.format(it) }
     val end = window.end?.let { formatter.format(it) }

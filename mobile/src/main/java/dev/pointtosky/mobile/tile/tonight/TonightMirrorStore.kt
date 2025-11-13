@@ -5,9 +5,17 @@ import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class ShortItem(val id: String, val title: String, val subtitle: String?, val icon: String?)
+data class ShortItem(
+    val id: String,
+    val title: String,
+    val subtitle: String?,
+    val icon: String?,
+)
 
-data class ShortModel(val updatedAt: Long, val items: List<ShortItem>)
+data class ShortModel(
+    val updatedAt: Long,
+    val items: List<ShortItem>,
+)
 
 object TonightMirrorStore {
     private val _model = MutableStateFlow<ShortModel?>(null)

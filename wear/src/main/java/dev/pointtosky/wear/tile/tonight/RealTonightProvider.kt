@@ -210,9 +210,7 @@ class RealTonightProvider(
         return TonightTileModel(updatedAt = now, items = limited)
     }
 
-    private fun displayName(star: Star): String {
-        return star.name ?: star.bayer ?: star.flamsteed ?: "Star"
-    }
+    private fun displayName(star: Star): String = star.name ?: star.bayer ?: star.flamsteed ?: "Star"
 
     private fun evaluatePlanet(
         body: Body,
@@ -369,7 +367,11 @@ class RealTonightProvider(
         )
     }
 
-    private data class NightWindow(val start: Instant, val end: Instant, val nightUtcDate: LocalDate)
+    private data class NightWindow(
+        val start: Instant,
+        val end: Instant,
+        val nightUtcDate: LocalDate,
+    )
 
     /**
      * Возвращает окно "ночи":
@@ -474,7 +476,8 @@ class RealTonightProvider(
     ): Instant {
         var a = a0
         var b = b0
-        repeat(14) { // ~ до нескольких секунд точности
+        repeat(14) {
+            // ~ до нескольких секунд точности
             val mid = a.plus(Duration.between(a, b).dividedBy(2))
             val altA = sunAlt(a, gp) >= levelDeg
             val altM = sunAlt(mid, gp) >= levelDeg
@@ -523,7 +526,12 @@ class RealTonightProvider(
 private fun Throwable.toLogMessage(): String = message ?: javaClass.simpleName
 
 // --- Кандидаты и приоритеты ---
-private enum class Kind(val priority: Int) { PLANET(2), STAR(1) }
+private enum class Kind(
+    val priority: Int,
+) {
+    PLANET(2),
+    STAR(1),
+}
 
 private data class Candidate(
     val id: String,
@@ -537,7 +545,10 @@ private data class Candidate(
 )
 
 // --- Кэш ---
-private data class CacheEntry(val model: TonightTileModel, val expiresAt: Long)
+private data class CacheEntry(
+    val model: TonightTileModel,
+    val expiresAt: Long,
+)
 
 private object TonightMemCache {
     private val map = ConcurrentHashMap<String, CacheEntry>()
@@ -618,11 +629,13 @@ private class TonightCacheStore(
             val az = fields[4].toDoubleOrNull()?.takeUnless { v -> v.isNaN() }
             val alt = fields[5].toDoubleOrNull()?.takeUnless { v -> v.isNaN() }
             val ws =
-                fields[6].toLongOrNull()
+                fields[6]
+                    .toLongOrNull()
                     ?.takeIf { secs -> secs >= 0 }
                     ?.let { secs -> Instant.ofEpochSecond(secs) }
             val we =
-                fields[7].toLongOrNull()
+                fields[7]
+                    .toLongOrNull()
                     ?.takeIf { secs -> secs >= 0 }
                     ?.let { secs -> Instant.ofEpochSecond(secs) }
             items += TonightTarget(id, title, subtitle, icon, az, alt, ws, we)

@@ -14,7 +14,9 @@ import kotlinx.coroutines.flow.map
 private const val DATA_STORE_NAME = "sensors_settings"
 private val Context.sensorsSettingsDataStore by preferencesDataStore(name = DATA_STORE_NAME)
 
-class SensorsSettingsDataStore(private val context: Context) {
+class SensorsSettingsDataStore(
+    private val context: Context,
+) {
     private val screenRotationKey = intPreferencesKey("screen_rotation_degrees")
     private val frameTraceModeKey = stringPreferencesKey("frame_trace_mode")
 

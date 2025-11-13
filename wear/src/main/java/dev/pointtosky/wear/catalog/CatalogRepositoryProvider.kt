@@ -7,9 +7,8 @@ object CatalogRepositoryProvider {
     @Volatile
     private var repository: CatalogRepository? = null
 
-    fun get(context: Context): CatalogRepository {
-        return repository ?: synchronized(this) {
+    fun get(context: Context): CatalogRepository =
+        repository ?: synchronized(this) {
             repository ?: CatalogRepository.create(context).also { repository = it }
         }
-    }
 }

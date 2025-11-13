@@ -89,6 +89,7 @@ import dev.pointtosky.wear.time.TimeDebugScreen
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import android.annotation.SuppressLint
 
 class MainActivity : ComponentActivity() {
     private var dlReceiver: BroadcastReceiver? = null
@@ -172,6 +173,7 @@ class MainActivity : ComponentActivity() {
         handleBridgeIntent(intent)
     }
 
+    @SuppressLint("WrongConstant")
     override fun onStart() {
         super.onStart()
         if (dlReceiver != null) return

@@ -12,7 +12,9 @@ import dev.pointtosky.core.logging.LogBus
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
-class TonightTargetComplicationUpdater(context: Context) {
+class TonightTargetComplicationUpdater(
+    context: Context,
+) {
     private val appContext = context.applicationContext
     private val componentName = ComponentName(appContext, TonightTargetDataSourceService::class.java)
     private val requester = ComplicationDataSourceUpdateRequester.create(appContext, componentName)
@@ -59,7 +61,8 @@ class TonightTargetComplicationRefreshWorker(
                         "delayMs" to delayMs,
                     ),
             )
-            WorkManager.getInstance(context)
+            WorkManager
+                .getInstance(context)
                 .enqueueUniqueWork(UNIQUE_WORK, ExistingWorkPolicy.REPLACE, request)
         }
     }

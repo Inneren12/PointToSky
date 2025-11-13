@@ -9,8 +9,8 @@ import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.data.SmallImageComplicationData
 import androidx.wear.watchface.complications.data.SmallImageType
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
-import dev.pointtosky.wear.R
 import dev.pointtosky.wear.ACTION_OPEN_AIM
+import dev.pointtosky.wear.R
 import dev.pointtosky.wear.aim.core.AimPhase
 import dev.pointtosky.wear.complication.config.AimPrefs
 import dev.pointtosky.wear.complication.config.ComplicationPrefsStore
@@ -57,12 +57,12 @@ class AimStatusDataSourceService : BaseComplicationDataSourceService() {
                 getString(R.string.comp_aim_status_title_default)
             }
         val builder =
-            ShortTextComplicationData.Builder(
-                text(textValue),
-                text(formatter.contentDescription(snapshot)),
-            )
-                .setTitle(text(title))
-                .setTapAction(aimTapAction(snapshot))
+            ShortTextComplicationData
+                .Builder(
+                    text(textValue),
+                    text(formatter.contentDescription(snapshot)),
+                ).setTitle(text(title))
+                .setTapAction(aimTapAction())
         if (prefs.showPhase) {
             builder.setMonochromaticImage(monochromaticImage(iconFor(snapshot)))
         }
@@ -79,7 +79,8 @@ class AimStatusDataSourceService : BaseComplicationDataSourceService() {
         val parts = mutableListOf<String>()
         parts += formatter.phaseLabel(snapshot.phase)
         if (prefs.showDelta) {
-            formatter.shortText(snapshot.dAzDeg, snapshot.dAltDeg)
+            formatter
+                .shortText(snapshot.dAzDeg, snapshot.dAltDeg)
                 ?.replace(' ', '/')
                 ?.let { parts += it }
         }
@@ -87,11 +88,11 @@ class AimStatusDataSourceService : BaseComplicationDataSourceService() {
     }
 
     private fun monochromaticImageData(snapshot: AimStatusSnapshot): ComplicationData =
-        MonochromaticImageComplicationData.Builder(
-            monochromaticImage(iconFor(snapshot)),
-            text(formatter.contentDescription(snapshot)),
-        )
-            .setTapAction(aimTapAction(snapshot))
+        MonochromaticImageComplicationData
+            .Builder(
+                monochromaticImage(iconFor(snapshot)),
+                text(formatter.contentDescription(snapshot)),
+            ).setTapAction(aimTapAction())
             .build()
 
     private fun smallImageData(snapshot: AimStatusSnapshot): ComplicationData {
@@ -102,24 +103,24 @@ class AimStatusDataSourceService : BaseComplicationDataSourceService() {
                 snapshot.phase == AimPhase.IN_TOLERANCE -> R.drawable.ic_complication_phase_in_tolerance
                 else -> R.drawable.ic_complication_phase_search
             }
-        return SmallImageComplicationData.Builder(
-            smallImage(icon, SmallImageType.ICON),
-            text(formatter.contentDescription(snapshot)),
-        )
-            .setTapAction(aimTapAction(snapshot))
+        return SmallImageComplicationData
+            .Builder(
+                smallImage(icon, SmallImageType.ICON),
+                text(formatter.contentDescription(snapshot)),
+            ).setTapAction(aimTapAction())
             .build()
     }
 
     private fun rangedValueData(snapshot: AimStatusSnapshot): ComplicationData {
         val value = snapshot.closenessPercent() ?: 0f
         val builder =
-            RangedValueComplicationData.Builder(
-                value,
-                0f,
-                100f,
-                text(formatter.contentDescription(snapshot)),
-            )
-                .setText(
+            RangedValueComplicationData
+                .Builder(
+                    value,
+                    0f,
+                    100f,
+                    text(formatter.contentDescription(snapshot)),
+                ).setText(
                     text(
                         when {
                             !snapshot.isActive -> getString(R.string.comp_aim_status_no_target)
@@ -128,8 +129,7 @@ class AimStatusDataSourceService : BaseComplicationDataSourceService() {
                                     ?: formatter.phaseLabel(snapshot.phase)
                         },
                     ),
-                )
-                .setTapAction(aimTapAction(snapshot))
+                ).setTapAction(aimTapAction())
         builder.setMonochromaticImage(monochromaticImage(iconFor(snapshot)))
         return builder.build()
     }
@@ -143,15 +143,15 @@ class AimStatusDataSourceService : BaseComplicationDataSourceService() {
             else -> R.drawable.ic_complication_crosshair
         }
 
-    private fun aimTapAction(snapshot: AimStatusSnapshot): PendingIntent =
+    private fun aimTapAction(): PendingIntent =
         PendingIntent.getActivity(
             this,
             PtsComplicationKind.AIM_STATUS.ordinal,
             mainActivityIntent(PtsComplicationKind.AIM_STATUS).apply {
                 action = ACTION_OPEN_AIM
-                },
+            },
             PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
+        )
 
     private fun previewSnapshot(): AimStatusSnapshot =
         AimStatusSnapshot(

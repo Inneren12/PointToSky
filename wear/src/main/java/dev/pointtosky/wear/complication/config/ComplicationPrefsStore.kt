@@ -16,7 +16,9 @@ private object ComplicationKeys {
     val TONIGHT_PREFER_PLANETS = booleanPreferencesKey("tonight_prefer_planets")
 }
 
-class ComplicationPrefsStore(private val context: Context) {
+class ComplicationPrefsStore(
+    private val context: Context,
+) {
     val aimFlow =
         context.complicationPrefsDataStore.data.map { prefs ->
             AimPrefs(

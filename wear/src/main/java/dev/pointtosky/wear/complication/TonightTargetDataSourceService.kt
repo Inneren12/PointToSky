@@ -1,7 +1,6 @@
 package dev.pointtosky.wear.complication
 
 import android.app.PendingIntent
-import android.content.Intent
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.MonochromaticImageComplicationData
@@ -30,6 +29,7 @@ import dev.pointtosky.wear.tile.tonight.TonightTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
@@ -49,7 +49,8 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         RealTonightProvider(
             context = this,
             zoneRepo = zoneRepo,
-            getLastKnownLocation = { locationPrefs.manualPointFlow.firstOrNull() },
+            // Лямбда у провайдера не suspend → забираем одно значение из Flow блокирующе
+            getLastKnownLocation = { runBlocking(Dispatchers.IO) { locationPrefs.manualPointFlow.firstOrNull() } },
         )
     }
 
@@ -87,19 +88,19 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
                 shortTextData(previewState(), tapAction(PtsComplicationKind.TONIGHT_TARGET))
 
             ComplicationType.MONOCHROMATIC_IMAGE ->
-                MonochromaticImageComplicationData.Builder(
-                    monochromaticImage(R.drawable.ic_tonight_jupiter),
-                    contentDescription(R.string.comp_tonight_target_preview_content_description),
-                )
-                    .setTapAction(tapAction(PtsComplicationKind.TONIGHT_TARGET))
+                MonochromaticImageComplicationData
+                    .Builder(
+                        monochromaticImage(R.drawable.ic_tonight_jupiter),
+                        contentDescription(R.string.comp_tonight_target_preview_content_description),
+                    ).setTapAction(tapAction(PtsComplicationKind.TONIGHT_TARGET))
                     .build()
 
             ComplicationType.SMALL_IMAGE ->
-                SmallImageComplicationData.Builder(
-                    smallImage(R.drawable.ic_tonight_jupiter),
-                    contentDescription(R.string.comp_tonight_target_preview_content_description),
-                )
-                    .setTapAction(tapAction(PtsComplicationKind.TONIGHT_TARGET))
+                SmallImageComplicationData
+                    .Builder(
+                        smallImage(R.drawable.ic_tonight_jupiter),
+                        contentDescription(R.string.comp_tonight_target_preview_content_description),
+                    ).setTapAction(tapAction(PtsComplicationKind.TONIGHT_TARGET))
                     .build()
 
             else -> null
@@ -132,11 +133,11 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         tapAction: PendingIntent,
     ): ComplicationData {
         val builder =
-            ShortTextComplicationData.Builder(
-                text(state.target.title),
-                text(state.contentDescription),
-            )
-                .setMonochromaticImage(monochromaticImage(iconDrawable(state.target.icon)))
+            ShortTextComplicationData
+                .Builder(
+                    text(state.target.title),
+                    text(state.contentDescription),
+                ).setMonochromaticImage(monochromaticImage(iconDrawable(state.target.icon)))
                 .setValidTimeRange(state.validTimeRange)
                 .setTapAction(tapAction)
         state.secondary?.let { secondary ->
@@ -150,28 +151,26 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
     private fun monochromaticImageData(
         state: TargetState,
         tapAction: PendingIntent,
-    ): ComplicationData {
-        return MonochromaticImageComplicationData.Builder(
-            monochromaticImage(iconDrawable(state.target.icon)),
-            text(state.contentDescription),
-        )
-            .setValidTimeRange(state.validTimeRange)
+    ): ComplicationData =
+        MonochromaticImageComplicationData
+            .Builder(
+                monochromaticImage(iconDrawable(state.target.icon)),
+                text(state.contentDescription),
+            ).setValidTimeRange(state.validTimeRange)
             .setTapAction(tapAction)
             .build()
-    }
 
     private fun smallImageData(
         state: TargetState,
         tapAction: PendingIntent,
-    ): ComplicationData {
-        return SmallImageComplicationData.Builder(
-            smallImage(iconDrawable(state.target.icon)),
-            text(state.contentDescription),
-        )
-            .setValidTimeRange(state.validTimeRange)
+    ): ComplicationData =
+        SmallImageComplicationData
+            .Builder(
+                smallImage(iconDrawable(state.target.icon)),
+                text(state.contentDescription),
+            ).setValidTimeRange(state.validTimeRange)
             .setTapAction(tapAction)
             .build()
-    }
 
     private fun tapActionForTarget(
         instanceId: Int,
@@ -180,7 +179,7 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         val intent =
             mainActivityIntent(PtsComplicationKind.TONIGHT_TARGET).apply {
                 action = ACTION_OPEN_AIM
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                // Lint: Avoid NEW_TASK/CLEAR_TOP для PendingIntent.getActivity — они не нужны.
                 aimTarget?.let { putAimTargetExtras(it) }
             }
         val requestCode = PtsComplicationKind.TONIGHT_TARGET.ordinal * 1000 + instanceId
@@ -276,7 +275,7 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
                 ),
             )
         val prefs = TonightPrefs(magLimit = 5.5f, preferPlanets = true)
-        val target = selectTarget(previewTargets, prefs).firstOrNull() ?: fallbackTarget
+        val target = TonightTargetSelector.selectTargets(previewTargets, prefs).firstOrNull() ?: fallbackTarget
         return TargetState(
             target = target,
             secondary = target.subtitle,

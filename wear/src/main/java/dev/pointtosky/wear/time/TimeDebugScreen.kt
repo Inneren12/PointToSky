@@ -116,8 +116,8 @@ private fun TimeDebugContent(
 }
 
 @Composable
-private fun rememberTickMetrics(timeSource: SystemTimeSource): State<TickMetrics> {
-    return produceState(
+private fun rememberTickMetrics(timeSource: SystemTimeSource): State<TickMetrics> =
+    produceState(
         initialValue = TickMetrics(timeSource.now(), null, null),
         key1 = timeSource,
     ) {
@@ -138,7 +138,6 @@ private fun rememberTickMetrics(timeSource: SystemTimeSource): State<TickMetrics
             value = TickMetrics(instant, avgPeriod, frequency)
         }
     }
-}
 
 private data class TickMetrics(
     val instant: Instant,

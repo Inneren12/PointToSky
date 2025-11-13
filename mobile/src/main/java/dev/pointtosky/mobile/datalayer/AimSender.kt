@@ -20,8 +20,8 @@ object AimSender {
         bridge: MobileBridge.Sender,
         raDeg: Double,
         decDeg: Double,
-    ): MobileBridge.Sender.Ack? {
-        return bridge.send(PATH_AIM_SET_TARGET) { cid ->
+    ): MobileBridge.Sender.Ack? =
+        bridge.send(PATH_AIM_SET_TARGET) { cid ->
             val msg =
                 AimSetTargetMessage(
                     cid = cid,
@@ -30,13 +30,12 @@ object AimSender {
                 )
             JsonCodec.encode(msg)
         }
-    }
 
     fun sendBody(
         bridge: MobileBridge.Sender,
         bodyName: String,
-    ): MobileBridge.Sender.Ack? {
-        return bridge.send(PATH_AIM_SET_TARGET) { cid ->
+    ): MobileBridge.Sender.Ack? =
+        bridge.send(PATH_AIM_SET_TARGET) { cid ->
             val msg =
                 AimSetTargetMessage(
                     cid = cid,
@@ -45,15 +44,14 @@ object AimSender {
                 )
             JsonCodec.encode(msg)
         }
-    }
 
     fun sendStar(
         bridge: MobileBridge.Sender,
         id: Int,
         raDeg: Double,
         decDeg: Double,
-    ): MobileBridge.Sender.Ack? {
-        return bridge.send(PATH_AIM_SET_TARGET) { cid ->
+    ): MobileBridge.Sender.Ack? =
+        bridge.send(PATH_AIM_SET_TARGET) { cid ->
             val msg =
                 AimSetTargetMessage(
                     cid = cid,
@@ -65,5 +63,4 @@ object AimSender {
                 )
             JsonCodec.encode(msg)
         }
-    }
 }

@@ -44,7 +44,8 @@ class TonightTileRefreshWorker(
                 name = "tile_request_update_scheduled",
                 payload = mapOf("atEpochMs" to at.toEpochMilli()),
             )
-            WorkManager.getInstance(context)
+            WorkManager
+                .getInstance(context)
                 .enqueueUniqueWork(UNIQUE_WORK, ExistingWorkPolicy.REPLACE, req)
         }
     }

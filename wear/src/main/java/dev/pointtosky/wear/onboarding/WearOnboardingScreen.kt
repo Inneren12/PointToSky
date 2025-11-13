@@ -64,7 +64,9 @@ fun WearOnboardingScreen(
         state = listState,
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 16.dp),
+        contentPadding =
+            androidx.compose.foundation.layout
+                .PaddingValues(horizontal = 12.dp, vertical = 16.dp),
     ) {
         item {
             Text(

@@ -407,33 +407,34 @@ private fun calculateOverlay(
     val tanVFov = tan(Math.toRadians(VERTICAL_FOV_DEG / 2.0))
 
     val objects =
-        state.stars.mapNotNull { star ->
-            val horizontal =
-                raDecToAltAz(
-                    star.equatorial,
-                    lstDeg = state.lstDeg,
-                    latDeg = state.location.latDeg,
-                    applyRefraction = false,
+        state.stars
+            .mapNotNull { star ->
+                val horizontal =
+                    raDecToAltAz(
+                        star.equatorial,
+                        lstDeg = state.lstDeg,
+                        latDeg = state.location.latDeg,
+                        applyRefraction = false,
+                    )
+                if (horizontal.altDeg < 0.0) return@mapNotNull null
+                val worldVec = horizontalToVector(horizontal)
+                val deviceVec = multiply(worldToDevice, worldVec)
+                if (deviceVec[2] >= -0.01f) return@mapNotNull null
+                val ndcX = (deviceVec[0] / -deviceVec[2]) / tanHFov
+                val ndcY = (deviceVec[1] / -deviceVec[2]) / tanVFov
+                val distance = sqrt(ndcX * ndcX + ndcY * ndcY)
+                if (distance > MAX_SCREEN_DISTANCE) return@mapNotNull null
+                val screenX = halfWidth * (1f + ndcX.toFloat())
+                val screenY = halfHeight * (1f - ndcY.toFloat())
+                val separation = angularSeparationDeg(reticleEquatorial, star.equatorial)
+                OverlayObject(
+                    title = star.label,
+                    magnitude = star.magnitude,
+                    position = Offset(screenX, screenY),
+                    distance = distance,
+                    separationDeg = separation,
                 )
-            if (horizontal.altDeg < 0.0) return@mapNotNull null
-            val worldVec = horizontalToVector(horizontal)
-            val deviceVec = multiply(worldToDevice, worldVec)
-            if (deviceVec[2] >= -0.01f) return@mapNotNull null
-            val ndcX = (deviceVec[0] / -deviceVec[2]) / tanHFov
-            val ndcY = (deviceVec[1] / -deviceVec[2]) / tanVFov
-            val distance = sqrt(ndcX * ndcX + ndcY * ndcY)
-            if (distance > MAX_SCREEN_DISTANCE) return@mapNotNull null
-            val screenX = halfWidth * (1f + ndcX.toFloat())
-            val screenY = halfHeight * (1f - ndcY.toFloat())
-            val separation = angularSeparationDeg(reticleEquatorial, star.equatorial)
-            OverlayObject(
-                title = star.label,
-                magnitude = star.magnitude,
-                position = Offset(screenX, screenY),
-                distance = distance,
-                separationDeg = separation,
-            )
-        }.sortedBy { it.distance }
+            }.sortedBy { it.distance }
             .take(MAX_LABELS)
 
     return OverlayData(
@@ -503,9 +504,7 @@ private fun vectorToHorizontal(vector: FloatArray): Horizontal {
 private fun formatAngle(
     locale: Locale,
     value: Double,
-): String {
-    return String.format(locale, "%.1f", value)
-}
+): String = String.format(locale, "%.1f", value)
 
 private const val HORIZONTAL_FOV_DEG = 60.0
 private const val VERTICAL_FOV_DEG = 45.0

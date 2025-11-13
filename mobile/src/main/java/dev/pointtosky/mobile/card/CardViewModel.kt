@@ -86,13 +86,12 @@ class CardViewModel(
     private fun computeHorizontal(
         eq: Equatorial,
         point: GeoPoint,
-    ): Horizontal? {
-        return runCatching {
+    ): Horizontal? =
+        runCatching {
             val instant = clock()
             val lst = lstAt(instant, point.lonDeg).lstDeg
             raDecToAltAz(eq, lst, point.latDeg, applyRefraction = false)
         }.getOrNull()
-    }
 
     private fun titleFor(model: CardObjectModel): String {
         val fallback = model.id
@@ -107,8 +106,8 @@ class CardViewModel(
         model: CardObjectModel,
         label: String,
         equatorial: Equatorial?,
-    ): AimTargetOption? {
-        return when (model.type) {
+    ): AimTargetOption? =
+        when (model.type) {
             CardObjectType.STAR ->
                 equatorial?.let { eq ->
                     AimTargetOption(
@@ -148,7 +147,6 @@ class CardViewModel(
                 }
             CardObjectType.CONST -> null
         }
-    }
 
     private fun buildShareText(
         title: String,
@@ -196,7 +194,8 @@ class CardViewModel(
         val end = window.end
         if (start == null && end == null) return null
         val formatter =
-            DateTimeFormatter.ofPattern("dd MMM HH:mm", Locale.getDefault())
+            DateTimeFormatter
+                .ofPattern("dd MMM HH:mm", Locale.getDefault())
                 .withZone(ZoneId.systemDefault())
         val startText = start?.let { formatter.format(it) }
         val endText = end?.let { formatter.format(it) }
@@ -230,7 +229,9 @@ class CardViewModelFactory(
 sealed interface CardUiState {
     object Loading : CardUiState
 
-    data class Error(val reason: CardErrorReason) : CardUiState
+    data class Error(
+        val reason: CardErrorReason,
+    ) : CardUiState
 
     data class Ready(
         val id: String,

@@ -35,11 +35,18 @@ object MobileBridge {
         instance = null
     }
 
-    class Sender(private val context: Context) {
-        data class Ack(val ok: Boolean, val err: String? = null)
+    class Sender(
+        private val context: Context,
+    ) {
+        data class Ack(
+            val ok: Boolean,
+            val err: String? = null,
+        )
 
         interface Transport {
-            data class Node(val id: String)
+            data class Node(
+                val id: String,
+            )
 
             @Throws(Exception::class)
             fun connectedNodes(): List<Node>
@@ -108,7 +115,9 @@ object MobileBridge {
             private const val MAX_SEND_ATTEMPTS = 2
         }
 
-        private class WearTransport(private val context: Context) : Transport {
+        private class WearTransport(
+            private val context: Context,
+        ) : Transport {
             override fun connectedNodes(): List<Transport.Node> {
                 val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
                 return nodes.map { node -> Transport.Node(node.id) }

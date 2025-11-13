@@ -1,7 +1,8 @@
 import org.gradle.api.Project
 
 fun Project.resolveConfigProperty(key: String): String? =
-    providers.gradleProperty(key)
+    providers
+        .gradleProperty(key)
         .orElse(providers.environmentVariable(key))
         .orNull
 
@@ -14,12 +15,21 @@ plugins {
 
 android {
     namespace = "dev.pointtosky.wear"
-    compileSdk = libs.versions.compileSdk.get().toInt()
+    compileSdk =
+        libs.versions.compileSdk
+            .get()
+            .toInt()
 
     defaultConfig {
         applicationId = "dev.pointtosky.wear"
-        minSdk = libs.versions.minSdkWear.get().toInt()
-        targetSdk = libs.versions.targetSdk.get().toInt()
+        minSdk =
+            libs.versions.minSdkWear
+                .get()
+                .toInt()
+        targetSdk =
+            libs.versions.targetSdk
+                .get()
+                .toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val resolvedVersionCode = project.resolveConfigProperty("P2S_VERSION_CODE")?.toIntOrNull() ?: 1
         val resolvedVersionName = project.resolveConfigProperty("P2S_VERSION_NAME") ?: "0.1.0"

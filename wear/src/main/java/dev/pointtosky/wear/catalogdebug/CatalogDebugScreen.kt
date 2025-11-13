@@ -216,7 +216,9 @@ fun CatalogDebugScreen(
             Button(
                 onClick = onBack,
                 modifier = Modifier.fillMaxWidth(),
-                colors = androidx.wear.compose.material.ButtonDefaults.secondaryButtonColors(),
+                colors =
+                    androidx.wear.compose.material.ButtonDefaults
+                        .secondaryButtonColors(),
             ) {
                 Text(text = stringResource(id = R.string.catalog_debug_back))
             }
@@ -258,7 +260,8 @@ private fun formatProbeResult(result: ProbeResultUi): String {
 private fun formatTimestamp(timestampMs: Long): String {
     val instant = Instant.ofEpochMilli(timestampMs)
     val formatter =
-        DateTimeFormatter.ofPattern("HH:mm:ss")
+        DateTimeFormatter
+            .ofPattern("HH:mm:ss")
             .withLocale(Locale.getDefault())
             .withZone(ZoneId.systemDefault())
     return formatter.format(instant)

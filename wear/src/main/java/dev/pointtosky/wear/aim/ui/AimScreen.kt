@@ -79,7 +79,10 @@ import kotlin.math.abs
 import kotlin.math.sign
 
 // Элементы пикера делаем top-level
-private data class UiTarget(val label: String, val toAim: AimTarget)
+private data class UiTarget(
+    val label: String,
+    val toAim: AimTarget,
+)
 
 /** Route: создаёт контроллер и рендерит AimScreen. */
 @Composable

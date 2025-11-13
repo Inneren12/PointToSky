@@ -26,7 +26,9 @@ class IdentifyViewModelFactory(
                 identifySolver = catalogRepository.identifySolver,
                 constellations = catalogRepository.constellationBoundaries,
                 ephemeris = SimpleEphemerisComputer(),
-                timeSource = dev.pointtosky.core.time.SystemTimeSource(periodMs = 200L),
+                timeSource =
+                    dev.pointtosky.core.time
+                        .SystemTimeSource(periodMs = 200L),
                 settings = settings,
             ) as T
         }

@@ -105,8 +105,8 @@ class SearchViewModel(
         }
     }
 
-    private fun prepareCardEntry(result: SearchResult): String {
-        return when (val payload = result.payload) {
+    private fun prepareCardEntry(result: SearchResult): String =
+        when (val payload = result.payload) {
             is SearchPayload.Star -> {
                 val eq = Equatorial(payload.star.raDeg, payload.star.decDeg)
                 val model =
@@ -151,7 +151,6 @@ class SearchViewModel(
                 model.id
             }
         }
-    }
 
     private fun buildEntries(): List<SearchEntry> {
         val stars = loadStars()
@@ -172,7 +171,8 @@ class SearchViewModel(
                 )
             }
         val planetEntries =
-            Body.values()
+            Body
+                .values()
                 .mapNotNull { body ->
                     val name = planetNames[body] ?: return@mapNotNull null
                     val aliases =
@@ -221,14 +221,13 @@ class SearchViewModel(
             }
     }
 
-    private fun primaryStarName(star: Star): String? {
-        return when {
+    private fun primaryStarName(star: Star): String? =
+        when {
             !star.name.isNullOrBlank() -> star.name
             !star.bayer.isNullOrBlank() -> star.bayer
             !star.flamsteed.isNullOrBlank() -> star.flamsteed
             else -> null
         }
-    }
 
     private fun buildStarAliases(star: SearchStar): List<Alias> {
         val aliases = linkedSetOf<String>()
@@ -255,9 +254,7 @@ class SearchViewModel(
         return pieces.takeIf { it.isNotEmpty() }?.joinToString(" • ")
     }
 
-    private fun magnitudeLabel(magnitude: Double): String {
-        return String.format(Locale.ROOT, "m %.1f", magnitude)
-    }
+    private fun magnitudeLabel(magnitude: Double): String = String.format(Locale.ROOT, "m %.1f", magnitude)
 
     private data class SearchEntry(
         val cardId: String,
@@ -345,9 +342,13 @@ class SearchViewModel(
     )
 
     sealed interface SearchPayload {
-        data class Star(val star: SearchStar) : SearchPayload
+        data class Star(
+            val star: SearchStar,
+        ) : SearchPayload
 
-        data class Planet(val body: Body) : SearchPayload
+        data class Planet(
+            val body: Body,
+        ) : SearchPayload
     }
 
     data class SearchStar(
@@ -362,12 +363,20 @@ class SearchViewModel(
         val decDeg: Double,
     )
 
-    private data class Alias(val original: String, val normalized: String)
+    private data class Alias(
+        val original: String,
+        val normalized: String,
+    )
 
-    private data class SearchMatch(val entry: SearchEntry, val score: Int)
+    private data class SearchMatch(
+        val entry: SearchEntry,
+        val score: Int,
+    )
 
     sealed interface SearchEvent {
-        data class OpenCard(val cardId: String) : SearchEvent
+        data class OpenCard(
+            val cardId: String,
+        ) : SearchEvent
     }
 
     class Factory(
@@ -393,7 +402,8 @@ class SearchViewModel(
         private fun normalize(input: String): String {
             if (input.isBlank()) return ""
             val lower =
-                input.lowercase(Locale.ROOT)
+                input
+                    .lowercase(Locale.ROOT)
                     .replace('\u2019', '\'')
                     .replace('-', ' ')
                     .replace('_', ' ')

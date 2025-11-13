@@ -5,7 +5,8 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
 
 fun Project.resolveConfigProperty(key: String): String? =
-    providers.gradleProperty(key)
+    providers
+        .gradleProperty(key)
         .orElse(providers.environmentVariable(key))
         .orNull
 
@@ -23,12 +24,21 @@ tasks.withType<Detekt>().configureEach {
 
 android {
     namespace = "dev.pointtosky.mobile"
-    compileSdk = libs.versions.compileSdk.get().toInt()
+    compileSdk =
+        libs.versions.compileSdk
+            .get()
+            .toInt()
 
     defaultConfig {
         applicationId = "dev.pointtosky.mobile"
-        minSdk = libs.versions.minSdkMobile.get().toInt()
-        targetSdk = libs.versions.targetSdk.get().toInt()
+        minSdk =
+            libs.versions.minSdkMobile
+                .get()
+                .toInt()
+        targetSdk =
+            libs.versions.targetSdk
+                .get()
+                .toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val resolvedVersionCode = project.resolveConfigProperty("P2S_VERSION_CODE")?.toIntOrNull() ?: 1
         val resolvedVersionName = project.resolveConfigProperty("P2S_VERSION_NAME") ?: "0.1.0"
@@ -233,9 +243,10 @@ run {
 
         // КРИТИЧНО: установите jdkHome
         jdkHome.set(
-            toolchains.launcherFor {
-                languageVersion.set(JavaLanguageVersion.of(17))
-            }.map { it.metadata.installationPath },
+            toolchains
+                .launcherFor {
+                    languageVersion.set(JavaLanguageVersion.of(17))
+                }.map { it.metadata.installationPath },
         )
     }
 }
@@ -254,11 +265,12 @@ plugins.withId("io.gitlab.arturbosch.detekt") {
     }
 
     // Отключаем variant-специфичные таски (InternalDebug/PublicRelease и т.п.)
-    tasks.matching {
-        it.name.startsWith("detekt") && it.name !in setOf("detekt", "detektMain", "detektTest")
-    }.configureEach {
-        enabled = false
-    }
+    tasks
+        .matching {
+            it.name.startsWith("detekt") && it.name !in setOf("detekt", "detektMain", "detektTest")
+        }.configureEach {
+            enabled = false
+        }
 
     // Общие настройки задач detektMain/Test: режим фейла и порядок после автоформатирования
     tasks.withType<Detekt>().configureEach {
