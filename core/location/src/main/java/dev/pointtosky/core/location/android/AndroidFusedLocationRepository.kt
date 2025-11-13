@@ -1,9 +1,11 @@
 package dev.pointtosky.core.location.android
 
+import android.Manifest
 import android.content.Context
 import android.location.Location
 import android.location.LocationManager
 import android.os.Looper
+import androidx.annotation.RequiresPermission
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.Granularity
 import com.google.android.gms.location.LocationCallback
@@ -73,6 +75,12 @@ class AndroidFusedLocationRepository(
     private var updatesJob: Job? = null
     private var started = false
 
+    @RequiresPermission(
+        anyOf = [
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ],
+    )
     override suspend fun start(config: LocationConfig) {
         mutex.withLock {
             throttleMs.value = config.throttleMs
@@ -122,11 +130,23 @@ class AndroidFusedLocationRepository(
         }
     }
 
+    @RequiresPermission(
+        anyOf = [
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ],
+    )
     override suspend fun getLastKnown(): LocationFix? {
         latestFix.get()?.let { return it }
         return runCatching { fetchLastKnown() }.getOrNull()
     }
 
+    @RequiresPermission(
+        anyOf = [
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ],
+    )
     suspend fun getCurrentLocation(timeoutMs: Long, priority: LocationPriority = LocationPriority.BALANCED): LocationFix? {
         val fusedPriority = when (priority) {
             LocationPriority.PASSIVE -> Priority.PRIORITY_PASSIVE
@@ -156,16 +176,40 @@ class AndroidFusedLocationRepository(
     }
 
     interface FusedClientDelegate {
+        @RequiresPermission(
+            anyOf = [
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ],
+        )
         fun locationUpdates(request: LocationRequest): Flow<LocationFix>
 
+        @RequiresPermission(
+            anyOf = [
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ],
+        )
         suspend fun lastLocation(): Location?
 
+        @RequiresPermission(
+            anyOf = [
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ],
+        )
         suspend fun currentLocation(timeoutMs: Long, priority: Int): Location?
     }
 
     class RealFusedClientDelegate(
         private val client: FusedLocationProviderClient,
     ) : FusedClientDelegate {
+        @RequiresPermission(
+            anyOf = [
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ],
+        )
         override fun locationUpdates(request: LocationRequest): Flow<LocationFix> = callbackFlow {
             val callback = object : LocationCallback() {
                 override fun onLocationResult(result: LocationResult) {
@@ -185,6 +229,12 @@ class AndroidFusedLocationRepository(
             }
         }
 
+        @RequiresPermission(
+            anyOf = [
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ],
+        )
         override suspend fun lastLocation(): Location? {
             return try {
                 withTimeoutOrNull(LAST_LOCATION_TIMEOUT_MS) {
@@ -200,6 +250,12 @@ class AndroidFusedLocationRepository(
             }
         }
 
+        @RequiresPermission(
+            anyOf = [
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ],
+        )
         override suspend fun currentLocation(timeoutMs: Long, priority: Int): Location? {
             return try {
                 withTimeoutOrNull(timeoutMs) {
