@@ -16,7 +16,7 @@ private data class CliConfig(
     val count: Int,
 )
 
-public fun main(args: Array<String>) {
+fun main(args: Array<String>) {
     val config = try {
         parseArgs(args)
     } catch (error: IllegalArgumentException) {

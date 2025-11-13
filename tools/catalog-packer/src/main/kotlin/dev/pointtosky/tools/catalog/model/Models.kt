@@ -27,7 +27,24 @@ data class PackRequest(
 data class PackResult(
     val binary: ByteArray,
     val meta: CatalogMeta,
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is PackResult) return false
+        if (!binary.contentEquals(other.binary)) return false
+        if (meta != other.meta) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = binary.contentHashCode()
+        result = 31 * result + meta.hashCode()
+        return result
+    }
+
+    override fun toString(): String =
+        "PackResult(binary=${binary.size} bytes, meta=$meta)"
+    }
 
 data class StarInput(
     val source: CatalogSource,
@@ -64,7 +81,7 @@ data class CatalogMeta(
         appendLine("  \"stringPoolSize\": ${stringPoolSize},")
         appendLine("  \"indexOffset\": ${indexOffset},")
         appendLine("  \"indexSize\": ${indexSize},")
-        appendLine("  \"crc32\": ${java.lang.Integer.toUnsignedLong(crc32)},")
+        appendLine("  \"crc32\": ${Integer.toUnsignedLong(crc32)},")
         appendLine("  \"bandCount\": ${bandCount},")
         appendLine("  \"indexEntries\": ${indexEntryCount},")
         appendLine("  \"rdpEpsilon\": ${rdpEpsilon},")

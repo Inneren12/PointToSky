@@ -1,6 +1,6 @@
 package dev.pointtosky.tools.catalog.csv
 
-internal class CsvRow(private val row: Map<String, String>) {
+internal class CsvRow(row: Map<String, String>) {
     private val normalized = row.mapKeys { it.key.trim().lowercase() }
 
     fun value(vararg keys: String): String? {

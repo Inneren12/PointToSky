@@ -171,8 +171,7 @@ class SearchViewModel(
                 )
             }
         val planetEntries =
-            Body
-                .values()
+            Body.entries
                 .mapNotNull { body ->
                     val name = planetNames[body] ?: return@mapNotNull null
                     val aliases =
@@ -203,7 +202,7 @@ class SearchViewModel(
             )
         return stars
             .distinctBy(Star::id)
-            .mapNotNull { star ->
+            .map { star ->
                 val magnitude = star.mag.toDouble().takeIf { !it.isNaN() }
                 val displayName = primaryStarName(star) ?: star.id.toString()
                 val constellation = star.constellation?.takeIf { it.isNotBlank() }
@@ -282,7 +281,7 @@ class SearchViewModel(
                 matches += SearchMatch(entry, score)
             }
             matches.sortWith(
-                compareBy<SearchMatch>({
+                compareBy({
                     it.score
                 }, { it.entry.priority }, { it.entry.magnitude ?: Double.MAX_VALUE }, { it.entry.title }),
             )

@@ -53,8 +53,8 @@ class ConstellationProcessor {
         for (i in converted.indices) {
             if (!remaining[i]) continue
             val path = mutableListOf<Vertex>()
-            var currentEdgeIndex = i
-            var current = converted[currentEdgeIndex]
+            val currentEdgeIndex = i
+            val current = converted[currentEdgeIndex]
             remaining[currentEdgeIndex] = false
             path += current.start
             path += current.end
@@ -187,7 +187,7 @@ class ConstellationProcessor {
         if (result.isEmpty() || !result.last().isApproximately(current)) {
             result.add(current)
         }
-        var startRa = current.ra
+        val startRa = current.ra
         val startDec = current.dec
         var targetRa = next.ra
         val targetDec = next.dec
@@ -201,7 +201,7 @@ class ConstellationProcessor {
         var currentRa = startRa
         var currentDec = startDec
         var adjustedTargetRa = targetRa
-        var adjustedTargetDec = targetDec
+        val adjustedTargetDec = targetDec
 
         while (adjustedTargetRa > 360 || adjustedTargetRa < 0) {
             val boundary = if (adjustedTargetRa > 360) 360.0 else 0.0

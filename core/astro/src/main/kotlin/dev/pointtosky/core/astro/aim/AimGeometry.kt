@@ -14,7 +14,7 @@ data class AimTolerance(
     val altitudeDeg: Double = 4.0,
 )
 
-public fun aimError(current: Horizontal, target: Horizontal, tol: AimTolerance): AimError {
+fun aimError(current: Horizontal, target: Horizontal, tol: AimTolerance): AimError {
     val rawAzDiff = target.azDeg - current.azDeg
     val wrappedAzDiff = normalizeAzimuthDelta(rawAzDiff)
     val altDiff = target.altDeg - current.altDeg

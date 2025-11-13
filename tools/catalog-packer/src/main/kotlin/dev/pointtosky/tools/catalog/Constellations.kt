@@ -23,6 +23,6 @@ object Constellations {
         if (code == null) return -1
         return codeToIndex[code.trim().uppercase()] ?: -1
     }
-
+    @Suppress("unused")
     fun allCodes(): List<String> = codes
 }

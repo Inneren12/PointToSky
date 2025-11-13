@@ -68,6 +68,4 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
-    // logging types are exposed in public API → must be api
-    api(project(":core:logging"))
 }

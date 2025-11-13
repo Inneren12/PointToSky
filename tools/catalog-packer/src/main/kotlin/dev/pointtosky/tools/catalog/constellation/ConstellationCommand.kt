@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package dev.pointtosky.tools.catalog.constellation
 
 import java.nio.file.Files
@@ -37,7 +39,7 @@ class ConstellationCommand {
                     ?: error("Invalid value for --rdp-epsilon: ${raw.substringAfter('=')}")
                 raw == "--help" || raw == "-h" -> {
                     printUsage()
-                    throw SilentExitException
+                    throw SilentExitException()
                 }
                 raw.isBlank() -> Unit
                 else -> error("Unknown option: $raw")
@@ -61,7 +63,7 @@ class ConstellationCommand {
         val rdpEpsilon: Double?,
     )
 
-    private object SilentExitException : RuntimeException()
+    private class SilentExitException : RuntimeException()
 
     companion object {
         private const val DEFAULT_RDP_EPSILON: Double = 0.05
