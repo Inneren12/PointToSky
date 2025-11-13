@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -384,7 +385,8 @@ private fun ArObjectLabel(
     }
 }
 
-private fun calculateOverlay(
+@VisibleForTesting
+internal fun calculateOverlay(
     state: ArUiState.Ready,
     frame: RotationFrame,
     viewport: IntSize,
@@ -445,7 +447,8 @@ private fun calculateOverlay(
     )
 }
 
-private data class OverlayObject(
+@VisibleForTesting
+internal data class OverlayObject(
     val title: String?,
     val magnitude: Double,
     val position: Offset,
@@ -453,7 +456,8 @@ private data class OverlayObject(
     val separationDeg: Double,
 )
 
-private data class OverlayData(
+@VisibleForTesting
+internal data class OverlayData(
     val reticleHorizontal: Horizontal,
     val reticleEquatorial: Equatorial,
     val labels: List<OverlayObject>,
