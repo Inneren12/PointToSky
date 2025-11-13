@@ -144,3 +144,15 @@ tasks.register("astroTest") {
 tasks.register("ephemCli") {
     dependsOn(":tools:ephem-cli:installDist")
 }
+
+tasks.register("preprodCheck") {
+    dependsOn(
+        ":core:astro:testDebugUnitTest",
+        ":core:catalog:testDebugUnitTest",
+        ":core:location:android:testDebugUnitTest",
+        ":mobile:testDebugUnitTest",
+        ":wear:testDebugUnitTest",
+        ":mobile:connectedDebugAndroidTest",
+        ":wear:connectedDebugAndroidTest",
+    )
+}

@@ -155,7 +155,6 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit-ktx:1.1.5")
     androidTestImplementation("androidx.test:runner:1.5.2")
     androidTestImplementation("androidx.test:rules:1.5.0")
-
     implementation(platform(libs.compose.bom))
 
     // Если используете BOM в других модулях — подключите и здесь:

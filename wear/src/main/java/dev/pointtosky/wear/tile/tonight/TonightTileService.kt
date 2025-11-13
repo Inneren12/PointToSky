@@ -4,6 +4,7 @@ package dev.pointtosky.wear.tile.tonight
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.annotation.VisibleForTesting
 import androidx.wear.tiles.ActionBuilders
 import androidx.wear.tiles.DeviceParametersBuilders
 import androidx.wear.tiles.DimensionBuilders
@@ -391,7 +392,8 @@ open class TonightTileService : TileService() {
     }
 
     /** Короткий JSON payload для mirroring. */
-    private fun buildPushModelJson(model: TonightTileModel): String {
+    @VisibleForTesting
+    internal fun buildPushModelJson(model: TonightTileModel): String {
         val root = JSONObject()
         root.put("updatedAt", model.updatedAt.epochSecond)
         val arr = JSONArray()
