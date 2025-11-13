@@ -10,7 +10,7 @@ import androidx.wear.watchface.complications.data.SmallImageComplicationData
 import androidx.wear.watchface.complications.data.SmallImageType
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import dev.pointtosky.wear.R
-import dev.pointtosky.wear.WearIntents.putAimTargetExtras
+import dev.pointtosky.wear.ACTION_OPEN_AIM
 import dev.pointtosky.wear.aim.core.AimPhase
 import dev.pointtosky.wear.complication.config.AimPrefs
 import dev.pointtosky.wear.complication.config.ComplicationPrefsStore
@@ -148,10 +148,10 @@ class AimStatusDataSourceService : BaseComplicationDataSourceService() {
             this,
             PtsComplicationKind.AIM_STATUS.ordinal,
             mainActivityIntent(PtsComplicationKind.AIM_STATUS).apply {
-                snapshot.target?.toAimTarget()?.let { putAimTargetExtras(it) }
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+                action = ACTION_OPEN_AIM
+                },
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
     private fun previewSnapshot(): AimStatusSnapshot =
         AimStatusSnapshot(

@@ -6,7 +6,7 @@ indent_size = 4
 max_line_length = 120
 insert_final_newline = true
 ij_kotlin_allow_trailing_comma = true
-ktlint_function_naming_ignore_when_annotated_with = Composable,Preview
+ktlint_function_naming_ignore_when_annotated_with = Composable,Preview,PreviewParameter
 
 # для тестов — отключаем конкретное правило по новому формату
 [**/src/test/**.kt]

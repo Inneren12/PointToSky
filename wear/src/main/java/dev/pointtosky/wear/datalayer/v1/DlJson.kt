@@ -19,9 +19,10 @@ private fun JSONObject.optBooleanOrNull(name: String): Boolean? =
 internal object DlJson {
     fun parseCid(data: ByteArray): String? =
         runCatching {
-            JSONObject(String(data, StandardCharsets.UTF_8)).optStringOrNull("cid")
+            JSONObject(String(data, StandardCharsets.UTF_8))
+                .optString("cid")
+                .takeIf { it.isNotBlank() }
         }.getOrNull()
-
     fun buildAck(
         refCid: String,
         ok: Boolean = true,
@@ -37,6 +38,8 @@ internal object DlJson {
 
     fun parseAck(data: ByteArray): Pair<String?, Boolean?> {
         val o = runCatching { JSONObject(String(data, StandardCharsets.UTF_8)) }.getOrNull() ?: return null to null
-        return o.optStringOrNull("refCid") to o.optBooleanOrNull("ok")
+        val ref = o.optString("refCid").takeIf { it.isNotBlank() }
+        val ok: Boolean? = if (o.has("ok")) o.optBoolean("ok") else null
+        return ref to ok
     }
 }

@@ -5,6 +5,7 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.kotlin.dsl.getByType
 import org.jlleitschuh.gradle.ktlint.KtlintExtension
+import org.gradle.api.Project
 
 plugins {
     alias(libs.plugins.android.application) apply false
@@ -86,6 +87,32 @@ subprojects {
 }
 
 subprojects {
+
+    plugins.withId("org.jlleitschuh.gradle.ktlint") {
+        // Берём версии из каталога "libs"
+        val libsCatalog = rootProject.extensions
+            .getByType(VersionCatalogsExtension::class.java)
+            .named("libs")
+        val ktlintEngine = libsCatalog.findVersion("ktlintEngine").get().toString()
+        val strict = System.getenv("CI") == "true" || project.hasProperty("strict")
+
+        // Конфигурация плагина: движок 1.x, Android-мод включён, фейлить только в CI
+        extensions.configure(KtlintExtension::class.java) {
+            version.set(ktlintEngine)
+            android.set(true)
+            ignoreFailures.set(!strict)
+            filter {
+                exclude("**/build/**")
+                exclude("**/generated/**")
+            }
+        }
+
+        // Чтобы проверки реально выполнялись в сборке
+        tasks.matching { it.name == "check" }.configureEach {
+            dependsOn("ktlintCheck")
+        }
+    }
+
     plugins.withId("io.gitlab.arturbosch.detekt") {
         staticCheck.configure { dependsOn(tasks.named("detekt")) }
     }

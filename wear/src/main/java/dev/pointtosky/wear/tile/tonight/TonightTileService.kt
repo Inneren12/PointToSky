@@ -303,7 +303,6 @@ open class TonightTileService : TileService() {
             ActionBuilders.AndroidActivity.Builder()
                 .setPackageName(context.packageName)
                 .setClassName("dev.pointtosky.wear.tile.tonight.TileEntryActivity")
-                .setAction(ACTION_OPEN_AIM)
                 .build()
         val launch: ActionBuilders.LaunchAction =
             ActionBuilders.LaunchAction.Builder()

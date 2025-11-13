@@ -1,15 +1,23 @@
 pluginManagement {
   repositories {
-    google()
-    mavenCentral()
-    gradlePluginPortal()
+      gradlePluginPortal()
+      maven { url = uri("https://cache-redirector.jetbrains.com/dl.google.com/dl/android/maven2") }
+      google()
+      mavenCentral()
   }
 }
 
 dependencyResolutionManagement {
   repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
   repositories {
-    google()
+      maven {
+          url = uri("https://cache-redirector.jetbrains.com/dl.google.com/dl/android/maven2")
+          metadataSources {
+              mavenPom()
+              artifact()
+          }
+      }
+      google()
     mavenCentral()
   }
 }

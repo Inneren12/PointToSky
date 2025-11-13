@@ -1,4 +1,8 @@
+import io.gitlab.arturbosch.detekt.Detekt
+import io.gitlab.arturbosch.detekt.extensions.DetektExtension
 import org.gradle.api.Project
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
 
 fun Project.resolveConfigProperty(key: String): String? =
     providers.gradleProperty(key)
@@ -10,6 +14,11 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.license.report)
+}
+
+// Detekt: временно исключаем большой Compose-файл, который крэшит анализ на JDK 21.
+tasks.withType<Detekt>().configureEach {
+    exclude("**/dev/pointtosky/mobile/ar/ArScreen.kt")
 }
 
 android {
@@ -213,3 +222,54 @@ licenseReport {
     copyHtmlReportToAssets = false
     copyJsonReportToAssets = false
 }
+
+// --- Force detekt to run on JDK 17 (workaround for detekt 1.23.x + JDK 21 crash) ---
+run {
+    val toolchains = extensions.getByType<JavaToolchainService>()
+
+    // Принудительно используем JDK 17 для всех detekt tasks
+    tasks.withType<Detekt>().configureEach {
+        jvmTarget = "17"
+
+        // КРИТИЧНО: установите jdkHome
+        jdkHome.set(
+            toolchains.launcherFor {
+                languageVersion.set(JavaLanguageVersion.of(17))
+            }.map { it.metadata.installationPath },
+        )
+    }
+}
+
+// --- Detekt stabilizer: отключаем variant-таски, мягкий локально/строгий в CI, без внутренней параллели ---
+plugins.withId("io.gitlab.arturbosch.detekt") {
+    val strict = System.getenv("CI") == "true" || project.hasProperty("strict")
+
+    // Расширение detekt: выключаем внутренний параллелизм (PSI race), оставляем базовые флаги
+    extensions.configure<DetektExtension>("detekt") {
+        parallel = false
+        autoCorrect = false
+        // на случай отсутствия явной инициализации где-то ещё — безопасно продублировать:
+        buildUponDefaultConfig = true
+        allRules = false
+    }
+
+    // Отключаем variant-специфичные таски (InternalDebug/PublicRelease и т.п.)
+    tasks.matching {
+        it.name.startsWith("detekt") && it.name !in setOf("detekt", "detektMain", "detektTest")
+    }.configureEach {
+        enabled = false
+    }
+
+    // Общие настройки задач detektMain/Test: режим фейла и порядок после автоформатирования
+    tasks.withType<Detekt>().configureEach {
+        ignoreFailures = !strict
+        mustRunAfter("ktlintFormat")
+    }
+
+    // Включаем детект в check и, если есть, подтягиваем ktlintCheck
+    tasks.matching { it.name == "check" }.configureEach {
+        dependsOn("detektMain", "detektTest")
+        runCatching { dependsOn("ktlintCheck") }
+    }
+}
+// --- end Detekt stabilizer ---
