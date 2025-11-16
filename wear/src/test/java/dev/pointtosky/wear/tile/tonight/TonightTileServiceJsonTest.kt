@@ -35,9 +35,7 @@ class TonightTileServiceJsonTest {
             )
 
         val json = service.buildPushModelJson(model)
-        println("DEBUG_JSON: $json")
         val parsed = JSONObject(json)
-        println("DEBUG_MODEL_UPDATED_AT: ${model.updatedAt.epochSecond}")
         assertEquals(model.updatedAt.epochSecond, parsed.getLong("updatedAt"))
 
         val items = parsed.getJSONArray("items")
