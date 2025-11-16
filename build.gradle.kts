@@ -147,12 +147,21 @@ tasks.register("ephemCli") {
 
 tasks.register("preprodCheck") {
     dependsOn(
+        // core-модули
         ":core:astro:testDebugUnitTest",
         ":core:catalog:testDebugUnitTest",
         ":core:location:android:testDebugUnitTest",
-        ":mobile:testDebugUnitTest",
-        ":wear:testDebugUnitTest",
-        ":mobile:connectedDebugAndroidTest",
-        ":wear:connectedDebugAndroidTest",
+
+        // mobile: internalDebug unit tests
+        ":mobile:testInternalDebugUnitTest",
+
+        // wear: internalDebug unit tests
+        ":wear:testInternalDebugUnitTest",
+
+        // mobile: instrumentation tests для internalDebug
+        ":mobile:connectedInternalDebugAndroidTest",
+
+        // wear: instrumentation tests для internalDebug
+        ":wear:connectedInternalDebugAndroidTest",
     )
 }

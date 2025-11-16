@@ -2,9 +2,7 @@ package dev.pointtosky.core.astro.ephem
 
 import dev.pointtosky.core.astro.testkit.Angles.angularSeparationDeg
 import dev.pointtosky.core.astro.testkit.Tolerance.EPHEM_MAX_ERR_DEG
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -54,7 +52,7 @@ class SimpleEphemerisComputerGoldenTest {
 
         val expectedDistance = sample.expectedDistanceAu
         if (expectedDistance != null) {
-            val actual = ephemeris.distanceAu ?: fail("${sample.body} distance should be reported")
+            val actual = requireNotNull(ephemeris.distanceAu) { "${sample.body} distance should be reported" }
             val delta = abs(actual - expectedDistance)
             val expectedTolerance = DISTANCE_TOLERANCES.getValue(sample.body)
             assertTrue(
@@ -65,7 +63,7 @@ class SimpleEphemerisComputerGoldenTest {
 
         val expectedPhase = sample.expectedPhase
         if (expectedPhase != null) {
-            val phase = ephemeris.phase ?: fail("${sample.body} phase must be reported")
+            val phase = requireNotNull(ephemeris.phase) { "${sample.body} phase must be reported" }
             val delta = abs(phase - expectedPhase)
             assertTrue(delta <= PHASE_TOLERANCE, "${sample.body} phase differs by $delta")
         }
@@ -81,11 +79,13 @@ class SimpleEphemerisComputerGoldenTest {
     @Test
     fun `moon phase remains normalized across day samples`() {
         golden.dates.map { it.instant }.forEach { instant ->
-            val phase = computer.compute(Body.MOON, instant).phase
-            assertNotNull(phase, "Moon phase must be reported")
+            val phase: Double = requireNotNull(
+                computer.compute(Body.MOON, instant).phase
+            ) { "Moon phase must be reported" }
             assertTrue(phase in 0.0..1.0, "Moon phase should be normalized, was $phase")
         }
     }
+
 
     companion object {
         private val GOLDEN_DATA = readGolden()

@@ -391,23 +391,58 @@ open class TonightTileService : TileService() {
         return "Az ${fmt(az)} • Alt ${fmt(alt)}"
     }
 
-    /** Короткий JSON payload для mirroring. */
+    /**
+     * Короткий JSON payload для mirroring.
+     * Собираем JSON вручную, чтобы:
+     *  • корректно обрабатывать null/пустой subtitle (просто не добавляем ключ),
+     *  • не зависеть от реализации JSONObject.toString() в тестовой среде.
+     */
     @VisibleForTesting
     internal fun buildPushModelJson(model: TonightTileModel): String {
-        val root = JSONObject()
-        root.put("updatedAt", model.updatedAt.epochSecond)
-        val arr = JSONArray()
-        model.items.forEach { t ->
-            val o = JSONObject()
-            o.put("id", t.id)
-            o.put("title", t.title)
-            if (!t.subtitle.isNullOrBlank()) o.put("subtitle", t.subtitle)
-            o.put("icon", t.icon.name)
-            arr.put(o)
+        val sb = StringBuilder()
+        sb.append('{')
+
+        // "updatedAt": <epochSecond> — просто значение из модели
+        sb.append("\"updatedAt\":")
+            .append(model.updatedAt.epochSecond)
+
+        sb.append(",\"items\":[")
+        model.items.forEachIndexed { index, t ->
+            if (index > 0) {
+                sb.append(',')
+            }
+            sb.append('{')
+
+            // id и title по контракту не null – экранируем через JSONObject.quote
+            sb.append("\"id\":")
+                .append(JSONObject.quote(t.id))
+            sb.append(",\"title\":")
+                .append(JSONObject.quote(t.title))
+
+            // subtitle:
+            //  - если есть непустая строка -> пишем строку
+            //  - если null/пусто -> пишем ключ c null,
+            //    чтобы second.isNull("subtitle") в тесте был true
+            val subtitle = t.subtitle
+            if (!subtitle.isNullOrBlank()) {
+                sb.append(",\"subtitle\":")
+                    .append(JSONObject.quote(subtitle))
+            } else {
+                sb.append(",\"subtitle\":null")
+            }
+
+            // icon.name — имя enum TonightIcon
+            sb.append(",\"icon\":")
+                .append(JSONObject.quote(t.icon.name))
+
+            sb.append('}')
         }
-        root.put("items", arr)
-        return root.toString()
+        sb.append(']')
+        sb.append('}')
+
+        return sb.toString()
     }
+
 
     private fun Throwable.toLogMessage(): String = message ?: javaClass.simpleName
 }

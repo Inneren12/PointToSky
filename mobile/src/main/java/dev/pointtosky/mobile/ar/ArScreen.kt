@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -421,6 +421,9 @@ internal fun calculateOverlay(
                 if (horizontal.altDeg < 0.0) return@mapNotNull null
                 val worldVec = horizontalToVector(horizontal)
                 val deviceVec = multiply(worldToDevice, worldVec)
+                // Конвенция, согласованная с RotationFrame и SensorManager:
+                // ось Z устройства направлена "из экрана", а "вперёд" = -Z.
+                // Значит, объекты "перед камерой" имеют deviceVec.z < 0.
                 if (deviceVec[2] >= -0.01f) return@mapNotNull null
                 val ndcX = (deviceVec[0] / -deviceVec[2]) / tanHFov
                 val ndcY = (deviceVec[1] / -deviceVec[2]) / tanVFov
@@ -436,7 +439,7 @@ internal fun calculateOverlay(
                     distance = distance,
                     separationDeg = separation,
                 )
-            }.sortedBy { it.distance }
+            }.sortedBy { it.separationDeg }
             .take(MAX_LABELS)
 
     return OverlayData(

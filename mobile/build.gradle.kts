@@ -148,6 +148,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 
+    testImplementation(kotlin("test"))           // kotlin.test + JUnit binding
+    // если это инструментальные тесты (androidTest):
+    androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
 // AndroidX Test для инструментальных тестов (ServiceScenario и пр.)
     androidTestImplementation("androidx.test:core:1.5.0")
     androidTestImplementation("androidx.test:core-ktx:1.5.0")

@@ -1,6 +1,10 @@
 package dev.pointtosky.core.astro.units
 
+import dev.pointtosky.core.astro.coord.Equatorial
 import kotlin.math.PI
+import kotlin.math.acos
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Factor to convert degrees to radians.
@@ -38,28 +42,33 @@ fun radToDeg(radians: Double): Double = radians * RAD
  * @param degrees Angle in degrees.
  * @return Angle normalized to [0°, 360°).
  */
-fun wrapDeg0To360(degrees: Double): Double = ((degrees % 360.0) + 360.0) % 360.0
+fun wrapDeg0To360(degrees: Double): Double =
+    ((degrees % 360.0) + 360.0) % 360.0
 
-/**
-+ * Alias for readability/backward-compatibility.
-+ * Wraps an angle in degrees to the (-180°, 180°] range.
-+ */
-fun wrapDegMinus180To180(degrees: Double): Double = wrapDegN180To180(degrees)
-
-/**
- * Wraps an angle in degrees to the (-180°, 180°] range.
- *
- * @param degrees Angle in degrees.
- * @return Angle normalized to (-180°, 180°].
- */
-fun wrapDegN180To180(degrees: Double): Double {
-    val wrapped = wrapDeg0To360(degrees)
-    return if (wrapped > 180.0 || (wrapped == 180.0 && degrees < 0.0)) {
-        wrapped - 360.0
-    } else {
-        wrapped
-    }
+/** Нормализует к диапазону (−180°, 180°] (180 включительно, −180 исключён). */
+fun wrapDegMinus180To180(degrees: Double): Double {
+    // базовый wrap в [-180, 180)
+    val y = ((degrees + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+    // переводим -180 в +180 → итог: (−180, 180]
+    return if (y == -180.0) 180.0 else y
 }
+
+/** Кратчайшая дуга по долготе/часовому углу в градусах (для азимута/RA-дельты). */
+fun shortestArcDeg(deltaDeg: Double): Double = wrapDegMinus180To180(deltaDeg)
+
+/** Угловое расстояние между двумя точками на сфере в экваториальных координатах (в градусах). */
+fun angularSeparationEqDeg(a: Equatorial, b: Equatorial): Double {
+    val dRA = Math.toRadians(shortestArcDeg(b.raDeg - a.raDeg))
+    val dec1 = Math.toRadians(a.decDeg)
+    val dec2 = Math.toRadians(b.decDeg)
+    val cosd = sin(dec1) * sin(dec2) + cos(dec1) * cos(dec2) * cos(dRA)
+    val clamped = cosd.coerceIn(-1.0, 1.0)
+    return Math.toDegrees(acos(clamped))
+}
+
+/** Кратчайшая дуга по азимуту в градусах (в диапазоне (−180, 180]). */
+fun deltaAzimuthShortestDeg(currentAzDeg: Double, targetAzDeg: Double): Double =
+    wrapDegMinus180To180(targetAzDeg - currentAzDeg)
 
 /**
  * Clamps a value to the [min, max] range.

@@ -2,6 +2,7 @@ package dev.pointtosky.core.astro.aim
 
 import dev.pointtosky.core.astro.coord.Horizontal
 import kotlin.math.abs
+import dev.pointtosky.core.astro.units.wrapDegMinus180To180
 
 data class AimError(
     val dAzDeg: Double,
@@ -15,8 +16,7 @@ data class AimTolerance(
 )
 
 fun aimError(current: Horizontal, target: Horizontal, tol: AimTolerance): AimError {
-    val rawAzDiff = target.azDeg - current.azDeg
-    val wrappedAzDiff = normalizeAzimuthDelta(rawAzDiff)
+    val wrappedAzDiff = wrapDegMinus180To180(target.azDeg - current.azDeg)
     val altDiff = target.altDeg - current.altDeg
 
     val inTolerance = abs(wrappedAzDiff) <= tol.azimuthDeg && abs(altDiff) <= tol.altitudeDeg
@@ -26,14 +26,4 @@ fun aimError(current: Horizontal, target: Horizontal, tol: AimTolerance): AimErr
         dAltDeg = altDiff,
         inTolerance = inTolerance,
     )
-}
-
-private fun normalizeAzimuthDelta(deltaDeg: Double): Double {
-    var normalized = deltaDeg % 360.0
-    if (normalized < -180.0) {
-        normalized += 360.0
-    } else if (normalized > 180.0) {
-        normalized -= 360.0
-    }
-    return normalized
 }

@@ -8,8 +8,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.util.Locale
+import android.os.Build
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [Build.VERSION_CODES.O]) // нужна версия SDK, где есть Configuration.getLocales()
 class AimStatusFormatterTest {
     private lateinit var context: Context
     private lateinit var formatter: AimStatusFormatter

@@ -3,7 +3,7 @@ package dev.pointtosky.core.astro.ephem
 import dev.pointtosky.core.astro.coord.Equatorial
 import java.time.Instant
 
-internal data class GoldenSample(
+data class GoldenSample(
     val body: Body,
     val instant: Instant,
     val expected: Equatorial,

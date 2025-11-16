@@ -232,6 +232,10 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.androidx.datastore.preferences)
+
+    androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
+    androidTestImplementation("androidx.test:rules:1.6.1")
 }
 
 licenseReport {
