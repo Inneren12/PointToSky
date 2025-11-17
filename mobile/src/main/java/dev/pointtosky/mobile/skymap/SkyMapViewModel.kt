@@ -1,6 +1,7 @@
 package dev.pointtosky.mobile.skymap
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -13,6 +14,7 @@ import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +22,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,6 +31,7 @@ import java.util.Locale
 class SkyMapViewModel(
     private val catalogRepository: CatalogRepository,
     private val locationPrefs: LocationPrefs,
+    private val deviceLocationRepository: DeviceLocationRepository,
     context: Context,
     private val timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1_000L),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -39,17 +41,35 @@ class SkyMapViewModel(
     private val staticData = MutableStateFlow<StaticSkyData?>(null)
 
     private val locationSnapshot: StateFlow<LocationSnapshot> =
-        locationPrefs.manualPointFlow
-            .map { manual ->
-                if (manual != null) {
-                    LocationSnapshot(point = manual, resolved = true)
-                } else {
-                    LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
+        combine(
+            deviceLocationRepository.deviceLocationFlow,
+            locationPrefs.manualPointFlow,
+        ) { device, manual ->
+            val snapshot =
+                when {
+                    manual != null ->
+                        LocationSnapshot(
+                            point = manual,
+                            resolved = true,
+                            source = LocationSource.MANUAL,
+                        )
+                    device != null ->
+                        LocationSnapshot(
+                            point = device,
+                            resolved = true,
+                            source = LocationSource.DEVICE,
+                        )
+                    else -> LocationSnapshot(DEFAULT_LOCATION, resolved = false, source = LocationSource.DEFAULT)
                 }
-            }.stateIn(
+            Log.d(
+                LOCATION_LOG_TAG,
+                "Using manual=${manual != null}, device=${device != null}, resolved=${snapshot.resolved}, source=${snapshot.source}",
+            )
+            snapshot
+        }.stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.Eagerly,
-                initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
+                initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false, source = LocationSource.DEFAULT),
             )
 
     val state: StateFlow<SkyMapState> =
@@ -126,6 +146,7 @@ class SkyMapViewModel(
             instant = instant,
             location = location.point,
             locationResolved = location.resolved,
+            locationSource = location.source,
             stars = projectedStars,
             constellations = projectedConstellations,
         )
@@ -139,7 +160,14 @@ class SkyMapViewModel(
     private data class LocationSnapshot(
         val point: GeoPoint,
         val resolved: Boolean,
+        val source: LocationSource,
     )
+
+    enum class LocationSource {
+        MANUAL,
+        DEVICE,
+        DEFAULT,
+    }
 
     private data class SkyStar(
         val id: Int,
@@ -153,6 +181,7 @@ class SkyMapViewModel(
     companion object {
         private const val STAR_MAG_LIMIT = 4.2
         private val DEFAULT_LOCATION = GeoPoint(latDeg = 0.0, lonDeg = 0.0)
+        private const val LOCATION_LOG_TAG = "SkyMapLocation"
     }
 }
 
@@ -163,6 +192,7 @@ sealed interface SkyMapState {
         val instant: Instant,
         val location: GeoPoint,
         val locationResolved: Boolean,
+        val locationSource: SkyMapViewModel.LocationSource,
         val stars: List<ProjectedStar>,
         val constellations: List<ConstellationProjection>,
     ) : SkyMapState
@@ -203,12 +233,13 @@ private fun starLabel(star: Star): String? {
 class SkyMapViewModelFactory(
     private val catalogRepository: CatalogRepository,
     private val locationPrefs: LocationPrefs,
+    private val deviceLocationRepository: DeviceLocationRepository,
     private val context: Context,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SkyMapViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return SkyMapViewModel(catalogRepository, locationPrefs, context) as T
+            return SkyMapViewModel(catalogRepository, locationPrefs, deviceLocationRepository, context) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class ${'$'}modelClass")
     }

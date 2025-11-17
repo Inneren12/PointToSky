@@ -206,6 +206,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:18.1.0")
 
     implementation(libs.play.services.wearable)
+    implementation(libs.play.services.location)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)

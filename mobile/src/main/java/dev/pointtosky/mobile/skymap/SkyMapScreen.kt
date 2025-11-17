@@ -53,6 +53,7 @@ import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -71,12 +72,14 @@ fun SkyMapRoute(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val deviceLocationRepository = remember { DeviceLocationRepository(context.applicationContext) }
     val viewModel: SkyMapViewModel =
         viewModel(
             factory =
                 SkyMapViewModelFactory(
                     catalogRepository = catalogRepository,
                     locationPrefs = locationPrefs,
+                    deviceLocationRepository = deviceLocationRepository,
                     context = context.applicationContext,
                 ),
         )
@@ -227,10 +230,12 @@ private fun SkyMapContent(
                     val latText = formatCoordinate(state.location.latDeg, isLat = true)
                     val lonText = formatCoordinate(state.location.lonDeg, isLat = false)
                     val resolvedText =
-                        if (state.locationResolved) {
-                            stringResource(id = R.string.sky_map_location_manual)
-                        } else {
-                            stringResource(id = R.string.sky_map_location_default)
+                        when {
+                            state.locationResolved && state.locationSource == SkyMapViewModel.LocationSource.MANUAL ->
+                                stringResource(id = R.string.sky_map_location_manual)
+                            state.locationResolved && state.locationSource == SkyMapViewModel.LocationSource.DEVICE ->
+                                stringResource(id = R.string.sky_map_location_device)
+                            else -> stringResource(id = R.string.sky_map_location_default)
                         }
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(text = stringResource(id = R.string.sky_map_timestamp, timeText))
