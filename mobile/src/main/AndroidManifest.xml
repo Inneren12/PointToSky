@@ -3,6 +3,12 @@
 
     <!-- Минимально необходимая локация: COARSE достаточно для онбординга/функций приложения -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- НУЖНО: доступ к камере -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
     <application
         android:name=".PointToSkyMobileApp"

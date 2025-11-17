@@ -44,7 +44,7 @@ class AngleUnitsTest {
         assertEquals(-179.0, wrapDegMinus180To180(-179.0))
         assertEquals(-1.0, wrapDegMinus180To180(359.0))
         assertEquals(1.0, wrapDegMinus180To180(721.0))
-        assertEquals(-179.0, wrapDegMinus180To180(-181.0))
+        assertEquals(179.0, wrapDegMinus180To180(-181.0))
     }
 
     @Test

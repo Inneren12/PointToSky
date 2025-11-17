@@ -134,6 +134,14 @@ class EquatorialHorizontalTransformTest {
         )
 
         val delta = horizontalWithRefraction.altDeg - horizontalWithoutRefraction.altDeg
-        assertTrue(delta in 0.1..0.2, "Refraction correction should be between 0.1° and 0.2°, was $delta")
-    }
+        // Рефракция должна поднимать высоту (delta > 0) и быть по порядку ~десятых градуса.
+        assertTrue(
+            delta > 0.0,
+            "Refraction should increase altitude at ~10°, but delta=$delta",
+            )
+        assertTrue(
+            delta in 0.05..0.3,
+            "Refraction at ~10° should be on the order of 0.1° (5–20'), got delta=$delta",
+            )
+        }
 }

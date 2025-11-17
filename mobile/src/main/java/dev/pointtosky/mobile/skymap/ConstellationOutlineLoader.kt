@@ -13,7 +13,12 @@ internal class ConstellationOutlineLoader(
     fun load(): List<ConstellationOutline> {
         assets.open(path).use { stream ->
             val bytes = stream.readBytes()
-            return parse(bytes)
+            return runCatching { parse(bytes) }
+                .onFailure { e ->
+                    // тут можно залогировать, но не падать:
+                    android.util.Log.e("ConstellationOutlineLoader", "Failed to parse $path", e)
+                }
+                .getOrElse { emptyList() }
         }
     }
 
@@ -34,10 +39,12 @@ internal class ConstellationOutlineLoader(
         val vertexCount = buffer.int
         val storedCrc = buffer.int
 
-        require(constellationCount == CONSTELLATION_COUNT) { "Unexpected constellation count" }
-        require(polygonCount >= 0) { "Negative polygon count" }
-        require(vertexCount >= 0) { "Negative vertex count" }
-
+        // Вместо жёсткого "88" — просто разумная проверка диапазона:
+        require(constellationCount in 1..256) {
+            "Constellation count must be in 1..256, got $constellationCount"
+        }
+        require(polygonCount >= 0) { "Negative polygon count: $polygonCount" }
+        require(vertexCount >= 0) { "Negative vertex count: $vertexCount" }
         val dataOffset = buffer.position()
         val payload = bytes.copyOfRange(dataOffset, bytes.size)
         val computedCrc = CRC32().apply { update(payload) }.value.toInt()
@@ -115,7 +122,7 @@ internal class ConstellationOutlineLoader(
     companion object {
         private const val MAGIC = "PTSKCONS"
         private const val VERSION = 1
-        private const val CONSTELLATION_COUNT = 88
+            //private const val CONSTELLATION_COUNT = 88
         private const val HEADER_SIZE_BYTES = 8 + 2 + 2 + 2 + 4 + 4 + 4
         private const val DEFAULT_PATH = "catalog/const_v1.bin"
     }

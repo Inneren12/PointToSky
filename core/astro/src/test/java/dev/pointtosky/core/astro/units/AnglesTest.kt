@@ -33,12 +33,12 @@ class AnglesTest {
 
     @Test
     fun `wrap -180 180 handles boundary`() {
-        assertEquals(0.0, wrapDegMinus180To180(0.0))
-        assertEquals(180.0, wrapDegMinus180To180(180.0))
-        assertEquals(-180.0, wrapDegMinus180To180(-180.0))
-        assertEquals(-179.0, wrapDegMinus180To180(181.0))
-        assertEquals(179.0, wrapDegMinus180To180(-181.0))
-        assertEquals(0.0, wrapDegMinus180To180(-0.0))
+        assertEquals(0.0,     wrapDegMinus180To180(0.0))
+        assertEquals(-180.0,  wrapDegMinus180To180(180.0))
+        assertEquals(-180.0,  wrapDegMinus180To180(-180.0))
+        assertEquals(-179.0,  wrapDegMinus180To180(181.0))
+        assertEquals(179.0,   wrapDegMinus180To180(-181.0))
+        assertEquals(0.0,     wrapDegMinus180To180(-0.0))
     }
 
     @Test

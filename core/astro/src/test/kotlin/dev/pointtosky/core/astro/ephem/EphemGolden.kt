@@ -42,6 +42,7 @@ private fun goldenResourceStream(): InputStream {
 
 private fun goldenOutputPath(): Path = Paths.get("src", "test", "resources", GOLDEN_RESOURCE)
 
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 internal data class EphemGolden(val dates: List<GoldenDate>) {
     fun toSamples(): List<GoldenSample> = dates.flatMap { date ->
         listOf(

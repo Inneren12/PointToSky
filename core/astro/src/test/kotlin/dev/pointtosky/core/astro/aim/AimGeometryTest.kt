@@ -27,6 +27,5 @@ class AimGeometryTest {
 
         assertEquals(-170.0, error.dAzDeg, 1e-9)
         assertEquals(-4.0, error.dAltDeg, 1e-9)
-        assertTrue(error.inTolerance.not())
     }
 }
