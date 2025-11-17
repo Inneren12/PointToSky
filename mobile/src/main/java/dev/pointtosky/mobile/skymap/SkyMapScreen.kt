@@ -24,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +50,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toIntSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.prefs.LocationPrefs
@@ -73,6 +77,19 @@ fun SkyMapRoute(
 ) {
     val context = LocalContext.current
     val deviceLocationRepository = remember { DeviceLocationRepository(context.applicationContext) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, deviceLocationRepository) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    deviceLocationRepository.onPermissionChanged()
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val viewModel: SkyMapViewModel =
         viewModel(
             factory =
