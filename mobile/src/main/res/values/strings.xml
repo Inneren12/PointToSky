@@ -125,6 +125,8 @@
     <string name="ar_set_target_button">Set %1$s as watch target</string>
     <string name="ar_label_meta">mag %1$.1f • Δ%2$.1f°</string>
     <string name="ar_unknown_object">Unknown object</string>
+    <string name="ar_show_constellations">Show constellations</string>
+    <string name="ar_show_asterisms">Show asterisms</string>
     <string name="settings_title">Settings</string>
     <string name="settings_mirror_title">Mirror to phone</string>
     <string name="settings_mirror_desc">Show Tonight tile data on the phone.</string>
