@@ -42,26 +42,24 @@ class DeviceLocationRepository(
 
     val deviceLocationFlow =
         permissionState
-            .distinctUntilChanged()
             .map { granted ->
                 Log.d(TAG, "Location permission changed: $granted")
                 granted
             }
             .flatMapLatest { granted ->
                 if (!granted) {
-                    flowOf(null)
+                    flowOf<GeoPoint?>(null)
                 } else {
-                    callbackFlow {
-                        fusedLocationProviderClient
-                            .lastLocation
-                            .addOnSuccessListener { location ->
-                                location?.let {
-                                    val point = GeoPoint(it.latitude, it.longitude)
-                                    Log.d(TAG, "Emitting last known location: $point")
-                                    trySend(point)
-                                }
-                            }
+                    callbackFlow<GeoPoint?> {
+                        // Дополнительный рантайм-чек в том же месте, где вызываем FusedLocationProvider
+                        if (!hasLocationPermission()) {
+                            Log.w(TAG, "Location permission missing in callbackFlow; emitting null")
+                            trySend(null)
+                            close()
+                            return@callbackFlow
+                        }
 
+                        // Сначала регистрируем callback
                         val callback =
                             object : LocationCallback() {
                                 override fun onLocationResult(result: LocationResult) {
@@ -74,13 +72,33 @@ class DeviceLocationRepository(
                                 }
                             }
 
-                        fusedLocationProviderClient.requestLocationUpdates(
-                            locationRequest,
-                            callback,
-                            Looper.getMainLooper(),
-                        )
+                        try {
+                            // lastLocation тоже требует permission, держим под тем же try/catch
+                            fusedLocationProviderClient
+                                .lastLocation
+                                .addOnSuccessListener { location ->
+                                    location?.let {
+                                        val point = GeoPoint(it.latitude, it.longitude)
+                                        Log.d(TAG, "Emitting last known location: $point")
+                                        trySend(point)
+                                    }
+                                }
 
-                        awaitClose { fusedLocationProviderClient.removeLocationUpdates(callback) }
+                            fusedLocationProviderClient.requestLocationUpdates(
+                                locationRequest,
+                                callback,
+                                Looper.getMainLooper(),
+                            )
+                        } catch (se: SecurityException) {
+                            Log.e(TAG, "SecurityException while requesting location updates", se)
+                            trySend(null)
+                            close(se)
+                            return@callbackFlow
+                        }
+
+                        awaitClose {
+                            fusedLocationProviderClient.removeLocationUpdates(callback)
+                        }
                     }
                 }
             }
