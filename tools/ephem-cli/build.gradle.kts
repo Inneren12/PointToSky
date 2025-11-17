@@ -9,6 +9,6 @@ application {
 }
 
 dependencies {
-    implementation(project(":core:astro"))
+    implementation(project(":core:astro-core"))
     implementation(kotlin("stdlib"))
 }

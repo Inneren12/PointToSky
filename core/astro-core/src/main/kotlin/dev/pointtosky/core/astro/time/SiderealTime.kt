@@ -2,7 +2,6 @@ package dev.pointtosky.core.astro.time
 
 import dev.pointtosky.core.astro.coord.Sidereal
 import dev.pointtosky.core.astro.units.wrapDeg0To360
-import dev.pointtosky.core.time.instantToJulianDay
 import java.time.Instant
 
 private const val JULIAN_DAY_AT_J2000 = 2_451_545.0

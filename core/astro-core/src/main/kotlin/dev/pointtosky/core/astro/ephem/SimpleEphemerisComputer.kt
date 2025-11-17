@@ -4,7 +4,7 @@ import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.units.degToRad
 import dev.pointtosky.core.astro.units.radToDeg
 import dev.pointtosky.core.astro.units.wrapDeg0To360
-import dev.pointtosky.core.time.instantToJulianDay
+import dev.pointtosky.core.astro.time.instantToJulianDay
 import java.time.Instant
 import kotlin.math.abs
 import kotlin.math.atan2
