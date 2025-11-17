@@ -1,6 +1,6 @@
 package dev.pointtosky.core.astro.time
 
-import dev.pointtosky.core.time.instantToJulianDay
+import dev.pointtosky.core.astro.time.instantToJulianDay
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -34,6 +34,7 @@ include(
   ":core:common",
   ":core:logging",
   ":core:location",
+  ":core:astro-core",
   ":core:astro",
   ":core:time",
   ":tools:ephem-cli",
