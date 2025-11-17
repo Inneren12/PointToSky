@@ -391,6 +391,8 @@ open class TonightTileService : TileService() {
         return "Az ${fmt(az)} • Alt ${fmt(alt)}"
     }
 
+
+
     /**
      * Короткий JSON payload для mirroring.
      * Формат:
@@ -402,15 +404,19 @@ open class TonightTileService : TileService() {
      *   ]
      * }
      */
+
     @VisibleForTesting
     internal fun buildPushModelJson(model: TonightTileModel): String {
         val sb = StringBuilder()
+
+        // Открываем корневой объект
         sb.append('{')
 
-        // "updatedAt": <epochSecond> — просто значение из модели
+        // "updatedAt": <epochSecond>
         sb.append("\"updatedAt\":")
-            .append(model.updatedAt.epochSecond)
+        sb.append(model.updatedAt.epochSecond)
 
+        // "items": [...]
         sb.append(",\"items\":[")
         model.items.forEachIndexed { index, t ->
             if (index > 0) {
@@ -418,28 +424,34 @@ open class TonightTileService : TileService() {
             }
             sb.append('{')
 
-            // id и title считаем обязательными — экранируем как строки
-            sb.append("\"id\":")
-                .append(JSONObject.quote(t.id))
-            sb.append(",\"title\":")
-                .append(JSONObject.quote(t.title))
+            // id — пишем как строку, без всяких JSON-утилит
+            sb.append("\"id\":\"")
+            sb.append(t.id)
+            sb.append('"')
 
-            // subtitle:
-            //  - если непустая строка -> пишем строку
-            //  - если null/пусто -> ключ не пишем вообще
+            // title — тоже как строку
+            sb.append(",\"title\":\"")
+            sb.append(t.title)
+            sb.append('"')
+
+            // subtitle — только если не null/пустой
             val subtitle = t.subtitle
             if (!subtitle.isNullOrBlank()) {
-                sb.append(",\"subtitle\":")
-                    .append(JSONObject.quote(subtitle))
+                sb.append(",\"subtitle\":\"")
+                sb.append(subtitle)
+                sb.append('"')
             }
 
-            // icon — имя enum TonightIcon
-            sb.append(",\"icon\":")
-                .append(JSONObject.quote(t.icon.name))
+            // icon — имя enum'а
+            sb.append(",\"icon\":\"")
+            sb.append(t.icon.name)
+            sb.append('"')
 
             sb.append('}')
         }
         sb.append(']')
+
+        // закрываем корневой объект
         sb.append('}')
 
         return sb.toString()

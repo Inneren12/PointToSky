@@ -34,6 +34,13 @@ class TonightTileServiceJsonTest {
                     ),
             )
 
+        println("DEBUG_MODEL: updatedAt=${model.updatedAt.epochSecond}")
+        model.items.forEachIndexed { idx, t ->
+            println(
+                "DEBUG_ITEM_$idx: id=${t.id} title=${t.title} subtitle=${t.subtitle} icon=${t.icon}"
+            )
+        }
+
         val json = service.buildPushModelJson(model)
         println("DEBUG_JSON: $json")
 

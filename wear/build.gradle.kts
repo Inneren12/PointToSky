@@ -194,6 +194,7 @@ dependencies {
     // DataStore для кэша
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation(project(":core:common"))
+    implementation(project(":core:astro-core"))
 
     // Тесты
     testImplementation("junit:junit:4.13.2")
