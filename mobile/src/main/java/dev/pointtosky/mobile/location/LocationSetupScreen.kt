@@ -262,6 +262,14 @@ private fun ManualSection(
             )
         }
 
+        if (!manualEnabled) {
+            Text(
+                text = stringResource(id = R.string.location_setup_device_fallback_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+
         if (manualEnabled) {
             Text(
                 text = stringResource(id = R.string.location_setup_manual_hint),

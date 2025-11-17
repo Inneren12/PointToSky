@@ -41,6 +41,7 @@
     <string name="sky_map_timestamp">Time: %1$s</string>
     <string name="sky_map_location_label">Coordinates: %1$s • %2$s</string>
     <string name="sky_map_location_manual">Manual entry</string>
+    <string name="sky_map_location_device">Device location</string>
     <string name="sky_map_location_default">Location not set</string>
     <string name="sky_map_unnamed_star">Unnamed star</string>
     <string name="sky_map_constellation">Constellation: %1$s</string>
@@ -52,6 +53,7 @@
     <string name="location_setup_open_settings">Open settings</string>
     <string name="location_setup_permission_granted">Location permission is already granted.</string>
     <string name="location_setup_manual_toggle">Use manual coordinates</string>
+    <string name="location_setup_device_fallback_hint">When manual coordinates are off, Sky map uses device location if available.</string>
     <string name="location_setup_manual_hint">Enter decimal coordinates, e.g. 55.7558 / 37.6176</string>
     <string name="location_setup_lat_label">Latitude</string>
     <string name="location_setup_lat_hint">Example: 55.7558</string>
