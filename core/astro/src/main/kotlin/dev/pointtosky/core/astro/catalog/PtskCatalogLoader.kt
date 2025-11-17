@@ -71,6 +71,7 @@ private class AstroCatalogImpl(
     private val overlays: List<ArtOverlay>,
 ) : AstroCatalog {
     private val constellationById = constellations.associateBy { it.id }
+    private val starsById: Map<Int, StarRecord> = stars.associateBy { it.id.raw }
     private val starsByConstellation = stars.groupBy { it.constellationId }
     private val asterismsByConstellation = asterisms.groupBy { it.constellationId }
     private val overlaysByConstellation = overlays.groupBy { it.constellationId }
@@ -79,6 +80,8 @@ private class AstroCatalogImpl(
         constellationById[id] ?: error("Unknown constellation id: ${id.index}")
 
     override fun allStars(): List<StarRecord> = stars
+
+    override fun starById(raw: Int): StarRecord? = starsById[raw]
 
     override fun starsByConstellation(id: ConstellationId): List<StarRecord> =
         starsByConstellation[id].orEmpty()

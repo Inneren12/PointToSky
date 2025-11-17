@@ -23,6 +23,9 @@ class PtskCatalogLoaderTest {
         assertEquals("Orion", orion.name)
         assertEquals("Lyra", lyra.name)
         assertEquals(5, catalog.starsByConstellation(ConstellationId(0)).size)
+
+        val betelgeuse = assertNotNull(catalog.starById(1))
+        assertEquals("Betelgeuse", betelgeuse.name)
     }
 
     @Test
