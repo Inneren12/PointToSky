@@ -49,6 +49,15 @@ class ArOverlayScenarioTest {
                 locationResolved = true,
                 lstDeg = lstDeg,
                 stars = listOf(target, farTarget),
+                catalog = null,
+                showConstellations = false,
+                showAsterisms = false,
+                asterismUiState =
+                    AsterismUiState(
+                        isEnabled = false,
+                        highlighted = null,
+                        available = emptyList(),
+                    ),
                 )
 
         // Направление "вперёд" в мировых координатах (как в реальном коде)
@@ -62,7 +71,13 @@ class ArOverlayScenarioTest {
             timestampNanos = 0L,
             )
 
-        val overlay = calculateOverlay(state, frame, IntSize(1080, 1080))
+        val overlay =
+            calculateOverlay(
+                state = state,
+                frame = frame,
+                viewport = IntSize(1080, 1080),
+                resolveConstellation = { null },
+            )
 
         val result = assertNotNull(overlay)
         // forwardWorld хранится как FloatArray и дальше гоняется через тригонометрию,
@@ -80,6 +95,9 @@ class ArOverlayScenarioTest {
         assertEquals(2, result.labels.size)
         assertEquals("Far", result.labels[1].title)
         assertTrue(nearest.separationDeg < 0.01)
+        assertTrue(result.constellationSegments.isEmpty())
+        assertTrue(result.asterismSegments.isEmpty())
+        assertTrue(result.artOverlays.isEmpty())
     }
 
     /**
