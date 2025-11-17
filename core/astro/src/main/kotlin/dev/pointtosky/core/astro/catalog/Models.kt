@@ -62,6 +62,11 @@ interface AstroCatalog {
 
     fun allStars(): List<StarRecord>
 
+    /**
+     * Быстрый доступ к звёздам по исходному идентификатору без пересборки карт.
+     */
+    fun starById(raw: Int): StarRecord?
+
     fun starsByConstellation(id: ConstellationId): List<StarRecord>
 
     fun asterismsByConstellation(id: ConstellationId): List<Asterism>
