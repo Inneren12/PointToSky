@@ -404,28 +404,46 @@ open class TonightTileService : TileService() {
      */
     @VisibleForTesting
     internal fun buildPushModelJson(model: TonightTileModel): String {
-        val root = JSONObject()
-        root.put("updatedAt", model.updatedAt.epochSecond)
+        val sb = StringBuilder()
+        sb.append('{')
 
-        val items = JSONArray()
-        model.items.forEach { t ->
-            val item =
-                JSONObject()
-                    .put("id", t.id)
-                    .put("title", t.title)
-                    .put(
-                        "subtitle",
-                        if (!t.subtitle.isNullOrBlank()) t.subtitle else JSONObject.NULL,
-                    )
-                    .put("icon", t.icon.name)
+        // "updatedAt": <epochSecond> — просто значение из модели
+        sb.append("\"updatedAt\":")
+            .append(model.updatedAt.epochSecond)
 
-            items.put(item)
+        sb.append(",\"items\":[")
+        model.items.forEachIndexed { index, t ->
+            if (index > 0) {
+                sb.append(',')
+            }
+            sb.append('{')
+
+            // id и title считаем обязательными — экранируем как строки
+            sb.append("\"id\":")
+                .append(JSONObject.quote(t.id))
+            sb.append(",\"title\":")
+                .append(JSONObject.quote(t.title))
+
+            // subtitle:
+            //  - если непустая строка -> пишем строку
+            //  - если null/пусто -> ключ не пишем вообще
+            val subtitle = t.subtitle
+            if (!subtitle.isNullOrBlank()) {
+                sb.append(",\"subtitle\":")
+                    .append(JSONObject.quote(subtitle))
+            }
+
+            // icon — имя enum TonightIcon
+            sb.append(",\"icon\":")
+                .append(JSONObject.quote(t.icon.name))
+
+            sb.append('}')
         }
+        sb.append(']')
+        sb.append('}')
 
-        root.put("items", items)
-        return root.toString()
+        return sb.toString()
     }
-
 
     private fun Throwable.toLogMessage(): String = message ?: javaClass.simpleName
 }
