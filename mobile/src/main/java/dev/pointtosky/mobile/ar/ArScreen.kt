@@ -800,4 +800,4 @@ private fun formatAngle(
 private const val HORIZONTAL_FOV_DEG = 60.0
 private const val VERTICAL_FOV_DEG = 45.0
 private const val MAX_SCREEN_DISTANCE = 1.2
-private const val MAX_LABELS = 5
+private const val MAX_LABELS = 100

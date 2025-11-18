@@ -155,10 +155,11 @@ internal class PtskCatalogParser {
         val constSection = requireSection("CST0", 16)
         val constellations = parseConstellations(buffer, constSection, strings)
 
-        val starSection = requireSection("STAR", 28)
+        // STAR-запись: id(4) + ra(4) + dec(4) + mag(4) + const(2) + flags(2) + nameId(4) = 24 байта
+        val starSection = requireSection("STAR", 24)
         val starsBin = parseStars(buffer, starSection)
 
-        val asterSection = requireSection("ASTR", 24)
+        val asterSection = requireSection("ASTR", 20)
         val polySection = requireSection("APLY", 12)
         val nodeSection = requireSection("ASTN", 4)
         val asterisms = parseAsterisms(buffer, asterSection, polySection, nodeSection, strings)

@@ -43,7 +43,7 @@ class IdentifySolver(
     private val brightnessReferenceMag: Double = 6.5
     private val brightnessWeight: Double = 0.5
 
-    fun findBest(center: Equatorial, searchRadiusDeg: Double = 5.0, magLimit: Double = 5.5): SkyObjectOrConstellation {
+    fun findBest(center: Equatorial, searchRadiusDeg: Double = 5.0, magLimit: Double? = 5.5): SkyObjectOrConstellation {
         val candidates = catalog.nearby(center, searchRadiusDeg, magLimit)
         val bestObject = candidates.minByOrNull { candidate ->
             val separation = angularSeparationDeg(center, candidate.eq)

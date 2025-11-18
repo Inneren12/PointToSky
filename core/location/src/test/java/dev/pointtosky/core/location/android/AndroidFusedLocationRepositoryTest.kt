@@ -127,7 +127,7 @@ class AndroidFusedLocationRepositoryTest {
         repo.fixes.first()
     }
 
-    private class FakeFusedClientDelegate : AndroidFusedLocationRepository.FusedClientDelegate {
+    privateclass FakeFusedClientDelegate : AndroidFusedLocationRepository.FusedClientDelegate {
         private val updates = MutableSharedFlow<LocationFixHolder>()
         var lastLocation: Location? = null
 

@@ -15,7 +15,7 @@ class BinaryStarCatalogLoadFallbackTest {
     fun `invalid header returns provided fallback`() {
         val provider = ByteArrayAssetProvider(mapOf(BinaryStarCatalog.DEFAULT_PATH to ByteArray(0)))
         val sentinel = object : StarCatalog {
-            override fun nearby(center: Equatorial, radiusDeg: Double, magLimit: Double?): List<Star> = emptyList()
+            override fun nearby(center: Equatorial, radiusDeg: Double, magLimit: Int): List<Star> = emptyList()
         }
         val loaded = BinaryStarCatalog.load(provider, fallback = sentinel)
         assertSame(sentinel, loaded)

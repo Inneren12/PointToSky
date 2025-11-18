@@ -1,48 +1,5 @@
 package dev.pointtosky.mobile.ar
 
-import dev.pointtosky.core.astro.catalog.Asterism
-import dev.pointtosky.core.astro.catalog.AsterismPoly
-import dev.pointtosky.core.astro.catalog.AstroCatalog
-import dev.pointtosky.core.astro.catalog.StarRecord
-
-/**
- * Собирает отрезки для отображения астризмов без дополнительных аллокаций карт на каждый кадр.
- * Ожидается, что [AstroCatalog.starById] использует уже подготовленный кеш звёзд по id.
- */
-internal fun buildAsterismSegments(
-    asterism: Asterism,
-    catalog: AstroCatalog,
-): List<StarLineSegment> {
-    val capacity = asterism.polylines.sumOf { (it.nodes.size - 1).coerceAtLeast(0) }
-    if (capacity == 0) return emptyList()
-
-    val segments = ArrayList<StarLineSegment>(capacity)
-    asterism.polylines.forEach { polyline ->
-        appendSegments(polyline, catalog, segments)
-    }
-    return segments
-}
-
-private fun appendSegments(
-    polyline: AsterismPoly,
-    catalog: AstroCatalog,
-    out: MutableList<StarLineSegment>,
-) {
-    if (polyline.nodes.size <= 1) return
-
-    var previous = catalog.starById(polyline.nodes.first().raw) ?: return
-    for (index in 1 until polyline.nodes.size) {
-        val next = catalog.starById(polyline.nodes[index].raw) ?: continue
-        out += StarLineSegment(start = previous, end = next, style = polyline.style)
-        previous = next
-    }
-}
-
-internal data class StarLineSegment(
-    val start: StarRecord,
-    val end: StarRecord,
-    val style: Int,
-)
 import androidx.compose.ui.geometry.Offset
 import dev.pointtosky.core.astro.catalog.Asterism
 import dev.pointtosky.core.astro.catalog.AsterismPoly
@@ -66,9 +23,14 @@ data class AsterismUiState(
     val available: List<AsterismSummary>,
 )
 
+/**
+ * Линия между двумя звёздами. [style] позволяет кодировать стиль (толщина/тип),
+ * но имеет значение по умолчанию, чтобы не ломать существующие вызовы.
+ */
 data class StarLineSegment(
     val start: StarRecord,
     val end: StarRecord,
+    val style: Int = 0,
 )
 
 data class AstroCatalogState(
@@ -96,6 +58,9 @@ data class ConstellationArtOverlay(
     val anchorB: Offset,
 )
 
+/**
+ * Собирает отрезки для отображения "скелета" созвездий.
+ */
 internal fun buildConstellationSkeletonLines(stars: List<StarRecord>): List<StarLineSegment> {
     val grouped =
         stars
@@ -108,29 +73,50 @@ internal fun buildConstellationSkeletonLines(stars: List<StarRecord>): List<Star
     }
 }
 
-internal fun buildAsterismSegments(asterism: Asterism, catalog: AstroCatalog): List<StarLineSegment> {
-    val starMap = catalog.allStars().associateBy { it.id.raw }
-    return asterism.polylines.flatMap { poly -> buildSegmentsForPolyline(poly, starMap) }
+/**
+ * Собирает отрезки для отображения астризмов с минимальными аллокациями.
+ * Ожидается, что [AstroCatalog.starById] использует уже подготовленный кеш звёзд по id.
+ */
+internal fun buildAsterismSegments(
+    asterism: Asterism,
+    catalog: AstroCatalog,
+): List<StarLineSegment> {
+    val capacity = asterism.polylines.sumOf { (it.nodes.size - 1).coerceAtLeast(0) }
+    if (capacity == 0) return emptyList()
+
+    val segments = ArrayList<StarLineSegment>(capacity)
+    asterism.polylines.forEach { polyline ->
+        appendSegments(polyline, catalog, segments)
+    }
+    return segments
 }
 
-private fun buildSegmentsForPolyline(
-    poly: AsterismPoly,
-    starMap: Map<Int, StarRecord>,
-): List<StarLineSegment> {
-    val nodes = poly.nodes.mapNotNull { starMap[it.raw] }
-    if (nodes.size < 2) return emptyList()
-    return nodes.zipWithNext().map { (start, end) -> StarLineSegment(start, end) }
+private fun appendSegments(
+    polyline: AsterismPoly,
+    catalog: AstroCatalog,
+    out: MutableList<StarLineSegment>,
+) {
+    if (polyline.nodes.size <= 1) return
+
+    // starById — быстрый доступ по id; если нет звезды, полилиния обрывается/пропускается.
+    var previous = catalog.starById(polyline.nodes.first().raw) ?: return
+    for (index in 1 until polyline.nodes.size) {
+        val next = catalog.starById(polyline.nodes[index].raw) ?: continue
+        out += StarLineSegment(start = previous, end = next, style = polyline.style)
+        previous = next
+    }
 }
 
 class ConstellationArtRenderer {
     fun render(
         overlays: List<ArtOverlay>,
         projectStar: (StarId) -> Offset?,
-    ): List<ConstellationArtOverlay> = overlays.mapNotNull { overlay ->
-        val anchorA = projectStar(overlay.anchorStarA) ?: return@mapNotNull null
-        val anchorB = projectStar(overlay.anchorStarB) ?: return@mapNotNull null
-        ConstellationArtOverlay(key = overlay.artKey, anchorA = anchorA, anchorB = anchorB)
-    }
+    ): List<ConstellationArtOverlay> =
+        overlays.mapNotNull { overlay ->
+            val anchorA = projectStar(overlay.anchorStarA) ?: return@mapNotNull null
+            val anchorB = projectStar(overlay.anchorStarB) ?: return@mapNotNull null
+            ConstellationArtOverlay(key = overlay.artKey, anchorA = anchorA, anchorB = anchorB)
+        }
 
     fun drawOrionSilhouette(anchorA: Offset, anchorB: Offset): ConstellationArtOverlay =
         ConstellationArtOverlay(key = ORION_SILHOUETTE_KEY, anchorA = anchorA, anchorB = anchorB)

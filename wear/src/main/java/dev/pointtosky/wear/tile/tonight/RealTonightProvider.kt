@@ -159,8 +159,7 @@ class RealTonightProvider(
             listOf(Body.MOON, Body.JUPITER, Body.SATURN)
                 .mapNotNull { body -> evaluatePlanet(body, gp, start, end, now) }
 
-        // Звёзды: маг ≤ 2.5
-        val brightStars: List<Star> = catalog.nearby(Equatorial(0.0, 0.0), 180.0, 2.5)
+        val brightStars: List<Star> = catalog.nearby(Equatorial(0.0, 0.0), 180.0, 6.0)
         val stars =
             brightStars
                 .mapNotNull { star ->

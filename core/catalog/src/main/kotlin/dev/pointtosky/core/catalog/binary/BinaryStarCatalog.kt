@@ -1,5 +1,6 @@
 package dev.pointtosky.core.catalog.binary
 
+import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.catalog.BuildConfig
 import dev.pointtosky.core.catalog.io.AssetProvider
 import dev.pointtosky.core.catalog.star.FakeStarCatalog
@@ -29,7 +30,7 @@ class BinaryStarCatalog private constructor(
 
     private val stringCache = ConcurrentHashMap<Int, String>()
 
-    override fun nearby(center: dev.pointtosky.core.astro.coord.Equatorial, radiusDeg: Double, magLimit: Double?): List<Star> {
+    override fun nearby(center: Equatorial, radiusDeg: Double, magLimit: Double?): List<Star> {
         if (data.count == 0 || radiusDeg <= 0.0) {
             return emptyList()
         }

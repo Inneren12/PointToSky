@@ -76,8 +76,25 @@ class ArViewModel(
             showConstellations,
             showAsterisms,
             asterismState,
-        ) { stars, catalog, location, instant, showConst, showAster, asterisms ->
-            buildState(stars, catalog, location, instant, showConst, showAster, asterisms)
+        ) { values: Array<Any?> ->
+            @Suppress("UNCHECKED_CAST")
+            val stars = values[0] as List<ArStar>
+            val catalog = values[1] as AstroCatalogState?
+            val location = values[2] as LocationSnapshot
+            val instant = values[3] as Instant
+            val showConst = values[4] as Boolean
+            val showAster = values[5] as Boolean
+            val asterisms = values[6] as AsterismUiState
+
+            buildState(
+                stars = stars,
+                catalog = catalog,
+                location = location,
+                instant = instant,
+                showConstellations = showConst,
+                showAsterisms = showAster,
+                asterismUiState = asterisms,
+            )
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
@@ -189,7 +206,7 @@ class ArViewModel(
         }
 
     companion object {
-        private const val STAR_MAG_LIMIT = 2.5
+        private const val STAR_MAG_LIMIT = 6.0
         private val DEFAULT_LOCATION = GeoPoint(latDeg = 0.0, lonDeg = 0.0)
     }
 }
@@ -236,10 +253,11 @@ class ArViewModelFactory(
             return ArViewModel(
                 catalogRepository = catalogRepository,
                 identifySolver = identifySolver,
-                astroLoader = PtskCatalogLoader(assetManager),
+                astroLoader = PtskCatalogLoader(assetManager, assetPath = "catalog/ptsk_catalog_v4_asterisms_orion_lyra.bin"),
                 locationPrefs = locationPrefs,
             ) as T
         }
+
         throw IllegalArgumentException("Unknown ViewModel class $modelClass")
     }
 }

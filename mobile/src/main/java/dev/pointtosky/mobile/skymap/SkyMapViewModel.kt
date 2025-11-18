@@ -179,7 +179,7 @@ class SkyMapViewModel(
     )
 
     companion object {
-        private const val STAR_MAG_LIMIT = 4.2
+        private const val STAR_MAG_LIMIT = 6.0
         private val DEFAULT_LOCATION = GeoPoint(latDeg = 0.0, lonDeg = 0.0)
         private const val LOCATION_LOG_TAG = "SkyMapLocation"
     }
