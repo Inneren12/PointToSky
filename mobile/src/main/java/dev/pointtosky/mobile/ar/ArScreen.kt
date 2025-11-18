@@ -26,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,7 +59,7 @@ import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
 import dev.pointtosky.core.astro.transform.altAzToRaDec
 import dev.pointtosky.core.astro.transform.raDecToAltAz
-import dev.pointtosky.core.catalog.runtime.CatalogRepository
+import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetEquatorialPayload
 import dev.pointtosky.core.datalayer.AimTargetKind
@@ -79,7 +80,7 @@ import kotlin.math.tan
 
 @Composable
 fun ArRoute(
-    catalogRepository: CatalogRepository,
+    identifySolver: IdentifySolver,
     locationPrefs: LocationPrefs,
     onBack: () -> Unit,
     onSendAimTarget: (AimTargetOption) -> Unit,
@@ -90,8 +91,7 @@ fun ArRoute(
         viewModel(
             factory =
                 ArViewModelFactory(
-                    catalogRepository = catalogRepository,
-                    identifySolver = catalogRepository.identifySolver,
+                    identifySolver = identifySolver,
                     assetManager = context.assets,
                     locationPrefs = locationPrefs,
                 ),
@@ -104,6 +104,7 @@ fun ArRoute(
         onAsterismsToggle = viewModel::setShowAsterisms,
         onAsterismContext = viewModel::updateAsterismContext,
         resolveConstellation = viewModel::resolveConstellationId,
+        onMagLimitChange = viewModel::setMagLimit,
         onBack = onBack,
         onSetTarget = { target ->
             val option =
@@ -143,6 +144,7 @@ fun ArScreen(
     onAsterismsToggle: (Boolean) -> Unit,
     onAsterismContext: (List<AsterismSummary>, AsterismId?) -> Unit,
     resolveConstellation: (Equatorial) -> ConstellationId?,
+    onMagLimitChange: (Double) -> Unit,
     onBack: () -> Unit,
     onSetTarget: (ArTarget) -> Unit,
     modifier: Modifier = Modifier,
@@ -244,11 +246,13 @@ fun ArScreen(
                     )
                 }
 
-                ConstellationToggles(
+                ArControlsPanel(
                     showConstellations = state.showConstellations,
                     showAsterisms = state.showAsterisms,
+                    magLimit = state.magLimit,
                     onConstellationsToggle = onConstellationsToggle,
                     onAsterismsToggle = onAsterismsToggle,
+                    onMagLimitChange = onMagLimitChange,
                     modifier =
                         Modifier
                             .align(Alignment.TopEnd)
@@ -514,6 +518,36 @@ private fun ConstellationLayer(
 }
 
 @Composable
+private fun ArControlsPanel(
+    showConstellations: Boolean,
+    showAsterisms: Boolean,
+    magLimit: Double,
+    onConstellationsToggle: (Boolean) -> Unit,
+    onAsterismsToggle: (Boolean) -> Unit,
+    onMagLimitChange: (Double) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier =
+            modifier
+                .background(color = Color(0x99000000), shape = RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ConstellationToggles(
+            showConstellations = showConstellations,
+            showAsterisms = showAsterisms,
+            onConstellationsToggle = onConstellationsToggle,
+            onAsterismsToggle = onAsterismsToggle,
+        )
+        MagnitudeSlider(
+            magLimit = magLimit,
+            onMagLimitChange = onMagLimitChange,
+        )
+    }
+}
+
+@Composable
 private fun ConstellationToggles(
     showConstellations: Boolean,
     showAsterisms: Boolean,
@@ -522,10 +556,7 @@ private fun ConstellationToggles(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier =
-            modifier
-                .background(color = Color(0x99000000), shape = RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ToggleRow(
@@ -537,6 +568,31 @@ private fun ConstellationToggles(
             title = stringResource(id = R.string.ar_show_asterisms),
             checked = showAsterisms,
             onCheckedChange = onAsterismsToggle,
+        )
+    }
+}
+
+@Composable
+private fun MagnitudeSlider(
+    magLimit: Double,
+    onMagLimitChange: (Double) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val sliderValue = magLimit.toFloat()
+    Column(
+        modifier = modifier.padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.ar_mag_limit_title, String.format("%.1f", magLimit)),
+            color = Color.White,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Slider(
+            value = sliderValue,
+            onValueChange = { onMagLimitChange(it.toDouble()) },
+            valueRange = 0f..7f,
+            steps = 14,
         )
     }
 }
@@ -621,13 +677,29 @@ internal fun calculateOverlay(
             ),
         )?.position
 
+    val constellationId = resolveConstellation(reticleEquatorial)
+
+    val overlayStars: List<StarRecord> =
+        if (state.catalog != null && constellationId != null) {
+            state.catalog.catalog
+                .starsByConstellation(constellationId)
+                .filter { s -> state.magLimit.let { it <= 0.0 || s.magnitude.toDouble() <= it } }
+        } else {
+            emptyList()
+        }
+
     val objects =
-        state.stars
+        overlayStars
             .mapNotNull { star ->
-                val projection = projectEquatorial(star.equatorial) ?: return@mapNotNull null
+                val equatorial =
+                    Equatorial(
+                        star.rightAscensionDeg.toDouble(),
+                        star.declinationDeg.toDouble(),
+                    )
+                val projection = projectEquatorial(equatorial) ?: return@mapNotNull null
                 OverlayObject(
-                    title = star.label,
-                    magnitude = star.magnitude,
+                    title = star.name,
+                    magnitude = star.magnitude.toDouble(),
                     position = projection.position,
                     distance = projection.distance,
                     separationDeg = projection.separationDeg,

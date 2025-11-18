@@ -5,6 +5,13 @@ import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.altAzToRaDec
+import dev.pointtosky.core.astro.catalog.Asterism
+import dev.pointtosky.core.astro.catalog.ArtOverlay
+import dev.pointtosky.core.astro.catalog.AstroCatalog
+import dev.pointtosky.core.astro.catalog.ConstellationId
+import dev.pointtosky.core.astro.catalog.ConstellationMeta
+import dev.pointtosky.core.astro.catalog.StarId
+import dev.pointtosky.core.astro.catalog.StarRecord
 import java.time.Instant
 import kotlin.math.abs
 import kotlin.test.Test
@@ -26,20 +33,53 @@ class ArOverlayScenarioTest {
         val reticleHorizontal = Horizontal(azDeg = 120.0, altDeg = 45.0)
         val reticleEquatorial = altAzToRaDec(reticleHorizontal, lstDeg, location.latDeg)
 
-        val target = ArViewModel.ArStar(
-            id = 1,
-            label = "Target",
-            equatorial = reticleEquatorial,
-            magnitude = 1.0,
+        val constellationId = ConstellationId(0)
+        val target =
+            StarRecord(
+                id = StarId(1),
+                rightAscensionDeg = reticleEquatorial.raDeg.toFloat(),
+                declinationDeg = reticleEquatorial.decDeg.toFloat(),
+                magnitude = 1.0f,
+                constellationId = constellationId,
+                flags = 0,
+                name = "Target",
             )
-        val farTarget = ArViewModel.ArStar(
-            id = 2,
-            label = "Far",
-            equatorial = Equatorial(
-                raDeg = reticleEquatorial.raDeg + 1.0,
-                decDeg = reticleEquatorial.decDeg,
-                ),
-            magnitude = 1.0,
+        val farTarget =
+            StarRecord(
+                id = StarId(2),
+                rightAscensionDeg = (reticleEquatorial.raDeg + 1.0).toFloat(),
+                declinationDeg = reticleEquatorial.decDeg.toFloat(),
+                magnitude = 1.0f,
+                constellationId = constellationId,
+                flags = 0,
+                name = "Far",
+            )
+
+        val catalog =
+            object : AstroCatalog {
+                private val stars = listOf(target, farTarget)
+
+                override fun getConstellationMeta(id: ConstellationId): ConstellationMeta =
+                    ConstellationMeta(id, abbreviation = "TST", name = "Test")
+
+                override fun allStars(): List<StarRecord> = stars
+
+                override fun starById(raw: Int): StarRecord? = stars.find { it.id.raw == raw }
+
+                override fun starsByConstellation(id: ConstellationId): List<StarRecord> =
+                    if (id == constellationId) stars else emptyList()
+
+                override fun asterismsByConstellation(id: ConstellationId) = emptyList<Asterism>()
+
+                override fun artOverlaysByConstellation(id: ConstellationId) = emptyList<ArtOverlay>()
+            }
+
+        val catalogState =
+            AstroCatalogState(
+                catalog = catalog,
+                starsById = mapOf(target.id.raw to target, farTarget.id.raw to farTarget),
+                constellationByAbbr = mapOf("TST" to constellationId),
+                skeletonLines = emptyList(),
             )
 
         val state =
@@ -48,8 +88,8 @@ class ArOverlayScenarioTest {
                 location = location,
                 locationResolved = true,
                 lstDeg = lstDeg,
-                stars = listOf(target, farTarget),
-                catalog = null,
+                stars = emptyList(),
+                catalog = catalogState,
                 showConstellations = false,
                 showAsterisms = false,
                 asterismUiState =
@@ -58,6 +98,7 @@ class ArOverlayScenarioTest {
                         highlighted = null,
                         available = emptyList(),
                     ),
+                magLimit = 6.0,
                 )
 
         // Направление "вперёд" в мировых координатах (как в реальном коде)
@@ -76,7 +117,7 @@ class ArOverlayScenarioTest {
                 state = state,
                 frame = frame,
                 viewport = IntSize(1080, 1080),
-                resolveConstellation = { null },
+                resolveConstellation = { constellationId },
             )
 
         val result = assertNotNull(overlay)
