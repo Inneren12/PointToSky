@@ -10,9 +10,8 @@ interface that can be populated from packed catalog files in later milestones.
 - `dev.pointtosky.core.catalog.star.Star` — immutable description of a star.
 - `dev.pointtosky.core.catalog.star.StarCatalog` — contract for querying nearby
   stars within an angular radius.
-- `dev.pointtosky.core.catalog.star.FakeStarCatalog` — lightweight in-memory
-  catalogue containing a curated list of bright stars suitable for demos and
-  tests.
+- `dev.pointtosky.core.catalog.star.AstroStarCatalogAdapter` — adapter that
+  exposes `AstroCatalog` data through the `StarCatalog` interface.
 
 ### Constellations
 - `dev.pointtosky.core.catalog.constellation.ConstellationBoundaries` — service
@@ -27,7 +26,7 @@ interface that can be populated from packed catalog files in later milestones.
 
 ## Binary formats (S5.B/C preview)
 
-Future milestones will replace the fake providers with readers backed by packed
+Future milestones will replace the stub providers with readers backed by packed
 binary catalogues:
 
 1. **Star catalogue** — compact binary blobs produced by `tools:catalog-packer`

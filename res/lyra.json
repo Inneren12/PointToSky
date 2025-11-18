@@ -1,0 +1,51 @@
+{
+  "abbr": "Lyr",
+  "name": "Lyra",
+  "stars": [
+    {
+      "key": "vega",
+      "name": "Vega (Alpha Lyr)",
+      "ra": "18:36:56.3",
+      "dec": "+38:47:01",
+      "mag": 0.03
+    },
+    {
+      "key": "sheliak",
+      "name": "Sheliak (Beta Lyr)",
+      "ra": "18:50:04.8",
+      "dec": "+33:21:46",
+      "mag": 3.45
+    },
+    {
+      "key": "sulafat",
+      "name": "Sulafat (Gamma Lyr)",
+      "ra": "18:58:56.6",
+      "dec": "+32:41:22",
+      "mag": 3.25
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "sheliak",
+        "vega",
+        "sulafat"
+      ]
+    }
+  ],
+  "asterisms": [
+    {
+      "name": "Lyra Triangle",
+      "polylines": [
+        [
+          "sheliak",
+          "vega",
+          "sulafat"
+        ]
+      ],
+      "label": "vega"
+    }
+  ],
+  "art_overlays": []
+}

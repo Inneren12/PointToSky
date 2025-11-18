@@ -190,7 +190,7 @@ class ArViewModel(
 
     private suspend fun loadAstroCatalog(): AstroCatalogState? =
         withContext(ioDispatcher) {
-            val catalog = astroLoader.load()
+            val catalog = astroLoader.load() ?: return@withContext null
             val stars = catalog.allStars()
             val constellationByAbbr =
                 (0..87).associate { index ->
@@ -253,7 +253,7 @@ class ArViewModelFactory(
             return ArViewModel(
                 catalogRepository = catalogRepository,
                 identifySolver = identifySolver,
-                astroLoader = PtskCatalogLoader(assetManager, assetPath = "catalog/ptsk_catalog_v4_asterisms_orion_lyra.bin"),
+                astroLoader = PtskCatalogLoader(assetManager),
                 locationPrefs = locationPrefs,
             ) as T
         }

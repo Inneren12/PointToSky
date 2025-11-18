@@ -7,7 +7,7 @@ import java.io.InputStream
  * Реализация для Android будет добавлена позже.
  */
 interface AssetProvider {
-    /** Открыть поток для чтения бинаря по относительному пути (например, "catalog/stars_v1.bin"). */
+    /** Открыть поток для чтения бинаря по относительному пути (например, "catalog/star.bin"). */
     @Throws(Exception::class)
     fun open(path: String): InputStream
 

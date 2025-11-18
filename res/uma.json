@@ -1,0 +1,111 @@
+{
+  "abbr": "UMa",
+  "name": "Ursa Major",
+  "stars": [
+    {
+      "key": "dubhe",
+      "name": "Dubhe (Alpha UMa)",
+      "ra": "11:03:43.7",
+      "dec": "+61:45:03",
+      "mag": 1.79
+    },
+    {
+      "key": "merak",
+      "name": "Merak (Beta UMa)",
+      "ra": "11:01:50.5",
+      "dec": "+56:22:56",
+      "mag": 2.37
+    },
+    {
+      "key": "phecda",
+      "name": "Phecda (Gamma UMa)",
+      "ra": "11:53:49.8",
+      "dec": "+53:41:41",
+      "mag": 2.41
+    },
+    {
+      "key": "megrez",
+      "name": "Megrez (Delta UMa)",
+      "ra": "12:15:25.6",
+      "dec": "+57:01:57",
+      "mag": 3.32
+    },
+    {
+      "key": "alioth",
+      "name": "Alioth (Epsilon UMa)",
+      "ra": "12:54:01.7",
+      "dec": "+55:57:35",
+      "mag": 1.76
+    },
+    {
+      "key": "mizar",
+      "name": "Mizar (Zeta UMa)",
+      "ra": "13:23:55.5",
+      "dec": "+54:55:31",
+      "mag": 2.23
+    },
+    {
+      "key": "alkaid",
+      "name": "Alkaid (Eta UMa)",
+      "ra": "13:47:32.4",
+      "dec": "+49:18:48",
+      "mag": 1.85
+    },
+    {
+      "key": "alcor",
+      "name": "Alcor (80 UMa)",
+      "ra": "13:25:13.5",
+      "dec": "+54:59:17",
+      "mag": 4.0
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "dubhe",
+        "merak",
+        "phecda",
+        "megrez",
+        "alioth",
+        "mizar",
+        "alkaid"
+      ]
+    },
+    {
+      "pp": 2,
+      "nodes": [
+        "merak",
+        "dubhe"
+      ]
+    }
+  ],
+  "asterisms": [
+    {
+      "name": "Big Dipper",
+      "polylines": [
+        [
+          "dubhe",
+          "merak",
+          "phecda",
+          "megrez",
+          "alioth",
+          "mizar",
+          "alkaid"
+        ]
+      ],
+      "label": "megrez"
+    },
+    {
+      "name": "Mizar–Alcor Pair",
+      "polylines": [
+        [
+          "mizar",
+          "alcor"
+        ]
+      ],
+      "label": "mizar"
+    }
+  ],
+  "art_overlays": []
+}

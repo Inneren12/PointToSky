@@ -11,12 +11,13 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import dev.pointtosky.core.astro.catalog.EmptyAstroCatalog
+import dev.pointtosky.core.astro.catalog.PtskCatalogLoader
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.EphemerisComputer
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
-import dev.pointtosky.core.catalog.binary.BinaryStarCatalog
-import dev.pointtosky.core.catalog.io.AssetProvider
+import dev.pointtosky.core.catalog.star.AstroStarCatalogAdapter
 import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.catalog.star.StarCatalog
 import dev.pointtosky.core.location.model.GeoPoint
@@ -26,7 +27,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
-import java.io.InputStream
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -50,7 +50,7 @@ class RealTonightProvider(
     private val context: Context,
     private val zoneRepo: ZoneRepo,
     private val ephemeris: EphemerisComputer = SimpleEphemerisComputer(),
-    // если null — загрузим BinaryStarCatalog из assets
+    // если null — загрузим AstroCatalog из assets
     private val starCatalog: StarCatalog? = null,
     private val getLastKnownLocation: suspend () -> GeoPoint? = { null },
     // инжектируемые диспетчеры (для тестов и без хардкода)
@@ -505,20 +505,8 @@ class RealTonightProvider(
     }
 
     private fun loadStarCatalog(): StarCatalog {
-        val assetProvider =
-            object : AssetProvider {
-                override fun open(path: String): InputStream = context.assets.open(path)
-
-                override fun exists(path: String): Boolean =
-                    try {
-                        context.assets.open(path).use { /* just probe */ }
-                        true
-                    } catch (_: Exception) {
-                        false
-                    }
-            }
-        // Фолбэк — FakeStarCatalog (внутри BinaryStarCatalog.load установлен).
-        return BinaryStarCatalog.load(assetProvider)
+        val astro = runCatching { PtskCatalogLoader(context.assets).load() }.getOrNull() ?: EmptyAstroCatalog
+        return AstroStarCatalogAdapter(astro)
     }
 }
 

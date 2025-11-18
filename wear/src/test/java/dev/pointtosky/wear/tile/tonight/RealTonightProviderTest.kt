@@ -3,7 +3,10 @@ package dev.pointtosky.wear.tile.tonight
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import dev.pointtosky.core.catalog.star.FakeStarCatalog
+import dev.pointtosky.core.astro.coord.Equatorial
+import dev.pointtosky.core.astro.identify.angularSeparationDeg
+import dev.pointtosky.core.catalog.star.Star
+import dev.pointtosky.core.catalog.star.StarCatalog
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.time.ZoneRepo
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,7 +40,7 @@ class RealTonightProviderTest {
             context = app,
             zoneRepo = zoneRepo,
             // Критично: подменяем каталог на тестовый, чтобы не грузить assets/bin
-            starCatalog = FakeStarCatalog(),
+            starCatalog = StubStarCatalog(),
             getLastKnownLocation = getLoc,
         )
 
@@ -84,4 +87,30 @@ class RealTonightProviderTest {
                 assertThat(planetIdx).isEqualTo(0)
             }
         }
+}
+
+private class StubStarCatalog : StarCatalog {
+    private data class Candidate(val star: Star, val separationDeg: Double)
+
+    private val stars: List<Star> = listOf(
+        Star(1, 101.287f, -16.716f, -1.46f, "Sirius", "α CMa", "9 CMa", "CMA"),
+        Star(5, 279.234f, 38.783f, 0.03f, "Vega", "α Lyr", "3 Lyr", "LYR"),
+        Star(12, 297.695f, 8.868f, 0.77f, "Altair", "α Aql", "53 Aql", "AQL"),
+        Star(18, 310.358f, 45.280f, 1.25f, "Deneb", "α Cyg", "50 Cyg", "CYG"),
+    )
+
+    override fun nearby(center: Equatorial, radiusDeg: Double, magLimit: Double?): List<Star> {
+        return stars.asSequence()
+            .map { star ->
+                val separation = angularSeparationDeg(center, Equatorial(star.raDeg.toDouble(), star.decDeg.toDouble()))
+                Candidate(star, separation)
+            }
+            .filter { candidate ->
+                candidate.separationDeg <= radiusDeg &&
+                    (magLimit == null || candidate.star.mag.toDouble() <= magLimit)
+            }
+            .sortedBy { it.separationDeg }
+            .map { it.star }
+            .toList()
+    }
 }

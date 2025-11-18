@@ -190,14 +190,14 @@ fun CatalogDebugScreen(
         }
     }
 }
-
 private fun buildStarInfo(state: CatalogDebugUiState): String {
     val diagnostics = state.diagnostics
     val metadata = diagnostics.starMetadata
     return if (metadata != null) {
-        val crcHex = metadata.payloadCrc32.toString(16).uppercase(Locale.ROOT)
-        val size = formatBytes(metadata.sizeBytes)
-        "Stars: ${metadata.starCount} • $size • CRC $crcHex • load ${diagnostics.starLoadDurationMs} ms"
+        // показываем то, что реально есть в AstroCatalogStats
+        "Stars: ${metadata.starCount} • constellations ${metadata.constellationCount} " +
+            "• asterisms ${metadata.asterismCount} • art overlays ${metadata.artOverlayCount} " +
+            "• load ${diagnostics.starLoadDurationMs} ms"
     } else {
         "Stars: fallback catalog • load ${diagnostics.starLoadDurationMs} ms"
     }
@@ -207,9 +207,8 @@ private fun buildConstellationInfo(state: CatalogDebugUiState): String {
     val diagnostics = state.diagnostics
     val metadata = diagnostics.boundaryMetadata
     return if (metadata != null) {
-        val crcHex = metadata.payloadCrc32.toString(16).uppercase(Locale.ROOT)
-        val size = formatBytes(metadata.sizeBytes)
-        "Constellations: ${metadata.recordCount} • $size • CRC $crcHex • load ${diagnostics.boundaryLoadDurationMs} ms"
+        // у Metadata гарантированно есть recordCount, его и используем
+        "Constellations: ${metadata.recordCount} • load ${diagnostics.boundaryLoadDurationMs} ms"
     } else {
         "Constellations: fallback boundaries • load ${diagnostics.boundaryLoadDurationMs} ms"
     }

@@ -1,6 +1,8 @@
 package dev.pointtosky.core.astro.catalog
 
 import android.content.res.AssetManager
+import android.util.Log
+import java.io.FileNotFoundException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
@@ -95,21 +97,32 @@ private class AstroCatalogImpl(
 
 class PtskCatalogLoader(
     private val assetManager: AssetManager,
-    private val assetPath: String = "catalog/ptsk_catalog_v4_asterisms_orion_lyra.bin",
+    private val assetPath: String = "catalog/star.bin",
 ) {
     private val parser = PtskCatalogParser()
 
-    suspend fun load(): AstroCatalog {
+    suspend fun load(): AstroCatalog? {
         parser.cached?.let { return it }
         val catalog = withContext(Dispatchers.IO) {
-            assetManager.open(assetPath).use { input ->
-                val bytes = input.readBytes()
-                val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-                parser.parse(buffer)
+            try {
+                assetManager.open(assetPath).use { input ->
+                    val bytes = input.readBytes()
+                    val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                    parser.parse(buffer)
+                }
+            } catch (e: FileNotFoundException) {
+                Log.w(TAG, "Catalog asset not found at $assetPath", e)
+                null
             }
         }
-        parser.cached = catalog
+        if (catalog != null) {
+            parser.cached = catalog
+        }
         return catalog
+    }
+
+    private companion object {
+        private const val TAG = "PtskCatalogLoader"
     }
 }
 

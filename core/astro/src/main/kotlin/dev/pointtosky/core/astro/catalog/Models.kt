@@ -73,3 +73,19 @@ interface AstroCatalog {
 
     fun artOverlaysByConstellation(id: ConstellationId): List<ArtOverlay>
 }
+
+object EmptyAstroCatalog : AstroCatalog {
+    private val emptyConstellation = ConstellationMeta(ConstellationId(0), abbreviation = "", name = "")
+
+    override fun getConstellationMeta(id: ConstellationId): ConstellationMeta = emptyConstellation
+
+    override fun allStars(): List<StarRecord> = emptyList()
+
+    override fun starById(raw: Int): StarRecord? = null
+
+    override fun starsByConstellation(id: ConstellationId): List<StarRecord> = emptyList()
+
+    override fun asterismsByConstellation(id: ConstellationId): List<Asterism> = emptyList()
+
+    override fun artOverlaysByConstellation(id: ConstellationId): List<ArtOverlay> = emptyList()
+}

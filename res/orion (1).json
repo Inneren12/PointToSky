@@ -1,0 +1,209 @@
+{
+  "abbr": "Ori",
+  "name": "Orion",
+  "stars": [
+    {
+      "key": "betelgeuse",
+      "name": "Betelgeuse",
+      "ra": "05:55:10.30536",
+      "dec": "+07:24:25.4304",
+      "mag": 0.5
+    },
+    {
+      "key": "bellatrix",
+      "name": "Bellatrix",
+      "ra": "05:25:07.86325",
+      "dec": "+06:20:58.9318",
+      "mag": 1.64
+    },
+    {
+      "key": "rigel",
+      "name": "Rigel",
+      "ra": "05:14:32.27210",
+      "dec": "-08:12:05.8981",
+      "mag": 0.13
+    },
+    {
+      "key": "saiph",
+      "name": "Saiph",
+      "ra": "05:47:45.38884",
+      "dec": "-09:40:10.5777",
+      "mag": 2.09
+    },
+    {
+      "key": "alnitak",
+      "name": "Alnitak",
+      "ra": "05:40:45",
+      "dec": "-01:56:34",
+      "mag": 1.77
+    },
+    {
+      "key": "alnilam",
+      "name": "Alnilam",
+      "ra": "05:36:12",
+      "dec": "-01:12:06",
+      "mag": 1.69
+    },
+    {
+      "key": "mintaka",
+      "name": "Mintaka",
+      "ra": "05:32:00.40009",
+      "dec": "-00:17:56.7424",
+      "mag": 2.23
+    },
+    {
+      "key": "meissa",
+      "name": "Meissa",
+      "ra": "05:35:08.28",
+      "dec": "+09:56:03.0",
+      "mag": 3.33
+    },
+    {
+      "key": "hatysa",
+      "name": "Hatysa (Iota Ori)",
+      "ra": "05:35:26.4",
+      "dec": "-05:54:35",
+      "mag": 2.77
+    },
+    {
+      "key": "theta1_ori",
+      "name": "Theta¹ Orionis",
+      "ra": "05:35:16.5",
+      "dec": "-05:23:23",
+      "mag": 5.1
+    },
+    {
+      "key": "theta2_ori",
+      "name": "Theta² Orionis",
+      "ra": "05:35:22.9",
+      "dec": "-05:24:57",
+      "mag": 6.0
+    },
+    {
+      "key": "pi3_ori",
+      "name": "Tabit (Pi³ Ori)",
+      "ra": "04:49:50",
+      "dec": "+06:57:40",
+      "mag": 3.2
+    },
+    {
+      "key": "pi4_ori",
+      "name": "Pi⁴ Orionis",
+      "ra": "04:56:54",
+      "dec": "+06:28:00",
+      "mag": 3.7
+    },
+    {
+      "key": "chi1_ori",
+      "name": "Chi¹ Orionis",
+      "ra": "05:54:22.9",
+      "dec": "+20:16:34",
+      "mag": 4.4
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "betelgeuse",
+        "bellatrix",
+        "rigel",
+        "saiph"
+      ]
+    },
+    {
+      "pp": 2,
+      "nodes": [
+        "alnitak",
+        "alnilam",
+        "mintaka"
+      ]
+    },
+    {
+      "pp": 3,
+      "nodes": [
+        "meissa",
+        "bellatrix",
+        "betelgeuse"
+      ]
+    }
+  ],
+  "asterisms": [
+    {
+      "name": "Orion's Belt",
+      "polylines": [
+        [
+          "alnitak",
+          "alnilam",
+          "mintaka"
+        ]
+      ],
+      "label": "alnilam"
+    },
+    {
+      "name": "Orion Rectangle",
+      "polylines": [
+        [
+          "betelgeuse",
+          "bellatrix",
+          "rigel",
+          "saiph"
+        ]
+      ],
+      "label": "bellatrix"
+    },
+    {
+      "name": "Orion Sheaf",
+      "polylines": [
+        [
+          "betelgeuse",
+          "bellatrix",
+          "alnitak",
+          "mintaka",
+          "saiph",
+          "rigel"
+        ]
+      ],
+      "label": "betelgeuse"
+    },
+    {
+      "name": "Orion's Sword",
+      "polylines": [
+        [
+          "hatysa",
+          "theta2_ori",
+          "theta1_ori"
+        ]
+      ],
+      "label": "theta1_ori"
+    },
+    {
+      "name": "Orion Shield",
+      "polylines": [
+        [
+          "betelgeuse",
+          "pi3_ori",
+          "pi4_ori"
+        ]
+      ],
+      "label": "pi3_ori"
+    },
+    {
+      "name": "Orion Club",
+      "polylines": [
+        [
+          "meissa",
+          "chi1_ori"
+        ]
+      ],
+      "label": "meissa"
+    }
+  ],
+  "art_overlays": [
+    {
+      "key": "orion_silhouette_v1",
+      "anchorA": "betelgeuse",
+      "anchorB": "rigel"
+    }
+  ]
+}

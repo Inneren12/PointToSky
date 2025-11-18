@@ -230,11 +230,9 @@ private fun buildStarInfo(state: CatalogDebugUiState): String {
     val diagnostics = state.diagnostics
     val metadata = diagnostics.starMetadata
     return if (metadata != null) {
-        val crcHex = metadata.payloadCrc32.toString(16).uppercase(Locale.ROOT)
-        val size = formatBytes(metadata.sizeBytes)
-        "Stars: ${metadata.starCount} • $size • CRC $crcHex • load ${diagnostics.starLoadDurationMs} ms"
+        "Stars: ${metadata.starCount} • const ${metadata.constellationCount} • asterisms ${metadata.asterismCount} • art ${metadata.artOverlayCount} • load ${diagnostics.starLoadDurationMs} ms"
     } else {
-        "Stars: fallback catalog • load ${diagnostics.starLoadDurationMs} ms"
+        "Stars: catalog missing • load ${diagnostics.starLoadDurationMs} ms"
     }
 }
 
