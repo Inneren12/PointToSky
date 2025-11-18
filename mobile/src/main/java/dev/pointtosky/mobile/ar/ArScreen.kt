@@ -666,13 +666,9 @@ internal fun calculateOverlay(
             lstDeg = state.lstDeg,
             latDeg = state.location.latDeg,
         )
+    // rotationMatrix is already remapped to the current display rotation.
     val worldToDevice = transpose(frame.rotationMatrix)
-    val width = viewport.width.toFloat()
-    val height = viewport.height.toFloat()
-    val halfWidth = width / 2f
-    val halfHeight = height / 2f
-    val tanHFov = tan(Math.toRadians(HORIZONTAL_FOV_DEG / 2.0))
-    val tanVFov = tan(Math.toRadians(VERTICAL_FOV_DEG / 2.0))
+    val projectionParams = projectionParams(viewport)
 
     data class ProjectionResult(
         val position: Offset,
@@ -691,15 +687,9 @@ internal fun calculateOverlay(
         if (horizontal.altDeg < 0.0) return null
         val worldVec = horizontalToVector(horizontal)
         val deviceVec = multiply(worldToDevice, worldVec)
-        if (deviceVec[2] >= -0.01f) return null
-        val ndcX = (deviceVec[0] / -deviceVec[2]) / tanHFov
-        val ndcY = (deviceVec[1] / -deviceVec[2]) / tanVFov
-        val distance = sqrt(ndcX * ndcX + ndcY * ndcY)
-        if (distance > MAX_SCREEN_DISTANCE) return null
-        val screenX = halfWidth * (1f + ndcX.toFloat())
-        val screenY = halfHeight * (1f - ndcY.toFloat())
+        val projection = projectDeviceVector(deviceVec, projectionParams) ?: return null
         val separation = angularSeparationDeg(reticleEquatorial, eq)
-        return ProjectionResult(Offset(screenX, screenY), distance, separation)
+        return ProjectionResult(projection.position, projection.distance, separation)
     }
 
     fun projectStarRecord(record: StarRecord): Offset? =
@@ -862,6 +852,64 @@ internal data class OverlayData(
     val artOverlays: List<ConstellationArtOverlay>,
 )
 
+@VisibleForTesting
+internal fun projectHorizontalsToScreen(
+    frame: RotationFrame,
+    viewport: IntSize,
+    horizontals: List<Horizontal>,
+): List<Offset> {
+    if (viewport.width == 0 || viewport.height == 0) return emptyList()
+
+    val worldToDevice = transpose(frame.rotationMatrix)
+    val params = projectionParams(viewport)
+
+    return horizontals.mapNotNull { horizontal ->
+        val worldVec = horizontalToVector(horizontal)
+        val deviceVec = multiply(worldToDevice, worldVec)
+        projectDeviceVector(deviceVec, params)?.position
+    }
+}
+
+private data class Projection(
+    val position: Offset,
+    val distance: Double,
+)
+
+private data class ProjectionParams(
+    val tanHFov: Double,
+    val tanVFov: Double,
+    val halfWidth: Float,
+    val halfHeight: Float,
+)
+
+private fun projectionParams(viewport: IntSize): ProjectionParams {
+    val width = viewport.width.toFloat()
+    val height = viewport.height.toFloat()
+    val aspect = viewport.width.toDouble() / viewport.height.toDouble()
+    val tanVFov = tan(Math.toRadians(VERTICAL_FOV_DEG / 2.0))
+    val tanHFov = tanVFov * aspect
+    return ProjectionParams(tanHFov, tanVFov, width / 2f, height / 2f)
+}
+
+private fun projectDeviceVector(
+    deviceVec: FloatArray,
+    params: ProjectionParams,
+): Projection? {
+    // deviceVec is expressed in display-aligned device coordinates:
+    // x → right, y → up, z → forward (negative means in front of the camera).
+    val z = deviceVec[2]
+    if (z >= -0.01f) return null
+
+    val ndcX = (deviceVec[0].toDouble() / -z.toDouble()) / params.tanHFov
+    val ndcY = (deviceVec[1].toDouble() / -z.toDouble()) / params.tanVFov
+    val distance = sqrt(ndcX * ndcX + ndcY * ndcY)
+    if (distance > MAX_SCREEN_DISTANCE) return null
+
+    val screenX = params.halfWidth * (1f + ndcX.toFloat())
+    val screenY = params.halfHeight * (1f - ndcY.toFloat())
+    return Projection(position = Offset(screenX, screenY), distance = distance)
+}
+
 private fun transpose(matrix: FloatArray): FloatArray {
     val result = FloatArray(9)
     for (i in 0 until 3) {
@@ -908,7 +956,7 @@ private fun formatAngle(
     value: Double,
 ): String = String.format(locale, "%.1f", value)
 
-private const val HORIZONTAL_FOV_DEG = 60.0
-private const val VERTICAL_FOV_DEG = 45.0
+// Base vertical FOV; horizontal FOV is derived from the current aspect ratio.
+private const val VERTICAL_FOV_DEG = 56.0
 private const val MAX_SCREEN_DISTANCE = 1.2
 private const val MAX_LABELS = 24

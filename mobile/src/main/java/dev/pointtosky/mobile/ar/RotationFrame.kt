@@ -4,6 +4,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.view.Surface
+import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -44,16 +46,22 @@ fun rememberRotationFrame(): RotationFrame? {
             object : SensorEventListener {
                 override fun onSensorChanged(event: SensorEvent) {
                     SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                    val displayRotation =
+                        context.display?.rotation
+                            ?: context.getSystemService<WindowManager>()?.defaultDisplay?.rotation
+                            ?: Surface.ROTATION_0
+                    // Normalize rotation so device axes follow the current display orientation.
+                    val remapped = remapForDisplay(rotationMatrix, displayRotation, rotationMatrix)
                     val worldForward =
                         floatArrayOf(
-                            -rotationMatrix[2],
-                            -rotationMatrix[5],
-                            -rotationMatrix[8],
+                            -remapped[2],
+                            -remapped[5],
+                            -remapped[8],
                         )
                     val normalizedForward = normalizeVector(worldForward)
                     frame =
                         RotationFrame(
-                            rotationMatrix = rotationMatrix.copyOf(),
+                            rotationMatrix = remapped.copyOf(),
                             forwardWorld = normalizedForward,
                             timestampNanos = event.timestamp,
                         )
