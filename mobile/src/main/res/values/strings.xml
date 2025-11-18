@@ -128,6 +128,8 @@
     <string name="ar_show_constellations">Show constellations</string>
     <string name="ar_show_asterisms">Show asterisms</string>
     <string name="ar_mag_limit_title">Max magnitude: %1$s</string>
+    <string name="ar_settings_content_desc">AR settings</string>
+    <string name="ar_hide_star_labels">Hide star names</string>
     <string name="settings_title">Settings</string>
     <string name="settings_mirror_title">Mirror to phone</string>
     <string name="settings_mirror_desc">Show Tonight tile data on the phone.</string>
@@ -153,6 +155,10 @@
     <string name="settings_mirror_preview_error">Preview unavailable</string>
     <string name="settings_redact_payloads_blocked">Sending raw payloads is disabled by privacy settings</string>
     <string name="settings_ar_disabled_toast">Enable AR in phone settings</string>
+    <string name="settings_debug_tools_title">Debug &amp; tools</string>
+    <string name="settings_phone_compass_title">Use phone compass</string>
+    <string name="settings_phone_compass_desc">Enable the phone magnetometer for aiming and testing.</string>
+    <string name="wear_menu_title">Wear</string>
     <string name="onboarding_title">Safety</string>
     <string name="onboarding_description">Point-to-Sky provides astronomy guidance only and must not be used for navigation.</string>
     <string name="onboarding_checkbox">I understand this app is not for navigation.</string>

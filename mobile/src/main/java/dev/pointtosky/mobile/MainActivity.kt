@@ -182,6 +182,11 @@ class MainActivity : ComponentActivity() {
                             MobileLog.arOpen()
                             navigationState.value = MobileDestination.Ar
                         },
+                        onOpenWearMenu = { navigationState.value = MobileDestination.WearMenu },
+                        onOpenLocationSetup = { navigationState.value = MobileDestination.LocationSetup },
+                        onOpenTimeDebug = { navigationState.value = MobileDestination.TimeDebug },
+                        onOpenCatalogDebug = { navigationState.value = MobileDestination.CatalogDebug },
+                        onOpenCrashLogs = { navigationState.value = MobileDestination.CrashLogs },
                         onShareToggle = { enabled ->
                             coroutineScope.launch { phoneLocationBridge.setShareEnabled(enabled) }
                         },
@@ -344,6 +349,11 @@ data class MobileAppActions(
     val onOpenLatestCard: () -> Unit,
     val onOpenSearch: () -> Unit,
     val onOpenAr: () -> Unit,
+    val onOpenWearMenu: () -> Unit,
+    val onOpenLocationSetup: () -> Unit,
+    val onOpenTimeDebug: () -> Unit,
+    val onOpenCatalogDebug: () -> Unit,
+    val onOpenCrashLogs: () -> Unit,
     val onShareToggle: (Boolean) -> Unit,
     val onSendAimTarget: (AimTargetOption) -> Unit,
     val onOpenAimOnWatch: () -> Unit,
@@ -363,11 +373,8 @@ data class MobileAppActions(
 
 @Immutable
 data class MobileHomeProps(
-    val aimTargets: List<AimTargetOption>,
-    val phoneCompassEnabled: Boolean,
     val cardAvailable: Boolean,
     val arEnabled: Boolean,
-    val mirrorEnabled: Boolean,
 )
 
 @Immutable
@@ -376,16 +383,8 @@ data class MobileHomeActions(
     val onSkyMap: () -> Unit,
     val onSearch: () -> Unit,
     val onAr: () -> Unit,
-    val onLocationSetup: () -> Unit,
-    val onTimeDebug: () -> Unit,
-    val onCatalogDebug: () -> Unit,
-    val onCrashLogs: () -> Unit,
-    val onSendAimTarget: (AimTargetOption) -> Unit,
-    val onOpenAimOnWatch: () -> Unit,
-    val onOpenIdentifyOnWatch: () -> Unit,
-    val onTogglePhoneCompass: () -> Unit,
+    val onOpenWearMenu: () -> Unit,
     val onOpenSettings: () -> Unit,
-    val onOpenMirrorPreview: () -> Unit,
 )
 
 @Composable
@@ -407,11 +406,8 @@ fun PointToSkyMobileApp(
                     MobileHome(
                         props =
                             MobileHomeProps(
-                                aimTargets = deps.aimTargets,
-                                phoneCompassEnabled = deps.phoneCompassEnabled,
                                 cardAvailable = deps.latestCardAvailable,
                                 arEnabled = deps.settingsState.arEnabled,
-                                mirrorEnabled = deps.settingsState.mirrorEnabled,
                             ),
                         actions =
                             MobileHomeActions(
@@ -419,16 +415,8 @@ fun PointToSkyMobileApp(
                                 onSkyMap = { actions.onNavigate(MobileDestination.SkyMap) },
                                 onSearch = actions.onOpenSearch,
                                 onAr = actions.onOpenAr,
-                                onLocationSetup = { actions.onNavigate(MobileDestination.LocationSetup) },
-                                onTimeDebug = { actions.onNavigate(MobileDestination.TimeDebug) },
-                                onCatalogDebug = { actions.onNavigate(MobileDestination.CatalogDebug) },
-                                onCrashLogs = { actions.onNavigate(MobileDestination.CrashLogs) },
-                                onSendAimTarget = actions.onSendAimTarget,
-                                onOpenAimOnWatch = actions.onOpenAimOnWatch,
-                                onOpenIdentifyOnWatch = actions.onOpenIdentifyOnWatch,
-                                onTogglePhoneCompass = actions.onTogglePhoneCompass,
+                                onOpenWearMenu = actions.onOpenWearMenu,
                                 onOpenSettings = actions.onOpenSettings,
-                                onOpenMirrorPreview = actions.onOpenMirrorPreview,
                             ),
                     )
 
@@ -437,24 +425,24 @@ fun PointToSkyMobileApp(
                         locationPrefs = deps.locationPrefs,
                         shareState = deps.shareState,
                         onShareToggle = actions.onShareToggle,
-                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                        onBack = { actions.onNavigate(MobileDestination.Settings) },
                     )
 
                 MobileDestination.TimeDebug ->
                     TimeDebugScreen(
-                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                        onBack = { actions.onNavigate(MobileDestination.Settings) },
                     )
 
                 MobileDestination.CatalogDebug ->
                     CatalogDebugRoute(
                         factory = CatalogDebugViewModelFactory(deps.catalogRepository),
                         modifier = Modifier.fillMaxSize(),
-                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                        onBack = { actions.onNavigate(MobileDestination.Settings) },
                     )
 
                 MobileDestination.CrashLogs ->
                     CrashLogRoute(
-                        onBack = { actions.onNavigate(MobileDestination.Home) },
+                        onBack = { actions.onNavigate(MobileDestination.Settings) },
                     )
 
                 MobileDestination.Ar ->
@@ -463,6 +451,19 @@ fun PointToSkyMobileApp(
                         locationPrefs = deps.locationPrefs,
                         onBack = { actions.onNavigate(MobileDestination.Home) },
                         onSendAimTarget = actions.onSendAimTarget,
+                    )
+
+                MobileDestination.WearMenu ->
+                    WearMenuScreen(
+                        props = WearMenuProps(aimTargets = deps.aimTargets),
+                        actions =
+                            WearMenuActions(
+                                onSendAimTarget = actions.onSendAimTarget,
+                                onOpenAimOnWatch = actions.onOpenAimOnWatch,
+                                onOpenIdentifyOnWatch = actions.onOpenIdentifyOnWatch,
+                                onBack = { actions.onNavigate(MobileDestination.Home) },
+                            ),
+                        modifier = Modifier.fillMaxSize(),
                     )
 
                 MobileDestination.SkyMap ->
@@ -485,10 +486,17 @@ fun PointToSkyMobileApp(
                 MobileDestination.Settings ->
                     SettingsScreen(
                         state = deps.settingsState,
+                        phoneCompassEnabled = deps.phoneCompassEnabled,
                         onMirrorChanged = actions.onToggleMirror,
                         onArChanged = actions.onToggleArSetting,
                         onLocationModeChanged = actions.onChangeLocationMode,
                         onRedactPayloadsChanged = actions.onToggleRedactPayloads,
+                        onTogglePhoneCompass = actions.onTogglePhoneCompass,
+                        onOpenLocationSetup = actions.onOpenLocationSetup,
+                        onOpenTimeDebug = actions.onOpenTimeDebug,
+                        onOpenCatalogDebug = actions.onOpenCatalogDebug,
+                        onOpenCrashLogs = actions.onOpenCrashLogs,
+                        onOpenMirrorPreview = actions.onOpenMirrorPreview,
                         onOpenPolicy = actions.onOpenPolicy,
                         onBack = { actions.onNavigate(MobileDestination.Home) },
                     )
@@ -547,6 +555,62 @@ fun MobileHome(
         ) {
             Text(text = stringResource(id = R.string.search_button))
         }
+        Button(
+            onClick = {
+                MobileLog.mapOpen()
+                actions.onSkyMap()
+            },
+            modifier = Modifier.padding(top = 16.dp),
+        ) {
+            Text(text = stringResource(id = R.string.sky_map))
+        }
+        if (props.arEnabled) {
+            Button(
+                onClick = actions.onAr,
+                modifier = Modifier.padding(top = 16.dp),
+            ) {
+                Text(text = stringResource(id = R.string.ar_mode))
+            }
+        }
+        Button(
+            onClick = actions.onOpenWearMenu,
+            modifier = Modifier.padding(top = 16.dp),
+        ) {
+            Text(text = stringResource(id = R.string.wear_menu_title))
+        }
+        Button(
+            onClick = actions.onOpenSettings,
+            modifier = Modifier.padding(top = 16.dp),
+        ) {
+            Text(text = stringResource(id = R.string.settings_button))
+        }
+    }
+}
+
+@Immutable
+data class WearMenuProps(
+    val aimTargets: List<AimTargetOption>,
+)
+
+data class WearMenuActions(
+    val onSendAimTarget: (AimTargetOption) -> Unit,
+    val onOpenAimOnWatch: () -> Unit,
+    val onOpenIdentifyOnWatch: () -> Unit,
+    val onBack: () -> Unit,
+)
+
+@Composable
+fun WearMenuScreen(
+    props: WearMenuProps,
+    actions: WearMenuActions,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text = stringResource(id = R.string.wear_menu_title), style = MaterialTheme.typography.headlineSmall)
         props.aimTargets.forEach { target ->
             Button(
                 onClick = { actions.onSendAimTarget(target) },
@@ -568,71 +632,10 @@ fun MobileHome(
             Text(text = stringResource(id = R.string.open_identify_on_watch))
         }
         Button(
-            onClick = actions.onTogglePhoneCompass,
-            modifier = Modifier.padding(top = 16.dp),
+            onClick = actions.onBack,
+            modifier = Modifier.padding(top = 24.dp),
         ) {
-            val label =
-                if (props.phoneCompassEnabled) {
-                    stringResource(id = R.string.use_phone_compass_on)
-                } else {
-                    stringResource(id = R.string.use_phone_compass_off)
-                }
-            Text(text = label)
-        }
-        Button(
-            onClick = {
-                MobileLog.mapOpen()
-                actions.onSkyMap()
-            },
-            modifier = Modifier.padding(top = 16.dp),
-        ) {
-            Text(text = stringResource(id = R.string.sky_map))
-        }
-        if (props.arEnabled) {
-            Button(
-                onClick = actions.onAr,
-                modifier = Modifier.padding(top = 16.dp),
-            ) {
-                Text(text = stringResource(id = R.string.ar_mode))
-            }
-        }
-        Button(
-            onClick = actions.onLocationSetup,
-            modifier = Modifier.padding(top = 16.dp),
-        ) {
-            Text(text = stringResource(id = R.string.location_settings))
-        }
-        Button(
-            onClick = actions.onTimeDebug,
-            modifier = Modifier.padding(top = 16.dp),
-        ) {
-            Text(text = stringResource(id = R.string.time_debug))
-        }
-        Button(
-            onClick = actions.onCatalogDebug,
-            modifier = Modifier.padding(top = 16.dp),
-        ) {
-            Text(text = stringResource(id = R.string.catalog_debug))
-        }
-        Button(
-            onClick = actions.onCrashLogs,
-            modifier = Modifier.padding(top = 16.dp),
-        ) {
-            Text(text = stringResource(id = R.string.crash_logs_button))
-        }
-        if (props.mirrorEnabled) {
-            Button(
-                onClick = actions.onOpenMirrorPreview,
-                modifier = Modifier.padding(top = 16.dp),
-            ) {
-                Text(text = stringResource(id = R.string.settings_mirror_preview))
-            }
-        }
-        Button(
-            onClick = actions.onOpenSettings,
-            modifier = Modifier.padding(top = 16.dp),
-        ) {
-            Text(text = stringResource(id = R.string.settings_button))
+            Text(text = stringResource(id = R.string.time_debug_back))
         }
     }
 }
@@ -655,6 +658,8 @@ sealed interface MobileDestination {
     object CrashLogs : MobileDestination
 
     object Ar : MobileDestination
+
+    object WearMenu : MobileDestination
 
     object Settings : MobileDestination
 
@@ -703,6 +708,11 @@ fun MobileHomePreview() {
                 onOpenLatestCard = {},
                 onOpenSearch = {},
                 onOpenAr = {},
+                onOpenWearMenu = {},
+                onOpenLocationSetup = {},
+                onOpenTimeDebug = {},
+                onOpenCatalogDebug = {},
+                onOpenCrashLogs = {},
                 onShareToggle = { _ -> },
                 onSendAimTarget = { _ -> },
                 onOpenAimOnWatch = {},

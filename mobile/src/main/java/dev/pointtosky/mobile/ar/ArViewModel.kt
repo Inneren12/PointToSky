@@ -42,6 +42,7 @@ class ArViewModel(
     private val showConstellations = MutableStateFlow(true)
     private val showAsterisms = MutableStateFlow(true)
     private val magLimit = MutableStateFlow<Double>(6.0)
+    private val showStarLabels = MutableStateFlow(true)
     private val asterismState =
         MutableStateFlow(
             AsterismUiState(
@@ -76,6 +77,7 @@ class ArViewModel(
             showAsterisms,
             asterismState,
             magLimit,
+            showStarLabels,
         ) { values: Array<Any?> ->
             @Suppress("UNCHECKED_CAST")
             val stars = values[0] as List<ArStar>
@@ -86,6 +88,7 @@ class ArViewModel(
             val showAster = values[5] as Boolean
             val asterisms = values[6] as AsterismUiState
             val magLimitValue = values[7] as Double
+            val showStarLabelsValue = values[8] as Boolean
 
             buildState(
                 stars = stars,
@@ -96,6 +99,7 @@ class ArViewModel(
                 showAsterisms = showAster,
                 asterismUiState = asterisms,
                 magLimit = magLimitValue,
+                showStarLabels = showStarLabelsValue,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -120,6 +124,7 @@ class ArViewModel(
         showAsterisms: Boolean,
         asterismUiState: AsterismUiState,
         magLimit: Double,
+        showStarLabels: Boolean,
     ): ArUiState {
         val lstDeg = lstAt(instant, location.point.lonDeg).lstDeg
         return ArUiState.Ready(
@@ -133,6 +138,7 @@ class ArViewModel(
             showAsterisms = showAsterisms,
             asterismUiState = asterismUiState,
             magLimit = magLimit,
+            showStarLabels = showStarLabels,
         )
     }
 
@@ -155,6 +161,10 @@ class ArViewModel(
 
     fun setMagLimit(value: Double) {
         magLimit.value = value.coerceIn(0.0, 8.0)
+    }
+
+    fun setShowStarLabels(enabled: Boolean) {
+        showStarLabels.value = enabled
     }
 
     fun resolveConstellationId(equatorial: Equatorial): ConstellationId? {
@@ -215,6 +225,7 @@ sealed interface ArUiState {
         val showAsterisms: Boolean,
         val asterismUiState: AsterismUiState,
         val magLimit: Double,
+        val showStarLabels: Boolean,
     ) : ArUiState
 }
 
