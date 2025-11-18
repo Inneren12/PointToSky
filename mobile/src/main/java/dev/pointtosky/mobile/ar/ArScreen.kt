@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -105,6 +106,7 @@ fun ArRoute(
         onAsterismContext = viewModel::updateAsterismContext,
         resolveConstellation = viewModel::resolveConstellationId,
         onMagLimitChange = viewModel::setMagLimit,
+        onShowStarLabelsToggle = viewModel::setShowStarLabels,
         onBack = onBack,
         onSetTarget = { target ->
             val option =
@@ -145,6 +147,7 @@ fun ArScreen(
     onAsterismContext: (List<AsterismSummary>, AsterismId?) -> Unit,
     resolveConstellation: (Equatorial) -> ConstellationId?,
     onMagLimitChange: (Double) -> Unit,
+    onShowStarLabelsToggle: (Boolean) -> Unit,
     onBack: () -> Unit,
     onSetTarget: (ArTarget) -> Unit,
     modifier: Modifier = Modifier,
@@ -232,11 +235,13 @@ fun ArScreen(
 
                 Reticle(modifier = Modifier.align(Alignment.Center))
 
-                overlay?.labels?.forEach { label ->
-                    ArObjectLabel(
-                        data = label,
-                        modifier = Modifier.align(Alignment.TopStart),
-                    )
+                if (state.showStarLabels) {
+                    overlay?.labels?.forEach { label ->
+                        ArObjectLabel(
+                            data = label,
+                            modifier = Modifier.align(Alignment.TopStart),
+                        )
+                    }
                 }
 
                 overlay?.asterismLabels?.forEach { label ->
@@ -246,19 +251,40 @@ fun ArScreen(
                     )
                 }
 
-                ArControlsPanel(
-                    showConstellations = state.showConstellations,
-                    showAsterisms = state.showAsterisms,
-                    magLimit = state.magLimit,
-                    onConstellationsToggle = onConstellationsToggle,
-                    onAsterismsToggle = onAsterismsToggle,
-                    onMagLimitChange = onMagLimitChange,
+                var settingsVisible by remember { mutableStateOf(false) }
+                IconButton(
+                    onClick = { settingsVisible = !settingsVisible },
                     modifier =
                         Modifier
                             .align(Alignment.TopEnd)
                             .statusBarsPadding()
-                            .padding(16.dp),
-                )
+                            .padding(12.dp)
+                            .background(Color(0x66000000), CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.ar_settings_content_desc),
+                        tint = Color.White,
+                    )
+                }
+
+                if (settingsVisible) {
+                    ArControlsPanel(
+                        showConstellations = state.showConstellations,
+                        showAsterisms = state.showAsterisms,
+                        magLimit = state.magLimit,
+                        showStarLabels = state.showStarLabels,
+                        onConstellationsToggle = onConstellationsToggle,
+                        onAsterismsToggle = onAsterismsToggle,
+                        onMagLimitChange = onMagLimitChange,
+                        onShowStarLabelsToggle = onShowStarLabelsToggle,
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .statusBarsPadding()
+                                .padding(top = 52.dp, end = 16.dp),
+                    )
+                }
 
                 val targetLabel =
                     overlay?.nearestLabel?.title
@@ -522,9 +548,11 @@ private fun ArControlsPanel(
     showConstellations: Boolean,
     showAsterisms: Boolean,
     magLimit: Double,
+    showStarLabels: Boolean,
     onConstellationsToggle: (Boolean) -> Unit,
     onAsterismsToggle: (Boolean) -> Unit,
     onMagLimitChange: (Double) -> Unit,
+    onShowStarLabelsToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -543,6 +571,11 @@ private fun ArControlsPanel(
         MagnitudeSlider(
             magLimit = magLimit,
             onMagLimitChange = onMagLimitChange,
+        )
+        ToggleRow(
+            title = stringResource(R.string.ar_hide_star_labels),
+            checked = !showStarLabels,
+            onCheckedChange = { hide -> onShowStarLabelsToggle(!hide) },
         )
     }
 }
@@ -679,14 +712,20 @@ internal fun calculateOverlay(
 
     val constellationId = resolveConstellation(reticleEquatorial)
 
-    val overlayStars: List<StarRecord> =
+    val baseStars = state.catalog?.catalog?.allStars().orEmpty()
+    val fromConstellation =
         if (state.catalog != null && constellationId != null) {
-            state.catalog.catalog
-                .starsByConstellation(constellationId)
-                .filter { s -> state.magLimit.let { it <= 0.0 || s.magnitude.toDouble() <= it } }
+            state.catalog.catalog.starsByConstellation(constellationId)
         } else {
             emptyList()
         }
+
+    val overlayStars: List<StarRecord> =
+        (if (fromConstellation.isNotEmpty()) fromConstellation else baseStars)
+            .filter { star ->
+                val limit = state.magLimit
+                limit <= 0.0 || star.magnitude.toDouble() <= limit
+            }
 
     val objects =
         overlayStars
@@ -872,4 +911,4 @@ private fun formatAngle(
 private const val HORIZONTAL_FOV_DEG = 60.0
 private const val VERTICAL_FOV_DEG = 45.0
 private const val MAX_SCREEN_DISTANCE = 1.2
-private const val MAX_LABELS = 100
+private const val MAX_LABELS = 24

@@ -56,10 +56,17 @@ private val LOCATION_PERMISSIONS =
 @Composable
 fun SettingsScreen(
     state: MobileSettingsState,
+    phoneCompassEnabled: Boolean,
     onMirrorChanged: (Boolean) -> Unit,
     onArChanged: (Boolean) -> Unit,
     onLocationModeChanged: (LocationMode) -> Unit,
     onRedactPayloadsChanged: (Boolean) -> Unit,
+    onTogglePhoneCompass: () -> Unit,
+    onOpenLocationSetup: () -> Unit,
+    onOpenTimeDebug: () -> Unit,
+    onOpenCatalogDebug: () -> Unit,
+    onOpenCrashLogs: () -> Unit,
+    onOpenMirrorPreview: () -> Unit,
     onOpenPolicy: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -129,6 +136,11 @@ fun SettingsScreen(
                     checked = state.mirrorEnabled,
                     onCheckedChange = onMirrorChanged,
                 )
+                if (state.mirrorEnabled) {
+                    OutlinedButton(onClick = onOpenMirrorPreview) {
+                        Text(text = stringResource(id = R.string.settings_mirror_preview))
+                    }
+                }
                 SettingsToggleRow(
                     title = stringResource(id = R.string.settings_ar_title),
                     description = stringResource(id = R.string.settings_ar_desc),
@@ -181,6 +193,33 @@ fun SettingsScreen(
                     granted = locationGranted,
                     onRequest = { locationLauncher.launch(LOCATION_PERMISSIONS) },
                 )
+            }
+
+            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
+
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.settings_debug_tools_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                SettingsToggleRow(
+                    title = stringResource(id = R.string.settings_phone_compass_title),
+                    description = stringResource(id = R.string.settings_phone_compass_desc),
+                    checked = phoneCompassEnabled,
+                    onCheckedChange = { onTogglePhoneCompass() },
+                )
+                OutlinedButton(onClick = onOpenLocationSetup, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = stringResource(id = R.string.location_settings))
+                }
+                OutlinedButton(onClick = onOpenTimeDebug, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = stringResource(id = R.string.time_debug))
+                }
+                OutlinedButton(onClick = onOpenCatalogDebug, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = stringResource(id = R.string.catalog_debug))
+                }
+                OutlinedButton(onClick = onOpenCrashLogs, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = stringResource(id = R.string.crash_logs_button))
+                }
             }
 
             HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
