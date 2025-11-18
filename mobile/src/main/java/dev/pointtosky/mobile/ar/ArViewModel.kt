@@ -6,12 +6,11 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.astro.catalog.ConstellationId
 import dev.pointtosky.core.astro.catalog.PtskCatalogLoader
+import dev.pointtosky.core.astro.catalog.StarRecord
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.SkyObjectOrConstellation
 import dev.pointtosky.core.astro.time.lstAt
-import dev.pointtosky.core.catalog.runtime.CatalogRepository
-import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
@@ -31,7 +30,6 @@ import java.time.Instant
 import java.util.Locale
 
 class ArViewModel(
-    private val catalogRepository: CatalogRepository,
     private val identifySolver: IdentifySolver,
     private val astroLoader: PtskCatalogLoader,
     locationPrefs: LocationPrefs,
@@ -43,6 +41,7 @@ class ArViewModel(
     private val astroCatalog = MutableStateFlow<AstroCatalogState?>(null)
     private val showConstellations = MutableStateFlow(true)
     private val showAsterisms = MutableStateFlow(true)
+    private val magLimit = MutableStateFlow<Double>(6.0)
     private val asterismState =
         MutableStateFlow(
             AsterismUiState(
@@ -76,6 +75,7 @@ class ArViewModel(
             showConstellations,
             showAsterisms,
             asterismState,
+            magLimit,
         ) { values: Array<Any?> ->
             @Suppress("UNCHECKED_CAST")
             val stars = values[0] as List<ArStar>
@@ -85,6 +85,7 @@ class ArViewModel(
             val showConst = values[4] as Boolean
             val showAster = values[5] as Boolean
             val asterisms = values[6] as AsterismUiState
+            val magLimitValue = values[7] as Double
 
             buildState(
                 stars = stars,
@@ -94,6 +95,7 @@ class ArViewModel(
                 showConstellations = showConst,
                 showAsterisms = showAster,
                 asterismUiState = asterisms,
+                magLimit = magLimitValue,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -103,28 +105,11 @@ class ArViewModel(
 
     init {
         viewModelScope.launch(ioDispatcher) {
-            staticStars.value = loadStars()
-            astroCatalog.value = loadAstroCatalog()
+            val catalogState = loadAstroCatalog()
+            astroCatalog.value = catalogState
+            staticStars.value = catalogState?.catalog?.allStars()?.map(::mapToArStar).orEmpty()
         }
     }
-
-    private suspend fun loadStars(): List<ArStar> =
-        withContext(ioDispatcher) {
-            val stars =
-                catalogRepository.starCatalog.nearby(
-                    center = Equatorial(0.0, 0.0),
-                    radiusDeg = 180.0,
-                    magLimit = STAR_MAG_LIMIT,
-                )
-            stars.distinctBy(Star::id).map { star ->
-                ArStar(
-                    id = star.id,
-                    label = resolveLabel(star),
-                    magnitude = star.mag.toDouble(),
-                    equatorial = Equatorial(star.raDeg.toDouble(), star.decDeg.toDouble()),
-                )
-            }
-        }
 
     private fun buildState(
         stars: List<ArStar>,
@@ -134,6 +119,7 @@ class ArViewModel(
         showConstellations: Boolean,
         showAsterisms: Boolean,
         asterismUiState: AsterismUiState,
+        magLimit: Double,
     ): ArUiState {
         val lstDeg = lstAt(instant, location.point.lonDeg).lstDeg
         return ArUiState.Ready(
@@ -146,6 +132,7 @@ class ArViewModel(
             showConstellations = showConstellations,
             showAsterisms = showAsterisms,
             asterismUiState = asterismUiState,
+            magLimit = magLimit,
         )
     }
 
@@ -164,6 +151,10 @@ class ArViewModel(
         if (current != next) {
             asterismState.value = next
         }
+    }
+
+    fun setMagLimit(value: Double) {
+        magLimit.value = value.coerceIn(0.0, 8.0)
     }
 
     fun resolveConstellationId(equatorial: Equatorial): ConstellationId? {
@@ -206,7 +197,6 @@ class ArViewModel(
         }
 
     companion object {
-        private const val STAR_MAG_LIMIT = 6.0
         private val DEFAULT_LOCATION = GeoPoint(latDeg = 0.0, lonDeg = 0.0)
     }
 }
@@ -214,7 +204,7 @@ class ArViewModel(
 sealed interface ArUiState {
     object Loading : ArUiState
 
-data class Ready(
+    data class Ready(
         val instant: Instant,
         val location: GeoPoint,
         val locationResolved: Boolean,
@@ -224,25 +214,20 @@ data class Ready(
         val showConstellations: Boolean,
         val showAsterisms: Boolean,
         val asterismUiState: AsterismUiState,
+        val magLimit: Double,
     ) : ArUiState
 }
 
-private fun resolveLabel(star: Star): String? {
-    // Избегаем '!!' — преобразуем в локальные безопасные переменные
-    val name = star.name?.takeIf { it.isNotBlank() }
-    if (name != null) return name
-
-    val bayer = star.bayer?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
-    val const = star.constellation?.takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)
-    if (bayer != null && const != null) return "$bayer $const"
-
-    val flam = star.flamsteed?.takeIf { it.isNotBlank() }
-    if (flam != null) return flam
-    return null
+private fun mapToArStar(star: StarRecord): ArViewModel.ArStar =
+    ArViewModel.ArStar(
+        id = star.id.raw,
+        label = star.name,
+        magnitude = star.magnitude.toDouble(),
+        equatorial = Equatorial(star.rightAscensionDeg.toDouble(), star.declinationDeg.toDouble()),
+    )
 }
 
 class ArViewModelFactory(
-    private val catalogRepository: CatalogRepository,
     private val identifySolver: IdentifySolver,
     private val assetManager: AssetManager,
     private val locationPrefs: LocationPrefs,
@@ -251,7 +236,6 @@ class ArViewModelFactory(
         if (modelClass.isAssignableFrom(ArViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
             return ArViewModel(
-                catalogRepository = catalogRepository,
                 identifySolver = identifySolver,
                 astroLoader = PtskCatalogLoader(assetManager),
                 locationPrefs = locationPrefs,

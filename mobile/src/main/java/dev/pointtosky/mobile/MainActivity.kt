@@ -459,7 +459,7 @@ fun PointToSkyMobileApp(
 
                 MobileDestination.Ar ->
                     ArRoute(
-                        catalogRepository = deps.catalogRepository,
+                        identifySolver = deps.catalogRepository.identifySolver,
                         locationPrefs = deps.locationPrefs,
                         onBack = { actions.onNavigate(MobileDestination.Home) },
                         onSendAimTarget = actions.onSendAimTarget,
