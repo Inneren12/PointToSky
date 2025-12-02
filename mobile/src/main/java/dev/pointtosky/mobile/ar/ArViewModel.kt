@@ -236,7 +236,6 @@ private fun mapToArStar(star: StarRecord): ArViewModel.ArStar =
         magnitude = star.magnitude.toDouble(),
         equatorial = Equatorial(star.rightAscensionDeg.toDouble(), star.declinationDeg.toDouble()),
     )
-}
 
 class ArViewModelFactory(
     private val identifySolver: IdentifySolver,
