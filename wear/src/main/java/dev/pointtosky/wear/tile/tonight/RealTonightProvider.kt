@@ -24,8 +24,10 @@ import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.ZoneRepo
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
@@ -56,6 +58,11 @@ class RealTonightProvider(
     // инжектируемые диспетчеры (для тестов и без хардкода)
     private val computation: CoroutineDispatcher = TonightDispatchers.computation,
     private val io: CoroutineDispatcher = TonightDispatchers.io,
+    private val catalogCache: TonightCatalogCache =
+        TonightCatalogCache(context = context, io = io).also { cache ->
+            // Пытаемся подогреть каталог в фоне, чтобы не блокировать вызовы тайла.
+            if (starCatalog == null) cache.requestWarmUp()
+        },
 ) : TonightProvider {
     private val cache by lazy { TonightCacheStore(context, io) }
 
@@ -151,18 +158,20 @@ class RealTonightProvider(
             return TonightTileModel(updatedAt = now, items = listOf(moon, vega))
         }
 
-        // Источники
-        val catalog = starCatalog ?: loadStarCatalog()
-
         // Планеты
         val planets =
             listOf(Body.MOON, Body.JUPITER, Body.SATURN)
                 .mapNotNull { body -> evaluatePlanet(body, gp, start, end, now) }
 
-        val brightStars: List<Star> = catalog.nearby(Equatorial(0.0, 0.0), 180.0, 6.0)
+        // Источники
+        val catalog = starCatalog ?: catalogCache.getCached().also { cached ->
+            if (cached == null) catalogCache.requestWarmUp()
+        }
+
         val stars =
-            brightStars
-                .mapNotNull { star ->
+            catalog
+                ?.nearby(Equatorial(0.0, 0.0), 180.0, 6.0)
+                ?.mapNotNull { star ->
                     evaluateStar(
                         star.raDeg.toDouble(),
                         star.decDeg.toDouble(),
@@ -173,6 +182,7 @@ class RealTonightProvider(
                         now,
                     )
                 }
+                .orEmpty()
 
         val all =
             (planets + stars)
@@ -504,9 +514,37 @@ class RealTonightProvider(
         return "N:$nightUtcDate@LAT:${"%.2f".format(latQ)}@LON:${"%.2f".format(lonQ)}"
     }
 
-    private fun loadStarCatalog(): StarCatalog {
-        val astro = runCatching { PtskCatalogLoader(context.assets).load() }.getOrNull() ?: EmptyAstroCatalog
-        return AstroStarCatalogAdapter(astro)
+}
+
+/**
+ * Кэш звёздного каталога для тайла «Tonight».
+ * Подогревается на фоне (IO), чтобы не блокировать binder‑потоки тайла/компликаций.
+ */
+internal class TonightCatalogCache(
+    private val context: Context,
+    private val io: CoroutineDispatcher,
+) {
+    private val scope = CoroutineScope(io)
+
+    @Volatile
+    private var cached: StarCatalog? = null
+
+    fun requestWarmUp() {
+        if (cached != null) return
+        scope.launch { warmUpInternal() }
+    }
+
+    fun getCached(): StarCatalog? = cached
+
+    private suspend fun warmUpInternal(): StarCatalog {
+        if (cached != null) return cached as StarCatalog
+        val catalog = withContext(io) {
+            val astro = runCatching { PtskCatalogLoader(context.assets).load() }.getOrNull()
+            val starCatalog = astro?.let { AstroStarCatalogAdapter(it) }
+            starCatalog ?: AstroStarCatalogAdapter(EmptyAstroCatalog)
+        }
+        cached = catalog
+        return catalog
     }
 }
 

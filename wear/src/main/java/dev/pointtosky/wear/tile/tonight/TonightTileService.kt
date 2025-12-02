@@ -407,54 +407,25 @@ open class TonightTileService : TileService() {
 
     @VisibleForTesting
     internal fun buildPushModelJson(model: TonightTileModel): String {
-        val sb = StringBuilder()
+        val itemsArray = JSONArray()
+        model.items.forEach { t ->
+            val jsonTarget = JSONObject()
+                .put("id", t.id)
+                .put("title", t.title)
+                .put("icon", t.icon.name)
 
-        // Открываем корневой объект
-        sb.append('{')
-
-        // "updatedAt": <epochSecond>
-        sb.append("\"updatedAt\":")
-        sb.append(model.updatedAt.epochSecond)
-
-        // "items": [...]
-        sb.append(",\"items\":[")
-        model.items.forEachIndexed { index, t ->
-            if (index > 0) {
-                sb.append(',')
-            }
-            sb.append('{')
-
-            // id — пишем как строку, без всяких JSON-утилит
-            sb.append("\"id\":\"")
-            sb.append(t.id)
-            sb.append('"')
-
-            // title — тоже как строку
-            sb.append(",\"title\":\"")
-            sb.append(t.title)
-            sb.append('"')
-
-            // subtitle — только если не null/пустой
             val subtitle = t.subtitle
             if (!subtitle.isNullOrBlank()) {
-                sb.append(",\"subtitle\":\"")
-                sb.append(subtitle)
-                sb.append('"')
+                jsonTarget.put("subtitle", subtitle)
             }
 
-            // icon — имя enum'а
-            sb.append(",\"icon\":\"")
-            sb.append(t.icon.name)
-            sb.append('"')
-
-            sb.append('}')
+            itemsArray.put(jsonTarget)
         }
-        sb.append(']')
 
-        // закрываем корневой объект
-        sb.append('}')
-
-        return sb.toString()
+        return JSONObject()
+            .put("updatedAt", model.updatedAt.epochSecond)
+            .put("items", itemsArray)
+            .toString()
     }
 
     private fun Throwable.toLogMessage(): String = message ?: javaClass.simpleName
