@@ -13,6 +13,29 @@ import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.zip.CRC32
 
+/**
+ * Status indicating whether real or fake constellation boundaries are in use.
+ */
+sealed class ConstellationBoundariesStatus {
+    /**
+     * Successfully loaded real constellation boundaries from binary file.
+     */
+    data class Real(val metadata: BinaryConstellationBoundaries.Metadata) : ConstellationBoundariesStatus()
+
+    /**
+     * Using fake/fallback constellation boundaries due to load failure.
+     */
+    data class Fake(val reason: String) : ConstellationBoundariesStatus()
+}
+
+/**
+ * Result of loading constellation boundaries, including status information.
+ */
+data class BoundariesLoadResult(
+    val boundaries: ConstellationBoundaries,
+    val status: ConstellationBoundariesStatus,
+)
+
 class BinaryConstellationBoundaries private constructor(
     private val regions: List<Region>,
     val metadata: Metadata,
@@ -54,67 +77,55 @@ class BinaryConstellationBoundaries private constructor(
             path: String = DEFAULT_PATH,
             fallback: ConstellationBoundaries = FakeConstellationBoundaries,
             logger: Logger = LogBus,
-        ): ConstellationBoundaries {
+        ): BoundariesLoadResult {
+            // Helper function to return fallback with logging
+            fun returnFallback(reason: String, exception: Exception? = null): BoundariesLoadResult {
+                if (exception != null) {
+                    logger.e(TAG, "Constellation boundaries invalid, falling back to FakeConstellationBoundaries", exception, mapOf("path" to path, "reason" to reason))
+                } else {
+                    logger.e(TAG, "Constellation boundaries invalid, falling back to FakeConstellationBoundaries", payload = mapOf("path" to path, "reason" to reason))
+                }
+                return BoundariesLoadResult(
+                    boundaries = fallback,
+                    status = ConstellationBoundariesStatus.Fake(reason)
+                )
+            }
+
             val bytes = try {
                 assetProvider.open(path).use { it.readBytes() }
             } catch (ioe: IOException) {
-                logger.e(TAG, "Failed to open constellation boundaries", ioe, mapOf("path" to path))
-                return fallback
+                return returnFallback("Failed to open file", ioe)
             } catch (ex: Exception) {
-                logger.e(TAG, "Unexpected error while opening constellation boundaries", ex, mapOf("path" to path))
-                return fallback
+                return returnFallback("Unexpected error while opening file", ex)
             }
 
             val header = CatalogHeader.read(bytes) ?: run {
-                logger.e(TAG, "Invalid header", payload = mapOf("path" to path))
-                return fallback
+                return returnFallback("Invalid header")
             }
             if (header.type != EXPECTED_TYPE || header.version != SUPPORTED_VERSION) {
-                logger.e(
-                    TAG,
-                    "Unsupported catalog",
-                    payload = mapOf("path" to path, "type" to header.type, "version" to header.version),
-                )
-                return fallback
+                return returnFallback("Unsupported catalog type=${header.type} version=${header.version}")
             }
             if (header.recordCount < 0) {
-                logger.e(
-                    TAG,
-                    "Negative record count",
-                    payload = mapOf("path" to path, "count" to header.recordCount),
-                )
-                return fallback
+                return returnFallback("Negative record count=${header.recordCount}")
             }
 
             val payloadOffset = HEADER_SIZE_BYTES
             if (payloadOffset > bytes.size) {
-                logger.e(TAG, "Header larger than file", payload = mapOf("path" to path))
-                return fallback
+                return returnFallback("Header larger than file")
             }
             val payload = bytes.copyOfRange(payloadOffset, bytes.size)
             val computedCrc = CRC32().apply { update(payload) }.value and 0xFFFF_FFFFL
             if (computedCrc != header.payloadCrc32) {
-                logger.e(
-                    TAG,
-                    "CRC mismatch",
-                    payload = mapOf(
-                        "path" to path,
-                        "expectedCrc" to header.payloadCrc32,
-                        "actualCrc" to computedCrc,
-                    ),
-                )
-                return fallback
+                return returnFallback("CRC mismatch expected=${header.payloadCrc32} actual=$computedCrc")
             }
 
             val regions = try {
                 val buffer = ByteBuffer.wrap(bytes, payloadOffset, bytes.size - payloadOffset).order(ByteOrder.LITTLE_ENDIAN)
                 parseRegions(buffer, header.recordCount)
             } catch (buf: BufferUnderflowException) {
-                logger.e(TAG, "Unexpected EOF while parsing constellation boundaries", buf, mapOf("path" to path))
-                return fallback
+                return returnFallback("Unexpected EOF while parsing", buf)
             } catch (ex: Exception) {
-                logger.e(TAG, "Failed to parse constellation boundaries", ex, mapOf("path" to path))
-                return fallback
+                return returnFallback("Failed to parse constellation boundaries", ex)
             }
 
             val metadata = Metadata(
@@ -124,7 +135,7 @@ class BinaryConstellationBoundaries private constructor(
             )
             logger.i(
                 TAG,
-                "Constellation catalog loaded",
+                "Constellation boundaries loaded successfully",
                 payload = mapOf(
                     "path" to path,
                     "sizeBytes" to metadata.sizeBytes,
@@ -133,7 +144,10 @@ class BinaryConstellationBoundaries private constructor(
                 ),
             )
 
-            return BinaryConstellationBoundaries(regions, metadata, isFallback = false)
+            return BoundariesLoadResult(
+                boundaries = BinaryConstellationBoundaries(regions, metadata, isFallback = false),
+                status = ConstellationBoundariesStatus.Real(metadata)
+            )
         }
 
         private fun parseRegions(buffer: ByteBuffer, recordCount: Int): List<Region> {
