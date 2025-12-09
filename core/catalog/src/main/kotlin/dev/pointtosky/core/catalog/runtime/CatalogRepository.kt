@@ -3,6 +3,7 @@ package dev.pointtosky.core.catalog.runtime
 import android.content.Context
 import android.content.res.AssetManager
 import dev.pointtosky.core.astro.catalog.AstroCatalog
+import dev.pointtosky.core.astro.catalog.CatalogMetadata
 import dev.pointtosky.core.astro.catalog.ConstellationId
 import dev.pointtosky.core.astro.catalog.EmptyAstroCatalog
 import dev.pointtosky.core.astro.catalog.PtskCatalogLoader
@@ -163,12 +164,12 @@ class CatalogRepository private constructor(
         private fun loadAstroCatalog(assetManager: AssetManager): LoadResult<AstroCatalog, AstroCatalogStats> {
             var metadata: AstroCatalogStats? = null
             val catalog: AstroCatalog
+            val loader = PtskCatalogLoader(assetManager)
             val durationNs = measureNanoTime {
-                val loaded = runBlocking {
-                    PtskCatalogLoader(assetManager).load()
-                } ?: EmptyAstroCatalog
-                catalog = loaded
-                metadata = buildAstroMetadata(loaded)
+                catalog = runBlocking {
+                    loader.load()
+                }
+                metadata = buildAstroMetadata(catalog, loader)
             }
             return LoadResult(
                 catalog = catalog,
@@ -177,8 +178,19 @@ class CatalogRepository private constructor(
             )
         }
 
-        private fun buildAstroMetadata(catalog: AstroCatalog): AstroCatalogStats? {
-            if (catalog === EmptyAstroCatalog) return null
+        private fun buildAstroMetadata(catalog: AstroCatalog, loader: PtskCatalogLoader): AstroCatalogStats? {
+            val loaderMeta = loader.metadata
+            if (catalog === EmptyAstroCatalog || loaderMeta == null) {
+                return AstroCatalogStats(
+                    starCount = 0,
+                    constellationCount = 0,
+                    asterismCount = 0,
+                    artOverlayCount = 0,
+                    isValid = loaderMeta?.isValid ?: false,
+                    isFallback = loaderMeta?.isFallback ?: true,
+                    error = loaderMeta?.error
+                )
+            }
             val constellations = runCatching {
                 (0..87).map { index -> catalog.getConstellationMeta(ConstellationId(index)) }.distinctBy { it.id }
             }.getOrDefault(emptyList())
@@ -193,6 +205,9 @@ class CatalogRepository private constructor(
                 constellationCount = constellations.size,
                 asterismCount = asterismCount,
                 artOverlayCount = artOverlayCount,
+                isValid = loaderMeta.isValid,
+                isFallback = loaderMeta.isFallback,
+                error = loaderMeta.error
             )
         }
 
@@ -225,11 +240,26 @@ data class CatalogDiagnostics(
     val boundaryMetadata: BinaryConstellationBoundaries.Metadata?,
     val boundaryLoadDurationMs: Long,
     val usingBinaryBoundaries: Boolean,
-)
+) {
+    /**
+     * Returns true if star catalog loaded successfully and is valid (not using fallback).
+     */
+    val catalogOk: Boolean
+        get() = starMetadata?.isValid == true && starMetadata?.isFallback == false
+
+    /**
+     * Returns true if constellation boundaries loaded successfully and are valid (not using fallback).
+     */
+    val constOk: Boolean
+        get() = boundaryMetadata != null && usingBinaryBoundaries
+}
 
 data class AstroCatalogStats(
     val starCount: Int,
     val constellationCount: Int,
     val asterismCount: Int,
     val artOverlayCount: Int,
+    val isValid: Boolean,
+    val isFallback: Boolean,
+    val error: String? = null,
 )

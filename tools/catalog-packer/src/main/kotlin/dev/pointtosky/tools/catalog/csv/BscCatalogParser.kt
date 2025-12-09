@@ -1,22 +1,37 @@
 package dev.pointtosky.tools.catalog.csv
 
 import com.github.doyaaaaaken.kotlincsv.dsl.csvReader
+import dev.pointtosky.tools.catalog.ValidationConstants
 import dev.pointtosky.tools.catalog.model.CatalogSource
 import dev.pointtosky.tools.catalog.model.StarInput
 import java.nio.file.Path
 import kotlin.math.abs
 
 class BscCatalogParser : CatalogCsvParser {
+    private var skippedCount = 0
+    private var totalRows = 0
+
     override fun read(path: Path, magLimit: Double): List<StarInput> {
         val reader = csvReader { skipEmptyLine = true }
         val rows = reader.readAllWithHeader(path.toFile())
-        return rows.mapNotNull { row ->
+        skippedCount = 0
+        totalRows = rows.size
+
+        val stars = rows.mapNotNull { row ->
             val accessor = CsvRow(row)
             val mag = accessor.double("Vmag", "vmag", "Vmag (Johnson)") ?: return@mapNotNull null
             if (mag > magLimit) return@mapNotNull null
 
             val raDeg = accessor.raDegrees() ?: return@mapNotNull null
             val decDeg = accessor.decDegrees() ?: return@mapNotNull null
+
+            // Validate coordinates and magnitude
+            val error = ValidationConstants.validateStarInput(raDeg, decDeg, mag)
+            if (error != null) {
+                System.err.println("WARNING [BSC]: Skipping invalid star: $error")
+                skippedCount++
+                return@mapNotNull null
+            }
 
             val hip = accessor.int("HIP", "hip") ?: -1
             val name = accessor.string("Name", "proper", "ProperName")
@@ -26,7 +41,7 @@ class BscCatalogParser : CatalogCsvParser {
 
             StarInput(
                 source = CatalogSource.BSC,
-                raDeg = raDeg,
+                raDeg = ValidationConstants.normalizeRa(raDeg),
                 decDeg = decDeg,
                 mag = mag,
                 hip = hip,
@@ -36,6 +51,12 @@ class BscCatalogParser : CatalogCsvParser {
                 constellation = con,
             )
         }
+
+        if (skippedCount > 0) {
+            System.err.println("INFO [BSC]: Skipped $skippedCount / $totalRows rows due to validation failures")
+        }
+
+        return stars
     }
 
     private fun CsvRow.raDegrees(): Double? {

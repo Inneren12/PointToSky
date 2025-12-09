@@ -3,6 +3,7 @@ package dev.pointtosky.tools.catalog
 import dev.pointtosky.tools.catalog.model.CatalogSource
 import dev.pointtosky.tools.catalog.model.PackRequest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer
@@ -154,6 +155,84 @@ class CatalogPackingServiceTest {
         assertEquals(0, ids[startIndex + 1])
         assertEquals(0.1f, ras[startIndex], 1e-4f)
         assertEquals(359.9f, ras[startIndex + 1], 1e-4f)
+    }
+
+    @Test
+    fun `fails on empty catalog after validation`() {
+        val csv = """
+            RAdeg,DEdeg,Vmag,HIP
+        """.trimIndent()
+
+        val csvPath = Files.createTempFile("empty", ".csv")
+        Files.writeString(csvPath, csv)
+
+        val request = PackRequest(
+            source = CatalogSource.BSC,
+            input = csvPath,
+            magLimit = 6.5,
+            rdpEpsilon = 0.05,
+            withConCodes = false,
+        )
+
+        val exception = assertThrows(IllegalStateException::class.java) {
+            service.pack(request)
+        }
+        assertTrue(exception.message!!.contains("No valid stars"))
+    }
+
+    @Test
+    fun `fails when all stars have invalid coordinates`() {
+        val csv = """
+            RAdeg,DEdeg,Vmag,HIP,Name
+            400.0,50.0,5.0,1,Invalid RA
+            180.0,100.0,5.0,2,Invalid Dec
+            180.0,0.0,20.0,3,Invalid Mag
+        """.trimIndent()
+
+        val csvPath = Files.createTempFile("invalid", ".csv")
+        Files.writeString(csvPath, csv)
+
+        val request = PackRequest(
+            source = CatalogSource.BSC,
+            input = csvPath,
+            magLimit = 25.0, // High enough to include invalid mag
+            rdpEpsilon = 0.05,
+            withConCodes = false,
+        )
+
+        val exception = assertThrows(IllegalStateException::class.java) {
+            service.pack(request)
+        }
+        assertTrue(exception.message!!.contains("No valid stars"))
+    }
+
+    @Test
+    fun `validates and skips stars with out-of-range values`() {
+        val csv = """
+            RAdeg,DEdeg,Vmag,HIP,Name
+            400.0,50.0,5.0,1,InvalidRA
+            180.0,0.0,3.0,2,ValidStar
+            180.0,100.0,4.0,3,InvalidDec
+        """.trimIndent()
+
+        val csvPath = Files.createTempFile("mixed", ".csv")
+        Files.writeString(csvPath, csv)
+
+        val request = PackRequest(
+            source = CatalogSource.BSC,
+            input = csvPath,
+            magLimit = 6.5,
+            rdpEpsilon = 0.05,
+            withConCodes = false,
+        )
+
+        val result = service.pack(request)
+
+        // Should pack only the valid star
+        val header = ByteBuffer.wrap(result.binary, 0, 32).order(ByteOrder.LITTLE_ENDIAN)
+        header.position(8 + 2 + 2)
+        val starCount = header.int
+        assertEquals(1, starCount, "Should have exactly 1 valid star")
     }
 }
 
