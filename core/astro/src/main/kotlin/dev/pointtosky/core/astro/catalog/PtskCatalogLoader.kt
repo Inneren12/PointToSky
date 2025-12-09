@@ -1,8 +1,11 @@
 package dev.pointtosky.core.astro.catalog
 
 import android.content.res.AssetManager
-import android.util.Log
+import dev.pointtosky.core.logging.LogBus
+import dev.pointtosky.core.logging.Logger
 import java.io.FileNotFoundException
+import java.io.IOException
+import java.nio.BufferUnderflowException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
@@ -98,33 +101,121 @@ private class AstroCatalogImpl(
 class PtskCatalogLoader(
     private val assetManager: AssetManager,
     private val assetPath: String = "catalog/star.bin",
+    private val logger: Logger = LogBus,
 ) {
     private val parser = PtskCatalogParser()
 
-    suspend fun load(): AstroCatalog? {
+    /**
+     * Metadata about the loaded catalog, or null if using fallback.
+     */
+    var metadata: CatalogMetadata? = null
+        private set
+
+    suspend fun load(): AstroCatalog {
         parser.cached?.let { return it }
-        val catalog = withContext(Dispatchers.IO) {
+
+        val result = withContext(Dispatchers.IO) {
             try {
                 assetManager.open(assetPath).use { input ->
                     val bytes = input.readBytes()
+                    logger.i(
+                        TAG,
+                        "Loading star catalog",
+                        payload = mapOf("path" to assetPath, "sizeBytes" to bytes.size)
+                    )
                     val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-                    parser.parse(buffer)
+                    val catalog = parser.parse(buffer)
+
+                    // Set metadata for successful load
+                    metadata = CatalogMetadata(
+                        isValid = true,
+                        isFallback = false,
+                        path = assetPath,
+                        sizeBytes = bytes.size,
+                        starCount = catalog.allStars().size
+                    )
+
+                    logger.i(
+                        TAG,
+                        "Star catalog loaded successfully",
+                        payload = mapOf(
+                            "path" to assetPath,
+                            "starCount" to catalog.allStars().size
+                        )
+                    )
+                    catalog
                 }
             } catch (e: FileNotFoundException) {
-                Log.w(TAG, "Catalog asset not found at $assetPath", e)
-                null
+                logger.e(TAG, "Catalog asset not found", e, mapOf("path" to assetPath))
+                metadata = CatalogMetadata(
+                    isValid = false,
+                    isFallback = true,
+                    path = assetPath,
+                    error = "File not found: $assetPath"
+                )
+                EmptyAstroCatalog
+            } catch (e: IOException) {
+                logger.e(TAG, "IO error loading catalog", e, mapOf("path" to assetPath))
+                metadata = CatalogMetadata(
+                    isValid = false,
+                    isFallback = true,
+                    path = assetPath,
+                    error = "IO error: ${e.message}"
+                )
+                EmptyAstroCatalog
+            } catch (e: IllegalArgumentException) {
+                logger.e(TAG, "Catalog validation failed", e, mapOf("path" to assetPath, "reason" to e.message))
+                metadata = CatalogMetadata(
+                    isValid = false,
+                    isFallback = true,
+                    path = assetPath,
+                    error = "Validation error: ${e.message}"
+                )
+                EmptyAstroCatalog
+            } catch (e: BufferUnderflowException) {
+                logger.e(TAG, "Catalog file truncated or corrupted", e, mapOf("path" to assetPath))
+                metadata = CatalogMetadata(
+                    isValid = false,
+                    isFallback = true,
+                    path = assetPath,
+                    error = "File truncated or corrupted"
+                )
+                EmptyAstroCatalog
+            } catch (e: Exception) {
+                logger.e(TAG, "Unexpected error loading catalog", e, mapOf("path" to assetPath))
+                metadata = CatalogMetadata(
+                    isValid = false,
+                    isFallback = true,
+                    path = assetPath,
+                    error = "Unexpected error: ${e.message}"
+                )
+                EmptyAstroCatalog
             }
         }
-        if (catalog != null) {
-            parser.cached = catalog
+
+        if (result != EmptyAstroCatalog) {
+            parser.cached = result
         }
-        return catalog
+
+        return result
     }
 
     private companion object {
         private const val TAG = "PtskCatalogLoader"
     }
 }
+
+/**
+ * Metadata about the loaded catalog for diagnostics.
+ */
+data class CatalogMetadata(
+    val isValid: Boolean,
+    val isFallback: Boolean,
+    val path: String,
+    val sizeBytes: Int = 0,
+    val starCount: Int = 0,
+    val error: String? = null
+)
 
 internal class PtskCatalogParser {
     var cached: AstroCatalog? = null

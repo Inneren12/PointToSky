@@ -27,8 +27,12 @@ class CatalogPackingService(
         val parser = parserFactory(request.source)
         val stars = parser.read(request.input, request.magLimit)
         if (stars.isEmpty()) {
-            throw IllegalStateException("No stars matched the filters (mag <= ${request.magLimit})")
+            throw IllegalStateException(
+                "No valid stars in catalog after filtering and validation. " +
+                "Source: ${request.source}, magLimit: ${request.magLimit}, input: ${request.input}"
+            )
         }
+        System.err.println("INFO [Packer]: Packed ${stars.size} stars from ${request.source} (magLimit: ${request.magLimit})")
 
         val stringPool = StringPoolBuilder()
         val recordsBytes = buildStarRecords(stars, stringPool, request)

@@ -16,6 +16,7 @@ import java.util.zip.CRC32
 class BinaryConstellationBoundaries private constructor(
     private val regions: List<Region>,
     val metadata: Metadata,
+    val isFallback: Boolean = false,
 ) : ConstellationBoundaries {
     override fun findByEq(eq: Equatorial): String? {
         val normalizedRa = normalizeRa(eq.raDeg)
@@ -132,7 +133,7 @@ class BinaryConstellationBoundaries private constructor(
                 ),
             )
 
-            return BinaryConstellationBoundaries(regions, metadata)
+            return BinaryConstellationBoundaries(regions, metadata, isFallback = false)
         }
 
         private fun parseRegions(buffer: ByteBuffer, recordCount: Int): List<Region> {
