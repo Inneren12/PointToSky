@@ -42,6 +42,7 @@ kotlin {
 dependencies {
     implementation(project(":core:astro-core"))
     implementation(project(":core:time"))
+    implementation(project(":core:logging"))
     testImplementation(kotlin("test"))
     // Bind kotlin.test to the JUnit 5 platform
     testImplementation(kotlin("test-junit5"))
