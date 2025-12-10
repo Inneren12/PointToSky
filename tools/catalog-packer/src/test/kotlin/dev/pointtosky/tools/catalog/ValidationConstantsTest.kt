@@ -36,6 +36,21 @@ class ValidationConstantsTest {
     }
 
     @Test
+    fun `RA out of range should fail`() {
+        var error = ValidationConstants.validateStarInput(-1.0, 0.0, 0.0)
+        assertNotNull("RA < 0 should fail", error)
+
+        error = ValidationConstants.validateStarInput(-10.0, 0.0, 0.0)
+        assertNotNull("RA < 0 should fail", error)
+
+        error = ValidationConstants.validateStarInput(360.0, 0.0, 0.0)
+        assertNotNull("RA >= 360 should fail", error)
+
+        error = ValidationConstants.validateStarInput(400.0, 0.0, 0.0)
+        assertNotNull("RA > 360 should fail", error)
+    }
+
+    @Test
     fun `Dec out of range should fail`() {
         var error = ValidationConstants.validateStarInput(0.0, -91.0, 0.0)
         assertNotNull("Dec < -90 should fail", error)
@@ -79,10 +94,16 @@ class ValidationConstantsTest {
 
     @Test
     fun `normalizeRa should wrap correctly`() {
+        // Within range
         assertEquals(0.0, ValidationConstants.normalizeRa(0.0), 0.0001)
         assertEquals(180.0, ValidationConstants.normalizeRa(180.0), 0.0001)
+
+        // At and above 360
         assertEquals(0.0, ValidationConstants.normalizeRa(360.0), 0.0001)
         assertEquals(1.0, ValidationConstants.normalizeRa(361.0), 0.0001)
+        assertEquals(40.0, ValidationConstants.normalizeRa(400.0), 0.0001)
+
+        // Negative values should wrap to positive
         assertEquals(359.0, ValidationConstants.normalizeRa(-1.0), 0.0001)
         assertEquals(270.0, ValidationConstants.normalizeRa(-90.0), 0.0001)
     }

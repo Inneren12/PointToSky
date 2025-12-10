@@ -34,10 +34,9 @@ object ValidationConstants {
             return "Magnitude is not finite: $mag"
         }
 
-        // Normalize RA to [0, 360) for validation
-        val normalizedRa = raDeg.mod(360.0)
-        if (normalizedRa < RA_MIN_DEG || normalizedRa >= RA_MAX_DEG) {
-            return "RA out of range [0, 360): $normalizedRa (original: $raDeg)"
+        // Validate raw RA value without normalization
+        if (raDeg < RA_MIN_DEG || raDeg >= RA_MAX_DEG) {
+            return "RA out of range [0, 360): $raDeg"
         }
 
         if (decDeg < DEC_MIN_DEG || decDeg > DEC_MAX_DEG) {
@@ -52,7 +51,12 @@ object ValidationConstants {
     }
 
     /**
-     * Normalizes RA to [0, 360) range.
+     * Normalizes RA (degrees) into [0, 360) range.
+     * This is for internal computations or transformations, not for initial data validation.
      */
-    fun normalizeRa(raDeg: Double): Double = raDeg.mod(360.0)
+    fun normalizeRa(raDeg: Double): Double {
+        if (!raDeg.isFinite()) return raDeg
+        val wrapped = raDeg % 360.0
+        return if (wrapped < 0.0) wrapped + 360.0 else wrapped
+    }
 }
