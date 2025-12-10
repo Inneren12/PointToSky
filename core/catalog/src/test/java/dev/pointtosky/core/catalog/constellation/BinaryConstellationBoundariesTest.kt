@@ -38,8 +38,8 @@ class BinaryConstellationBoundariesTest {
         val wrapPolygon = listOf(
             350.0 to -5.0,
             360.0 to -5.0,
-            0.0 to -5.0,
-            0.0 to 5.0,
+            10.0 to -5.0,
+            10.0 to 5.0,
             360.0 to 5.0,
             350.0 to 5.0,
         )
