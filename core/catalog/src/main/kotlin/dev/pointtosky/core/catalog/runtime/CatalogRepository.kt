@@ -13,6 +13,8 @@ import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
 import dev.pointtosky.core.catalog.CatalogAdapter
 import dev.pointtosky.core.catalog.binary.BinaryConstellationBoundaries
+import dev.pointtosky.core.catalog.binary.BoundariesLoadResult
+import dev.pointtosky.core.catalog.binary.ConstellationBoundariesStatus
 import dev.pointtosky.core.catalog.io.AndroidAssetProvider
 import dev.pointtosky.core.catalog.io.AssetProvider
 import dev.pointtosky.core.catalog.star.AstroStarCatalogAdapter
@@ -28,6 +30,7 @@ class CatalogRepository private constructor(
     val starLoadDurationMs: Long,
     val constellationBoundaries: ConstellationBoundaries,
     val boundaryMetadata: BinaryConstellationBoundaries.Metadata?,
+    val boundaryStatus: ConstellationBoundariesStatus,
     val boundaryLoadDurationMs: Long,
     val skyCatalog: CatalogAdapter,
     val identifySolver: IdentifySolver,
@@ -36,8 +39,8 @@ class CatalogRepository private constructor(
         starMetadata = starMetadata,
         starLoadDurationMs = starLoadDurationMs,
         boundaryMetadata = boundaryMetadata,
+        boundaryStatus = boundaryStatus,
         boundaryLoadDurationMs = boundaryLoadDurationMs,
-        usingBinaryBoundaries = boundaryMetadata != null,
     )
 
     fun probe(center: Equatorial, radiusDeg: Double, magLimit: Double?, maxResults: Int = 8): List<ProbeResult> {
@@ -145,6 +148,7 @@ class CatalogRepository private constructor(
                 starLoadDurationMs = starHolder.loadDurationMs,
                 constellationBoundaries = boundariesHolder.catalog,
                 boundaryMetadata = boundariesHolder.metadata,
+                boundaryStatus = boundariesHolder.status,
                 boundaryLoadDurationMs = boundariesHolder.loadDurationMs,
                 skyCatalog = adapter,
                 identifySolver = solver,
@@ -211,17 +215,23 @@ class CatalogRepository private constructor(
             )
         }
 
-        private fun loadBoundaries(provider: AssetProvider): LoadResult<ConstellationBoundaries, BinaryConstellationBoundaries.Metadata> {
+        private fun loadBoundaries(provider: AssetProvider): LoadResultWithStatus<ConstellationBoundaries, BinaryConstellationBoundaries.Metadata> {
             var metadata: BinaryConstellationBoundaries.Metadata? = null
             val boundaries: ConstellationBoundaries
+            var status: ConstellationBoundariesStatus
             val durationNs = measureNanoTime {
-                val loaded = BinaryConstellationBoundaries.load(provider)
-                boundaries = loaded
-                metadata = (loaded as? BinaryConstellationBoundaries)?.metadata
+                val result = BinaryConstellationBoundaries.load(provider)
+                boundaries = result.boundaries
+                status = result.status
+                metadata = when (status) {
+                    is ConstellationBoundariesStatus.Real -> status.metadata
+                    is ConstellationBoundariesStatus.Fake -> null
+                }
             }
-            return LoadResult(
+            return LoadResultWithStatus(
                 catalog = boundaries,
                 metadata = metadata,
+                status = status,
                 loadDurationMs = (durationNs / 1_000_000.0).roundToInt().toLong(),
             )
         }
@@ -232,14 +242,21 @@ class CatalogRepository private constructor(
         val metadata: M?,
         val loadDurationMs: Long,
     )
+
+    private data class LoadResultWithStatus<T, M>(
+        val catalog: T,
+        val metadata: M?,
+        val status: ConstellationBoundariesStatus,
+        val loadDurationMs: Long,
+    )
 }
 
 data class CatalogDiagnostics(
     val starMetadata: AstroCatalogStats?,
     val starLoadDurationMs: Long,
     val boundaryMetadata: BinaryConstellationBoundaries.Metadata?,
+    val boundaryStatus: ConstellationBoundariesStatus,
     val boundaryLoadDurationMs: Long,
-    val usingBinaryBoundaries: Boolean,
 ) {
     /**
      * Returns true if star catalog loaded successfully and is valid (not using fallback).
@@ -251,7 +268,19 @@ data class CatalogDiagnostics(
      * Returns true if constellation boundaries loaded successfully and are valid (not using fallback).
      */
     val constOk: Boolean
-        get() = boundaryMetadata != null && usingBinaryBoundaries
+        get() = boundaryStatus is ConstellationBoundariesStatus.Real
+
+    /**
+     * Returns true if constellation boundaries are using fake/fallback implementation.
+     */
+    val usingFakeBoundaries: Boolean
+        get() = boundaryStatus is ConstellationBoundariesStatus.Fake
+
+    /**
+     * Returns the reason for using fake boundaries, or null if using real boundaries.
+     */
+    val fakeBoundariesReason: String?
+        get() = (boundaryStatus as? ConstellationBoundariesStatus.Fake)?.reason
 }
 
 data class AstroCatalogStats(
