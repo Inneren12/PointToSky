@@ -581,4 +581,124 @@ class RedactorTest {
         assertTrue(stackTrace.contains("Utils.kt:40"),
             "Filename should be preserved")
     }
+
+    @Test
+    fun `path redaction - no directory segment leakage`() {
+        // This test specifically verifies the bug fix for directory segment leakage
+        // Previously, /home/user/project/Main.kt:10 was reduced to user/project/Main.kt:10
+        // Now it should be reduced to just Main.kt:10
+        val throwable = ThrowableSnapshot(
+            type = "RuntimeException",
+            message = "Test error",
+            stackTrace = """
+                java.lang.RuntimeException: Test error
+                    at com.example.MainKt.main(Main.kt:10) (/home/user/project/Main.kt:10)
+                    at com.example.Utils.helper(Utils.java:25) (C:\Users\admin\project\Utils.java:25)
+                    at com.example.Handler.process(Handler.kt:42) (file:///home/developer/app/Handler.kt:42)
+            """.trimIndent()
+        )
+
+        val event = LogEvent(
+            level = LogLevel.ERROR,
+            tag = "PathLeakTest",
+            message = "Testing directory leak",
+            thread = thread,
+            process = process,
+            device = device,
+            error = throwable,
+        )
+
+        val redacted = redactor.redact(event)
+        val stackTrace = redacted.error?.stackTrace ?: ""
+
+        // Critical: Verify NO directory segments remain
+        assertFalse(stackTrace.contains("user/project"),
+            "Directory segments 'user/project' should NOT appear in redacted stack trace")
+        assertFalse(stackTrace.contains("admin\\project"),
+            "Directory segments 'admin\\project' should NOT appear in redacted stack trace")
+        assertFalse(stackTrace.contains("developer/app"),
+            "Directory segments 'developer/app' should NOT appear in redacted stack trace")
+
+        // Verify full paths are removed
+        assertFalse(stackTrace.contains("/home/user/project"),
+            "Full Unix path should be redacted")
+        assertFalse(stackTrace.contains("C:\\Users\\admin\\project"),
+            "Full Windows path should be redacted")
+        assertFalse(stackTrace.contains("file:///home/developer/app"),
+            "Full file:// URL should be redacted")
+
+        // Verify only filenames with line numbers remain
+        assertTrue(stackTrace.contains("Main.kt:10"),
+            "Filename with line number should be preserved")
+        assertTrue(stackTrace.contains("Utils.java:25"),
+            "Filename with line number should be preserved")
+        assertTrue(stackTrace.contains("Handler.kt:42"),
+            "Filename with line number should be preserved")
+
+        // Verify the method names and structure are preserved (not part of path redaction)
+        assertTrue(stackTrace.contains("com.example.MainKt.main"),
+            "Method name should be preserved")
+        assertTrue(stackTrace.contains("com.example.Utils.helper"),
+            "Method name should be preserved")
+    }
+
+    @Test
+    fun `path redaction - standard stack trace formats`() {
+        // Test realistic stack trace formats to ensure proper redaction
+        val testCases = listOf(
+            // Standard Unix path
+            Triple(
+                "/home/user/project/Main.kt:10",
+                "Main.kt:10",
+                "user/project"
+            ),
+            // Standard Windows path
+            Triple(
+                "C:\\Users\\User\\project\\Main.kt:10",
+                "Main.kt:10",
+                "User\\project"
+            ),
+            // file:// URL
+            Triple(
+                "file:///home/user/project/Main.kt:10",
+                "Main.kt:10",
+                "user/project"
+            ),
+            // Path with spaces in directory
+            Triple(
+                "/Users/User Name/my project/Main.kt:10",
+                "Main.kt:10",
+                "User Name/my project"
+            ),
+        )
+
+        testCases.forEach { (inputPath, expectedFilename, forbiddenSegment) ->
+            val throwable = ThrowableSnapshot(
+                type = "Exception",
+                message = "Test",
+                stackTrace = "    at com.example.Test.method($inputPath)"
+            )
+
+            val event = LogEvent(
+                level = LogLevel.ERROR,
+                tag = "Test",
+                message = "Test",
+                thread = thread,
+                process = process,
+                device = device,
+                error = throwable,
+            )
+
+            val redacted = redactor.redact(event)
+            val stackTrace = redacted.error?.stackTrace ?: ""
+
+            // Verify the expected filename is present
+            assertTrue(stackTrace.contains(expectedFilename),
+                "Should contain '$expectedFilename' for input: $inputPath\nGot: $stackTrace")
+
+            // Verify forbidden directory segments are NOT present
+            assertFalse(stackTrace.contains(forbiddenSegment),
+                "Should NOT contain directory segment '$forbiddenSegment' for input: $inputPath\nGot: $stackTrace")
+        }
+    }
 }

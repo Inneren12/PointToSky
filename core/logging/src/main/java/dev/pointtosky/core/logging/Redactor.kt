@@ -181,8 +181,10 @@ fun interface Redactor {
             //   - Optional file:// prefix
             //   - Windows drive (C:\) or Unix root (/)
             //   - Any characters until the last path separator (including spaces)
-            //   - Captures: filename.ext or filename.ext:line
-            result = result.replace(Regex("""(?:file://)?(?:[A-Za-z]:[\\/]|/)[\S ]*?[\\/](\S+?\.\w+(?::\d+)?)""")) {
+            //   - Captures: filename.ext or filename.ext:line (excluding path separators)
+            // Note: [^\\/\s]+ ensures the capture group excludes path separators to prevent
+            // directory leakage (e.g., /home/user/project/Main.kt:10 → Main.kt:10, not user/project/Main.kt:10)
+            result = result.replace(Regex("""(?:file://)?(?:[A-Za-z]:[\\/]|/)[\S ]*?[\\/]([^\\/\s]+\.\w+(?::\d+)?)""")) {
                 it.groupValues[1] // Keep only filename[:line]
             }
 
