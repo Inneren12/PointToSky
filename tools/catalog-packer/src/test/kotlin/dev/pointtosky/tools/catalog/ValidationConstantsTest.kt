@@ -69,6 +69,35 @@ class ValidationConstantsTest {
     }
 
     @Test
+    fun `extreme magnitude values should fail`() {
+        // Far beyond reasonable physical values
+        var error = ValidationConstants.validateStarInput(0.0, 0.0, 99.0)
+        assertNotNull("Mag = 99.0 should fail", error)
+
+        error = ValidationConstants.validateStarInput(0.0, 0.0, -50.0)
+        assertNotNull("Mag = -50.0 should fail", error)
+
+        error = ValidationConstants.validateStarInput(0.0, 0.0, 1000.0)
+        assertNotNull("Mag = 1000.0 should fail", error)
+
+        error = ValidationConstants.validateStarInput(0.0, 0.0, -100.0)
+        assertNotNull("Mag = -100.0 should fail", error)
+    }
+
+    @Test
+    fun `magnitudes slightly within sanity range should pass`() {
+        // Near boundaries but valid
+        var error = ValidationConstants.validateStarInput(0.0, 0.0, -1.5)
+        assertNull("Mag = -1.5 should pass", error)
+
+        error = ValidationConstants.validateStarInput(0.0, 0.0, 14.9)
+        assertNull("Mag = 14.9 should pass", error)
+
+        error = ValidationConstants.validateStarInput(0.0, 0.0, -1.99)
+        assertNull("Mag = -1.99 should pass", error)
+    }
+
+    @Test
     fun `NaN values should fail`() {
         var error = ValidationConstants.validateStarInput(Double.NaN, 0.0, 0.0)
         assertNotNull("NaN RA should fail", error)
@@ -90,6 +119,9 @@ class ValidationConstantsTest {
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, Double.POSITIVE_INFINITY)
         assertNotNull("Infinite magnitude should fail", error)
+
+        error = ValidationConstants.validateStarInput(0.0, 0.0, Double.NEGATIVE_INFINITY)
+        assertNotNull("Negative infinite magnitude should fail", error)
     }
 
     @Test

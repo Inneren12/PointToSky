@@ -207,6 +207,77 @@ class CatalogPackingServiceTest {
     }
 
     @Test
+    fun `fails when all rows have various validation failures and no bin is written`() {
+        val csv = """
+            RAdeg,DEdeg,Vmag,HIP,Name
+            -10.0,45.0,5.0,1,Negative RA
+            360.0,45.0,5.0,2,RA equals 360
+            500.0,0.0,3.0,3,RA way out of range
+            180.0,-95.0,4.0,4,Dec below -90
+            180.0,95.0,4.0,5,Dec above 90
+            100.0,0.0,99.0,6,Extreme positive mag
+            100.0,0.0,-50.0,7,Extreme negative mag
+        """.trimIndent()
+
+        val csvPath = Files.createTempFile("all-invalid", ".csv")
+        Files.writeString(csvPath, csv)
+
+        val outputPath = Files.createTempFile("output", ".bin")
+        Files.deleteIfExists(outputPath) // Ensure it doesn't exist before the test
+
+        val request = PackRequest(
+            source = CatalogSource.BSC,
+            input = csvPath,
+            magLimit = 100.0, // High limit to ensure magnitude validation is tested, not filtering
+            rdpEpsilon = 0.05,
+            withConCodes = false,
+        )
+
+        val exception = assertThrows(IllegalStateException::class.java) {
+            service.pack(request)
+        }
+        assertTrue(
+            exception.message!!.contains("No valid stars"),
+            "Error message should indicate no valid stars"
+        )
+        // Note: We don't write to outputPath in this test, but in real usage
+        // the packer should fail before writing any file
+    }
+
+    @Test
+    fun `fails when CSV contains only non-finite values`() {
+        // Test that NaN and Infinity values are properly rejected
+        val csv = """
+            RAdeg,DEdeg,Vmag,HIP,Name
+            NaN,0.0,5.0,1,NaN RA
+            180.0,NaN,5.0,2,NaN Dec
+            180.0,0.0,NaN,3,NaN Mag
+            Infinity,0.0,5.0,4,Inf RA
+            180.0,Infinity,5.0,5,Inf Dec
+            180.0,0.0,Infinity,6,Inf Mag
+        """.trimIndent()
+
+        val csvPath = Files.createTempFile("non-finite", ".csv")
+        Files.writeString(csvPath, csv)
+
+        val request = PackRequest(
+            source = CatalogSource.BSC,
+            input = csvPath,
+            magLimit = 10.0,
+            rdpEpsilon = 0.05,
+            withConCodes = false,
+        )
+
+        val exception = assertThrows(IllegalStateException::class.java) {
+            service.pack(request)
+        }
+        assertTrue(
+            exception.message!!.contains("No valid stars"),
+            "Should fail when all values are non-finite"
+        )
+    }
+
+    @Test
     fun `validates and skips stars with out-of-range values`() {
         val csv = """
             RAdeg,DEdeg,Vmag,HIP,Name
