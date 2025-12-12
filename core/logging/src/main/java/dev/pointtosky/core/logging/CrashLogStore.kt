@@ -23,6 +23,7 @@ class CrashLogStore(
     private val directory: File,
     private val clock: Clock = Clock.systemUTC(),
     private val maxEntries: Int = DEFAULT_MAX_ENTRIES,
+    private val redactor: Redactor = Redactor.Privacy,
 ) {
     private val file: File = File(directory, FILE_NAME)
     private val lock = Any()
@@ -97,13 +98,29 @@ class CrashLogStore(
             val zipName = "pointtosky-crash-$timestamp.zip"
             val zipFile = File(targetDirectory, zipName)
             return try {
-                FileInputStream(file).use { input ->
-                    FileOutputStream(zipFile).use { output ->
-                        ZipOutputStream(output).use { zip ->
-                            zip.putNextEntry(ZipEntry(file.name))
-                            input.copyTo(zip)
-                            zip.closeEntry()
+                // Read, redact, and write crash log entries
+                FileOutputStream(zipFile).use { output ->
+                    ZipOutputStream(output).use { zip ->
+                        zip.putNextEntry(ZipEntry(file.name))
+                        file.inputStream().bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
+                            lines.forEach { line ->
+                                if (line.isNotBlank()) {
+                                    // Parse entry, redact it, and write to ZIP
+                                    val entry = CrashLogEntry.fromJson(line)
+                                    if (entry != null) {
+                                        val redacted = if (redactor is Redactor.Privacy) {
+                                            Redactor.Privacy.redact(entry)
+                                        } else {
+                                            entry // Passthrough if not using Privacy redactor
+                                        }
+                                        val redactedLine = redacted.toJsonLine()
+                                        zip.write(redactedLine.toByteArray(StandardCharsets.UTF_8))
+                                        zip.write(NEWLINE_BYTE)
+                                    }
+                                }
+                            }
                         }
+                        zip.closeEntry()
                     }
                 }
                 zipFile

@@ -228,27 +228,28 @@ class BinaryConstellationBoundariesLoadTest {
         val errorMessages = mutableListOf<String>()
         val infoMessages = mutableListOf<String>()
 
-        override fun d(tag: String, message: String, payload: Map<String, Any?>): Logger {
-            return this
+        override fun v(tag: String, msg: String, payload: Map<String, Any?>) {
+            // No-op for tests
         }
 
-        override fun i(tag: String, message: String, payload: Map<String, Any?>): Logger {
-            infoMessages.add("$tag: $message $payload")
-            return this
+        override fun d(tag: String, msg: String, payload: Map<String, Any?>) {
+            // No-op for tests
         }
 
-        override fun w(tag: String, message: String, payload: Map<String, Any?>): Logger {
-            return this
+        override fun i(tag: String, msg: String, payload: Map<String, Any?>) {
+            infoMessages.add("$tag: $msg $payload")
         }
 
-        override fun e(tag: String, message: String, payload: Map<String, Any?>): Logger {
-            errorMessages.add("$tag: $message $payload")
-            return this
+        override fun w(tag: String, msg: String, err: Throwable?, payload: Map<String, Any?>) {
+            // No-op for tests
         }
 
-        override fun e(tag: String, message: String, throwable: Throwable, payload: Map<String, Any?>): Logger {
-            errorMessages.add("$tag: $message ${throwable.message} $payload")
-            return this
+        override fun e(tag: String, msg: String, err: Throwable?, payload: Map<String, Any?>) {
+            errorMessages.add("$tag: $msg ${err?.message ?: ""} $payload")
+        }
+
+        override fun event(name: String, payload: Map<String, Any?>) {
+            // No-op for tests
         }
     }
 }
