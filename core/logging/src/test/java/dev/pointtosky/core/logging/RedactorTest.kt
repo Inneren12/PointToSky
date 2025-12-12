@@ -402,4 +402,183 @@ class RedactorTest {
         assertEquals(null, redactedNulls.payload["key"])
         assertEquals(null, redactedNulls.payload["lat"])
     }
+
+    @Test
+    fun `path redaction - Windows paths with spaces`() {
+        val throwable = ThrowableSnapshot(
+            type = "IllegalStateException",
+            message = "Error occurred",
+            stackTrace = """
+                java.lang.IllegalStateException: Error occurred
+                    at com.example.MyClass.doSomething(MyClass.kt:42)
+                    at C:\Users\John Doe\App\Main.kt:10
+                    at C:\Program Files\MyApp\src\Utils.kt:25
+            """.trimIndent()
+        )
+
+        val event = LogEvent(
+            level = LogLevel.ERROR,
+            tag = "PathTest",
+            message = "Exception occurred",
+            thread = thread,
+            process = process,
+            device = device,
+            error = throwable,
+        )
+
+        val redacted = redactor.redact(event)
+        val stackTrace = redacted.error?.stackTrace ?: ""
+
+        // Original paths with usernames/spaces should be removed
+        assertFalse(stackTrace.contains("John Doe"),
+            "Username should be redacted from Windows path")
+        assertFalse(stackTrace.contains("C:\\Users\\John Doe"),
+            "Full Windows path with spaces should be redacted")
+        assertFalse(stackTrace.contains("Program Files"),
+            "Program Files directory should be redacted")
+
+        // Filenames with line numbers should be preserved
+        assertTrue(stackTrace.contains("Main.kt:10"),
+            "Filename with line number should be preserved")
+        assertTrue(stackTrace.contains("Utils.kt:25"),
+            "Filename with line number should be preserved")
+    }
+
+    @Test
+    fun `path redaction - Unix paths with spaces`() {
+        val throwable = ThrowableSnapshot(
+            type = "NullPointerException",
+            message = "Null value",
+            stackTrace = """
+                java.lang.NullPointerException: Null value
+                    at /Users/John Doe/app/Main.kt:100
+                    at /home/user name/project/src/Handler.java:55
+                    at /Applications/My App/lib/Core.kt:200
+            """.trimIndent()
+        )
+
+        val event = LogEvent(
+            level = LogLevel.ERROR,
+            tag = "PathTest",
+            message = "Exception occurred",
+            thread = thread,
+            process = process,
+            device = device,
+            error = throwable,
+        )
+
+        val redacted = redactor.redact(event)
+        val stackTrace = redacted.error?.stackTrace ?: ""
+
+        // Original paths with usernames/spaces should be removed
+        assertFalse(stackTrace.contains("John Doe"),
+            "Username should be redacted from Unix path")
+        assertFalse(stackTrace.contains("/Users/John Doe"),
+            "Full Unix path with spaces should be redacted")
+        assertFalse(stackTrace.contains("user name"),
+            "Username with space should be redacted")
+        assertFalse(stackTrace.contains("/Applications/My App"),
+            "Application path with spaces should be redacted")
+
+        // Filenames with line numbers should be preserved
+        assertTrue(stackTrace.contains("Main.kt:100"),
+            "Filename with line number should be preserved")
+        assertTrue(stackTrace.contains("Handler.java:55"),
+            "Filename with line number should be preserved")
+        assertTrue(stackTrace.contains("Core.kt:200"),
+            "Filename with line number should be preserved")
+    }
+
+    @Test
+    fun `path redaction - file protocol URLs with spaces`() {
+        val throwable = ThrowableSnapshot(
+            type = "RuntimeException",
+            message = "Runtime error",
+            stackTrace = """
+                java.lang.RuntimeException: Runtime error
+                    at file:///Users/John Doe/app/MyApp.java:55
+                    at file://C:\Users\Jane Smith\App\Main.kt:10
+                    at file:///home/user 123/src/Core.kt:42
+            """.trimIndent()
+        )
+
+        val event = LogEvent(
+            level = LogLevel.ERROR,
+            tag = "PathTest",
+            message = "Exception occurred",
+            thread = thread,
+            process = process,
+            device = device,
+            error = throwable,
+        )
+
+        val redacted = redactor.redact(event)
+        val stackTrace = redacted.error?.stackTrace ?: ""
+
+        // Original paths with usernames/spaces should be removed
+        assertFalse(stackTrace.contains("John Doe"),
+            "Username should be redacted from file:// URL")
+        assertFalse(stackTrace.contains("Jane Smith"),
+            "Username should be redacted from file:// URL")
+        assertFalse(stackTrace.contains("user 123"),
+            "Username should be redacted from file:// URL")
+        assertFalse(stackTrace.contains("file:///Users/John Doe"),
+            "Full file:// path should be redacted")
+
+        // Filenames with line numbers should be preserved
+        assertTrue(stackTrace.contains("MyApp.java:55"),
+            "Filename with line number should be preserved")
+        assertTrue(stackTrace.contains("Main.kt:10"),
+            "Filename with line number should be preserved")
+        assertTrue(stackTrace.contains("Core.kt:42"),
+            "Filename with line number should be preserved")
+    }
+
+    @Test
+    fun `path redaction - mixed paths with and without spaces`() {
+        val throwable = ThrowableSnapshot(
+            type = "IllegalArgumentException",
+            message = "Invalid argument",
+            stackTrace = """
+                java.lang.IllegalArgumentException: Invalid argument
+                    at /home/user/project/Main.kt:10
+                    at /home/john doe/app/Handler.kt:20
+                    at C:\Users\admin\App\Core.kt:30
+                    at C:\Program Files\MyApp\Utils.kt:40
+            """.trimIndent()
+        )
+
+        val event = LogEvent(
+            level = LogLevel.ERROR,
+            tag = "PathTest",
+            message = "Exception occurred",
+            thread = thread,
+            process = process,
+            device = device,
+            error = throwable,
+        )
+
+        val redacted = redactor.redact(event)
+        val stackTrace = redacted.error?.stackTrace ?: ""
+
+        // All paths should be redacted, whether they have spaces or not
+        assertFalse(stackTrace.contains("/home/user/project"),
+            "Path without spaces should be redacted")
+        assertFalse(stackTrace.contains("john doe"),
+            "Path with spaces should be redacted")
+        assertFalse(stackTrace.contains("C:\\Users\\admin"),
+            "Windows path without spaces should be redacted")
+        assertFalse(stackTrace.contains("Program Files"),
+            "Windows path with spaces should be redacted")
+
+        // All filenames should be preserved
+        assertTrue(stackTrace.contains("Main.kt:10"),
+            "Filename should be preserved")
+        assertTrue(stackTrace.contains("Handler.kt:20"),
+            "Filename should be preserved")
+        assertTrue(stackTrace.contains("Core.kt:30"),
+            "Filename should be preserved")
+        assertTrue(stackTrace.contains("Utils.kt:40"),
+            "Filename should be preserved")
+    }
 }

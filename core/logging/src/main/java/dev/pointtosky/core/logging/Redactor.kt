@@ -175,10 +175,15 @@ fun interface Redactor {
         private fun redactStackTrace(stackTrace: String): String {
             var result = stackTrace
 
-            // Redact full file paths (e.g., /Users/username/... or C:\Users\username\...)
-            // Keep just the filename
-            result = result.replace(Regex("""(?:file://)?(?:[A-Za-z]:\\|/)(?:[\w.-]+[/\\])*(\w+\.\w+)""")) {
-                it.groupValues[1] // Keep only the filename
+            // Redact full file paths (e.g., /Users/John Doe/... or C:\Users\John Doe\...)
+            // Handles paths with spaces, keeps just the filename (and optional :line)
+            // Pattern matches:
+            //   - Optional file:// prefix
+            //   - Windows drive (C:\) or Unix root (/)
+            //   - Any characters until the last path separator (including spaces)
+            //   - Captures: filename.ext or filename.ext:line
+            result = result.replace(Regex("""(?:file://)?(?:[A-Za-z]:[\\/]|/)[\S ]*?[\\/](\S+?\.\w+(?::\d+)?)""")) {
+                it.groupValues[1] // Keep only filename[:line]
             }
 
             // Apply general string redaction (IDs, emails, etc.)
