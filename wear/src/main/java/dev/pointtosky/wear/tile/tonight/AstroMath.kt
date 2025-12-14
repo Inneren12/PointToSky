@@ -1,7 +1,10 @@
 package dev.pointtosky.wear.tile.tonight
 
 import dev.pointtosky.core.astro.coord.Equatorial
-import dev.pointtosky.core.time.instantToJulianDay
+import dev.pointtosky.core.astro.time.gmstDeg
+import dev.pointtosky.core.astro.time.instantToJulianDay
+import dev.pointtosky.core.astro.time.lstDeg
+import dev.pointtosky.core.astro.units.wrapDeg0To360
 import java.time.Instant
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -23,8 +26,10 @@ object AstroMath {
     ): Horizontal {
         val decRad = Math.toRadians(eq.decDeg.coerceIn(-90.0, 90.0))
         val latRad = Math.toRadians(latDeg.coerceIn(-90.0, 90.0))
-        val lstDeg = lstDegrees(instant, lonDeg)
-        val haRad = Math.toRadians(wrap0To360(lstDeg) - wrap0To360(eq.raDeg))
+        val jd = instantToJulianDay(instant)
+        val gmst = gmstDeg(jd)
+        val lst = lstDeg(gmst, lonDeg)
+        val haRad = Math.toRadians(wrapDeg0To360(lst) - wrapDeg0To360(eq.raDeg))
 
         val sinAlt = sin(decRad) * sin(latRad) + cos(decRad) * cos(latRad) * cos(haRad)
         val alt = asin(sinAlt)
@@ -42,22 +47,5 @@ object AstroMath {
         val cosZ = cos(zRad)
         // Kasten & Young (1989)
         return 1.0 / (cosZ + 0.50572 * (90.0 - z + 6.07995).pow(-1.6364))
-    }
-
-    private fun lstDegrees(
-        instant: Instant,
-        lonDeg: Double,
-    ): Double {
-        val jd = instantToJulianDay(instant)
-        val t = (jd - 2451545.0) / 36525.0
-        var gmst = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * t * t - t * t * t / 38710000.0
-        gmst = wrap0To360(gmst)
-        return wrap0To360(gmst + lonDeg)
-    }
-
-    private fun wrap0To360(v: Double): Double {
-        var x = v % 360.0
-        if (x < 0) x += 360.0
-        return x
     }
 }

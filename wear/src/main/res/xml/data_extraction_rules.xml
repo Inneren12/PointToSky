@@ -1,22 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup disableIfNoEncryptionCapabilities="true">
-        <!-- Ничего не отдаём в облако -->
-        <exclude domain="full-backup-content"/>
-        <exclude domain="sharedpref"/>
+        <!-- Include user preferences stored in DataStore -->
+        <include domain="sharedpref" path="."/>
+        <include domain="file" path="datastore/"/>
+
+        <!-- Exclude heavy binary catalogs (shipped/derivable data) -->
+        <exclude domain="file" path="files/catalog/"/>
+        <exclude domain="file" path="cache/"/>
+
+        <!-- Exclude logs and diagnostic data -->
+        <exclude domain="file" path="files/logs/"/>
+        <exclude domain="file" path="files/diagnostics/"/>
+
+        <!-- Exclude all other files not explicitly included -->
         <exclude domain="database"/>
-        <exclude domain="external-files"/>
-        <exclude domain="files"/>
-        <exclude domain="root"/>
-        <exclude domain="device-transfer"/>
+        <exclude domain="external"/>
     </cloud-backup>
     <device-transfer>
-        <!-- Ничего не переносим между устройствами -->
-        <exclude domain="full-backup-content"/>
-        <exclude domain="sharedpref"/>
+        <!-- Include user preferences for device transfer -->
+        <include domain="sharedpref" path="."/>
+        <include domain="file" path="datastore/"/>
+
+        <!-- Exclude heavy binary catalogs -->
+        <exclude domain="file" path="files/catalog/"/>
+        <exclude domain="file" path="cache/"/>
+
+        <!-- Exclude logs -->
+        <exclude domain="file" path="files/logs/"/>
+        <exclude domain="file" path="files/diagnostics/"/>
+
+        <!-- Exclude all other files not explicitly included -->
         <exclude domain="database"/>
-        <exclude domain="external-files"/>
-        <exclude domain="files"/>
-        <exclude domain="root"/>
+        <exclude domain="external"/>
     </device-transfer>
 </data-extraction-rules>

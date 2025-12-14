@@ -21,5 +21,3 @@ fun instantToJulianCenturies(instant: Instant): Double {
     val julianDay = instantToJulianDay(instant)
     return (julianDay - JULIAN_DAY_AT_J2000) / JULIAN_CENTURY_DAYS
 }
-
-// TODO: формулы LST/GMST перенести в S4 (astro-core).
