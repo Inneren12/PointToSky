@@ -20,6 +20,7 @@ import androidx.wear.tiles.material.Text
 import androidx.wear.tiles.material.layouts.PrimaryLayout
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.ZoneRepo
@@ -27,8 +28,12 @@ import dev.pointtosky.wear.ACTION_OPEN_AIM
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.datalayer.WearMessageBridge
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -77,15 +82,18 @@ open class TonightTileService : TileService() {
         )
     }
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
         val startRealtime = SystemClock.elapsedRealtime()
         LogBus.event("tile_get_tile_start")
-        return try {
-            val model = runBlocking { provider.getModel(Instant.now()) }
-            TonightTileDebug.update(model)
+        val future = SettableFuture.create<TileBuilders.Tile>()
+        serviceScope.launch {
+            try {
+                val model = provider.getModel(Instant.now())
+                TonightTileDebug.update(model)
 
-            // S7.E: Mirroring — отправка короткой модели на телефон
-            runBlocking {
+                // S7.E: Mirroring — отправка короткой модели на телефон
                 val settings = AimIdentifySettingsDataStore(applicationContext)
                 val mirroring = settings.tileMirroringEnabledFlow.first()
                 if (mirroring) {
@@ -112,73 +120,81 @@ open class TonightTileService : TileService() {
                         )
                     }
                 }
-            }
 
-            // S7.B: используем Material PrimaryLayout с учётом форм-фактора
-            val root =
-                buildPrimaryLayoutRoot(
-                    context = this,
-                    model = model,
-                    deviceParams = requestParams.deviceParameters,
+                // S7.B: используем Material PrimaryLayout с учётом форм-фактора
+                val root =
+                    buildPrimaryLayoutRoot(
+                        context = this@TonightTileService,
+                        model = model,
+                        deviceParams = requestParams.deviceParameters,
+                    )
+                val layout =
+                    LayoutElementBuilders.Layout
+                        .Builder()
+                        .setRoot(root)
+                        .build()
+                val entry =
+                    TimelineBuilders.TimelineEntry
+                        .Builder()
+                        .setLayout(layout)
+                        .build()
+                val timeline =
+                    TimelineBuilders.Timeline
+                        .Builder()
+                        .addTimelineEntry(entry)
+                        .build()
+                val tile =
+                    TileBuilders.Tile
+                        .Builder()
+                        .setResourcesVersion(RES_VER)
+                        // Резервный периодический апдейт от платформы (на случай промаха воркера)
+                        .setFreshnessIntervalMillis(45L * 60_000L)
+                        .setTimeline(timeline)
+                        .build()
+                future.set(tile)
+            } catch (e: JSONException) {
+                LogBus.event(
+                    name = "tile_error",
+                    payload =
+                        mapOf(
+                            "err" to e.toLogMessage(),
+                            "stage" to "on_tile_request_json",
+                        ),
                 )
-            val layout =
-                LayoutElementBuilders.Layout
-                    .Builder()
-                    .setRoot(root)
-                    .build()
-            val entry =
-                TimelineBuilders.TimelineEntry
-                    .Builder()
-                    .setLayout(layout)
-                    .build()
-            val timeline =
-                TimelineBuilders.Timeline
-                    .Builder()
-                    .addTimelineEntry(entry)
-                    .build()
-            Futures.immediateFuture(
-                TileBuilders.Tile
-                    .Builder()
-                    .setResourcesVersion(RES_VER)
-                    // Резервный периодический апдейт от платформы (на случай промаха воркера)
-                    .setFreshnessIntervalMillis(45L * 60_000L)
-                    .setTimeline(timeline)
-                    .build(),
-            )
-        } catch (e: JSONException) {
-            LogBus.event(
-                name = "tile_error",
-                payload =
-                    mapOf(
-                        "err" to e.toLogMessage(),
-                        "stage" to "on_tile_request_json",
-                    ),
-            )
-            throw e
-        } catch (e: SecurityException) {
-            LogBus.event(
-                name = "tile_error",
-                payload =
-                    mapOf(
-                        "err" to e.toLogMessage(),
-                        "stage" to "on_tile_request_security",
-                    ),
-            )
-            throw e
-        } catch (e: IllegalStateException) {
-            LogBus.event(
-                name = "tile_error",
-                payload =
-                    mapOf(
-                        "err" to e.toLogMessage(),
-                        "stage" to "on_tile_request_state",
-                    ),
-            )
-            throw e
-        } finally {
-            val durationMs = SystemClock.elapsedRealtime() - startRealtime
-            LogBus.event("tile_get_tile_end", mapOf("durationMs" to durationMs))
+                future.setException(e)
+            } catch (e: SecurityException) {
+                LogBus.event(
+                    name = "tile_error",
+                    payload =
+                        mapOf(
+                            "err" to e.toLogMessage(),
+                            "stage" to "on_tile_request_security",
+                        ),
+                )
+                future.setException(e)
+            } catch (e: IllegalStateException) {
+                LogBus.event(
+                    name = "tile_error",
+                    payload =
+                        mapOf(
+                            "err" to e.toLogMessage(),
+                            "stage" to "on_tile_request_state",
+                        ),
+                )
+                future.setException(e)
+            } catch (e: Exception) {
+                future.setException(e)
+            } finally {
+                val durationMs = SystemClock.elapsedRealtime() - startRealtime
+                LogBus.event("tile_get_tile_end", mapOf("durationMs" to durationMs))
+            }
         }
+        return future
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
     }
 
     @Deprecated("Tiles v1 API; kept for backward compatibility. Consider migrating to ProtoLayout.")
