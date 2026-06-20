@@ -2,6 +2,14 @@ package dev.pointtosky.wear.sensors.orientation
 
 import android.hardware.SensorManager
 
+/**
+ * A single orientation sample.
+ *
+ * @property forward Device pointing direction in the world ENU frame. **Invariant: always exactly
+ *   3 components** — `[0] = East, [1] = North, [2] = Up` — and unit length (producers normalize it,
+ *   see `RotationVectorOrientationRepository`/`AccelMagOrientationRepository`). Consumers may rely
+ *   on this rather than defaulting missing components, which would silently read as "straight up".
+ */
 data class OrientationFrame(
     val timestampNanos: Long,
     val azimuthDeg: Float,

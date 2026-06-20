@@ -7,12 +7,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class PointingTest {
-    private fun forwardFor(azDeg: Double, altDeg: Double): Triple<Double, Double, Double> {
+    /** Builds a forward ENU vector for the given az/alt, scaled by [scale] (1.0 = unit length). */
+    private fun forwardFor(azDeg: Double, altDeg: Double, scale: Double = 1.0): Triple<Double, Double, Double> {
         val az = Math.toRadians(azDeg)
         val alt = Math.toRadians(altDeg)
         val cosAlt = cos(alt)
         // Android world ENU frame: x = East, y = North, z = Up.
-        return Triple(sin(az) * cosAlt, cos(az) * cosAlt, sin(alt))
+        return Triple(scale * sin(az) * cosAlt, scale * cos(az) * cosAlt, scale * sin(alt))
     }
 
     @Test
@@ -21,6 +22,23 @@ class PointingTest {
         val h = forwardVectorToHorizontal(e, n, u)
         assertEquals(359.0, h.azDeg, 1e-6)
         assertEquals(30.0, h.altDeg, 1e-6)
+    }
+
+    @Test
+    fun `non-normalized vector still yields correct altitude (az=0, alt=30)`() {
+        // Length 250 vector pointing due north at 30° elevation.
+        val (e, n, u) = forwardFor(azDeg = 0.0, altDeg = 30.0, scale = 250.0)
+        val h = forwardVectorToHorizontal(e, n, u)
+        assertEquals(0.0, h.azDeg, 1e-6)
+        assertEquals(30.0, h.altDeg, 1e-6)
+    }
+
+    @Test
+    fun `non-normalized vector still yields correct azimuth and altitude (az=90, alt=45)`() {
+        val (e, n, u) = forwardFor(azDeg = 90.0, altDeg = 45.0, scale = 0.013)
+        val h = forwardVectorToHorizontal(e, n, u)
+        assertEquals(90.0, h.azDeg, 1e-6)
+        assertEquals(45.0, h.altDeg, 1e-6)
     }
 
     @Test
@@ -33,6 +51,13 @@ class PointingTest {
     @Test
     fun `up component is clamped against floating point overshoot`() {
         val h = forwardVectorToHorizontal(east = 0.0, north = 0.0, up = 1.0000001)
+        assertEquals(90.0, h.altDeg, 1e-9)
+    }
+
+    @Test
+    fun `zero vector returns the documented zenith fallback`() {
+        val h = forwardVectorToHorizontal(east = 0.0, north = 0.0, up = 0.0)
+        assertEquals(0.0, h.azDeg, 1e-9)
         assertEquals(90.0, h.altDeg, 1e-9)
     }
 
