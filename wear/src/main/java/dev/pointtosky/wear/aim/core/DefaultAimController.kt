@@ -1,5 +1,7 @@
 package dev.pointtosky.wear.aim.core
 
+import dev.pointtosky.core.astro.aim.forwardVectorToHorizontal
+import dev.pointtosky.core.astro.aim.toTrueNorth
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.ephem.EphemerisComputer
@@ -7,6 +9,7 @@ import dev.pointtosky.core.location.api.LocationOrchestrator
 import dev.pointtosky.core.location.model.LocationFix
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.TimeSource
+import dev.pointtosky.wear.sensors.orientation.MagneticDeclinationProvider
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import kotlinx.coroutines.CoroutineDispatcher
@@ -49,6 +52,12 @@ class DefaultAimController(
     private val raDecToAltAz: (Equatorial, Double, Double) -> Horizontal,
     /** Оффлайн‑резолвер звезды по id (если eq не передали). */
     private val starResolver: ((Int) -> Equatorial?)? = null,
+    /**
+     * Источник магнитного склонения для перевода компасного азимута (магнитный север)
+     * в истинный север. По умолчанию — нулевой (без коррекции), чтобы не тянуть Android
+     * в JVM‑тесты.
+     */
+    private val declinationProvider: MagneticDeclinationProvider = MagneticDeclinationProvider.Zero,
     /** Диспетчер для вычислений/сбора потоков (инжектируется для тестов). */
     private val dispatcher: CoroutineDispatcher = AimDispatchers.computation,
 ) : AimController {
@@ -163,11 +172,11 @@ class DefaultAimController(
         if (nowMs - lastTickMs < MIN_UPDATE_INTERVAL_MS) return
         lastTickMs = nowMs
 
-        val current = toHorizontal(frame)
-        addAzSample(nowMs, current.azDeg)
-
         val fix = lastFix
         val instant = time.now()
+        val current = toHorizontal(frame, declinationFor(fix, instant))
+        addAzSample(nowMs, current.azDeg)
+
         val targetHor = computeTargetHorizontal(instant, fix)
 
         if (targetHor != null) {
@@ -224,11 +233,41 @@ class DefaultAimController(
     }
 
     // --- core helpers kept in class (логическая часть) ---
-    private fun toHorizontal(frame: OrientationFrame): Horizontal =
-        Horizontal(
-            azDeg = wrapDeg0To360(frame.azimuthDeg.toDouble()),
-            altDeg = clamp(frame.pitchDeg.toDouble(), -90.0, 90.0),
-        )
+    /**
+     * Текущее направление руки в горизонтальных координатах.
+     *
+     * Берём «forward»‑вектор устройства в мировой ENU‑системе (а не сырые углы Эйлера): так
+     * высота не зависит от крена. Азимут компас отдаёт относительно магнитного севера —
+     * добавляем склонение [declinationDeg], чтобы получить истинный север, как у целей.
+     */
+    private fun toHorizontal(
+        frame: OrientationFrame,
+        declinationDeg: Double,
+    ): Horizontal {
+        // forward — инвариант: ровно 3 ENU‑компоненты (см. OrientationFrame.forward).
+        val forward = frame.forward
+        val magnetic =
+            forwardVectorToHorizontal(
+                east = forward[0].toDouble(),
+                north = forward[1].toDouble(),
+                up = forward[2].toDouble(),
+            )
+        return magnetic.toTrueNorth(declinationDeg)
+    }
+
+    private fun declinationFor(
+        fix: LocationFix?,
+        instant: Instant,
+    ): Double {
+        val point = fix?.point ?: return 0.0
+        return declinationProvider
+            .declinationDeg(
+                latDeg = point.latDeg,
+                lonDeg = point.lonDeg,
+                altitudeM = fix.altitudeM ?: 0.0,
+                epochMillis = instant.toEpochMilli(),
+            ).toDouble()
+    }
 
     private fun computeTargetHorizontal(
         now: Instant,
@@ -316,12 +355,6 @@ class DefaultAimController(
 }
 
 // ---- Angle/Time helpers (file‑private) ----
-private fun clamp(
-    v: Double,
-    mn: Double,
-    mx: Double,
-) = max(mn, min(mx, v))
-
 private fun wrapDeg0To360(d: Double): Double {
     var x = d % 360.0
     if (x < 0) x += 360.0

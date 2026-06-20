@@ -7,6 +7,7 @@ import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.api.LocationRepository
+import dev.pointtosky.wear.sensors.orientation.GeomagneticFieldDeclinationProvider
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
 import java.util.Locale
@@ -30,6 +31,7 @@ class IdentifyViewModelFactory(
                     dev.pointtosky.core.time
                         .SystemTimeSource(periodMs = 200L),
                 settings = settings,
+                declinationProvider = GeomagneticFieldDeclinationProvider(),
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class ${'$'}modelClass")

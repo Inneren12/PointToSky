@@ -28,6 +28,7 @@ import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.wear.R
+import dev.pointtosky.wear.sensors.orientation.GeomagneticFieldDeclinationProvider
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import java.util.Locale
 
@@ -215,6 +216,7 @@ class AstroDebugViewModelFactory(
                 ephemerisComputer = ephemerisComputer,
                 identifySolver = catalogRepository.identifySolver,
                 constellations = catalogRepository.constellationBoundaries,
+                declinationProvider = GeomagneticFieldDeclinationProvider(),
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class ${'$'}modelClass")
