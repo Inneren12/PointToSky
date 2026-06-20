@@ -195,8 +195,9 @@ class AccelMagOrientationRepository(
                 val pitch = normalizePitchDeg(rawPitch)
                 val roll = normalizeRollDeg(rawRoll)
 
-                val forward = extractForwardVector(activeMatrix)
-                val normalizedForward = normalizeVector(forward)
+                val rawForward = extractForwardVector(activeMatrix)
+                val rotatedForward = applyAzimuthOffsetToForward(rawForward, zeroOffset.azimuthOffsetDeg)
+                val normalizedForward = normalizeVector(rotatedForward)
                 val combinedAccuracy = mapAccuracy(magnetAccuracyStatus)
 
                 val frame = OrientationFrame(

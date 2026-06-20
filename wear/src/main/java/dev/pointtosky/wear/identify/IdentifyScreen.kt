@@ -71,6 +71,7 @@ fun IdentifyScreen(
         ) {
             if (state.lowAccuracy) {
                 LowAccuracyBadge()
+                CalibrationHint()
             }
             Text(
                 text = title,
@@ -98,6 +99,17 @@ fun IdentifyScreen(
             Text(text = "Карточка")
         }
     }
+}
+
+@Composable
+private fun CalibrationHint() {
+    Text(
+        text = "Выполните движение «восьмерка»",
+        style = MaterialTheme.typography.caption2,
+        color = Color(0xFFFFAA00),
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
