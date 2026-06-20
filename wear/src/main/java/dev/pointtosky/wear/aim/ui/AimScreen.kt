@@ -72,6 +72,7 @@ import dev.pointtosky.wear.complication.PersistentAimStatusReporter
 import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import dev.pointtosky.wear.haptics.HapticEvent
 import dev.pointtosky.wear.haptics.HapticPolicy
+import dev.pointtosky.wear.sensors.orientation.GeomagneticFieldDeclinationProvider
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
 import kotlinx.coroutines.launch
@@ -105,6 +106,7 @@ fun AimRoute(
                     raDecToAltAz(eq, lstDeg, latDeg, applyRefraction = false)
                 },
                 starResolver = offlineStarResolver(context),
+                declinationProvider = GeomagneticFieldDeclinationProvider(),
             )
         }
     val aimStatusReporter = remember(context) { PersistentAimStatusReporter(context) }

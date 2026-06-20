@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.astro.aim.AimError
 import dev.pointtosky.core.astro.aim.AimTolerance
 import dev.pointtosky.core.astro.aim.aimError
+import dev.pointtosky.core.astro.aim.forwardVectorToHorizontal
+import dev.pointtosky.core.astro.aim.toTrueNorth
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.ephem.Body
@@ -16,12 +18,11 @@ import dev.pointtosky.core.astro.identify.SkyObjectOrConstellation
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.altAzToRaDec
 import dev.pointtosky.core.astro.transform.raDecToAltAz
-import dev.pointtosky.core.astro.units.radToDeg
-import dev.pointtosky.core.astro.units.wrapDeg0To360
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.core.location.model.LocationFix
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.SystemTimeSource
+import dev.pointtosky.wear.sensors.orientation.MagneticDeclinationProvider
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
 import dev.pointtosky.wear.sensors.orientation.OrientationRepository
@@ -38,8 +39,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.util.Locale
-import kotlin.math.asin
-import kotlin.math.atan2
 import kotlin.math.roundToInt
 
 private const val ORIENTATION_SAMPLE_MS = 100L
@@ -52,6 +51,7 @@ class AstroDebugViewModel(
     private val identifySolver: IdentifySolver,
     private val constellations: ConstellationBoundaries,
     timeSource: SystemTimeSource = SystemTimeSource(periodMs = 200L),
+    private val declinationProvider: MagneticDeclinationProvider = MagneticDeclinationProvider.Zero,
 ) : ViewModel() {
     private val fpsAverager = FrameRateAverager()
     private var lastFpsLogAt = 0L
@@ -125,13 +125,13 @@ class AstroDebugViewModel(
         target: Body,
         fpsValue: Float?,
     ): AstroDebugUiState {
-        val horizontal = frame.toHorizontal()
+        val magneticHorizontal = frame.toHorizontal()
         val locationPoint = locationFix?.point
         if (locationPoint == null) {
             return AstroDebugUiState(
                 lstDeg = null,
                 lstHms = null,
-                horizontal = horizontal,
+                horizontal = magneticHorizontal,
                 equatorial = null,
                 bestMatch = null,
                 target = target,
@@ -139,6 +139,16 @@ class AstroDebugViewModel(
                 fps = null,
             )
         }
+
+        val declinationDeg =
+            declinationProvider
+                .declinationDeg(
+                    latDeg = locationPoint.latDeg,
+                    lonDeg = locationPoint.lonDeg,
+                    altitudeM = locationFix?.altitudeM ?: 0.0,
+                    epochMillis = instant.toEpochMilli(),
+                ).toDouble()
+        val horizontal = magneticHorizontal.toTrueNorth(declinationDeg)
 
         val lst = lstAt(instant, locationPoint.lonDeg)
         val lstDeg = lst.lstDeg
@@ -161,16 +171,13 @@ class AstroDebugViewModel(
         )
     }
 
-    private fun OrientationFrame.toHorizontal(): Horizontal {
-        val east = forward.getOrNull(0)?.toDouble() ?: 0.0
-        val north = forward.getOrNull(1)?.toDouble() ?: 0.0
-        val up = forward.getOrNull(2)?.toDouble() ?: 1.0
-        val upClamped = up.coerceIn(-1.0, 1.0)
-        val altitudeDeg = radToDeg(asin(upClamped))
-        val azimuthRad = atan2(east, north)
-        val azimuthDeg = wrapDeg0To360(radToDeg(azimuthRad))
-        return Horizontal(azimuthDeg, altitudeDeg)
-    }
+    private fun OrientationFrame.toHorizontal(): Horizontal =
+        // east/north/up → магнитные az/alt (склонение применяется в computeState)
+        forwardVectorToHorizontal(
+            east = forward.getOrNull(0)?.toDouble() ?: 0.0,
+            north = forward.getOrNull(1)?.toDouble() ?: 0.0,
+            up = forward.getOrNull(2)?.toDouble() ?: 1.0,
+        )
 
     private fun computeBestMatch(equatorial: Equatorial): AstroBestMatch? =
         when (val result = identifySolver.findBest(equatorial)) {

@@ -2,6 +2,8 @@ package dev.pointtosky.wear.identify
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.pointtosky.core.astro.aim.forwardVectorToHorizontal
+import dev.pointtosky.core.astro.aim.toTrueNorth
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.ephem.Body
@@ -13,10 +15,10 @@ import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.altAzToRaDec
 import dev.pointtosky.core.astro.units.degToRad
 import dev.pointtosky.core.astro.units.radToDeg
-import dev.pointtosky.core.astro.units.wrapDeg0To360
 import dev.pointtosky.core.location.api.LocationRepository
 import dev.pointtosky.core.location.model.LocationFix
 import dev.pointtosky.core.logging.LogBus
+import dev.pointtosky.wear.sensors.orientation.MagneticDeclinationProvider
 import dev.pointtosky.wear.sensors.orientation.OrientationAccuracy
 import dev.pointtosky.wear.sensors.orientation.OrientationFrame
 import dev.pointtosky.wear.sensors.orientation.OrientationFrameDefaults
@@ -35,8 +37,6 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
-import kotlin.math.asin
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -89,6 +89,8 @@ class IdentifyViewModel(
             .SystemTimeSource(periodMs = 200L),
     @Suppress("unused")
     private val settings: AimIdentifySettingsDataStore,
+    /** Магнитное склонение для перевода компасного азимута в истинный север. */
+    private val declinationProvider: MagneticDeclinationProvider = MagneticDeclinationProvider.Zero,
 ) : ViewModel() {
     private val locationState = MutableStateFlow<LocationFix?>(null)
 
@@ -152,9 +154,18 @@ class IdentifyViewModel(
         val lowAccuracy =
             frame.accuracy == OrientationAccuracy.UNRELIABLE ||
                 frame.accuracy == OrientationAccuracy.LOW
-        val locationPoint = locationFix?.point ?: return missingLocationState()
+        val fix = locationFix ?: return missingLocationState()
+        val locationPoint = fix.point
 
-        val horizontal = frame.toHorizontal()
+        val declinationDeg =
+            declinationProvider
+                .declinationDeg(
+                    latDeg = locationPoint.latDeg,
+                    lonDeg = locationPoint.lonDeg,
+                    altitudeM = fix.altitudeM ?: 0.0,
+                    epochMillis = instant.toEpochMilli(),
+                ).toDouble()
+        val horizontal = frame.toHorizontal().toTrueNorth(declinationDeg)
         val lstDeg = lstAt(instant, locationPoint.lonDeg).lstDeg
         val equatorial = altAzToRaDec(horizontal, lstDeg, locationPoint.latDeg)
 
@@ -327,17 +338,13 @@ class IdentifyViewModel(
 
 // --- helpers ---
 
-private fun OrientationFrame.toHorizontal(): Horizontal {
-    // Такой же расчёт, как в AstroDebugViewModel: east/north/up → az/alt
-    val east = forward.getOrNull(0)?.toDouble() ?: 0.0
-    val north = forward.getOrNull(1)?.toDouble() ?: 0.0
-    val up = forward.getOrNull(2)?.toDouble() ?: 1.0
-    val upClamped = up.coerceIn(-1.0, 1.0)
-    val altitudeDeg = radToDeg(asin(upClamped))
-    val azimuthRad = atan2(east, north)
-    val azimuthDeg = wrapDeg0To360(radToDeg(azimuthRad))
-    return Horizontal(azimuthDeg, altitudeDeg)
-}
+private fun OrientationFrame.toHorizontal(): Horizontal =
+    // east/north/up → магнитные az/alt (склонение применяется отдельно в computeState)
+    forwardVectorToHorizontal(
+        east = forward.getOrNull(0)?.toDouble() ?: 0.0,
+        north = forward.getOrNull(1)?.toDouble() ?: 0.0,
+        up = forward.getOrNull(2)?.toDouble() ?: 1.0,
+    )
 
 private fun separationDeg(
     a: Equatorial,
