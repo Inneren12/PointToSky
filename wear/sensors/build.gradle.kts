@@ -40,4 +40,5 @@ dependencies {
     implementation(project(":core:logging"))
 
     testImplementation(kotlin("test"))
+    testImplementation(project(":core:astro-core"))
 }

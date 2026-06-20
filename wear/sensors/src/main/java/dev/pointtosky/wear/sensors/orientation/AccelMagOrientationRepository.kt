@@ -196,6 +196,9 @@ class AccelMagOrientationRepository(
                 val roll = normalizeRollDeg(rawRoll)
 
                 val rawForward = extractForwardVector(activeMatrix)
+                // No additional forward EMA here: accelFilter/magnetFilter already smooth the raw
+                // sensor inputs before the rotation matrix is computed, so the forward vector is
+                // indirectly pre-filtered. A second EMA would over-smooth the fallback path.
                 val rotatedForward = applyAzimuthOffsetToForward(rawForward, zeroOffset.azimuthOffsetDeg)
                 val normalizedForward = normalizeVector(rotatedForward)
                 val combinedAccuracy = mapAccuracy(magnetAccuracyStatus)

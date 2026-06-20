@@ -178,9 +178,11 @@ class RotationVectorOrientationRepository(
                 val roll = normalizeRollDeg(rawRoll)
 
                 val rawForward = extractForwardVector(activeMatrix)
-                val rotatedForward = applyAzimuthOffsetToForward(rawForward, zeroOffset.azimuthOffsetDeg)
-                forwardFilter.filter(rotatedForward, filteredForwardBuffer)
-                val normalizedForward = normalizeVector(filteredForwardBuffer)
+                // Filter raw sensor noise first so the EMA state tracks the physical direction.
+                // Then apply the calibration offset, which must take effect immediately (not be blended).
+                forwardFilter.filter(rawForward, filteredForwardBuffer)
+                val rotatedForward = applyAzimuthOffsetToForward(filteredForwardBuffer, zeroOffset.azimuthOffsetDeg)
+                val normalizedForward = normalizeVector(rotatedForward)
                 val accuracy = mapAccuracy(event.accuracy)
                 val frame = OrientationFrame(
                     timestampNanos = event.timestamp,
@@ -298,8 +300,7 @@ internal fun normalizeRollDeg(value: Float): Float {
 }
 
 internal fun extractForwardVector(rotationMatrix: FloatArray): FloatArray {
-    // Column 1 = device +Y axis in world ENU frame.
-    // For standard watch wearing (12 o'clock toward the hand), +Y is the along-forearm direction.
+    // Project pointing convention: device +Y is treated as the aiming ray in world ENU coordinates.
     return floatArrayOf(rotationMatrix[1], rotationMatrix[4], rotationMatrix[7])
 }
 

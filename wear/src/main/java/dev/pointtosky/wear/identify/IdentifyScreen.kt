@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.stringResource
+import dev.pointtosky.wear.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -104,7 +106,7 @@ fun IdentifyScreen(
 @Composable
 private fun CalibrationHint() {
     Text(
-        text = "Выполните движение «восьмерка»",
+        text = stringResource(R.string.accuracy_hint_figure_eight),
         style = MaterialTheme.typography.caption2,
         color = Color(0xFFFFAA00),
         textAlign = TextAlign.Center,
