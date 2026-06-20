@@ -339,11 +339,11 @@ class IdentifyViewModel(
 // --- helpers ---
 
 private fun OrientationFrame.toHorizontal(): Horizontal =
-    // east/north/up → магнитные az/alt (склонение применяется отдельно в computeState)
+    // forward — инвариант: ровно 3 ENU‑компоненты; склонение применяется отдельно в computeState.
     forwardVectorToHorizontal(
-        east = forward.getOrNull(0)?.toDouble() ?: 0.0,
-        north = forward.getOrNull(1)?.toDouble() ?: 0.0,
-        up = forward.getOrNull(2)?.toDouble() ?: 1.0,
+        east = forward[0].toDouble(),
+        north = forward[1].toDouble(),
+        up = forward[2].toDouble(),
     )
 
 private fun separationDeg(

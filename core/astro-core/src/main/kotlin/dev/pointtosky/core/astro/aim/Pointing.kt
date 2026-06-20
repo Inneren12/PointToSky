@@ -34,7 +34,8 @@ private val DEGENERATE_FALLBACK = Horizontal(azDeg = 0.0, altDeg = 90.0)
  * The input **does not need to be normalized**: the vector is normalized internally before the
  * altitude is taken, so `asin` always receives a value in `[-1, 1]`. Azimuth is invariant under
  * uniform scaling and is computed directly from the raw components. A zero or near-zero length
- * vector (length < 1e-9) carries no direction and yields [DEGENERATE_FALLBACK] (the zenith).
+ * vector (length < 1e-9) carries no direction and yields the documented zenith fallback:
+ * azimuth 0°, altitude 90°.
  *
  * Azimuth is measured clockwise from **magnetic** North, because the rotation-vector/compass world
  * frame is referenced to the magnetic meridian. Use [toTrueNorth] to obtain a true-north azimuth
