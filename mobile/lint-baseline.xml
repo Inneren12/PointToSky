@@ -2296,16 +2296,6 @@
             column="23"/>
     </issue>
     <issue
-        id="NewApi"
-        message="Call requires API level 30 (current min is 26): android.content.Context#getDisplay"
-        errorLine1="                        context.display?.rotation"
-        errorLine2="                                ~~~~~~~">
-        <location
-            file="src/main/java/dev/pointtosky/mobile/ar/RotationFrame.kt"
-            line="50"
-            column="33"/>
-    </issue>
-    <issue
         id="FullBackupContent"
         message="files/catalog/ is not in an included path"
         errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/catalog/&quot;/&gt;"

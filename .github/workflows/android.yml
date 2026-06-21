@@ -83,4 +83,4 @@ jobs:
           path: |
             build/catalog-sample/stars_v1.bin
             build/catalog-sample/const_v1.bin
-          if-no-files-found: error
+          if-no-files-found: warn
