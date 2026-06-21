@@ -7,6 +7,7 @@ This project uses astronomical reference data compiled from publicly available s
 - IAU constellation boundary data set.
 
 ## Attribution
+- Yale Bright Star Catalogue (BSC5), 5th ed., Hoffleit & Warren — public domain.
 - Bright Star Catalog v5 / HYG database — credits to the original compilers and contributors. // TODO: проверить лицензионные требования и добавить точные формулировки
 - IAU constellation boundaries — © International Astronomical Union. // TODO: проверить лицензионные требования и добавить точные формулировки
 
