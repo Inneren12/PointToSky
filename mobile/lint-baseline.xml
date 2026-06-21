@@ -2285,4 +2285,205 @@
             column="31"/>
     </issue>
 
+    <issue
+        id="MissingPermission"
+        message="Call requires permission which may be rejected by user: code should explicitly check to see if permission is available (with checkPermission) or explicitly handle a potential SecurityException"
+        errorLine1="        val current = fusedRepository.getCurrentLocation(timeoutMs = CURRENT_LOCATION_TIMEOUT_MS)"
+        errorLine2="                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/pointtosky/mobile/location/share/PhoneLocationBridge.kt"
+            line="216"
+            column="23"/>
+    </issue>
+    <issue
+        id="FullBackupContent"
+        message="files/catalog/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/catalog/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="9"
+            column="38"/>
+    </issue>
+    <issue
+        id="FullBackupContent"
+        message="cache/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;cache/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="10"
+            column="38"/>
+    </issue>
+    <issue
+        id="FullBackupContent"
+        message="files/logs/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/logs/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="13"
+            column="38"/>
+    </issue>
+    <issue
+        id="FullBackupContent"
+        message="files/diagnostics/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/diagnostics/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="14"
+            column="38"/>
+    </issue>
+    <issue
+        id="FullBackupContent"
+        message="files/catalog/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/catalog/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="26"
+            column="38"/>
+    </issue>
+    <issue
+        id="FullBackupContent"
+        message="cache/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;cache/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="27"
+            column="38"/>
+    </issue>
+    <issue
+        id="FullBackupContent"
+        message="files/logs/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/logs/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="30"
+            column="38"/>
+    </issue>
+    <issue
+        id="FullBackupContent"
+        message="files/diagnostics/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/diagnostics/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="31"
+            column="38"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;sky_map_location_device&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;sky_map_location_device&quot;&gt;Device location&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="44"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;location_setup_device_fallback_hint&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;location_setup_device_fallback_hint&quot;&gt;When manual coordinates are off, Sky map uses device location if available.&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="56"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;ar_show_constellations&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;ar_show_constellations&quot;&gt;Show constellations&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="128"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;ar_show_asterisms&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;ar_show_asterisms&quot;&gt;Show asterisms&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="129"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;ar_mag_limit_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;ar_mag_limit_title&quot;&gt;Max magnitude: %1$s&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="130"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;ar_settings_content_desc&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;ar_settings_content_desc&quot;&gt;AR settings&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="131"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;ar_hide_star_labels&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;ar_hide_star_labels&quot;&gt;Hide star names&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="132"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;settings_debug_tools_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;settings_debug_tools_title&quot;&gt;Debug &amp;amp; tools&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="158"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;settings_phone_compass_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;settings_phone_compass_title&quot;&gt;Use phone compass&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="159"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;settings_phone_compass_desc&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;settings_phone_compass_desc&quot;&gt;Enable the phone magnetometer for aiming and testing.&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="160"
+            column="13"/>
+    </issue>
+    <issue
+        id="MissingTranslation"
+        message="&quot;wear_menu_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;wear_menu_title&quot;&gt;Wear&lt;/string&gt;"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="161"
+            column="13"/>
+    </issue>
+
 </issues>

@@ -20,7 +20,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlin.jvm.Volatile
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
+
+private const val FORWARD_LOW_PASS_ALPHA = 0.25f
 
 class RotationVectorOrientationRepository(
     private val sensorManager: SensorManager,
@@ -148,6 +152,8 @@ class RotationVectorOrientationRepository(
         val rotationMatrix = FloatArray(9)
         val remappedMatrix = FloatArray(9)
         val orientation = FloatArray(3)
+        val forwardFilter = ExponentialLowPassFilter(alpha = FORWARD_LOW_PASS_ALPHA, dimension = 3)
+        val filteredForwardBuffer = FloatArray(3)
         val frameThrottleNanos = activeConfig.frameThrottleMs * NANOS_IN_MILLI
         var lastEmitTimestampNs = 0L
 
@@ -171,8 +177,12 @@ class RotationVectorOrientationRepository(
                 val pitch = normalizePitchDeg(rawPitch)
                 val roll = normalizeRollDeg(rawRoll)
 
-                val forward = extractForwardVector(activeMatrix)
-                val normalizedForward = normalizeVector(forward)
+                val rawForward = extractForwardVector(activeMatrix)
+                // Filter raw sensor noise first so the EMA state tracks the physical direction.
+                // Then apply the calibration offset, which must take effect immediately (not be blended).
+                forwardFilter.filter(rawForward, filteredForwardBuffer)
+                val rotatedForward = applyAzimuthOffsetToForward(filteredForwardBuffer, zeroOffset.azimuthOffsetDeg)
+                val normalizedForward = normalizeVector(rotatedForward)
                 val accuracy = mapAccuracy(event.accuracy)
                 val frame = OrientationFrame(
                     timestampNanos = event.timestamp,
@@ -290,7 +300,8 @@ internal fun normalizeRollDeg(value: Float): Float {
 }
 
 internal fun extractForwardVector(rotationMatrix: FloatArray): FloatArray {
-    return floatArrayOf(rotationMatrix[2], rotationMatrix[5], rotationMatrix[8])
+    // Project pointing convention: device +Y is treated as the aiming ray in world ENU coordinates.
+    return floatArrayOf(rotationMatrix[1], rotationMatrix[4], rotationMatrix[7])
 }
 
 internal fun normalizeVector(vector: FloatArray): FloatArray {
@@ -307,4 +318,18 @@ internal fun mapAccuracy(accuracy: Int): OrientationAccuracy = when (accuracy) {
     SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM -> OrientationAccuracy.MEDIUM
     SensorManager.SENSOR_STATUS_ACCURACY_HIGH -> OrientationAccuracy.HIGH
     else -> OrientationAccuracy.MEDIUM
+}
+
+// Rotates the horizontal ENU components of [forward] clockwise by [offsetDeg] degrees,
+// matching the sign convention of azimuthOffsetDeg (positive = eastward shift).
+internal fun applyAzimuthOffsetToForward(forward: FloatArray, offsetDeg: Float): FloatArray {
+    if (offsetDeg == 0f) return forward
+    val rad = Math.toRadians(offsetDeg.toDouble())
+    val cosA = cos(rad).toFloat()
+    val sinA = sin(rad).toFloat()
+    return floatArrayOf(
+        forward[0] * cosA + forward[1] * sinA,
+        -forward[0] * sinA + forward[1] * cosA,
+        forward[2],
+    )
 }

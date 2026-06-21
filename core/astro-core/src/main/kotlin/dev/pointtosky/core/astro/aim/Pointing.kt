@@ -21,15 +21,17 @@ private const val MIN_FORWARD_LENGTH = 1e-9
 private val DEGENERATE_FALLBACK = Horizontal(azDeg = 0.0, altDeg = 90.0)
 
 /**
- * Converts a device "forward" pointing vector, expressed in the Android world ENU frame
- * (`x = East`, `y = North`, `z = Up`), into horizontal coordinates.
+ * Converts a device pointing vector, already selected and expressed in the Android world ENU
+ * frame (`x = East`, `y = North`, `z = Up`), into horizontal coordinates.
  *
- * The forward vector is the direction the device is pointing, taken from the world rotation
- * matrix (`SensorManager.getRotationMatrixFromVector` → third column). The altitude is the
- * elevation of that ray (`asin(up / |v|)`) and the azimuth is `atan2(east, north)`. Deriving
- * altitude from the vector this way is **roll-invariant** — unlike the raw Euler pitch returned by
- * `SensorManager.getOrientation`, which mixes in roll and is wrong as an altitude once the wrist is
- * tilted.
+ * Producers are responsible for selecting the appropriate device axis. For Wear, the project
+ * pointing convention uses the device +Y axis as the aiming ray (see
+ * `RotationVectorOrientationRepository.extractForwardVector`).
+ *
+ * The altitude is the elevation of that ray (`asin(up / |v|)`) and the azimuth is
+ * `atan2(east, north)`. Deriving altitude from the vector this way is **roll-invariant** —
+ * unlike the raw Euler pitch returned by `SensorManager.getOrientation`, which mixes in roll
+ * and is wrong as an altitude once the wrist is tilted.
  *
  * The input **does not need to be normalized**: the vector is normalized internally before the
  * altitude is taken, so `asin` always receives a value in `[-1, 1]`. Azimuth is invariant under

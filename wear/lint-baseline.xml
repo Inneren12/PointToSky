@@ -2472,4 +2472,136 @@
             column="31"/>
     </issue>
 
+    <issue
+        id="FullBackupContent"
+        message="files/catalog/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/catalog/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="9"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="cache/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;cache/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="10"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="files/logs/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/logs/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="13"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="files/diagnostics/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/diagnostics/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="14"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="files/catalog/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/catalog/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="26"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="cache/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;cache/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="27"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="files/logs/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/logs/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="30"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="files/diagnostics/ is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;files/diagnostics/&quot;/&gt;"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="31"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;comp_tonight_target_preview_text&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;comp_tonight_target_preview_text&quot;>Jupiter • 22:10–01:30&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="196"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;comp_tonight_target_preview_content_description&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;comp_tonight_target_preview_content_description&quot;>Tonight target Jupiter from 22:10 to 01:30&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="197"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;comp_tonight_target_content_description&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;comp_tonight_target_content_description&quot;>Tonight target %1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="198"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;comp_tonight_target_content_description_with_secondary&quot; is not translated in &quot;ru&quot; (Russian)"
+        errorLine1="    &lt;string name=&quot;comp_tonight_target_content_description_with_secondary&quot;>Tonight target %1$s, %2$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="199"
+            column="13"/>
+    </issue>
+
 </issues>

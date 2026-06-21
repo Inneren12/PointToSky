@@ -4,6 +4,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
 import android.view.Surface
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
@@ -47,7 +48,7 @@ fun rememberRotationFrame(): RotationFrame? {
                 override fun onSensorChanged(event: SensorEvent) {
                     SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
                     val displayRotation =
-                        context.display?.rotation
+                        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) context.display else null)?.rotation
                             ?: context.getSystemService<WindowManager>()?.defaultDisplay?.rotation
                             ?: Surface.ROTATION_0
                     // Normalize rotation so device axes follow the current display orientation.
