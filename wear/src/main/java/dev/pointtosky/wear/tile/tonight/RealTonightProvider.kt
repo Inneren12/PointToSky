@@ -125,7 +125,7 @@ class RealTonightProvider(
 
     // --- Подбор целей ---
 
-    private fun pickTargets(
+    private suspend fun pickTargets(
         now: Instant,
         start: Instant,
         end: Instant,
@@ -504,7 +504,7 @@ class RealTonightProvider(
         return "N:$nightUtcDate@LAT:${"%.2f".format(latQ)}@LON:${"%.2f".format(lonQ)}"
     }
 
-    private fun loadStarCatalog(): StarCatalog {
+    private suspend fun loadStarCatalog(): StarCatalog {
         val astro = runCatching { PtskCatalogLoader(context.assets).load() }.getOrNull() ?: EmptyAstroCatalog
         return AstroStarCatalogAdapter(astro)
     }
