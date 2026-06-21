@@ -17,8 +17,10 @@ JSON mirror: https://raw.githubusercontent.com/brettonw/YaleBrightStarCatalog/ma
 Usage:
   build_bsc_ptskcat4.py <out.bin> [--input=bsc5-all.json] [--mag-limit=6.5]
 If --input is omitted the script fetches the mirror above.
-StarId == cc*10000 + pp*100 + ss with unique (pp,ss) per constellation, so
-StarId.cc()==const holds and ids never collide (associateBy-safe).
+StarId == cc*10000 + pp*100 + ss. Point stars MUST stay in the pp==0 group: mobile AR
+buildConstellationSkeletonLines() treats any star with StarId.pp()!=0 as a constellation
+line node. pp==0 gives 100 ss slots, so each constellation is capped at its 100 brightest
+(keeps ids unique AND prevents spurious skeleton lines). Only Taurus hits the cap at <=6.5.
 """
 import sys, os, io, json, struct, collections, urllib.request
 
@@ -76,11 +78,17 @@ def build(stars, out_path):
         if s in off: return off[s]
         o = len(blob); blob.extend(s.encode("utf-8")); blob.append(0); off[s] = o; return o
     for a, n in CONST_LIST: sid(a); sid(n)
-    counter = collections.Counter(); recs = []; seen = set()
+    MAX_PER_CONST = 100  # pp==0 has exactly 100 ss slots; staying in pp==0 avoids fake skeleton lines
+    counter = collections.Counter(); recs = []; seen = set(); dropped = 0
     for con, ra, dec, mag, lab in sorted(stars, key=lambda x: (ABBR[x[0]], x[3])):
-        cc = ABBR[con]; n = counter[cc]; counter[cc] += 1
-        sidv = cc*10000 + (n//100)*100 + (n % 100)
-        if sidv in seen: raise SystemExit(f"id space exhausted for {con}")
+        cc = ABBR[con]; n = counter[cc]
+        if n >= MAX_PER_CONST:  # keep the 100 brightest; drop fainter overflow
+            dropped += 1; continue
+        counter[cc] += 1
+        ss = n % 100  # pp is always 0 here -> StarId.pp()==0 for every point star
+        sidv = cc*10000 + ss
+        assert (sidv // 100) % 100 == 0, "point star must have pp()==0"
+        if sidv in seen: raise SystemExit(f"dup id {sidv}")
         seen.add(sidv)
         flags = BRIGHT if mag < 2.0 else 0
         recs.append(struct.pack("<IfffHHI", sidv, ra, dec, mag, cc, flags, sid(lab)))
@@ -99,7 +107,7 @@ def build(stars, out_path):
     for fc, oo, ln, cnt in dirs: b.write(struct.pack("<4sIII", fc, oo, ln, cnt))
     b.write(payload)
     open(out_path, "wb").write(b.getvalue())
-    return len(recs), len(b.getvalue())
+    return len(recs), len(b.getvalue()), dropped
 
 def main(argv):
     if len(argv) < 2:
@@ -121,8 +129,8 @@ def main(argv):
         if None in (ra, dec, m) or m > mag: continue
         rows.append((con, ra, dec, m, _label(r)))
     if unmapped: print("WARNING unmapped constellation codes:", dict(unmapped))
-    cnt, size = build(rows, out)
-    print(f"wrote {cnt} stars ({size} bytes) -> {out}  [mag<= {mag}, skipped {skipped_nocon} w/o constellation]")
+    cnt, size, dropped = build(rows, out)
+    print(f"wrote {cnt} stars ({size} bytes) -> {out}  [mag<= {mag}, skipped {skipped_nocon} w/o constellation, capped {dropped} faint overflow]")
     return 0
 
 if __name__ == "__main__":
