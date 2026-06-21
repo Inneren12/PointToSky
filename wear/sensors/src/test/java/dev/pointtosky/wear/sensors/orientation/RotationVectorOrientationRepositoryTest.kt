@@ -59,8 +59,12 @@ class RotationVectorOrientationRepositoryTest {
 
     @Test
     fun `device +Y aligned with world East yields az=90 alt=0`() {
-        // Device rotated: +Y→East, +X→North, +Z→Down (proper rotation, det=+1)
-        val matrix = floatArrayOf(0f, 1f, 0f, 1f, 0f, 0f, 0f, 0f, -1f)
+        // Rotation about world Up: device +Y→East, +Z remains Up.
+        val matrix = floatArrayOf(
+            0f,  1f, 0f,
+            -1f, 0f, 0f,
+            0f,  0f, 1f,
+        )
         val forward = extractForwardVector(matrix) // [E=1, N=0, U=0]
         val h = forwardVectorToHorizontal(forward[0].toDouble(), forward[1].toDouble(), forward[2].toDouble())
         assertEquals(90.0, h.azDeg, 1e-6)
