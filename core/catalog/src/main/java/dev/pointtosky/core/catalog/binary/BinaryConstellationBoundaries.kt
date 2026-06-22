@@ -197,6 +197,7 @@ class BinaryConstellationBoundaries private constructor(
                     .toByteArray()
                     .toString(Charsets.US_ASCII)
                     .trim()
+                    .uppercase()
                 val polyStart = buffer.int
                 val polyCountEntry = buffer.int
                 val raMin = buffer.float

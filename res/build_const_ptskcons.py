@@ -51,7 +51,7 @@ def build(rings_by, out_path):
         if not rs: raise SystemExit(f"missing rings for {c}")
         allv = [v for r in rs for v in r]
         ar0, ar1, ad0, ad1 = circ_aabb(allv)
-        dir_b.write(c.ljust(3)[:3].encode("ascii")); dir_b.write(b"\x00")
+        dir_b.write(c.upper().ljust(3)[:3].encode("ascii")); dir_b.write(b"\x00")
         dir_b.write(struct.pack("<ii", poly_i, len(rs)))
         dir_b.write(struct.pack("<ffff", ar0, ar1, ad0, ad1))
         for r in rs:

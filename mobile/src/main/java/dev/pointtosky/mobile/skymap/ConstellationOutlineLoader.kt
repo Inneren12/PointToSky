@@ -60,6 +60,7 @@ internal class ConstellationOutlineLoader(
                         .toByteArray()
                         .toString(Charsets.US_ASCII)
                         .trim()
+                        .uppercase()
                 val polyStart = buffer.int
                 val polyCountEntry = buffer.int
                 // Skip the directory AABB, outlines don't need the bounding boxes
