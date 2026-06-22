@@ -12,7 +12,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.zip.CRC32
 import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.min
 
 /**
@@ -47,9 +46,7 @@ class BinaryConstellationBoundaries private constructor(
         val ra = normalizeRa(eq.raDeg)
         val dec = eq.decDeg
         for (constellation in constellations) {
-            if (!constellation.aabb.contains(ra, dec)) continue
             for (polygon in constellation.polygons) {
-                if (!polygon.aabb.contains(ra, dec)) continue
                 if (polygon.contains(ra, dec)) return constellation.code
             }
         }
@@ -58,57 +55,45 @@ class BinaryConstellationBoundaries private constructor(
 
     private data class RuntimeConstellation(
         val code: String,
-        val aabb: Aabb,
         val polygons: List<RuntimePolygon>,
     )
 
     private class RuntimePolygon(
-        val aabb: Aabb,
-        val unwrappedRa: DoubleArray,
-        val dec: DoubleArray,
+        private val ra: DoubleArray,           // normalized [0, 360)
+        private val dec: DoubleArray,
+        private val enclosesNorthPole: Boolean,
+        private val enclosesSouthPole: Boolean,
     ) {
-        fun contains(ra: Double, decValue: Double): Boolean {
-            if (unwrappedRa.isEmpty()) return false
-            var sum = 0.0
-            var prevX = angleDelta(unwrappedRa.last(), ra)
-            var prevY = dec.last() - decValue
-            for (i in unwrappedRa.indices) {
-                val x = angleDelta(unwrappedRa[i], ra)
-                val y = dec[i] - decValue
-                val cross = prevX * y - x * prevY
-                val dot = prevX * x + prevY * y
-                sum += atan2(cross, dot)
-                prevX = x
-                prevY = y
+        fun contains(qRa: Double, qDec: Double): Boolean {
+            val n = ra.size
+            if (n == 0) return false
+            val up = qDec <= 0.0                // cast ray toward the opposite pole
+            var crossings = 0
+            for (i in 0 until n) {
+                val j = if (i + 1 < n) i + 1 else 0
+                val x1 = sdiff(ra[i], qRa)
+                val x2 = x1 + sdiff(ra[j], ra[i]) // unwrap edge end relative to its start
+                val y1 = dec[i] - qDec
+                val y2 = dec[j] - qDec
+                if ((x1 <= 0.0 && 0.0 < x2) || (x2 <= 0.0 && 0.0 < x1)) {
+                    val yc = y1 + (y2 - y1) * (-x1) / (x2 - x1)
+                    if ((up && yc > 0.0) || (!up && yc < 0.0)) crossings++
+                }
             }
-            return abs(sum) > Math.PI
-        }
-
-        private fun angleDelta(vertexRa: Double, refRa: Double): Double {
-            var d = (vertexRa - refRa) % 360.0
-            if (d < -180.0) d += 360.0
-            if (d >= 180.0) d -= 360.0
-            return d
+            var inside = crossings % 2 == 1
+            if (up && enclosesNorthPole) inside = !inside
+            if (!up && enclosesSouthPole) inside = !inside
+            return inside
         }
     }
 
+    // Aabb is kept as a plain data holder so parseConstellations keeps the buffer aligned.
     private data class Aabb(
         val raMin: Float,
         val raMax: Float,
         val decMin: Float,
         val decMax: Float,
-    ) {
-        private val wraps: Boolean = raMin > raMax
-
-        fun contains(ra: Double, dec: Double): Boolean {
-            if (dec < decMin - TOLERANCE || dec > decMax + TOLERANCE) return false
-            return if (!wraps) {
-                ra >= raMin - TOLERANCE && ra <= raMax + TOLERANCE
-            } else {
-                ra >= raMin - TOLERANCE || ra <= raMax + TOLERANCE
-            }
-        }
-    }
+    )
 
     companion object {
         private const val TAG = "BinaryConstellation"
@@ -116,7 +101,6 @@ class BinaryConstellationBoundaries private constructor(
         // 8(magic) + 2(version) + 2(reserved) + 2(constCount) + 4(polyCount) + 4(vertexCount) + 4(crc32)
         private const val HEADER_SIZE = 26
         private const val SUPPORTED_VERSION = 1
-        private const val TOLERANCE = 1e-5
         const val DEFAULT_PATH = "catalog/const_v1.bin"
 
         fun load(
@@ -249,44 +233,41 @@ class BinaryConstellationBoundaries private constructor(
                 } else {
                     emptyList()
                 }
-                RuntimeConstellation(entry.code, entry.aabb, subset)
+                RuntimeConstellation(entry.code, subset)
             }
         }
 
         private fun buildRuntimePolygon(entry: PolygonEntry, vertices: FloatArray): RuntimePolygon {
             val count = entry.vertexCount
-            if (count <= 0) return RuntimePolygon(entry.aabb, DoubleArray(0), DoubleArray(0))
+            if (count <= 0) return RuntimePolygon(DoubleArray(0), DoubleArray(0), false, false)
 
             val start = entry.vertexStart
-            val raValues = DoubleArray(count) { normalizeRa(vertices[(start + it) * 2].toDouble()) }
-            val decValues = DoubleArray(count) { vertices[(start + it) * 2 + 1].toDouble() }
+            val ra = DoubleArray(count) { normalizeRa(vertices[(start + it) * 2].toDouble()) }
+            val dec = DoubleArray(count) { vertices[(start + it) * 2 + 1].toDouble() }
 
             // Remove duplicate closing vertex if present
-            var actualCount = count
-            if (actualCount >= 2 &&
-                abs(raValues[0] - raValues[actualCount - 1]) < 1e-6 &&
-                abs(decValues[0] - decValues[actualCount - 1]) < 1e-6
-            ) {
-                actualCount -= 1
-            }
+            var n = count
+            if (n >= 2 && abs(ra[0] - ra[n - 1]) < 1e-6 && abs(dec[0] - dec[n - 1]) < 1e-6) n -= 1
 
-            return RuntimePolygon(entry.aabb, unwrap(raValues.copyOf(actualCount)), decValues.copyOf(actualCount))
+            val raT = ra.copyOf(n)
+            val decT = dec.copyOf(n)
+
+            // Precompute pole-enclosure flags via RA winding sum
+            var wind = 0.0
+            for (i in 0 until n) {
+                val j = if (i + 1 < n) i + 1 else 0
+                wind += sdiff(raT[j], raT[i])
+            }
+            val meanDec = if (n == 0) 0.0 else decT.sum() / n
+            return RuntimePolygon(raT, decT, abs(wind) > 180.0 && meanDec > 0, abs(wind) > 180.0 && meanDec < 0)
         }
 
-        private fun unwrap(raValues: DoubleArray): DoubleArray {
-            if (raValues.isEmpty()) return raValues
-            val result = DoubleArray(raValues.size)
-            result[0] = raValues[0]
-            var previous = raValues[0]
-            for (i in 1 until raValues.size) {
-                var value = raValues[i]
-                val diff = value - previous
-                if (diff > 180) value -= 360.0
-                else if (diff < -180) value += 360.0
-                result[i] = value
-                previous = value
-            }
-            return result
+        // Signed shortest RA delta in (-180, 180]: sdiff(a, b) = a - b wrapped.
+        private fun sdiff(a: Double, b: Double): Double {
+            var d = (a - b) % 360.0
+            if (d < -180.0) d += 360.0
+            if (d >= 180.0) d -= 360.0
+            return d
         }
 
         private fun normalizeRa(value: Double): Double {

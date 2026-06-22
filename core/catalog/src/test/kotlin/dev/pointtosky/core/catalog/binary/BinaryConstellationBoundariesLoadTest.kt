@@ -173,6 +173,18 @@ class BinaryConstellationBoundariesLoadTest {
         assertTrue((result.status as ConstellationBoundariesStatus.Fake).reason.contains("Failed to open file"))
     }
 
+    @Test
+    fun `point in polar cap beyond all vertices resolves`() {
+        // Ring whose vertices stop at Dec 80° — no vertex reaches Dec 89°.
+        // Without pole-enclosure correction the AABB dec-filter (or PIP) would miss Polaris.
+        val binary = builder.build(mapOf(
+            "UMI" to listOf(listOf(0.0 to 80.0, 120.0 to 80.0, 240.0 to 80.0)),
+        ))
+        val provider = ByteArrayAssetProvider(mapOf(BinaryConstellationBoundaries.DEFAULT_PATH to binary))
+        val result = BinaryConstellationBoundaries.load(provider)
+        assertEquals("UMI", result.boundaries.findByEq(Equatorial(37.954, 89.264)))
+    }
+
     // Builds a 26-byte PTSKCONS header for error-case tests.
     private fun buildHeader(magic: String, version: Int, constCount: Int, polyCount: Int, vertexCount: Int, crc: Int): ByteArray {
         return ByteBuffer.allocate(26).order(ByteOrder.LITTLE_ENDIAN).apply {
@@ -211,7 +223,7 @@ class BinaryConstellationBoundariesLoadTest {
                 polygonsByCode.containsKey(code) || polygonsByCode.isEmpty()
             }.let { _ -> IAU_CODES } // always all codes so indices match
 
-            val polyCount = IAU_CODES.sumOf { code -> (polygonsByCode[code] ?: emptyList()).sumOf { ring -> 1 } }
+            val polyCount = IAU_CODES.sumOf { code -> (polygonsByCode[code] ?: emptyList()).size }
             val vertexCount = IAU_CODES.sumOf { code ->
                 (polygonsByCode[code] ?: emptyList()).sumOf { ring -> ensureClosed(ring).size }
             }
