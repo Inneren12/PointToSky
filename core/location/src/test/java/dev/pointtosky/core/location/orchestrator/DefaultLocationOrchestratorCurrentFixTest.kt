@@ -38,12 +38,14 @@ class DefaultLocationOrchestratorCurrentFixTest {
         override suspend fun setShareLocationWithWatch(share: Boolean) { _share.value = share }
     }
 
-    private class FakeFusedRepository : LocationRepository {
+    private class FakeFusedRepository(
+        private val lastKnownResult: LocationFix? = null,
+    ) : LocationRepository {
         private val _fixes = MutableSharedFlow<LocationFix>(extraBufferCapacity = 8)
         override val fixes: Flow<LocationFix> = _fixes
         override suspend fun start(config: LocationConfig) = Unit
         override suspend fun stop() = Unit
-        override suspend fun getLastKnown(): LocationFix? = null
+        override suspend fun getLastKnown(): LocationFix? = lastKnownResult
         suspend fun emit(fix: LocationFix) = _fixes.emit(fix)
     }
 
@@ -283,6 +285,64 @@ class DefaultLocationOrchestratorCurrentFixTest {
         pump()  // anyProviderAvailable = useFallback && remoteOk = true && false = false
 
         assertNull(received.last(), "the usePhoneFallback preference alone must not fabricate availability; currentFix must remain null")
+
+        job.cancel()
+    }
+
+    @Test
+    fun `remote getLastKnown fresh fix seeds availability at startup`() = runTest {
+        var now = 0L
+        val prefs = FakeLocationPrefs()
+        // fakeRemote has a cached fix but emits nothing live
+        val fakeRemote = FakeFusedRepository(lastKnownResult = remoteFix(timeMs = 0L))
+        val orchestrator = DefaultLocationOrchestrator(
+            fused = null, manualPrefs = prefs, remotePhone = fakeRemote,
+            clock = { now }, manualReemitIntervalMs = -1L,
+            freshTtlMs = 1_000L, remoteFreshnessTickMs = 100L,
+        )
+
+        // Caller fetches last-known before collecting currentFix; this seeds latestFix with the
+        // REMOTE_PHONE fix. No live remote emission will arrive.
+        prefs.setUsePhoneFallback(true)
+        orchestrator.getLastKnown()
+
+        val received = mutableListOf<LocationFix?>()
+        val job = launch { orchestrator.currentFix.collect { received += it } }
+        pump()
+        // remoteFresh: latestRemoteFix=null, latestFix=REMOTE_PHONE(timeMs=0), 0-0=0≤1000 → true
+        // anyProviderAvailable = useFallback && remoteOk = true && true = true
+        // currentFix emits the cached fix (seeded via fixes.onStart { latestFix.get() })
+
+        assertNotNull(received.last(), "cached REMOTE_PHONE fix from getLastKnown must make currentFix non-null at startup")
+
+        job.cancel()
+    }
+
+    @Test
+    fun `remote getLastKnown fix ages out after freshTtlMs with no live emission`() = runTest {
+        var now = 0L
+        val prefs = FakeLocationPrefs()
+        val fakeRemote = FakeFusedRepository(lastKnownResult = remoteFix(timeMs = 0L))
+        val orchestrator = DefaultLocationOrchestrator(
+            fused = null, manualPrefs = prefs, remotePhone = fakeRemote,
+            clock = { now }, manualReemitIntervalMs = -1L,
+            freshTtlMs = 1_000L, remoteFreshnessTickMs = 100L,
+        )
+
+        prefs.setUsePhoneFallback(true)
+        orchestrator.getLastKnown()
+
+        val received = mutableListOf<LocationFix?>()
+        val job = launch { orchestrator.currentFix.collect { received += it } }
+        pump()
+        assertNotNull(received.last(), "should be non-null with a fresh cached remote fix")
+
+        // Advance clock past freshTtlMs; no live remote fix arrives to refresh latestRemoteFix.
+        now = 2_000L
+        pump(2_000L)
+        // ticker: clock()-rf.timeMs = 2000-0 = 2000 > 1000 → false → anyProviderAvailable=false
+
+        assertNull(received.last(), "currentFix must become null once the cached remote fix ages past freshTtlMs")
 
         job.cancel()
     }

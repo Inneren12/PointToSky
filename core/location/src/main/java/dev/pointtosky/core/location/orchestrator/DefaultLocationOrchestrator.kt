@@ -81,9 +81,14 @@ class DefaultLocationOrchestrator(
 
     // Ticks to re-evaluate whether the latest relayed fix is still within the freshness window.
     // A pure combine() can't flip to false on time alone; the ticker drives that transition.
+    // latestRemoteFix is preferred (populated by live emissions); when it is null (startup, before
+    // the first live emission), fall back to latestFix if it carries a REMOTE_PHONE fix — this
+    // covers the getLastKnown() / cached-startup-seed case without letting manual/fused fixes
+    // fabricate remote availability.
     private val remoteFresh: Flow<Boolean> = flow {
         while (true) {
             val rf = latestRemoteFix.get()
+                ?: latestFix.get()?.takeIf { it.provider == ProviderType.REMOTE_PHONE }
             emit(rf != null && clock() - rf.timeMs <= freshTtlMs)
             delay(remoteFreshnessTickMs)
         }
