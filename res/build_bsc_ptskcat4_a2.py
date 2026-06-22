@@ -127,7 +127,10 @@ def pip_assign(boundaries, ra, dec):
 # ---------- PTSKCAT4 v4 writer (identical layout to A1) ----------
 def build(stars, out_path):
     # stars: list of (abbr, ra, dec, mag, label)
-    blob = bytearray(); off = {}
+    # Reserve STR0 offset 0 for the empty string: the loader always reads STR0 at nameId and
+    # maps an EMPTY string to null (strings.get(nameId).ifEmpty{null}). Unlabeled stars use sid("")==0,
+    # so offset 0 MUST be "" — otherwise they inherit whatever string sits first (e.g. "And").
+    blob = bytearray(b"\x00"); off = {"": 0}
     def sid(s):
         if not s: return 0
         if s in off: return off[s]
