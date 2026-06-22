@@ -18,9 +18,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import java.util.concurrent.atomic.AtomicReference
 
 class DefaultLocationOrchestrator(
@@ -71,6 +73,33 @@ class DefaultLocationOrchestrator(
             }
         }
         .onEach { fix -> latestFix.set(fix) }
+
+    // True when SOME source can currently provide location: a manual point is set, the fused
+    // provider is alive (even if momentarily quiet because the user is stationary), or phone
+    // fallback is enabled.
+    private val anyProviderAvailable: Flow<Boolean> = combine(
+        manualPrefs.manualPointFlow,
+        fusedAvailable,
+        manualPrefs.usePhoneFallbackFlow,
+    ) { manualPoint, fusedOk, useFallback -> manualPoint != null || fusedOk || useFallback }
+        .distinctUntilChanged()
+
+    // Stateful current-fix stream. Uses combine so that:
+    //   • a change in anyProviderAvailable re-emits with combine's buffered last fix (handles the
+    //     availability-restored case without needing a new fix emission from the quiet provider);
+    //   • onStart seeds combine's fix buffer with the cached latestFix so a brand-new collector
+    //     gets the last known fix immediately rather than waiting for the next emission;
+    //   • a quiet-but-alive provider never emits null because anyProviderAvailable stays true and
+    //     combine never re-triggers on the fix side.
+    override val currentFix: Flow<LocationFix?> = combine(
+        anyProviderAvailable,
+        fixes
+            .map<LocationFix, LocationFix?> { it }
+            .onStart { emit(latestFix.get()) },
+    ) { available, fix ->
+        if (available) fix else null
+    }
+    .distinctUntilChanged()
 
     override suspend fun start(config: LocationConfig) {
         // Не поднимаем доступность оптимистически
