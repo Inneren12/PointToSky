@@ -348,6 +348,73 @@ class DefaultLocationOrchestratorCurrentFixTest {
     }
 
     @Test
+    fun `start(config) freshTtlMs overrides constructor default for remote freshness`() = runTest {
+        var now = 0L
+        val prefs = FakeLocationPrefs()
+        val fakeRemote = FakeFusedRepository()
+        // Constructor freshTtlMs defaults to LocationConfig().freshTtlMs (120_000ms).
+        // start() must override it; otherwise the fix would still look fresh well past 1_000ms.
+        val orchestrator = DefaultLocationOrchestrator(
+            fused = null, manualPrefs = prefs, remotePhone = fakeRemote,
+            clock = { now }, manualReemitIntervalMs = -1L,
+            remoteFreshnessTickMs = 100L,
+        )
+
+        orchestrator.start(LocationConfig(freshTtlMs = 1_000L))  // activeFreshTtlMs = 1_000
+        prefs.setUsePhoneFallback(true)
+
+        val received = mutableListOf<LocationFix?>()
+        val job = launch { orchestrator.currentFix.collect { received += it } }
+        pump()
+
+        fakeRemote.emit(remoteFix(timeMs = now))
+        pump()          // latestRemoteFix updated
+        pump(100L)      // ticker fires: 0-0=0 ≤ 1_000 → true → non-null
+        assertNotNull(received.last(), "remote fix should be available while within the config TTL")
+
+        // Advance past the config TTL (1_000ms); the constructor default of 120_000ms must not apply.
+        now = 2_000L
+        pump(2_000L)    // ticker: 2000-0=2000 > 1000 → false → null
+
+        assertNull(received.last(), "currentFix must use start(config).freshTtlMs (1_000ms), not the constructor default")
+
+        job.cancel()
+    }
+
+    @Test
+    fun `start(config) larger freshTtlMs keeps remote fix available longer than constructor default`() = runTest {
+        var now = 0L
+        val prefs = FakeLocationPrefs()
+        val fakeRemote = FakeFusedRepository()
+        val orchestrator = DefaultLocationOrchestrator(
+            fused = null, manualPrefs = prefs, remotePhone = fakeRemote,
+            clock = { now }, manualReemitIntervalMs = -1L,
+            freshTtlMs = 500L,          // small constructor default
+            remoteFreshnessTickMs = 100L,
+        )
+
+        orchestrator.start(LocationConfig(freshTtlMs = 3_000L))  // activeFreshTtlMs = 3_000
+        prefs.setUsePhoneFallback(true)
+
+        val received = mutableListOf<LocationFix?>()
+        val job = launch { orchestrator.currentFix.collect { received += it } }
+        pump()
+
+        fakeRemote.emit(remoteFix(timeMs = now))
+        pump()
+        pump(100L)
+        assertNotNull(received.last(), "remote fix should be available initially")
+
+        // Advance past the constructor default (500ms) but not the config TTL (3_000ms).
+        now = 1_000L
+        pump(1_000L)    // ticker: 1000-0=1000 ≤ 3000 → still true
+
+        assertNotNull(received.last(), "remote fix must remain available; start(config) TTL of 3_000ms has not elapsed")
+
+        job.cancel()
+    }
+
+    @Test
     fun `currentFix emits fused fix when fused repository provides one`() = runTest {
         val prefs = FakeLocationPrefs()
         val fused = FakeFusedRepository()

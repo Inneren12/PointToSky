@@ -43,6 +43,10 @@ class DefaultLocationOrchestrator(
 
     private val latestRemoteFix = AtomicReference<LocationFix?>(null)
 
+    // Updated in start(config) so the freshness window always matches the active LocationConfig.
+    // Initialised from the constructor param so tests can inject a value without calling start().
+    @Volatile private var activeFreshTtlMs: Long = freshTtlMs
+
     private val fusedFixes: Flow<LocationFix> = (fused?.fixes ?: emptyFlow())
         .onEach {
             if (!fusedAvailable.value) fusedAvailable.value = true
@@ -89,7 +93,7 @@ class DefaultLocationOrchestrator(
         while (true) {
             val rf = latestRemoteFix.get()
                 ?: latestFix.get()?.takeIf { it.provider == ProviderType.REMOTE_PHONE }
-            emit(rf != null && clock() - rf.timeMs <= freshTtlMs)
+            emit(rf != null && clock() - rf.timeMs <= activeFreshTtlMs)
             delay(remoteFreshnessTickMs)
         }
     }.distinctUntilChanged()
@@ -125,6 +129,7 @@ class DefaultLocationOrchestrator(
     .distinctUntilChanged()
 
     override suspend fun start(config: LocationConfig) {
+        activeFreshTtlMs = config.freshTtlMs
         // Не поднимаем доступность оптимистически
         fusedAvailable.value = false
         try {
