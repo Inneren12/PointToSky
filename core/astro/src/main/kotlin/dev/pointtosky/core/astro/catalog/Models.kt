@@ -17,6 +17,12 @@ value class StarId(val raw: Int) {
     fun ss(): Int = raw % 100
 }
 
+/** Bit flags carried in StarRecord.flags (the STAR record's flags:u16 field). */
+object StarFlags {
+    const val BRIGHT = 0x01 // bright / labeled star (existing sample convention)
+    const val LINE_NODE = 0x02 // participates in a constellation skeleton polyline
+}
+
 data class ConstellationMeta(
     val id: ConstellationId,
     val abbreviation: String,
