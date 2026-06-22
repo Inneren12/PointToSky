@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -57,6 +58,13 @@ class DefaultLocationOrchestratorCurrentFixTest {
         timeMs = 0,
         accuracyM = 10f,
         provider = ProviderType.GPS,
+    )
+
+    private fun remoteFix(lat: Double = 45.0, lon: Double = -113.0, timeMs: Long = 0L) = LocationFix(
+        point = GeoPoint(lat, lon),
+        timeMs = timeMs,
+        accuracyM = 5f,
+        provider = ProviderType.REMOTE_PHONE,
     )
 
     // ---- Tests ----
@@ -144,12 +152,12 @@ class DefaultLocationOrchestratorCurrentFixTest {
     }
 
     @Test
-    fun `currentFix restores cached fix when a source becomes available again without a new emission`() = runTest {
+    fun `currentFix recovers when manual source is re-enabled after being cleared`() = runTest {
         val prefs = FakeLocationPrefs()
         val orchestrator = DefaultLocationOrchestrator(
             fused = null,
             manualPrefs = prefs,
-            remotePhone = null,  // null → remoteFixes = emptyFlow
+            remotePhone = null,
             clock = { 0L },
             manualReemitIntervalMs = -1L,
         )
@@ -161,23 +169,104 @@ class DefaultLocationOrchestratorCurrentFixTest {
         // Step 1: fix arrives.
         prefs.setManual(GeoPoint(45.0, -113.0))
         advanceUntilIdle()
-        val cachedFix = received.filterNotNull().lastOrNull()
-        assertNotNull(cachedFix, "Should have received a fix")
+        val firstFix = received.filterNotNull().lastOrNull()
+        assertNotNull(firstFix, "Should have received a fix")
 
         // Step 2: source goes away → null.
         prefs.setManual(null)
         advanceUntilIdle()
         assertNull(received.last(), "Should be null after manual source is cleared")
 
-        // Step 3: enable phone fallback → anyProviderAvailable becomes true.
-        // remotePhone is null so remoteFixes is emptyFlow: no new fix emission arrives.
-        // combine re-emits with its buffered last fix value (cachedFix).
-        prefs.setUsePhoneFallback(true)
+        // Step 3: re-enable manual → anyProviderAvailable becomes true; manualFixFlow emits.
+        prefs.setManual(GeoPoint(45.0, -113.0))
         advanceUntilIdle()
 
         val restored = received.last()
-        assertNotNull(restored, "currentFix should restore a cached fix when a source becomes available without a new emission")
-        assertEquals(cachedFix.point, restored.point)
+        assertNotNull(restored, "currentFix should be non-null when manual source is re-enabled")
+        assertEquals(firstFix.point, restored.point)
+
+        job.cancel()
+    }
+
+    @Test
+    fun `remote goes stale - currentFix emits null (fallback on, no fused or manual)`() = runTest {
+        var now = 0L
+        val prefs = FakeLocationPrefs()
+        val fakeRemote = FakeFusedRepository()
+        val orchestrator = DefaultLocationOrchestrator(
+            fused = null, manualPrefs = prefs, remotePhone = fakeRemote,
+            clock = { now }, manualReemitIntervalMs = -1L,
+            freshTtlMs = 1_000L, remoteFreshnessTickMs = 100L,
+        )
+
+        val received = mutableListOf<LocationFix?>()
+        val job = launch { orchestrator.currentFix.collect { received += it } }
+        advanceUntilIdle()
+
+        prefs.setUsePhoneFallback(true)
+        fakeRemote.emit(remoteFix(timeMs = now))
+        advanceUntilIdle()
+
+        assertTrue(received.any { it != null }, "Should have received the remote fix while fresh")
+
+        // Advance clock past freshTtlMs and let the ticker fire.
+        now += 2_000L
+        advanceTimeBy(2_000L)
+        advanceUntilIdle()
+
+        assertNull(received.last(), "currentFix must emit null when the remote fix goes stale")
+
+        job.cancel()
+    }
+
+    @Test
+    fun `remote keeps emitting fresh fixes - currentFix never nulls (connected stationary phone)`() = runTest {
+        var now = 0L
+        val prefs = FakeLocationPrefs()
+        val fakeRemote = FakeFusedRepository()
+        val orchestrator = DefaultLocationOrchestrator(
+            fused = null, manualPrefs = prefs, remotePhone = fakeRemote,
+            clock = { now }, manualReemitIntervalMs = -1L,
+            freshTtlMs = 1_000L, remoteFreshnessTickMs = 100L,
+        )
+
+        val received = mutableListOf<LocationFix?>()
+        val job = launch { orchestrator.currentFix.collect { received += it } }
+        advanceUntilIdle()
+
+        prefs.setUsePhoneFallback(true)
+
+        // Simulate phone re-fetching a fresh-timestamped location while stationary.
+        repeat(5) {
+            now += 500L
+            fakeRemote.emit(remoteFix(timeMs = now))
+            advanceTimeBy(500L)
+            advanceUntilIdle()
+        }
+
+        assertTrue(received.filterNotNull().isNotEmpty(), "Should have received remote fixes")
+        assertNotNull(received.last(), "currentFix must never become null while the phone keeps sending fresh fixes")
+
+        job.cancel()
+    }
+
+    @Test
+    fun `fallback enabled but no remote source - currentFix stays null without a real fix`() = runTest {
+        val prefs = FakeLocationPrefs()
+        val orchestrator = DefaultLocationOrchestrator(
+            fused = null, manualPrefs = prefs, remotePhone = null,
+            clock = { 0L }, manualReemitIntervalMs = -1L,
+            freshTtlMs = 1_000L, remoteFreshnessTickMs = 100L,
+        )
+
+        val received = mutableListOf<LocationFix?>()
+        val job = launch { orchestrator.currentFix.collect { received += it } }
+        advanceUntilIdle()
+
+        prefs.setUsePhoneFallback(true)
+        advanceUntilIdle()
+
+        assertNull(received.last(), "the usePhoneFallback preference alone must not fabricate availability; currentFix must remain null")
 
         job.cancel()
     }
