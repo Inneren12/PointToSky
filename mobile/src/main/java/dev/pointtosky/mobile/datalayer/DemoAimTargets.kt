@@ -1,5 +1,6 @@
 package dev.pointtosky.mobile.datalayer
 
+import dev.pointtosky.core.astro.coord.PolarisJ2000
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetBodyPayload
@@ -20,8 +21,8 @@ object DemoAimTargets {
                         payload =
                             JsonCodec.encodeToElement(
                                 AimTargetEquatorialPayload(
-                                    raDeg = 37.95456067,
-                                    decDeg = 89.26410897,
+                                    raDeg = PolarisJ2000.raDeg,
+                                    decDeg = PolarisJ2000.decDeg,
                                 ),
                             ),
                     )

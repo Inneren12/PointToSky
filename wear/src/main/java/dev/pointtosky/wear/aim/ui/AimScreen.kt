@@ -52,7 +52,7 @@ import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.Vignette
 import androidx.wear.compose.material.VignettePosition
 import androidx.wear.compose.material.rememberPickerState
-import dev.pointtosky.core.astro.coord.Equatorial
+import dev.pointtosky.core.astro.coord.PolarisJ2000
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.transform.raDecToAltAz
@@ -216,7 +216,6 @@ fun AimScreen(
         )
 
     // targets
-    val polarisEq = Equatorial(raDeg = 37.95456067, decDeg = 89.26410897)
     val options =
         remember {
             listOf(
@@ -224,7 +223,7 @@ fun AimScreen(
                 UiTarget("MOON", BodyTarget(Body.MOON)),
                 UiTarget("JUPITER", BodyTarget(Body.JUPITER)),
                 UiTarget("SATURN", BodyTarget(Body.SATURN)),
-                UiTarget("POLARIS", EquatorialTarget(polarisEq)),
+                UiTarget("POLARIS", EquatorialTarget(PolarisJ2000)),
             )
         }
     val initialIndex = remember(initialTarget) { targetIndexFor(initialTarget) }

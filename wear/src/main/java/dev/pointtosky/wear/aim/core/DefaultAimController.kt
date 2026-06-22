@@ -6,6 +6,8 @@ import dev.pointtosky.core.astro.aim.forwardVectorToHorizontal
 import dev.pointtosky.core.astro.aim.toTrueNorth
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
+import dev.pointtosky.core.astro.coord.PolarisJ2000
+import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.ephem.EphemerisComputer
 import dev.pointtosky.core.location.api.LocationOrchestrator
 import dev.pointtosky.core.location.model.LocationFix
@@ -43,11 +45,6 @@ class DefaultAimController(
     private val time: TimeSource,
     private val ephem: EphemerisComputer,
     /**
-     * Fallback‑резолвер звезды по id (офлайн), если в цели нет eq.
-     * По умолчанию ничего не резолвит.
-     */
-    private val resolveStar: (Int) -> Equatorial? = { null },
-    /**
      * Преобразование экваториальных координат в горизонтальные.
      * Ожидает lstDeg (0..360) и широту места.
      */
@@ -77,21 +74,21 @@ class DefaultAimController(
     override val state: StateFlow<AimState> = _state
 
     private var scope: CoroutineScope? = null
-    @Volatile private var target: AimTarget = AimTarget.EquatorialTarget(POLARIS_EQ)
+    @Volatile private var target: AimTarget = AimTarget.EquatorialTarget(PolarisJ2000)
     @Volatile private var tol: AimTolerance = AimTolerance()
     @Volatile private var holdMs: Long = DEFAULT_HOLD_TO_LOCK_MS
     @Volatile private var lastFix: LocationFix? = null
 
-    // удержание для LOCK
-    // Accessed from tick only; setTarget/stop write null as a best-effort reset.
-    // @Volatile would only provide single-field visibility, not atomicity over the full phase
-    // machine, so we leave it as a plain var and accept a one-tick stale read on target change.
-    private var inTolSinceMs: Long? = null
-    private var lastTickMs: Long = 0
+    // Phase-machine state shared between resetPhaseMachine() (UI thread: setTarget/start/stop) and
+    // tick() (Default thread). The only cross-thread writes are the UI-thread resets, which are plain
+    // writes of known values; the read-modify-write of these fields happens ONLY in tick() (a single
+    // coroutine), so there is no concurrent RMW across threads. @Volatile therefore gives the needed
+    // visibility (a UI reset is promptly seen by the next tick) without requiring full-machine atomicity.
+    @Volatile private var inTolSinceMs: Long? = null
+    @Volatile private var lastPhase: AimPhase = AimPhase.SEARCHING
+    @Volatile private var outTolTicks: Int = 0
 
-    // для определения переходов фаз
-    private var lastPhase: AimPhase = AimPhase.SEARCHING
-    private var outTolTicks: Int = 0
+    private var lastTickMs: Long = 0
 
     // окно для оценки confidence
     private data class AzSample(
@@ -336,12 +333,12 @@ class DefaultAimController(
     ): Horizontal? {
         val lat = fix?.point?.latDeg ?: 0.0
         val lon = fix?.point?.lonDeg ?: 0.0
-        val lst = lstDeg(now, lon)
+        val lst = lstAt(now, lon).lstDeg
         val eqOrNull: Equatorial? =
             when (val t = target) {
                 is AimTarget.EquatorialTarget -> t.eq
                 is AimTarget.BodyTarget -> ephem.compute(t.body, now).eq
-                is AimTarget.StarTarget -> t.eq ?: starResolver?.invoke(t.starId) ?: resolveStar(t.starId)
+                is AimTarget.StarTarget -> t.eq ?: starResolver?.invoke(t.starId)
             }
         return eqOrNull?.let { raDecToAltAz(it, lst, lat) }
     }
@@ -454,42 +451,8 @@ class DefaultAimController(
         private const val RELEASE_FACTOR: Double = 1.8 // release box = 1.8× the enter tolerance
         private const val RELEASE_TICKS: Int = 3       // ~200 ms at 15 Hz before dropping the lock
         private const val HORIZON_THRESHOLD_DEG: Double = 0.0 // target.alt below this ⇒ BELOW_HORIZON
-
-        // Polaris ~ J2000 (приближенно)
-        private val POLARIS_EQ = Equatorial(raDeg = 37.95456067, decDeg = 89.26410897)
     }
 }
-
-// ---- Angle/Time helpers (file‑private) ----
-private fun wrapDeg0To360(d: Double): Double {
-    var x = d % 360.0
-    if (x < 0) x += 360.0
-    return x
-}
-
-private fun normalizeAzimuthDelta(delta: Double): Double {
-    var d = delta
-    while (d > 180.0) d -= 360.0
-    while (d <= -180.0) d += 360.0
-    return d
-}
-
-private fun julianDay(instant: Instant): Double =
-    // JD from Unix time: JD = (ms/86400000) + 2440587.5
-    instant.toEpochMilli() / 86_400_000.0 + 2440587.5
-
-private fun gmstDeg(jd: Double): Double {
-    val t = (jd - 2451545.0) / 36525.0
-    val theta =
-        280.46061837 + 360.98564736629 * (jd - 2451545.0) +
-            0.000387933 * t * t - (t * t * t) / 38710000.0
-    return wrapDeg0To360(theta)
-}
-
-private fun lstDeg(
-    instant: Instant,
-    lonDeg: Double,
-): Double = wrapDeg0To360(gmstDeg(julianDay(instant)) + lonDeg)
 
 // Локальный провайдер дефолтного диспетчера с подавлением линта.
 private object AimDispatchers {
