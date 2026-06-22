@@ -77,6 +77,7 @@ class DefaultAimController(
     @Volatile private var target: AimTarget = AimTarget.EquatorialTarget(polarisJ2000)
     @Volatile private var tol: AimTolerance = AimTolerance()
     @Volatile private var holdMs: Long = DEFAULT_HOLD_TO_LOCK_MS
+    @Volatile private var mode: AimMode = AimMode.NAKED_EYE
     @Volatile private var lastFix: LocationFix? = null
 
     // Phase-machine state shared between resetPhaseMachine() (UI thread: setTarget/start/stop) and
@@ -134,6 +135,10 @@ class DefaultAimController(
 
     override fun setHoldToLockMs(ms: Long) {
         this.holdMs = max(0L, ms)
+    }
+
+    override fun setMode(mode: AimMode) {
+        this.mode = mode
     }
 
     override fun start() {
@@ -370,10 +375,13 @@ class DefaultAimController(
                     if (nowMs - start >= holdMs) AimPhase.LOCKED else AimPhase.IN_TOLERANCE
                 }
                 release -> {
-                    // Grace zone: preserve IN_TOLERANCE but reset the hold timer so grace time
-                    // cannot contribute to the holdMs requirement.
-                    inTolSinceMs = null
                     outTolTicks = 0
+                    // FINDER: strict — a drift into the grace zone resets the hold timer, so locking requires
+                    // holding steady inside the tight enter box. NAKED_EYE: keep the running timer so brief
+                    // tremor excursions into the grace zone don't lose acquisition progress.
+                    // In BOTH modes the LOCK transition fires only from the enter box, so a LOCK always means
+                    // the ray was within enter tolerance at lock time.
+                    if (mode.graceResetsHold) inTolSinceMs = null
                     AimPhase.IN_TOLERANCE
                 }
                 else -> {

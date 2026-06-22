@@ -44,6 +44,8 @@ class AimScreenSmokeTest {
 
                 override fun setHoldToLockMs(ms: Long) = Unit
 
+                override fun setMode(mode: dev.pointtosky.wear.aim.core.AimMode) = Unit
+
                 override fun start() = Unit
 
                 override fun stop() = Unit
