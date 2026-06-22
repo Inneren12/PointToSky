@@ -1,5 +1,6 @@
 package dev.pointtosky.wear.aim.core
 
+import dev.pointtosky.core.astro.aim.aimDelta
 import dev.pointtosky.core.astro.aim.forwardVectorToHorizontal
 import dev.pointtosky.core.astro.aim.toTrueNorth
 import dev.pointtosky.core.astro.coord.Equatorial
@@ -75,17 +76,21 @@ class DefaultAimController(
     override val state: StateFlow<AimState> = _state
 
     private var scope: CoroutineScope? = null
-    private var target: AimTarget = AimTarget.EquatorialTarget(POLARIS_EQ)
-    private var tol: AimTolerance = AimTolerance()
-    private var holdMs: Long = DEFAULT_HOLD_TO_LOCK_MS
+    @Volatile private var target: AimTarget = AimTarget.EquatorialTarget(POLARIS_EQ)
+    @Volatile private var tol: AimTolerance = AimTolerance()
+    @Volatile private var holdMs: Long = DEFAULT_HOLD_TO_LOCK_MS
     private var lastFix: LocationFix? = null
 
     // удержание для LOCK
+    // Accessed from tick only; setTarget/stop write null as a best-effort reset.
+    // @Volatile would only provide single-field visibility, not atomicity over the full phase
+    // machine, so we leave it as a plain var and accept a one-tick stale read on target change.
     private var inTolSinceMs: Long? = null
     private var lastTickMs: Long = 0
 
     // для определения переходов фаз
     private var lastPhase: AimPhase = AimPhase.SEARCHING
+    private var outTolTicks: Int = 0
 
     // окно для оценки confidence
     private data class AzSample(
@@ -97,8 +102,7 @@ class DefaultAimController(
 
     override fun setTarget(target: AimTarget) {
         this.target = target
-        // сбрасываем удержание
-        inTolSinceMs = null
+        resetPhaseMachine()
         // aim_target_changed {target}
         when (target) {
             is AimTarget.StarTarget -> {
@@ -136,6 +140,7 @@ class DefaultAimController(
 
     override fun start() {
         if (scope != null) return
+        resetPhaseMachine()
         // aim_start
         LogBus.d(tag = "Aim", msg = "aim_start", payload = emptyMap())
 
@@ -163,7 +168,7 @@ class DefaultAimController(
 
         scope?.cancel()
         scope = null
-        inTolSinceMs = null
+        resetPhaseMachine()
         azWindow.clear()
     }
 
@@ -180,11 +185,10 @@ class DefaultAimController(
         val targetHor = computeTargetHorizontal(instant, fix)
 
         if (targetHor != null) {
-            val dAz = normalizeAzimuthDelta(targetHor.azDeg - current.azDeg)
-            val dAlt = targetHor.altDeg - current.altDeg
-
-            val inTolerance = (abs(dAz) <= tol.azDeg) && (abs(dAlt) <= tol.altDeg)
-            val newPhase = computePhase(nowMs, inTolerance)
+            val delta = aimDelta(current, targetHor)
+            val crossAbs = abs(delta.crossTrackDeg)
+            val alongAbs = abs(delta.alongTrackDeg)
+            val newPhase = computePhase(nowMs, crossAbs, alongAbs)
             val conf = computeConfidence()
 
             // лог переходов фаз
@@ -194,7 +198,7 @@ class DefaultAimController(
                         LogBus.d(
                             tag = "Aim",
                             msg = "aim_enter_tolerance",
-                            payload = mapOf("dAz" to dAz, "dAlt" to dAlt),
+                            payload = mapOf("dAz" to delta.crossTrackDeg, "dAlt" to delta.alongTrackDeg),
                         )
                     }
                     AimPhase.LOCKED -> {
@@ -216,8 +220,8 @@ class DefaultAimController(
                 AimState(
                     current = current,
                     target = targetHor,
-                    dAzDeg = dAz,
-                    dAltDeg = dAlt,
+                    dAzDeg = delta.crossTrackDeg,
+                    dAltDeg = delta.alongTrackDeg,
                     phase = newPhase,
                     confidence = conf,
                 )
@@ -285,21 +289,63 @@ class DefaultAimController(
         return eqOrNull?.let { raDecToAltAz(it, lst, lat) }
     }
 
+    private fun resetPhaseMachine() {
+        inTolSinceMs = null
+        outTolTicks = 0
+        lastPhase = AimPhase.SEARCHING
+        _state.value = _state.value.copy(phase = AimPhase.SEARCHING)
+    }
+
     private fun computePhase(
         nowMs: Long,
-        inTolerance: Boolean,
+        crossAbs: Double,
+        alongAbs: Double,
     ): AimPhase {
-        if (!inTolerance) {
-            inTolSinceMs = null
-            return AimPhase.SEARCHING
-        }
-        val start =
-            inTolSinceMs ?: run {
-                inTolSinceMs = nowMs
-                return AimPhase.IN_TOLERANCE
+        val enter = crossAbs <= tol.azDeg && alongAbs <= tol.altDeg
+        val release = crossAbs <= tol.azDeg * RELEASE_FACTOR && alongAbs <= tol.altDeg * RELEASE_FACTOR
+        return when (lastPhase) {
+            AimPhase.SEARCHING ->
+                if (enter) { inTolSinceMs = nowMs; outTolTicks = 0; AimPhase.IN_TOLERANCE }
+                else AimPhase.SEARCHING
+
+            AimPhase.IN_TOLERANCE -> when {
+                enter -> {
+                    // Only the enter box may advance the hold timer.
+                    outTolTicks = 0
+                    val start = inTolSinceMs ?: nowMs.also { inTolSinceMs = it }
+                    if (nowMs - start >= holdMs) AimPhase.LOCKED else AimPhase.IN_TOLERANCE
+                }
+                release -> {
+                    // Grace zone: preserve IN_TOLERANCE but reset the hold timer so grace time
+                    // cannot contribute to the holdMs requirement.
+                    inTolSinceMs = null
+                    outTolTicks = 0
+                    AimPhase.IN_TOLERANCE
+                }
+                else -> {
+                    outTolTicks += 1
+                    if (outTolTicks >= RELEASE_TICKS) {
+                        inTolSinceMs = null; outTolTicks = 0; AimPhase.SEARCHING
+                    } else {
+                        AimPhase.IN_TOLERANCE // grace: survive a brief excursion beyond release box
+                    }
+                }
             }
-        val dt = nowMs - start
-        return if (dt >= holdMs) AimPhase.LOCKED else AimPhase.IN_TOLERANCE
+
+            AimPhase.LOCKED ->
+                if (release) {
+                    // Enter zone is a subset of release zone — both keep the lock.
+                    outTolTicks = 0
+                    AimPhase.LOCKED
+                } else {
+                    outTolTicks += 1
+                    if (outTolTicks >= RELEASE_TICKS) {
+                        inTolSinceMs = null; outTolTicks = 0; AimPhase.SEARCHING
+                    } else {
+                        AimPhase.LOCKED // grace: survive a brief excursion beyond release box
+                    }
+                }
+        }
     }
 
     private fun addAzSample(
@@ -348,6 +394,8 @@ class DefaultAimController(
         private const val CONFIDENCE_WINDOW_CAPACITY: Int = 64
         private const val MAX_STD_DEV_DEG: Double = 12.0
         private const val MIN_RESULTANT_LENGTH: Double = 1e-3
+        private const val RELEASE_FACTOR: Double = 1.8 // release box = 1.8× the enter tolerance
+        private const val RELEASE_TICKS: Int = 3       // ~200 ms at 15 Hz before dropping the lock
 
         // Polaris ~ J2000 (приближенно)
         private val POLARIS_EQ = Equatorial(raDeg = 37.95456067, decDeg = 89.26410897)
