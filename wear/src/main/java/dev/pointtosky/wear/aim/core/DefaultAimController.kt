@@ -6,7 +6,7 @@ import dev.pointtosky.core.astro.aim.forwardVectorToHorizontal
 import dev.pointtosky.core.astro.aim.toTrueNorth
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
-import dev.pointtosky.core.astro.coord.PolarisJ2000
+import dev.pointtosky.core.astro.coord.polarisJ2000
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.ephem.EphemerisComputer
 import dev.pointtosky.core.location.api.LocationOrchestrator
@@ -74,7 +74,7 @@ class DefaultAimController(
     override val state: StateFlow<AimState> = _state
 
     private var scope: CoroutineScope? = null
-    @Volatile private var target: AimTarget = AimTarget.EquatorialTarget(PolarisJ2000)
+    @Volatile private var target: AimTarget = AimTarget.EquatorialTarget(polarisJ2000)
     @Volatile private var tol: AimTolerance = AimTolerance()
     @Volatile private var holdMs: Long = DEFAULT_HOLD_TO_LOCK_MS
     @Volatile private var lastFix: LocationFix? = null

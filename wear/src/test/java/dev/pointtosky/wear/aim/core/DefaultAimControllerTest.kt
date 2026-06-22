@@ -32,7 +32,63 @@ import kotlin.test.assertTrue
 
 class DefaultAimControllerTest {
     @Test
-    fun `dAz wraps across 0-360`() =
+    fun `StarTarget without embedded eq resolves via starResolver`() =
+        runBlocking {
+            val resolvedEq = Equatorial(raDeg = 10.0, decDeg = 45.0)
+            val expectedHorizontal = Horizontal(azDeg = 90.0, altDeg = 30.0)
+
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(GeoPoint(52.0, 13.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { eq, _, _ ->
+                        if (eq == resolvedEq) expectedHorizontal
+                        else Horizontal(azDeg = 0.0, altDeg = 0.0)
+                    },
+                    starResolver = { id -> if (id == 42) resolvedEq else null },
+                )
+
+            // StarTarget with no embedded eq — resolver must supply the coordinates.
+            controller.setTarget(AimTarget.StarTarget(starId = 42, eq = null))
+            controller.setHoldToLockMs(0)
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+            controller.start()
+
+            location.emit(
+                LocationFix(
+                    point = GeoPoint(52.0, 13.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.MANUAL,
+                ),
+            )
+
+            // Aim ray on target — should enter IN_TOLERANCE (not stay SEARCHING forever).
+            orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 90.0, altDeg = 30.0))
+
+            val state =
+                withTimeout(1_000) {
+                    controller.state.filter {
+                        it.phase == AimPhase.IN_TOLERANCE || it.phase == AimPhase.LOCKED
+                    }.first()
+                }
+
+            assertEquals(
+                expectedHorizontal.azDeg,
+                state.target.azDeg,
+                1e-6,
+                "resolver-supplied equatorial must be used as target",
+            )
+            controller.stop()
+        }
+
+    @Test
         runBlocking {
             val orientation = FakeOrientationRepository()
             val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))

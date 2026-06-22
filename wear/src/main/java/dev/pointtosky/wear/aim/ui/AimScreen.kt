@@ -52,7 +52,7 @@ import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.Vignette
 import androidx.wear.compose.material.VignettePosition
 import androidx.wear.compose.material.rememberPickerState
-import dev.pointtosky.core.astro.coord.PolarisJ2000
+import dev.pointtosky.core.astro.coord.polarisJ2000
 import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.transform.raDecToAltAz
@@ -223,7 +223,7 @@ fun AimScreen(
                 UiTarget("MOON", BodyTarget(Body.MOON)),
                 UiTarget("JUPITER", BodyTarget(Body.JUPITER)),
                 UiTarget("SATURN", BodyTarget(Body.SATURN)),
-                UiTarget("POLARIS", EquatorialTarget(PolarisJ2000)),
+                UiTarget("POLARIS", EquatorialTarget(polarisJ2000)),
             )
         }
     val initialIndex = remember(initialTarget) { targetIndexFor(initialTarget) }
