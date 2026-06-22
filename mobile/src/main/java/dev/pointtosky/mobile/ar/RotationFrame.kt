@@ -98,6 +98,7 @@ fun rememberRotationFrame(): RotationFrame? {
  * sensor world frame (Y = MAGNETIC north) into a TRUE-north world frame. After this,
  * vectorToHorizontal(forwardWorld) is TRUE azimuth and transpose(rotationMatrix) maps TRUE-north world
  * vectors to device space. Mirrors the watch's Horizontal.toTrueNorth(declination).
+ * In the project convention az = atan2(x, y), this maps magnetic azimuth m to true azimuth m + declinationDeg.
  */
 internal fun RotationFrame.correctedForTrueNorth(declinationDeg: Double): RotationFrame {
     if (declinationDeg == 0.0) return this

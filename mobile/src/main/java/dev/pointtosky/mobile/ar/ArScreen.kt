@@ -677,8 +677,8 @@ internal fun calculateOverlay(
 ): OverlayData? {
     if (viewport.width == 0 || viewport.height == 0) return null
 
-    val frame = frame.correctedForTrueNorth(declinationDeg)
-    val reticleHorizontal = vectorToHorizontal(frame.forwardWorld)
+    val trueNorthFrame = frame.correctedForTrueNorth(declinationDeg)
+    val reticleHorizontal = vectorToHorizontal(trueNorthFrame.forwardWorld)
     val reticleEquatorial =
         altAzToRaDec(
             reticleHorizontal,
@@ -686,7 +686,7 @@ internal fun calculateOverlay(
             latDeg = state.location.latDeg,
         )
     // rotationMatrix is already remapped to the current display rotation.
-    val worldToDevice = transpose(frame.rotationMatrix)
+    val worldToDevice = transpose(trueNorthFrame.rotationMatrix)
     val projectionParams = projectionParams(viewport)
 
     data class ProjectionResult(
@@ -881,8 +881,8 @@ internal fun projectHorizontalsToScreen(
 ): List<Offset> {
     if (viewport.width == 0 || viewport.height == 0) return emptyList()
 
-    val frame = frame.correctedForTrueNorth(declinationDeg)
-    val worldToDevice = transpose(frame.rotationMatrix)
+    val trueNorthFrame = frame.correctedForTrueNorth(declinationDeg)
+    val worldToDevice = transpose(trueNorthFrame.rotationMatrix)
     val params = projectionParams(viewport)
 
     return horizontals.mapNotNull { horizontal ->
