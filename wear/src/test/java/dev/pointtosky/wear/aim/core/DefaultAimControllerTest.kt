@@ -667,6 +667,68 @@ class DefaultAimControllerTest {
             controller.stop()
         }
 
+    @Test
+    fun `restart without a fix - stale lastFix is cleared and never guides`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            // Session 1 has a real fix (via the getLastKnown() seed); session 2 will have none.
+            val location = FakeLocationOrchestrator(GeoPoint(45.0, -113.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    // On-target ray (az0/alt30) — would lock if a stale fix leaked into session 2.
+                    raDecToAltAz = { _, _, _ -> Horizontal(azDeg = 0.0, altDeg = 30.0) },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0)
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+
+            // Session 1: real fix present → reach a guiding phase, so lastFix holds a real fix.
+            controller.start()
+            withTimeout(2_000) {
+                var t = 0L
+                while (controller.state.value.phase != AimPhase.IN_TOLERANCE &&
+                    controller.state.value.phase != AimPhase.LOCKED
+                ) {
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                    delay(100)
+                    t += 100
+                }
+            }
+            controller.stop()
+
+            // The fix source now reports no location for the next session.
+            location.setManual(null)
+
+            // Session 2: the previous session's fix must not leak in. Every on-target frame must read
+            // a non-guiding phase (the stale fix would otherwise lock instantly with holdMs=0), and the
+            // controller must settle on NO_LOCATION.
+            controller.start()
+            var sawNoLocation = false
+            withTimeout(2_000) {
+                var t = 5_000L
+                while (!sawNoLocation) {
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                    delay(100)
+                    val phase = controller.state.value.phase
+                    assertTrue(
+                        phase != AimPhase.IN_TOLERANCE && phase != AimPhase.LOCKED,
+                        "A stale fix must not guide/lock after restart without a fix; got $phase",
+                    )
+                    if (phase == AimPhase.NO_LOCATION) sawNoLocation = true
+                    t += 100
+                }
+            }
+            assertEquals(AimPhase.NO_LOCATION, controller.state.value.phase)
+            controller.stop()
+        }
+
     private fun orientationFrame(
         timestampMs: Long,
         azDeg: Double,

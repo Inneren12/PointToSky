@@ -142,6 +142,9 @@ class DefaultAimController(
     override fun start() {
         if (scope != null) return
         resetPhaseMachine()
+        // Drop any fix carried over from a previous session BEFORE collectors launch, so a stale
+        // value can't briefly guide/lock before the new getLastKnown() seed or a live fix arrives.
+        lastFix = null
         // aim_start
         LogBus.d(tag = "Aim", msg = "aim_start", payload = emptyMap())
 
@@ -172,6 +175,7 @@ class DefaultAimController(
         scope?.cancel()
         scope = null
         resetPhaseMachine()
+        lastFix = null
         azWindow.clear()
     }
 
