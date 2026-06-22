@@ -33,6 +33,8 @@ class AimStatusFormatter(
             AimPhase.SEARCHING -> resources.getString(R.string.comp_aim_status_phase_searching)
             AimPhase.IN_TOLERANCE -> resources.getString(R.string.comp_aim_status_phase_in_tolerance)
             AimPhase.LOCKED -> resources.getString(R.string.comp_aim_status_phase_locked)
+            AimPhase.BELOW_HORIZON -> resources.getString(R.string.comp_aim_status_phase_below_horizon)
+            AimPhase.NO_LOCATION -> resources.getString(R.string.comp_aim_status_phase_no_location)
             null -> resources.getString(R.string.comp_aim_status_phase_inactive)
         }
 

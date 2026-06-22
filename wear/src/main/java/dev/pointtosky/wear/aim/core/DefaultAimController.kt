@@ -1,5 +1,6 @@
 package dev.pointtosky.wear.aim.core
 
+import dev.pointtosky.core.astro.aim.AimDelta
 import dev.pointtosky.core.astro.aim.aimDelta
 import dev.pointtosky.core.astro.aim.forwardVectorToHorizontal
 import dev.pointtosky.core.astro.aim.toTrueNorth
@@ -79,7 +80,7 @@ class DefaultAimController(
     @Volatile private var target: AimTarget = AimTarget.EquatorialTarget(POLARIS_EQ)
     @Volatile private var tol: AimTolerance = AimTolerance()
     @Volatile private var holdMs: Long = DEFAULT_HOLD_TO_LOCK_MS
-    private var lastFix: LocationFix? = null
+    @Volatile private var lastFix: LocationFix? = null
 
     // удержание для LOCK
     // Accessed from tick only; setTarget/stop write null as a best-effort reset.
@@ -146,11 +147,13 @@ class DefaultAimController(
 
         scope =
             CoroutineScope(dispatcher + SupervisorJob()).also { sc ->
-                // поток локации (редко)
+                // поток локации
                 sc.launch {
+                    // Seed once so a cached fix is usable before the first live emission.
                     lastFix = location.getLastKnown()
-                    // допускаем, что где-то ещё у тебя есть полноценная подписка на Fixes,
-                    // здесь нам достаточно lastKnown, чтобы ядро работало.
+                    // Live updates. Until a real fix exists, lastFix stays null and tick() reports
+                    // NO_LOCATION instead of fabricating (0,0). location.start() is owned by MainActivity.
+                    location.fixes.collect { fix -> lastFix = fix }
                 }
                 // поток ориентации
                 sc.launch {
@@ -182,58 +185,107 @@ class DefaultAimController(
         val current = toHorizontal(frame, declinationFor(fix, instant))
         addAzSample(nowMs, current.azDeg)
 
+        // GATE 1 — no real location fix: do not fabricate (0,0).
+        if (fix == null) {
+            enterNonGuidingPhase(AimPhase.NO_LOCATION, current)
+            return
+        }
+
         val targetHor = computeTargetHorizontal(instant, fix)
-
-        if (targetHor != null) {
-            val delta = aimDelta(current, targetHor)
-            val crossAbs = abs(delta.crossTrackDeg)
-            val alongAbs = abs(delta.alongTrackDeg)
-            val newPhase = computePhase(nowMs, crossAbs, alongAbs)
-            val conf = computeConfidence()
-
-            // лог переходов фаз
-            if (newPhase != lastPhase) {
-                when (newPhase) {
-                    AimPhase.IN_TOLERANCE -> {
-                        LogBus.d(
-                            tag = "Aim",
-                            msg = "aim_enter_tolerance",
-                            payload = mapOf("dAz" to delta.crossTrackDeg, "dAlt" to delta.alongTrackDeg),
-                        )
-                    }
-                    AimPhase.LOCKED -> {
-                        LogBus.d(
-                            tag = "Aim",
-                            msg = "aim_lock",
-                            payload = mapOf("holdMs" to holdMs),
-                        )
-                    }
-                    AimPhase.SEARCHING -> {
-                        LogBus.d(tag = "Aim", msg = "aim_lost", payload = emptyMap())
-                    }
-                }
-            }
-            // фиксируем новую фазу, чтобы не спамить событиями на каждом тике
-            lastPhase = newPhase
-
-            _state.value =
-                AimState(
-                    current = current,
-                    target = targetHor,
-                    dAzDeg = delta.crossTrackDeg,
-                    dAltDeg = delta.alongTrackDeg,
-                    phase = newPhase,
-                    confidence = conf,
-                )
-        } else {
-            // Цель пока не посчитана — публикуем только текущий луч.
+        if (targetHor == null) {
+            // Target unresolvable (e.g. unknown star id) — existing behaviour: publish current ray only.
+            inTolSinceMs = null
+            outTolTicks = 0
+            lastPhase = AimPhase.SEARCHING
             _state.value =
                 _state.value.copy(
                     current = current,
                     phase = AimPhase.SEARCHING,
                     confidence = computeConfidence(),
                 )
+            return
         }
+
+        // GATE 2 — target below the horizon: not observable. No lock, no haptics.
+        if (targetHor.altDeg < HORIZON_THRESHOLD_DEG) {
+            enterNonGuidingPhase(AimPhase.BELOW_HORIZON, current, targetHor, aimDelta(current, targetHor))
+            return
+        }
+
+        // --- normal guidance path below, UNCHANGED ---
+        val delta = aimDelta(current, targetHor)
+        val crossAbs = abs(delta.crossTrackDeg)
+        val alongAbs = abs(delta.alongTrackDeg)
+        val newPhase = computePhase(nowMs, crossAbs, alongAbs)
+        val conf = computeConfidence()
+
+        // лог переходов фаз
+        if (newPhase != lastPhase) {
+            when (newPhase) {
+                AimPhase.IN_TOLERANCE -> {
+                    LogBus.d(
+                        tag = "Aim",
+                        msg = "aim_enter_tolerance",
+                        payload = mapOf("dAz" to delta.crossTrackDeg, "dAlt" to delta.alongTrackDeg),
+                    )
+                }
+                AimPhase.LOCKED -> {
+                    LogBus.d(
+                        tag = "Aim",
+                        msg = "aim_lock",
+                        payload = mapOf("holdMs" to holdMs),
+                    )
+                }
+                AimPhase.SEARCHING -> {
+                    LogBus.d(tag = "Aim", msg = "aim_lost", payload = emptyMap())
+                }
+                else -> {}
+            }
+        }
+        // фиксируем новую фазу, чтобы не спамить событиями на каждом тике
+        lastPhase = newPhase
+
+        _state.value =
+            AimState(
+                current = current,
+                target = targetHor,
+                dAzDeg = delta.crossTrackDeg,
+                dAltDeg = delta.alongTrackDeg,
+                phase = newPhase,
+                confidence = conf,
+            )
+    }
+
+    /**
+     * Publish a non-guiding phase (NO_LOCATION / BELOW_HORIZON) and reset lock progress so that
+     * returning to the normal path re-acquires from scratch. No ENTER/LOCK haptics ever fire here
+     * because AimScreen's haptic effect only reacts to IN_TOLERANCE / LOCKED / SEARCHING.
+     */
+    private fun enterNonGuidingPhase(
+        phase: AimPhase,
+        current: Horizontal,
+        target: Horizontal? = null,
+        delta: AimDelta? = null,
+    ) {
+        inTolSinceMs = null
+        outTolTicks = 0
+        if (phase != lastPhase) {
+            LogBus.d(
+                tag = "Aim",
+                msg = if (phase == AimPhase.NO_LOCATION) "aim_no_location" else "aim_below_horizon",
+                payload = emptyMap(),
+            )
+        }
+        lastPhase = phase
+        _state.value =
+            _state.value.copy(
+                current = current,
+                target = target ?: _state.value.target,
+                dAzDeg = delta?.crossTrackDeg ?: _state.value.dAzDeg,
+                dAltDeg = delta?.alongTrackDeg ?: _state.value.dAltDeg,
+                phase = phase,
+                confidence = computeConfidence(),
+            )
     }
 
     // --- core helpers kept in class (логическая часть) ---
@@ -304,7 +356,7 @@ class DefaultAimController(
         val enter = crossAbs <= tol.azDeg && alongAbs <= tol.altDeg
         val release = crossAbs <= tol.azDeg * RELEASE_FACTOR && alongAbs <= tol.altDeg * RELEASE_FACTOR
         return when (lastPhase) {
-            AimPhase.SEARCHING ->
+            AimPhase.SEARCHING, AimPhase.BELOW_HORIZON, AimPhase.NO_LOCATION ->
                 if (enter) { inTolSinceMs = nowMs; outTolTicks = 0; AimPhase.IN_TOLERANCE }
                 else AimPhase.SEARCHING
 
@@ -396,6 +448,7 @@ class DefaultAimController(
         private const val MIN_RESULTANT_LENGTH: Double = 1e-3
         private const val RELEASE_FACTOR: Double = 1.8 // release box = 1.8× the enter tolerance
         private const val RELEASE_TICKS: Int = 3       // ~200 ms at 15 Hz before dropping the lock
+        private const val HORIZON_THRESHOLD_DEG: Double = 0.0 // target.alt below this ⇒ BELOW_HORIZON
 
         // Polaris ~ J2000 (приближенно)
         private val POLARIS_EQ = Equatorial(raDeg = 37.95456067, decDeg = 89.26410897)

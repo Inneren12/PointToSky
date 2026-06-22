@@ -9,7 +9,7 @@ data class AimTolerance(
     val altDeg: Double = 4.0,
 )
 
-enum class AimPhase { SEARCHING, IN_TOLERANCE, LOCKED }
+enum class AimPhase { SEARCHING, IN_TOLERANCE, LOCKED, BELOW_HORIZON, NO_LOCATION }
 
 data class AimState(
     val current: Horizontal,

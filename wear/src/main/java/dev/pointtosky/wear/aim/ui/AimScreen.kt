@@ -279,42 +279,49 @@ fun AimScreen(
                 confidence = state.confidence.coerceIn(0f, 1f),
             )
 
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AltScaleWithA11y(
-                    absAltDeg = altAbs,
-                    dirUp = altUp,
-                    height = 110.dp,
-                    width = 14.dp,
-                    contentDesc = altCd,
-                )
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .semantics { contentDescription = arrowCd },
-                ) {
-                    TurnArrow(
-                        right = azRight,
-                        emphasized = state.phase != AimPhase.SEARCHING,
-                        size = 150.dp,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "│ΔAz│ " + formatDeg(azAbs),
-                        style = MaterialTheme.typography.title3,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
+            // Non-guiding phases must not show a (misleading) arrow/scale — surface an honest status
+            // message instead. The normal guidance row is unchanged.
+            when (state.phase) {
+                AimPhase.NO_LOCATION -> AimStatusMessage(stringResource(R.string.aim_status_no_location))
+                AimPhase.BELOW_HORIZON -> AimStatusMessage(stringResource(R.string.aim_status_below_horizon))
+                else ->
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AltScaleWithA11y(
+                            absAltDeg = altAbs,
+                            dirUp = altUp,
+                            height = 110.dp,
+                            width = 14.dp,
+                            contentDesc = altCd,
+                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .semantics { contentDescription = arrowCd },
+                        ) {
+                            TurnArrow(
+                                right = azRight,
+                                emphasized = state.phase == AimPhase.IN_TOLERANCE || state.phase == AimPhase.LOCKED,
+                                size = 150.dp,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "│ΔAz│ " + formatDeg(azAbs),
+                                style = MaterialTheme.typography.title3,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                        Spacer(Modifier.width(14.dp))
+                    }
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -369,6 +376,8 @@ private fun PhaseBadge(phase: AimPhase) {
             AimPhase.SEARCHING -> Triple(Color(0x334A4A4A), Color(0xFFB0B0B0), "SEARCHING")
             AimPhase.IN_TOLERANCE -> Triple(Color(0x33F4D03F), Color(0xFFF4D03F), "IN")
             AimPhase.LOCKED -> Triple(Color(0x332ECC71), Color(0xFF2ECC71), "LOCKED")
+            AimPhase.BELOW_HORIZON -> Triple(Color(0x33E67E22), Color(0xFFE67E22), "BELOW")
+            AimPhase.NO_LOCATION -> Triple(Color(0x335DADE2), Color(0xFF5DADE2), "NO GPS")
         }
     Box(
         Modifier
@@ -381,6 +390,23 @@ private fun PhaseBadge(phase: AimPhase) {
             text = text,
             color = fg,
             style = MaterialTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
+        )
+    }
+}
+
+/** Honest status text shown in place of the arrow/scales when guidance is not possible. */
+@Composable
+private fun AimStatusMessage(text: String) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.title3,
+            textAlign = TextAlign.Center,
         )
     }
 }
