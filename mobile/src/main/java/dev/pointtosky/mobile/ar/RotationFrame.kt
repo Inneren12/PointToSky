@@ -15,6 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.getSystemService
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 data class RotationFrame(
@@ -89,6 +91,33 @@ fun rememberRotationFrame(): RotationFrame? {
     }
 
     return frame
+}
+
+/**
+ * Rotates this frame's world reference about the up axis by [declinationDeg], converting the Android
+ * sensor world frame (Y = MAGNETIC north) into a TRUE-north world frame. After this,
+ * vectorToHorizontal(forwardWorld) is TRUE azimuth and transpose(rotationMatrix) maps TRUE-north world
+ * vectors to device space. Mirrors the watch's Horizontal.toTrueNorth(declination).
+ * In the project convention az = atan2(x, y), this maps magnetic azimuth m to true azimuth m + declinationDeg.
+ */
+internal fun RotationFrame.correctedForTrueNorth(declinationDeg: Double): RotationFrame {
+    if (declinationDeg == 0.0) return this
+    val d = Math.toRadians(declinationDeg)
+    val c = cos(d).toFloat()
+    val s = sin(d).toFloat()
+    val r = rotationMatrix
+    val cm = floatArrayOf(
+        c * r[0] + s * r[3], c * r[1] + s * r[4], c * r[2] + s * r[5],
+        -s * r[0] + c * r[3], -s * r[1] + c * r[4], -s * r[2] + c * r[5],
+        r[6], r[7], r[8],
+    )
+    val f = forwardWorld
+    val cf = floatArrayOf(
+        c * f[0] + s * f[1],
+        -s * f[0] + c * f[1],
+        f[2],
+    )
+    return copy(rotationMatrix = cm, forwardWorld = cf)
 }
 
 private fun normalizeVector(vector: FloatArray): FloatArray {

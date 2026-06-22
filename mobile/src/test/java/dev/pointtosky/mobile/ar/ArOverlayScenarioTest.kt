@@ -225,6 +225,110 @@ class ArOverlayScenarioTest {
         assertEquals("RealStar", overlay.labels.first().title)
     }
 
+    @Test
+    fun `declination correction shifts reticle from magnetic to true azimuth`() {
+        val instant = Instant.parse("2024-01-01T00:00:00Z")
+        val location = GeoPoint(latDeg = 53.5461, lonDeg = -113.4938)
+        val lstDeg = lstAt(instant, location.lonDeg).lstDeg
+
+        val D = 13.0
+        val trueAz = 120.0
+        val magneticAz = trueAz - D  // 107.0
+        val altDeg = 45.0
+
+        // Frame built in the magnetic sensor frame: device is physically aimed at TRUE azimuth 120°,
+        // which is magnetic azimuth 107° (since magnetic north is D° east of true north).
+        val magneticForward = horizontalToVector(Horizontal(azDeg = magneticAz, altDeg = altDeg))
+        val frame = RotationFrame(
+            rotationMatrix = makeRotationMatrixFromForward(magneticForward),
+            forwardWorld = magneticForward,
+            timestampNanos = 0L,
+        )
+
+        // Star placed at TRUE azimuth 120°.
+        val starEquatorial = altAzToRaDec(Horizontal(azDeg = trueAz, altDeg = altDeg), lstDeg, location.latDeg)
+        val constellationId = ConstellationId(0)
+        val star = StarRecord(
+            id = StarId(10),
+            rightAscensionDeg = starEquatorial.raDeg.toFloat(),
+            declinationDeg = starEquatorial.decDeg.toFloat(),
+            magnitude = 1.0f,
+            constellationId = constellationId,
+            flags = 0,
+            name = "TrueNorthStar",
+        )
+        val catalog = object : AstroCatalog {
+            private val stars = listOf(star)
+            override fun getConstellationMeta(id: ConstellationId) =
+                ConstellationMeta(id, abbreviation = "TRU", name = "True")
+            override fun allStars() = stars
+            override fun starById(raw: Int) = stars.find { it.id.raw == raw }
+            override fun starsByConstellation(id: ConstellationId) =
+                if (id == constellationId) stars else emptyList()
+            override fun asterismsByConstellation(id: ConstellationId) = emptyList<Asterism>()
+            override fun artOverlaysByConstellation(id: ConstellationId) = emptyList<ArtOverlay>()
+        }
+        val catalogState = AstroCatalogState(
+            catalog = catalog,
+            starsById = mapOf(star.id.raw to star),
+            constellationByAbbr = mapOf("TRU" to constellationId),
+            skeletonLines = emptyList(),
+        )
+        val state = ArUiState.Ready(
+            instant = instant,
+            location = location,
+            locationResolved = true,
+            lstDeg = lstDeg,
+            stars = emptyList(),
+            catalog = catalogState,
+            showConstellations = false,
+            showAsterisms = false,
+            asterismUiState = AsterismUiState(isEnabled = false, highlighted = null, available = emptyList()),
+            magLimit = 6.0,
+            showStarLabels = true,
+        )
+        val viewport = IntSize(1080, 1080)
+
+        // With D=13: corrected frame's true forward = magneticAz + D = trueAz; reticle matches star.
+        val correctedOverlay = assertNotNull(calculateOverlay(state, frame, viewport, { constellationId }, declinationDeg = D))
+        assertEquals(trueAz, correctedOverlay.reticleHorizontal.azDeg, 1e-4)
+        assertEquals(altDeg, correctedOverlay.reticleHorizontal.altDeg, 1e-4)
+        val correctedNearest = assertNotNull(correctedOverlay.nearestLabel)
+        assertTrue(correctedNearest.separationDeg < 0.01)
+
+        // With D=0: no correction; reticle stays at magnetic az 107° — star at true az 120° is ~D away.
+        val uncorrectedOverlay = assertNotNull(calculateOverlay(state, frame, viewport, { constellationId }, declinationDeg = 0.0))
+        assertEquals(magneticAz, uncorrectedOverlay.reticleHorizontal.azDeg, 1e-4)
+        val uncorrectedNearest = assertNotNull(uncorrectedOverlay.nearestLabel)
+        assertTrue(uncorrectedNearest.separationDeg > D * 0.5)
+    }
+
+    @Test
+    fun `correctedForTrueNorth rotates magnetic frame vector to true azimuth`() {
+        // A vector pointing north (magnetic az=0) when rotated by D should yield true az=D.
+        // vectorToHorizontal of the rotated forwardWorld should give az=D.
+        val D = 13.0
+        val northForward = horizontalToVector(Horizontal(azDeg = 0.0, altDeg = 0.0))
+        val frame = RotationFrame(
+            rotationMatrix = makeRotationMatrixFromForward(northForward),
+            forwardWorld = northForward,
+            timestampNanos = 0L,
+        )
+        val corrected = frame.correctedForTrueNorth(D)
+        // After +D rotation: magnetic az=0 → true az=D
+        val trueHorizontal = vectorToHorizontal(corrected.forwardWorld)
+        assertEquals(D, trueHorizontal.azDeg, 1e-4)
+        assertEquals(0.0, trueHorizontal.altDeg, 1e-4)
+    }
+
+    private fun vectorToHorizontal(vector: FloatArray): dev.pointtosky.core.astro.coord.Horizontal {
+        val z = vector[2].toDouble().coerceIn(-1.0, 1.0)
+        val altDeg = Math.toDegrees(kotlin.math.asin(z))
+        var azDeg = Math.toDegrees(kotlin.math.atan2(vector[0].toDouble(), vector[1].toDouble()))
+        if (azDeg < 0) azDeg += 360.0
+        return dev.pointtosky.core.astro.coord.Horizontal(azDeg = azDeg, altDeg = altDeg)
+    }
+
     /**
      * Строим rotationMatrix, согласованный с forwardWorld.
      * Это имитирует поведение SensorManager: ось Z устройства направлена "из экрана",

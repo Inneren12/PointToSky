@@ -207,14 +207,23 @@ fun ArScreen(
             }
 
             is ArUiState.Ready -> {
+                val declinationDeg = remember(state.location) {
+                    android.hardware.GeomagneticField(
+                        state.location.latDeg.toFloat(),
+                        state.location.lonDeg.toFloat(),
+                        0f,
+                        System.currentTimeMillis(),
+                    ).declination.toDouble()
+                }
                 val overlay =
-                    remember(state, rotationFrame, overlaySize) {
+                    remember(state, rotationFrame, overlaySize, declinationDeg) {
                         if (rotationFrame != null && overlaySize != IntSize.Zero) {
                             calculateOverlay(
                                 state = state,
                                 frame = rotationFrame,
                                 viewport = overlaySize,
                                 resolveConstellation = resolveConstellation,
+                                declinationDeg = declinationDeg,
                             )
                         } else {
                             null
@@ -664,10 +673,12 @@ internal fun calculateOverlay(
     frame: RotationFrame,
     viewport: IntSize,
     resolveConstellation: (Equatorial) -> ConstellationId?,
+    declinationDeg: Double = 0.0,
 ): OverlayData? {
     if (viewport.width == 0 || viewport.height == 0) return null
 
-    val reticleHorizontal = vectorToHorizontal(frame.forwardWorld)
+    val trueNorthFrame = frame.correctedForTrueNorth(declinationDeg)
+    val reticleHorizontal = vectorToHorizontal(trueNorthFrame.forwardWorld)
     val reticleEquatorial =
         altAzToRaDec(
             reticleHorizontal,
@@ -675,7 +686,7 @@ internal fun calculateOverlay(
             latDeg = state.location.latDeg,
         )
     // rotationMatrix is already remapped to the current display rotation.
-    val worldToDevice = transpose(frame.rotationMatrix)
+    val worldToDevice = transpose(trueNorthFrame.rotationMatrix)
     val projectionParams = projectionParams(viewport)
 
     data class ProjectionResult(
@@ -866,10 +877,12 @@ internal fun projectHorizontalsToScreen(
     frame: RotationFrame,
     viewport: IntSize,
     horizontals: List<Horizontal>,
+    declinationDeg: Double = 0.0,
 ): List<Offset> {
     if (viewport.width == 0 || viewport.height == 0) return emptyList()
 
-    val worldToDevice = transpose(frame.rotationMatrix)
+    val trueNorthFrame = frame.correctedForTrueNorth(declinationDeg)
+    val worldToDevice = transpose(trueNorthFrame.rotationMatrix)
     val params = projectionParams(viewport)
 
     return horizontals.mapNotNull { horizontal ->
