@@ -128,6 +128,9 @@
     <string name="a11y_aim_arrow">Turn %1$s. ΔAz %2$.1f°</string>
     <string name="a11y_alt_scale">Move %1$s. ΔAlt %2$.1f°</string>
     <string name="a11y_open_card">Open card</string>
+    <!-- Aim non-guiding status messages (PR2) -->
+    <string name="aim_status_no_location">Waiting for location…</string>
+    <string name="aim_status_below_horizon">Target is below the horizon</string>
     <!-- Tonight tile -->
     <string name="tonight_targets_loading">Loading…</string>
     <string name="tonight_targets_empty">No targets available</string>
@@ -175,6 +178,8 @@
     <string name="comp_aim_status_phase_searching">Searching</string>
     <string name="comp_aim_status_phase_in_tolerance">In tolerance</string>
     <string name="comp_aim_status_phase_locked">Locked</string>
+    <string name="comp_aim_status_phase_below_horizon">Below horizon</string>
+    <string name="comp_aim_status_phase_no_location">No location</string>
     <string name="comp_aim_status_phase_inactive">Inactive</string>
     <string name="comp_aim_status_content_no_target">Aim status inactive</string>
     <string name="comp_aim_status_content_active">Aim status %1$s for %2$s. Horizontal offset %3$s. Vertical offset %4$s.</string>

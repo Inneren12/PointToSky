@@ -459,6 +459,276 @@ class DefaultAimControllerTest {
             controller.stop()
         }
 
+    @Test
+    fun `no location fix - phase is NO_LOCATION and never locks`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            // getLastKnown() == null and fixes emits nothing → the controller has no fix at all.
+            val location = FakeLocationOrchestrator(null)
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    // A ray at az0/alt0 would match this target and lock if the (0,0) fallback regressed.
+                    raDecToAltAz = { _, _, _ -> Horizontal(azDeg = 0.0, altDeg = 0.0) },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0)
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+            controller.start()
+
+            // First frame on the would-be target → NO_LOCATION (no fix to compute against).
+            orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 0.0, altDeg = 0.0))
+            withTimeout(1_000) {
+                controller.state.filter { it.phase == AimPhase.NO_LOCATION }.first()
+            }
+
+            // Keep the ray on target across several frames — must never guide or lock.
+            repeat(5) { i ->
+                delay(100)
+                orientation.emit(orientationFrame(timestampMs = (i + 1) * 100L, azDeg = 0.0, altDeg = 0.0))
+                delay(50)
+                val phase = controller.state.value.phase
+                assertTrue(
+                    phase != AimPhase.IN_TOLERANCE && phase != AimPhase.LOCKED,
+                    "Without a location fix the controller must not guide; got $phase",
+                )
+            }
+            assertEquals(AimPhase.NO_LOCATION, controller.state.value.phase)
+            controller.stop()
+        }
+
+    @Test
+    fun `location fix arrives - NO_LOCATION clears`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(null)
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> Horizontal(azDeg = 0.0, altDeg = 30.0) },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0)
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+            controller.start()
+
+            // No fix yet → NO_LOCATION.
+            orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 0.0, altDeg = 30.0))
+            withTimeout(1_000) {
+                controller.state.filter { it.phase == AimPhase.NO_LOCATION }.first()
+            }
+
+            // A real fix arrives. Re-emit it each tick: the controller's fixes subscription may not
+            // have been active for the first emission (SharedFlow has no replay), and a single
+            // dropped emission would otherwise hang the test.
+            val realFix =
+                LocationFix(
+                    point = GeoPoint(45.0, -113.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.GPS,
+                )
+            val cleared =
+                withTimeout(2_000) {
+                    var phase = controller.state.value.phase
+                    var t = 100L
+                    while (phase == AimPhase.NO_LOCATION) {
+                        location.emit(realFix)
+                        orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                        delay(100)
+                        phase = controller.state.value.phase
+                        t += 100
+                    }
+                    phase
+                }
+            assertTrue(
+                cleared != AimPhase.NO_LOCATION,
+                "NO_LOCATION must clear once a real fix arrives; got $cleared",
+            )
+            controller.stop()
+        }
+
+    @Test
+    fun `target below horizon - phase is BELOW_HORIZON and never locks`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            // Real fix present via the getLastKnown() seed.
+            val location = FakeLocationOrchestrator(GeoPoint(45.0, -113.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    // Target sits 20° below the horizon.
+                    raDecToAltAz = { _, _, _ -> Horizontal(azDeg = 0.0, altDeg = -20.0) },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0) // would lock instantly if the horizon gate were missing
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+            controller.start()
+
+            // Wait for BELOW_HORIZON (tolerate a transient NO_LOCATION before the seed lands).
+            withTimeout(2_000) {
+                var t = 0L
+                while (controller.state.value.phase != AimPhase.BELOW_HORIZON) {
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = -20.0))
+                    delay(100)
+                    t += 100
+                }
+            }
+
+            // Ray stays exactly on the sub-horizon target — must never guide or lock.
+            repeat(5) { i ->
+                orientation.emit(orientationFrame(timestampMs = 600L + i * 100L, azDeg = 0.0, altDeg = -20.0))
+                delay(100)
+                assertEquals(AimPhase.BELOW_HORIZON, controller.state.value.phase)
+            }
+            controller.stop()
+        }
+
+    @Test
+    fun `target rises above horizon - re-acquires from SEARCHING`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(GeoPoint(45.0, -113.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            // Target altitude flips from below to above the horizon. StateFlow.value reads are
+            // volatile, so the tick coroutine observes the change without extra synchronisation.
+            val targetAlt = MutableStateFlow(-5.0)
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> Horizontal(azDeg = 0.0, altDeg = targetAlt.value) },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(300) // a real hold is required; no instant inherited lock
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+            controller.start()
+
+            // Below the horizon first.
+            withTimeout(2_000) {
+                var t = 0L
+                while (controller.state.value.phase != AimPhase.BELOW_HORIZON) {
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = -5.0))
+                    delay(100)
+                    t += 100
+                }
+            }
+
+            // Target rises; the ray follows it. The first frame after the rise must NOT inherit a
+            // lock — it re-acquires from scratch (IN_TOLERANCE, never instant LOCKED).
+            targetAlt.value = 30.0
+            delay(100)
+            orientation.emit(orientationFrame(timestampMs = 1_000L, azDeg = 0.0, altDeg = 30.0))
+            val firstAfter =
+                withTimeout(1_000) {
+                    controller.state.filter { it.phase != AimPhase.BELOW_HORIZON }.first()
+                }
+            assertTrue(
+                firstAfter.phase == AimPhase.IN_TOLERANCE || firstAfter.phase == AimPhase.SEARCHING,
+                "After rising the target must re-acquire (not instant LOCKED); got ${firstAfter.phase}",
+            )
+
+            // With continued on-target frames it locks via the normal hold.
+            val locked =
+                withTimeout(2_000) {
+                    var t = 1_100L
+                    var s = controller.state.value
+                    while (s.phase != AimPhase.LOCKED) {
+                        orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                        delay(100)
+                        s = controller.state.value
+                        t += 100
+                    }
+                    s
+                }
+            assertEquals(AimPhase.LOCKED, locked.phase)
+            controller.stop()
+        }
+
+    @Test
+    fun `restart without a fix - stale lastFix is cleared and never guides`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            // Session 1 has a real fix (via the getLastKnown() seed); session 2 will have none.
+            val location = FakeLocationOrchestrator(GeoPoint(45.0, -113.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    // On-target ray (az0/alt30) — would lock if a stale fix leaked into session 2.
+                    raDecToAltAz = { _, _, _ -> Horizontal(azDeg = 0.0, altDeg = 30.0) },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0)
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+
+            // Session 1: real fix present → reach a guiding phase, so lastFix holds a real fix.
+            controller.start()
+            withTimeout(2_000) {
+                var t = 0L
+                while (controller.state.value.phase != AimPhase.IN_TOLERANCE &&
+                    controller.state.value.phase != AimPhase.LOCKED
+                ) {
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                    delay(100)
+                    t += 100
+                }
+            }
+            controller.stop()
+
+            // The fix source now reports no location for the next session.
+            location.setManual(null)
+
+            // Session 2: the previous session's fix must not leak in. Every on-target frame must read
+            // a non-guiding phase (the stale fix would otherwise lock instantly with holdMs=0), and the
+            // controller must settle on NO_LOCATION.
+            controller.start()
+            var sawNoLocation = false
+            withTimeout(2_000) {
+                var t = 5_000L
+                while (!sawNoLocation) {
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                    delay(100)
+                    val phase = controller.state.value.phase
+                    assertTrue(
+                        phase != AimPhase.IN_TOLERANCE && phase != AimPhase.LOCKED,
+                        "A stale fix must not guide/lock after restart without a fix; got $phase",
+                    )
+                    if (phase == AimPhase.NO_LOCATION) sawNoLocation = true
+                    t += 100
+                }
+            }
+            assertEquals(AimPhase.NO_LOCATION, controller.state.value.phase)
+            controller.stop()
+        }
+
     private fun orientationFrame(
         timestampMs: Long,
         azDeg: Double,

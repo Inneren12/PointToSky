@@ -128,6 +128,9 @@
     <string name="a11y_aim_arrow">Поверните %1$s. ΔAz %2$.1f°</string>
     <string name="a11y_alt_scale">Сместите %1$s. ΔAlt %2$.1f°</string>
     <string name="a11y_open_card">Открыть карточку</string>
+    <!-- Aim non-guiding status messages (PR2) -->
+    <string name="aim_status_no_location">Ожидание геолокации…</string>
+    <string name="aim_status_below_horizon">Цель под горизонтом</string>
     <!-- Tonight tile -->
     <string name="tonight_targets_loading">Загрузка…</string>
     <string name="tonight_targets_empty">Нет доступных целей</string>
@@ -175,6 +178,8 @@
     <string name="comp_aim_status_phase_searching">Поиск</string>
     <string name="comp_aim_status_phase_in_tolerance">В допуске</string>
     <string name="comp_aim_status_phase_locked">Захват</string>
+    <string name="comp_aim_status_phase_below_horizon">Под горизонтом</string>
+    <string name="comp_aim_status_phase_no_location">Нет геолокации</string>
     <string name="comp_aim_status_phase_inactive">Не активно</string>
     <string name="comp_aim_status_content_no_target">Aim: нет активной цели</string>
     <string name="comp_aim_status_content_active">Aim %1$s для %2$s. Горизонтальное отклонение %3$s. Вертикальное отклонение %4$s.</string>
