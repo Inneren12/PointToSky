@@ -31,6 +31,8 @@ class DefaultLocationOrchestrator(
     private val remotePhone: LocationRepository?,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val manualReemitIntervalMs: Long = DEFAULT_MANUAL_REEMIT_INTERVAL_MS,
+    private val freshTtlMs: Long = LocationConfig().freshTtlMs,
+    private val remoteFreshnessTickMs: Long = DEFAULT_REMOTE_FRESHNESS_TICK_MS,
 ) : LocationOrchestrator {
 
     // Не считаем fused "доступным" по факту наличия инстанса.
@@ -38,6 +40,12 @@ class DefaultLocationOrchestrator(
     private val fusedAvailable = MutableStateFlow(false)
 
     private val latestFix = AtomicReference<LocationFix?>(null)
+
+    private val latestRemoteFix = AtomicReference<LocationFix?>(null)
+
+    // Updated in start(config) so the freshness window always matches the active LocationConfig.
+    // Initialised from the constructor param so tests can inject a value without calling start().
+    @Volatile private var activeFreshTtlMs: Long = freshTtlMs
 
     private val fusedFixes: Flow<LocationFix> = (fused?.fixes ?: emptyFlow())
         .onEach {
@@ -54,7 +62,8 @@ class DefaultLocationOrchestrator(
             if (cause != null) fusedAvailable.value = false
         }
 
-    private val remoteFixes: Flow<LocationFix> = remotePhone?.fixes ?: emptyFlow()
+    private val remoteFixes: Flow<LocationFix> = (remotePhone?.fixes ?: emptyFlow())
+        .onEach { latestRemoteFix.set(it) }
 
     override val fixes: Flow<LocationFix> = manualPrefs.manualPointFlow
         .distinctUntilChanged()
@@ -74,15 +83,33 @@ class DefaultLocationOrchestrator(
         }
         .onEach { fix -> latestFix.set(fix) }
 
+    // Ticks to re-evaluate whether the latest relayed fix is still within the freshness window.
+    // A pure combine() can't flip to false on time alone; the ticker drives that transition.
+    // latestRemoteFix is preferred (populated by live emissions); when it is null (startup, before
+    // the first live emission), fall back to latestFix if it carries a REMOTE_PHONE fix — this
+    // covers the getLastKnown() / cached-startup-seed case without letting manual/fused fixes
+    // fabricate remote availability.
+    private val remoteFresh: Flow<Boolean> = flow {
+        while (true) {
+            val rf = latestRemoteFix.get()
+                ?: latestFix.get()?.takeIf { it.provider == ProviderType.REMOTE_PHONE }
+            emit(rf != null && clock() - rf.timeMs <= activeFreshTtlMs)
+            delay(remoteFreshnessTickMs)
+        }
+    }.distinctUntilChanged()
+
     // True when SOME source can currently provide location: a manual point is set, the fused
     // provider is alive (even if momentarily quiet because the user is stationary), or phone
-    // fallback is enabled.
+    // fallback is enabled AND the remote source is delivering fresh fixes.
+    // usePhoneFallback gates the remote path; remoteFresh reflects actual liveness.
     private val anyProviderAvailable: Flow<Boolean> = combine(
         manualPrefs.manualPointFlow,
         fusedAvailable,
         manualPrefs.usePhoneFallbackFlow,
-    ) { manualPoint, fusedOk, useFallback -> manualPoint != null || fusedOk || useFallback }
-        .distinctUntilChanged()
+        remoteFresh,
+    ) { manualPoint, fusedOk, useFallback, remoteOk ->
+        manualPoint != null || fusedOk || (useFallback && remoteOk)
+    }.distinctUntilChanged()
 
     // Stateful current-fix stream. Uses combine so that:
     //   • a change in anyProviderAvailable re-emits with combine's buffered last fix (handles the
@@ -102,6 +129,7 @@ class DefaultLocationOrchestrator(
     .distinctUntilChanged()
 
     override suspend fun start(config: LocationConfig) {
+        activeFreshTtlMs = config.freshTtlMs
         // Не поднимаем доступность оптимистически
         fusedAvailable.value = false
         try {
@@ -186,5 +214,6 @@ class DefaultLocationOrchestrator(
 
     companion object {
         private const val DEFAULT_MANUAL_REEMIT_INTERVAL_MS = 5 * 60 * 1000L
+        private const val DEFAULT_REMOTE_FRESHNESS_TICK_MS = 10_000L
     }
 }
