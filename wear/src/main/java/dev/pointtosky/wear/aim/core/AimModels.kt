@@ -14,7 +14,10 @@ enum class AimPhase { SEARCHING, IN_TOLERANCE, LOCKED }
 data class AimState(
     val current: Horizontal,
     val target: Horizontal,
+    /** Cos(alt)-corrected cross-track azimuth error in true sky degrees (left/right offset from target).
+     *  Positive = target is to the right (clockwise). Not the raw azimuth difference. */
     val dAzDeg: Double,
+    /** Along-track altitude error in degrees (target.alt − current.alt). Positive = target is higher. */
     val dAltDeg: Double,
     val phase: AimPhase,
     val confidence: Float,
