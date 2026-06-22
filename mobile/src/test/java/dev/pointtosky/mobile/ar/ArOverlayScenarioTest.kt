@@ -10,6 +10,7 @@ import dev.pointtosky.core.astro.catalog.ArtOverlay
 import dev.pointtosky.core.astro.catalog.AstroCatalog
 import dev.pointtosky.core.astro.catalog.ConstellationId
 import dev.pointtosky.core.astro.catalog.ConstellationMeta
+import dev.pointtosky.core.astro.catalog.StarFlags
 import dev.pointtosky.core.astro.catalog.StarId
 import dev.pointtosky.core.astro.catalog.StarRecord
 import java.time.Instant
@@ -99,6 +100,7 @@ class ArOverlayScenarioTest {
                         available = emptyList(),
                     ),
                 magLimit = 6.0,
+                showStarLabels = true,
                 )
 
         // Направление "вперёд" в мировых координатах (как в реальном коде)
@@ -139,6 +141,88 @@ class ArOverlayScenarioTest {
         assertTrue(result.constellationSegments.isEmpty())
         assertTrue(result.asterismSegments.isEmpty())
         assertTrue(result.artOverlays.isEmpty())
+    }
+
+    @Test
+    fun `AUX_ONLY skeleton node does not appear in rendered overlay labels`() {
+        val instant = Instant.parse("2024-01-01T00:00:00Z")
+        val location = GeoPoint(latDeg = 53.5461, lonDeg = -113.4938)
+        val lstDeg = lstAt(instant, location.lonDeg).lstDeg
+        val reticleHorizontal = Horizontal(azDeg = 120.0, altDeg = 45.0)
+        val reticleEquatorial = altAzToRaDec(reticleHorizontal, lstDeg, location.latDeg)
+        val constellationId = ConstellationId(0)
+
+        val realStar = StarRecord(
+            id = StarId(1),
+            rightAscensionDeg = reticleEquatorial.raDeg.toFloat(),
+            declinationDeg = reticleEquatorial.decDeg.toFloat(),
+            magnitude = 1.0f,
+            constellationId = constellationId,
+            flags = 0,
+            name = "RealStar",
+        )
+        // AUX_ONLY skeleton node at the exact same position — must not appear in labels.
+        val auxNode = StarRecord(
+            id = StarId(2),
+            rightAscensionDeg = reticleEquatorial.raDeg.toFloat(),
+            declinationDeg = reticleEquatorial.decDeg.toFloat(),
+            magnitude = 0.0f,
+            constellationId = constellationId,
+            flags = StarFlags.LINE_NODE or StarFlags.AUX_ONLY,
+            name = "SkelNode",
+        )
+
+        val catalog = object : AstroCatalog {
+            private val stars = listOf(realStar, auxNode)
+            override fun getConstellationMeta(id: ConstellationId) =
+                ConstellationMeta(id, abbreviation = "TST", name = "Test")
+            override fun allStars() = stars
+            override fun starById(raw: Int) = stars.find { it.id.raw == raw }
+            override fun starsByConstellation(id: ConstellationId) =
+                if (id == constellationId) stars else emptyList()
+            override fun asterismsByConstellation(id: ConstellationId) = emptyList<Asterism>()
+            override fun artOverlaysByConstellation(id: ConstellationId) = emptyList<ArtOverlay>()
+        }
+
+        val catalogState = AstroCatalogState(
+            catalog = catalog,
+            starsById = mapOf(realStar.id.raw to realStar, auxNode.id.raw to auxNode),
+            constellationByAbbr = mapOf("TST" to constellationId),
+            skeletonLines = emptyList(),
+        )
+        val state = ArUiState.Ready(
+            instant = instant,
+            location = location,
+            locationResolved = true,
+            lstDeg = lstDeg,
+            stars = emptyList(),
+            catalog = catalogState,
+            showConstellations = false,
+            showAsterisms = false,
+            asterismUiState = AsterismUiState(isEnabled = false, highlighted = null, available = emptyList()),
+            magLimit = 6.0,
+            showStarLabels = true,
+        )
+
+        val forwardWorld = horizontalToVector(reticleHorizontal)
+        val frame = RotationFrame(
+            rotationMatrix = makeRotationMatrixFromForward(forwardWorld),
+            forwardWorld = forwardWorld,
+            timestampNanos = 0L,
+        )
+
+        val overlay = assertNotNull(calculateOverlay(
+            state = state,
+            frame = frame,
+            viewport = IntSize(1080, 1080),
+            resolveConstellation = { constellationId },
+        ))
+
+        assertTrue(overlay.labels.none { it.title == "SkelNode" },
+            "AUX_ONLY skeleton node must not appear in overlay labels")
+        assertEquals(1, overlay.labels.size,
+            "Only the real bulk star should be labelled")
+        assertEquals("RealStar", overlay.labels.first().title)
     }
 
     /**

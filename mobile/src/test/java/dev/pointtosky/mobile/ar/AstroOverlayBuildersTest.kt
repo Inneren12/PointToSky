@@ -62,6 +62,24 @@ class AstroOverlayBuildersTest {
     }
 
     @Test
+    fun `buildConstellationSkeletonLines includes LINE_NODE AUX_ONLY nodes as geometry`() {
+        val constellation = ConstellationId(3)
+        val stars = listOf(
+            starRecord(30101, constellation, flags = StarFlags.LINE_NODE or StarFlags.AUX_ONLY),
+            starRecord(30102, constellation, flags = StarFlags.LINE_NODE or StarFlags.AUX_ONLY),
+            starRecord(30103, constellation, flags = StarFlags.LINE_NODE or StarFlags.AUX_ONLY),
+        )
+
+        val segments = buildConstellationSkeletonLines(stars)
+
+        assertEquals(2, segments.size)
+        assertEquals(30101, segments[0].start.id.raw)
+        assertEquals(30102, segments[0].end.id.raw)
+        assertEquals(30102, segments[1].start.id.raw)
+        assertEquals(30103, segments[1].end.id.raw)
+    }
+
+    @Test
     fun `buildAsterismSegments follows polyline order`() {
         val constellation = ConstellationId(2)
         val stars =
@@ -110,6 +128,8 @@ private class FakeAstroCatalog(
         ConstellationMeta(id = id, abbreviation = "C${id.index}", name = "Constellation ${id.index}")
 
     override fun allStars(): List<StarRecord> = stars
+
+    override fun starById(raw: Int): StarRecord? = stars.firstOrNull { it.id.raw == raw }
 
     override fun starsByConstellation(id: ConstellationId): List<StarRecord> =
         stars.filter { it.constellationId == id }

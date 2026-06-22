@@ -1,6 +1,7 @@
 package dev.pointtosky.core.catalog.star
 
 import dev.pointtosky.core.astro.catalog.AstroCatalog
+import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
 import kotlin.math.acos
 import kotlin.math.cos
@@ -21,6 +22,7 @@ class AstroStarCatalogAdapter(
         return astro.allStars()
             .asSequence()
             .filter { s -> magLimit == null || s.magnitude.toDouble() <= magLimit }
+            .filter { s -> s.isRenderablePoint() }
             .map { s ->
                 val sep = angularSeparationDeg(
                     center,

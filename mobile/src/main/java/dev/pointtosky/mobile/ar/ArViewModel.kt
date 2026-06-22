@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.astro.catalog.ConstellationId
 import dev.pointtosky.core.astro.catalog.PtskCatalogLoader
 import dev.pointtosky.core.astro.catalog.StarRecord
+import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.SkyObjectOrConstellation
@@ -111,7 +112,11 @@ class ArViewModel(
         viewModelScope.launch(ioDispatcher) {
             val catalogState = loadAstroCatalog()
             astroCatalog.value = catalogState
-            staticStars.value = catalogState?.catalog?.allStars()?.map(::mapToArStar).orEmpty()
+            staticStars.value =
+                catalogState?.catalog?.allStars()
+                    ?.filter { it.isRenderablePoint() }
+                    ?.map(::mapToArStar)
+                    .orEmpty()
         }
     }
 
