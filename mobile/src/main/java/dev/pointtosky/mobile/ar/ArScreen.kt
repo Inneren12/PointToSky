@@ -207,14 +207,23 @@ fun ArScreen(
             }
 
             is ArUiState.Ready -> {
+                val declinationDeg = remember(state.location) {
+                    android.hardware.GeomagneticField(
+                        state.location.latDeg.toFloat(),
+                        state.location.lonDeg.toFloat(),
+                        0f,
+                        System.currentTimeMillis(),
+                    ).declination.toDouble()
+                }
                 val overlay =
-                    remember(state, rotationFrame, overlaySize) {
+                    remember(state, rotationFrame, overlaySize, declinationDeg) {
                         if (rotationFrame != null && overlaySize != IntSize.Zero) {
                             calculateOverlay(
                                 state = state,
                                 frame = rotationFrame,
                                 viewport = overlaySize,
                                 resolveConstellation = resolveConstellation,
+                                declinationDeg = declinationDeg,
                             )
                         } else {
                             null
@@ -664,9 +673,11 @@ internal fun calculateOverlay(
     frame: RotationFrame,
     viewport: IntSize,
     resolveConstellation: (Equatorial) -> ConstellationId?,
+    declinationDeg: Double = 0.0,
 ): OverlayData? {
     if (viewport.width == 0 || viewport.height == 0) return null
 
+    val frame = frame.correctedForTrueNorth(declinationDeg)
     val reticleHorizontal = vectorToHorizontal(frame.forwardWorld)
     val reticleEquatorial =
         altAzToRaDec(
@@ -866,9 +877,11 @@ internal fun projectHorizontalsToScreen(
     frame: RotationFrame,
     viewport: IntSize,
     horizontals: List<Horizontal>,
+    declinationDeg: Double = 0.0,
 ): List<Offset> {
     if (viewport.width == 0 || viewport.height == 0) return emptyList()
 
+    val frame = frame.correctedForTrueNorth(declinationDeg)
     val worldToDevice = transpose(frame.rotationMatrix)
     val params = projectionParams(viewport)
 
