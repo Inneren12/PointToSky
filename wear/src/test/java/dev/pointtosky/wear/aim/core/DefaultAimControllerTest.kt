@@ -182,6 +182,117 @@ class DefaultAimControllerTest {
         }
 
     @Test
+    fun `release-box time does not accumulate toward lock`() =
+        runBlocking {
+            // If the ray drifts into the grace zone (outside enter, inside release) for longer
+            // than holdMs the phase must NOT become LOCKED — hold time accumulates only while
+            // inside the enter box.
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val targetHorizontal = Horizontal(azDeg = 0.0, altDeg = 0.0)
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> targetHorizontal },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(300) // short hold so flakiness window is small
+            controller.setTolerance(AimTolerance(azDeg = 3.0, altDeg = 4.0))
+            controller.start()
+
+            location.emit(
+                LocationFix(
+                    point = GeoPoint(0.0, 0.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.MANUAL,
+                ),
+            )
+
+            // Enter tolerance
+            orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 0.0, altDeg = 0.0))
+            withTimeout(1_000) { controller.state.filter { it.phase == AimPhase.IN_TOLERANCE }.first() }
+
+            // Drift into the grace zone (az=4°: > 3° enter, < 5.4°=3.0*1.8 release) and stay
+            // there for > holdMs. Each frame resets inTolSinceMs so lock time must not accumulate.
+            repeat(4) { i ->
+                delay(100) // > MIN_UPDATE_INTERVAL_MS (66ms) and > holdMs/4
+                orientation.emit(orientationFrame(timestampMs = (i + 1) * 100L, azDeg = 4.0, altDeg = 0.0))
+            }
+            delay(100) // ensure the last frame is processed before asserting
+
+            val phase = controller.state.value.phase
+            assertEquals(
+                AimPhase.IN_TOLERANCE,
+                phase,
+                "Grace-zone time must not count toward lock; expected IN_TOLERANCE but got $phase",
+            )
+
+            controller.stop()
+        }
+
+    @Test
+    fun `locked stays locked during brief inside-release-box blip`() =
+        runBlocking {
+            // A single frame inside the release box (but outside the enter box) while LOCKED
+            // must NOT trigger a phase drop.
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val targetHorizontal = Horizontal(azDeg = 0.0, altDeg = 0.0)
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> targetHorizontal },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0) // lock on second tick
+            controller.setTolerance(AimTolerance(azDeg = 3.0, altDeg = 4.0))
+            controller.start()
+
+            location.emit(
+                LocationFix(
+                    point = GeoPoint(0.0, 0.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.MANUAL,
+                ),
+            )
+
+            // Reach LOCKED
+            orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 0.0, altDeg = 0.0))
+            withTimeout(1_000) { controller.state.filter { it.phase == AimPhase.IN_TOLERANCE }.first() }
+            delay(100)
+            orientation.emit(orientationFrame(timestampMs = 100L, azDeg = 0.0, altDeg = 0.0))
+            withTimeout(1_000) { controller.state.filter { it.phase == AimPhase.LOCKED }.first() }
+
+            // Single blip inside release box (az=4°: > enter 3°, < release 5.4°) — must stay LOCKED
+            delay(100)
+            orientation.emit(orientationFrame(timestampMs = 200L, azDeg = 4.0, altDeg = 0.0))
+            delay(200)
+
+            val phase = controller.state.value.phase
+            assertEquals(
+                AimPhase.LOCKED,
+                phase,
+                "LOCKED must survive a release-box blip; expected LOCKED but got $phase",
+            )
+
+            controller.stop()
+        }
+
+    @Test
     fun `hysteresis hold-through - release-box blip does not drop phase to SEARCHING`() =
         runBlocking {
             val orientation = FakeOrientationRepository()

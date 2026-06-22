@@ -82,7 +82,10 @@ class DefaultAimController(
     private var lastFix: LocationFix? = null
 
     // удержание для LOCK
-    @Volatile private var inTolSinceMs: Long? = null
+    // Accessed from tick only; setTarget/stop write null as a best-effort reset.
+    // @Volatile would only provide single-field visibility, not atomicity over the full phase
+    // machine, so we leave it as a plain var and accept a one-tick stale read on target change.
+    private var inTolSinceMs: Long? = null
     private var lastTickMs: Long = 0
 
     // для определения переходов фаз
@@ -299,17 +302,42 @@ class DefaultAimController(
             AimPhase.SEARCHING ->
                 if (enter) { inTolSinceMs = nowMs; outTolTicks = 0; AimPhase.IN_TOLERANCE }
                 else AimPhase.SEARCHING
-            AimPhase.IN_TOLERANCE, AimPhase.LOCKED ->
-                if (release) {
+
+            AimPhase.IN_TOLERANCE -> when {
+                enter -> {
+                    // Only the enter box may advance the hold timer.
                     outTolTicks = 0
                     val start = inTolSinceMs ?: nowMs.also { inTolSinceMs = it }
                     if (nowMs - start >= holdMs) AimPhase.LOCKED else AimPhase.IN_TOLERANCE
+                }
+                release -> {
+                    // Grace zone: preserve IN_TOLERANCE but reset the hold timer so grace time
+                    // cannot contribute to the holdMs requirement.
+                    inTolSinceMs = null
+                    outTolTicks = 0
+                    AimPhase.IN_TOLERANCE
+                }
+                else -> {
+                    outTolTicks += 1
+                    if (outTolTicks >= RELEASE_TICKS) {
+                        inTolSinceMs = null; outTolTicks = 0; AimPhase.SEARCHING
+                    } else {
+                        AimPhase.IN_TOLERANCE // grace: survive a brief excursion beyond release box
+                    }
+                }
+            }
+
+            AimPhase.LOCKED ->
+                if (release) {
+                    // Enter zone is a subset of release zone — both keep the lock.
+                    outTolTicks = 0
+                    AimPhase.LOCKED
                 } else {
                     outTolTicks += 1
                     if (outTolTicks >= RELEASE_TICKS) {
                         inTolSinceMs = null; outTolTicks = 0; AimPhase.SEARCHING
                     } else {
-                        lastPhase // grace: keep current phase through a brief excursion
+                        AimPhase.LOCKED // grace: survive a brief excursion beyond release box
                     }
                 }
         }
