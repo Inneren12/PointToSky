@@ -395,6 +395,70 @@ class DefaultAimControllerTest {
             controller.stop()
         }
 
+    @Test
+    fun `setTarget while locked resets phase machine to SEARCHING`() =
+        runBlocking {
+            // Lock onto target A (raDeg=0 → az 0°/alt 0°), then switch to target B
+            // (raDeg=100 → az 120°). The ray stays at az 0°, so B is far out of tolerance.
+            // The first published state after the switch must be SEARCHING, not LOCKED.
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { eq, _, _ ->
+                        if (eq.raDeg == 0.0) Horizontal(azDeg = 0.0, altDeg = 0.0)
+                        else Horizontal(azDeg = 120.0, altDeg = 0.0)
+                    },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0) // lock on second tick
+            controller.setTolerance(AimTolerance(azDeg = 3.0, altDeg = 4.0))
+            controller.start()
+
+            location.emit(
+                LocationFix(
+                    point = GeoPoint(0.0, 0.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.MANUAL,
+                ),
+            )
+
+            // Lock onto A: ray at az=0, target A at az=0
+            orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 0.0, altDeg = 0.0))
+            withTimeout(1_000) { controller.state.filter { it.phase == AimPhase.IN_TOLERANCE }.first() }
+            delay(100)
+            orientation.emit(orientationFrame(timestampMs = 100L, azDeg = 0.0, altDeg = 0.0))
+            withTimeout(1_000) { controller.state.filter { it.phase == AimPhase.LOCKED }.first() }
+
+            // Switch to B while still LOCKED — resetPhaseMachine() must fire immediately
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(100.0, 0.0)))
+
+            // The state update from resetPhaseMachine() is synchronous; the next published state
+            // must be SEARCHING. We also emit a new frame to confirm the tick agrees.
+            withTimeout(1_000) { controller.state.filter { it.phase == AimPhase.SEARCHING }.first() }
+
+            delay(100)
+            orientation.emit(orientationFrame(timestampMs = 200L, azDeg = 0.0, altDeg = 0.0))
+            delay(200)
+
+            // Ray is 120° away from B — must remain SEARCHING
+            assertEquals(
+                AimPhase.SEARCHING,
+                controller.state.value.phase,
+                "After target switch the phase must stay SEARCHING when ray is far from new target",
+            )
+
+            controller.stop()
+        }
+
     private fun orientationFrame(
         timestampMs: Long,
         azDeg: Double,

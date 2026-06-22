@@ -102,9 +102,7 @@ class DefaultAimController(
 
     override fun setTarget(target: AimTarget) {
         this.target = target
-        // сбрасываем удержание
-        inTolSinceMs = null
-        outTolTicks = 0
+        resetPhaseMachine()
         // aim_target_changed {target}
         when (target) {
             is AimTarget.StarTarget -> {
@@ -142,6 +140,7 @@ class DefaultAimController(
 
     override fun start() {
         if (scope != null) return
+        resetPhaseMachine()
         // aim_start
         LogBus.d(tag = "Aim", msg = "aim_start", payload = emptyMap())
 
@@ -169,8 +168,7 @@ class DefaultAimController(
 
         scope?.cancel()
         scope = null
-        inTolSinceMs = null
-        outTolTicks = 0
+        resetPhaseMachine()
         azWindow.clear()
     }
 
@@ -289,6 +287,13 @@ class DefaultAimController(
                 is AimTarget.StarTarget -> t.eq ?: starResolver?.invoke(t.starId) ?: resolveStar(t.starId)
             }
         return eqOrNull?.let { raDecToAltAz(it, lst, lat) }
+    }
+
+    private fun resetPhaseMachine() {
+        inTolSinceMs = null
+        outTolTicks = 0
+        lastPhase = AimPhase.SEARCHING
+        _state.value = _state.value.copy(phase = AimPhase.SEARCHING)
     }
 
     private fun computePhase(
