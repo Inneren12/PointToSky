@@ -175,6 +175,7 @@ fun AimScreen(
     val azTolerance by settings.aimAzTolFlow.collectAsStateWithLifecycle(initialValue = 3.0)
     val altTolerance by settings.aimAltTolFlow.collectAsStateWithLifecycle(initialValue = 4.0)
     val aimMode by settings.aimModeFlow.collectAsStateWithLifecycle(initialValue = AimMode.NAKED_EYE)
+    val aimHoldMs by settings.aimHoldMsFlow.collectAsStateWithLifecycle(initialValue = 1200L)
     val haptics = remember(appContext) { HapticPolicy(appContext) }
     val lockText = remember { context.getString(R.string.a11y_lock_captured) } // ← НЕ @Composable
     val view = LocalView.current
@@ -201,10 +202,11 @@ fun AimScreen(
     }
 
     // Push the user's settings into the controller: tolerance still flows from the (mode-seeded)
-    // az/alt steppers; the mode supplies only the grace-reset behavior.
-    LaunchedEffect(aimController, aimMode, azTolerance, altTolerance) {
+    // az/alt steppers; the mode supplies only the grace-reset behavior; hold from the hold stepper.
+    LaunchedEffect(aimController, aimMode, azTolerance, altTolerance, aimHoldMs) {
         aimController.setMode(aimMode)
         aimController.setTolerance(AimTolerance(azTolerance, altTolerance))
+        aimController.setHoldToLockMs(aimHoldMs)
     }
 
     // visuals + a11y strings
