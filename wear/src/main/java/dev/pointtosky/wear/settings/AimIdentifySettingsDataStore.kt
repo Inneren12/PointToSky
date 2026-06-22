@@ -70,7 +70,17 @@ class AimIdentifySettingsDataStore(
 
     suspend fun setAimHoldMs(value: Long) = context.aimIdentifyPrefsDataStore.edit { it[keyHoldMs] = value }
 
-    suspend fun setAimMode(mode: AimMode) = context.aimIdentifyPrefsDataStore.edit { it[keyMode] = mode.name }
+    /**
+     * Atomically persists the selected aim mode AND its tolerance preset in one DataStore
+     * transaction, so a cancellation mid-write can't leave mode and tolerances inconsistent
+     * (e.g. mode=FINDER with naked-eye 3°/4° tolerances).
+     */
+    suspend fun setAimMode(mode: AimMode) =
+        context.aimIdentifyPrefsDataStore.edit {
+            it[keyMode] = mode.name
+            it[keyAzTol] = mode.tolerance.azDeg
+            it[keyAltTol] = mode.tolerance.altDeg
+        }
 
     suspend fun setAimHapticEnabled(value: Boolean) = context.aimIdentifyPrefsDataStore.edit { it[keyHaptic] = value }
 

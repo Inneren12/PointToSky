@@ -103,13 +103,7 @@ fun SettingsScreen(
         item {
             ToggleChip(
                 checked = state.mode == AimMode.NAKED_EYE,
-                onCheckedChange = {
-                    scope.launch {
-                        settings.setAimMode(AimMode.NAKED_EYE)
-                        settings.setAimAzTol(AimMode.NAKED_EYE.tolerance.azDeg)
-                        settings.setAimAltTol(AimMode.NAKED_EYE.tolerance.altDeg)
-                    }
-                },
+                onCheckedChange = { scope.launch { settings.setAimMode(AimMode.NAKED_EYE) } },
                 label = { Text(text = stringResource(id = R.string.aim_mode_naked_eye)) },
                 toggleControl = {},
                 modifier = Modifier.fillMaxWidth(),
@@ -118,13 +112,7 @@ fun SettingsScreen(
         item {
             ToggleChip(
                 checked = state.mode == AimMode.FINDER,
-                onCheckedChange = {
-                    scope.launch {
-                        settings.setAimMode(AimMode.FINDER)
-                        settings.setAimAzTol(AimMode.FINDER.tolerance.azDeg)
-                        settings.setAimAltTol(AimMode.FINDER.tolerance.altDeg)
-                    }
-                },
+                onCheckedChange = { scope.launch { settings.setAimMode(AimMode.FINDER) } },
                 label = { Text(text = stringResource(id = R.string.aim_mode_finder)) },
                 toggleControl = {},
                 modifier = Modifier.fillMaxWidth(),
