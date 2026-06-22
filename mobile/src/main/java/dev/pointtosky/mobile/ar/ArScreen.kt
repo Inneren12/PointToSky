@@ -580,6 +580,13 @@ private fun ArControlsPanel(
     }
 }
 
+// PRODUCT NOTE / TODO(catalog-capabilities): These constellation/asterism (and the art overlay)
+// controls are currently shown unconditionally. With the A1 star-points-only catalog there are no
+// LINE_NODE stars and the ASTR/APLY/ASTN/ART0 sections are empty, so these toggles are inert — they
+// flip state that produces no on-screen geometry. They should be hidden/disabled based on catalog
+// capabilities (has skeleton lines / has asterisms / has art), derived from AstroCatalogState. That
+// gating is intentionally deferred to a separate UI PR; it is not part of the behavior-preserving
+// LINE_NODE skeleton-gating change and would otherwise expand its scope.
 @Composable
 private fun ConstellationToggles(
     showConstellations: Boolean,

@@ -5,6 +5,7 @@ import dev.pointtosky.core.astro.catalog.AsterismPoly
 import dev.pointtosky.core.astro.catalog.AstroCatalog
 import dev.pointtosky.core.astro.catalog.ConstellationId
 import dev.pointtosky.core.astro.catalog.ConstellationMeta
+import dev.pointtosky.core.astro.catalog.StarFlags
 import dev.pointtosky.core.astro.catalog.StarId
 import dev.pointtosky.core.astro.catalog.StarRecord
 import kotlin.test.Test
@@ -17,12 +18,12 @@ class AstroOverlayBuildersTest {
         val constellation = ConstellationId(1)
         val stars =
             listOf(
-                starRecord(10102, constellation),
-                starRecord(10101, constellation),
-                starRecord(10103, constellation),
-                starRecord(10201, constellation),
-                starRecord(10203, constellation),
-                starRecord(10202, constellation),
+                starRecord(10102, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10101, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10103, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10201, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10203, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10202, constellation, flags = StarFlags.LINE_NODE),
                 starRecord(10001, constellation),
             )
 
@@ -37,6 +38,27 @@ class AstroOverlayBuildersTest {
         assertEquals(10202, segments[2].end.id.raw)
         assertEquals(10202, segments[3].start.id.raw)
         assertEquals(10203, segments[3].end.id.raw)
+    }
+
+    @Test
+    fun `buildConstellationSkeletonLines ignores bulk stars without LINE_NODE`() {
+        val constellation = ConstellationId(1)
+        val stars =
+            listOf(
+                starRecord(10102, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10101, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10103, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10201, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10203, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10202, constellation, flags = StarFlags.LINE_NODE),
+                starRecord(10001, constellation),
+                // A2 scenario: dense bulk star spilled into a high pp slot, but flags = 0.
+                starRecord(10301, constellation, flags = 0),
+            )
+
+        val segments = buildConstellationSkeletonLines(stars)
+
+        assertEquals(4, segments.size)
     }
 
     @Test
@@ -68,14 +90,14 @@ class AstroOverlayBuildersTest {
         assertEquals(20103, segments[1].end.id.raw)
     }
 
-    private fun starRecord(id: Int, constellation: ConstellationId): StarRecord =
+    private fun starRecord(id: Int, constellation: ConstellationId, flags: Int = 0): StarRecord =
         StarRecord(
             id = StarId(id),
             rightAscensionDeg = 0f,
             declinationDeg = 0f,
             magnitude = 0f,
             constellationId = constellation,
-            flags = 0,
+            flags = flags,
             name = null,
         )
 }

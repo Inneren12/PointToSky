@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class PtskCatalogLoaderTest {
 
@@ -26,6 +27,23 @@ class PtskCatalogLoaderTest {
 
         val betelgeuse = assertNotNull(catalog.starById(1))
         assertEquals("Betelgeuse", betelgeuse.name)
+    }
+
+    @Test
+    fun `parser maps STAR flags field into StarRecord flags`() {
+        val parser = PtskCatalogParser()
+        val buffer = ByteBuffer.wrap(TestCatalogBuilder().build()).order(ByteOrder.LITTLE_ENDIAN)
+
+        val catalog = parser.parse(buffer)
+
+        // Sheliak was written with flags = LINE_NODE in the fixture; it must survive the round-trip.
+        val sheliak = assertNotNull(catalog.starById(10101))
+        assertEquals(StarFlags.LINE_NODE, sheliak.flags)
+        assertTrue(sheliak.flags and StarFlags.LINE_NODE != 0)
+
+        // A star written with no flags stays at 0 (the current A1 bulk-star case).
+        val betelgeuse = assertNotNull(catalog.starById(1))
+        assertEquals(0, betelgeuse.flags)
     }
 
     @Test
@@ -158,7 +176,8 @@ private class TestCatalogBuilder {
         StarDef(StarId(102), 84.1f, -1.2f, 1.7f, 0, "Alnilam"),
         StarDef(StarId(103), 83.0f, -0.3f, 2.2f, 0, "Mintaka"),
         StarDef(StarId(10001), 279.2f, 38.8f, 0.0f, 1, "Vega"),
-        StarDef(StarId(10101), 284.7f, 33.4f, 3.3f, 1, "Sheliak"),
+        // Sheliak carries LINE_NODE so the loader round-trip is covered for the flags:u16 field.
+        StarDef(StarId(10101), 284.7f, 33.4f, 3.3f, 1, "Sheliak", flags = StarFlags.LINE_NODE),
         StarDef(StarId(10102), 281.0f, 32.7f, 3.3f, 1, "Sulafat"),
     )
 

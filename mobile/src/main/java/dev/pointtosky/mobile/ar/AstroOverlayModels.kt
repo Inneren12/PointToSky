@@ -6,6 +6,7 @@ import dev.pointtosky.core.astro.catalog.AsterismPoly
 import dev.pointtosky.core.astro.catalog.AstroCatalog
 import dev.pointtosky.core.astro.catalog.ArtOverlay
 import dev.pointtosky.core.astro.catalog.ConstellationId
+import dev.pointtosky.core.astro.catalog.StarFlags
 import dev.pointtosky.core.astro.catalog.StarRecord
 import dev.pointtosky.core.astro.catalog.StarId
 
@@ -64,8 +65,8 @@ data class ConstellationArtOverlay(
 internal fun buildConstellationSkeletonLines(stars: List<StarRecord>): List<StarLineSegment> {
     val grouped =
         stars
+            .filter { star -> star.flags and StarFlags.LINE_NODE != 0 } // gate on LINE_NODE, not pp()
             .groupBy { star -> star.constellationId to star.id.pp() }
-            .filterKeys { (_, pp) -> pp != 0 }
 
     return grouped.values.flatMap { group ->
         val sorted = group.sortedBy { it.id.ss() }
