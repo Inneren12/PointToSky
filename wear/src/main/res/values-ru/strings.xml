@@ -145,6 +145,10 @@
     <string name="aim_alt_tol_label">Допуск по высоте: %1$.1f°</string>
     <string name="aim_hold_ms_label">Удерживать для захвата: %1$d мс</string>
     <string name="aim_haptic_label">Вибрация</string>
+    <string name="aim_mode_title">Режим прицеливания</string>
+    <string name="aim_mode_naked_eye">Глаз</string>
+    <string name="aim_mode_finder">Искатель</string>
+    <string name="aim_mode_caveat">Датчики часов точны до нескольких градусов — «Искатель» наводит в поле зрения искателя, дальше — звёздными прыжками.</string>
     <string name="identify_radius_label">Радиус поиска: %1$.1f°</string>
     <string name="identify_mag_limit_label">Порог блеска: %1$.1f</string>
     <!-- S7.E -->

@@ -261,6 +261,9 @@ class DefaultAimControllerTest {
             controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
             controller.setHoldToLockMs(300) // short hold so flakiness window is small
             controller.setTolerance(AimTolerance(azDeg = 3.0, altDeg = 4.0))
+            // FINDER is the strict mode this test was written for: a grace excursion resets the timer.
+            // (The default NAKED_EYE keeps the timer — see the NAKED_EYE test below.)
+            controller.setMode(AimMode.FINDER)
             controller.start()
 
             location.emit(
@@ -290,6 +293,59 @@ class DefaultAimControllerTest {
                 phase,
                 "Grace-zone time must not count toward lock; expected IN_TOLERANCE but got $phase",
             )
+
+            controller.stop()
+        }
+
+    @Test
+    fun `NAKED_EYE keeps the timer through a grace excursion and locks`() =
+        runBlocking {
+            // Default mode (NAKED_EYE): a brief drift into the grace zone (outside enter, inside
+            // release) must NOT reset the hold timer, so progress accumulates across the excursion
+            // and the phase reaches LOCKED once total elapsed ≥ holdMs (contrast the FINDER test above).
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val targetHorizontal = Horizontal(azDeg = 0.0, altDeg = 0.0)
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> targetHorizontal },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(300)
+            controller.setTolerance(AimTolerance(azDeg = 3.0, altDeg = 4.0)) // enter 3°, release 5.4°
+            // No setMode → NAKED_EYE (default).
+            controller.start()
+
+            location.emit(
+                LocationFix(
+                    point = GeoPoint(0.0, 0.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.MANUAL,
+                ),
+            )
+
+            // Enter the box so the timer starts.
+            orientation.emit(orientationFrame(timestampMs = 0L, azDeg = 0.0, altDeg = 0.0))
+            withTimeout(1_000) { controller.state.filter { it.phase == AimPhase.IN_TOLERANCE }.first() }
+
+            // Drift into the grace zone (az=4°: > 3° enter, < 5.4° release) — timer kept (NAKED_EYE).
+            delay(100)
+            orientation.emit(orientationFrame(timestampMs = 100L, azDeg = 4.0, altDeg = 0.0))
+            delay(100)
+            orientation.emit(orientationFrame(timestampMs = 200L, azDeg = 4.0, altDeg = 0.0)) // still grace
+            // Return to the enter box after total elapsed ≥ holdMs (300 ms).
+            delay(150)
+            orientation.emit(orientationFrame(timestampMs = 350L, azDeg = 0.0, altDeg = 0.0))
+
+            withTimeout(1_000) { controller.state.filter { it.phase == AimPhase.LOCKED }.first() }
 
             controller.stop()
         }

@@ -61,8 +61,10 @@ import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.aim.core.AimController
+import dev.pointtosky.wear.aim.core.AimMode
 import dev.pointtosky.wear.aim.core.AimPhase
 import dev.pointtosky.wear.aim.core.AimTarget
+import dev.pointtosky.wear.aim.core.AimTolerance
 import dev.pointtosky.wear.aim.core.AimTarget.BodyTarget
 import dev.pointtosky.wear.aim.core.AimTarget.EquatorialTarget
 import dev.pointtosky.wear.aim.core.DefaultAimController
@@ -172,6 +174,7 @@ fun AimScreen(
     val hapticEnabled by settings.aimHapticEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val azTolerance by settings.aimAzTolFlow.collectAsStateWithLifecycle(initialValue = 3.0)
     val altTolerance by settings.aimAltTolFlow.collectAsStateWithLifecycle(initialValue = 4.0)
+    val aimMode by settings.aimModeFlow.collectAsStateWithLifecycle(initialValue = AimMode.NAKED_EYE)
     val haptics = remember(appContext) { HapticPolicy(appContext) }
     val lockText = remember { context.getString(R.string.a11y_lock_captured) } // ← НЕ @Composable
     val view = LocalView.current
@@ -195,6 +198,13 @@ fun AimScreen(
 
     LaunchedEffect(azTolerance, altTolerance) {
         aimStatusReporter.onToleranceChanged(azTolerance, altTolerance)
+    }
+
+    // Push the user's settings into the controller: tolerance still flows from the (mode-seeded)
+    // az/alt steppers; the mode supplies only the grace-reset behavior.
+    LaunchedEffect(aimController, aimMode, azTolerance, altTolerance) {
+        aimController.setMode(aimMode)
+        aimController.setTolerance(AimTolerance(azTolerance, altTolerance))
     }
 
     // visuals + a11y strings

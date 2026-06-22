@@ -7,7 +7,9 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import dev.pointtosky.wear.aim.core.AimMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import androidx.datastore.preferences.core.booleanPreferencesKey as boolKey
@@ -23,6 +25,7 @@ class AimIdentifySettingsDataStore(
     private val keyAzTol = doublePreferencesKey("aim.azTol")
     private val keyAltTol = doublePreferencesKey("aim.altTol")
     private val keyHoldMs = longPreferencesKey("aim.holdMs")
+    private val keyMode = stringPreferencesKey("aim.mode")
     private val keyHaptic = booleanPreferencesKey("aim.hapticEnabled")
     private val keyMagLimit = doublePreferencesKey("identify.magLimit")
     private val keyRadius = doublePreferencesKey("identify.radiusDeg")
@@ -43,6 +46,11 @@ class AimIdentifySettingsDataStore(
         context.aimIdentifyPrefsDataStore.data.map { it[keyAltTol] ?: defAltTol }
     val aimHoldMsFlow: Flow<Long> =
         context.aimIdentifyPrefsDataStore.data.map { it[keyHoldMs] ?: defHoldMs }
+    // Persisted as the enum name (stable across reorderings, unlike ordinal); missing/unparseable → NAKED_EYE.
+    val aimModeFlow: Flow<AimMode> =
+        context.aimIdentifyPrefsDataStore.data.map { prefs ->
+            prefs[keyMode]?.let { runCatching { AimMode.valueOf(it) }.getOrNull() } ?: AimMode.NAKED_EYE
+        }
     val aimHapticEnabledFlow: Flow<Boolean> =
         context.aimIdentifyPrefsDataStore.data.map { it[keyHaptic] ?: defHaptic }
     val identifyMagLimitFlow: Flow<Double> =
@@ -61,6 +69,8 @@ class AimIdentifySettingsDataStore(
     suspend fun setAimAltTol(value: Double) = context.aimIdentifyPrefsDataStore.edit { it[keyAltTol] = value }
 
     suspend fun setAimHoldMs(value: Long) = context.aimIdentifyPrefsDataStore.edit { it[keyHoldMs] = value }
+
+    suspend fun setAimMode(mode: AimMode) = context.aimIdentifyPrefsDataStore.edit { it[keyMode] = mode.name }
 
     suspend fun setAimHapticEnabled(value: Boolean) = context.aimIdentifyPrefsDataStore.edit { it[keyHaptic] = value }
 

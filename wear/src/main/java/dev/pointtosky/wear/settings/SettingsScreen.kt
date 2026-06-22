@@ -22,6 +22,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChip
 import dev.pointtosky.wear.R
+import dev.pointtosky.wear.aim.core.AimMode
 import dev.pointtosky.wear.complication.ComplicationDebug
 import kotlinx.coroutines.launch
 
@@ -40,6 +41,7 @@ fun SettingsRoute(
 }
 
 data class SettingsState(
+    val mode: AimMode,
     val azTol: Double,
     val altTol: Double,
     val holdMs: Long,
@@ -51,6 +53,7 @@ data class SettingsState(
 
 @Composable
 private fun rememberSettingsState(settings: AimIdentifySettingsDataStore): SettingsState {
+    val mode by settings.aimModeFlow.collectAsStateWithLifecycle(initialValue = AimMode.NAKED_EYE)
     val az by settings.aimAzTolFlow.collectAsStateWithLifecycle(initialValue = 3.0)
     val alt by settings.aimAltTolFlow.collectAsStateWithLifecycle(initialValue = 4.0)
     val hold by settings.aimHoldMsFlow.collectAsStateWithLifecycle(initialValue = 1200L)
@@ -58,7 +61,7 @@ private fun rememberSettingsState(settings: AimIdentifySettingsDataStore): Setti
     val mag by settings.identifyMagLimitFlow.collectAsStateWithLifecycle(initialValue = 5.5)
     val rad by settings.identifyRadiusDegFlow.collectAsStateWithLifecycle(initialValue = 5.0)
     val mirror by settings.tileMirroringEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
-    return SettingsState(az, alt, hold, hap, mag, rad, mirror)
+    return SettingsState(mode, az, alt, hold, hap, mag, rad, mirror)
 }
 
 @Composable
@@ -83,6 +86,56 @@ fun SettingsScreen(
                 text = stringResource(id = R.string.settings_title),
                 style = MaterialTheme.typography.title3,
                 textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // Aim: mode selector («Глаз»/«Искатель») — selecting a mode persists it and snaps the
+        // az/alt tolerance steppers below to the mode's preset, so the modes feel distinct.
+        item {
+            Text(
+                text = stringResource(id = R.string.aim_mode_title),
+                style = MaterialTheme.typography.body2,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            ToggleChip(
+                checked = state.mode == AimMode.NAKED_EYE,
+                onCheckedChange = {
+                    scope.launch {
+                        settings.setAimMode(AimMode.NAKED_EYE)
+                        settings.setAimAzTol(AimMode.NAKED_EYE.tolerance.azDeg)
+                        settings.setAimAltTol(AimMode.NAKED_EYE.tolerance.altDeg)
+                    }
+                },
+                label = { Text(text = stringResource(id = R.string.aim_mode_naked_eye)) },
+                toggleControl = {},
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            ToggleChip(
+                checked = state.mode == AimMode.FINDER,
+                onCheckedChange = {
+                    scope.launch {
+                        settings.setAimMode(AimMode.FINDER)
+                        settings.setAimAzTol(AimMode.FINDER.tolerance.azDeg)
+                        settings.setAimAltTol(AimMode.FINDER.tolerance.altDeg)
+                    }
+                },
+                label = { Text(text = stringResource(id = R.string.aim_mode_finder)) },
+                toggleControl = {},
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            Text(
+                text = stringResource(id = R.string.aim_mode_caveat),
+                style = MaterialTheme.typography.caption2,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colors.onBackground.copy(alpha = 0.6f),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
