@@ -21,6 +21,8 @@ value class StarId(val raw: Int) {
 object StarFlags {
     const val BRIGHT = 0x01 // bright / labeled star (existing sample convention)
     const val LINE_NODE = 0x02 // participates in a constellation skeleton polyline
+    const val AUX_ONLY = 0x08 // auxiliary skeleton-geometry node: drawn via LINE_NODE, but excluded
+                               // from the rendered point set and from identify/search/skymap
 }
 
 data class ConstellationMeta(
