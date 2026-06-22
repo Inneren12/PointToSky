@@ -159,7 +159,9 @@ def ang_sep_deg(ra1, dec1, ra2, dec2):
     return math.degrees(math.acos(max(-1.0, min(1.0, v))))
 
 def make_id(cc, pp, ss):
-    return cc*10000 + (pp % 100)*100 + (ss % 100)
+    if not (0 <= pp <= 99): raise SystemExit(f"make_id: pp={pp} out of range [0,99]")
+    if not (0 <= ss <= 99): raise SystemExit(f"make_id: ss={ss} out of range [0,99]")
+    return cc * 10000 + pp * 100 + ss
 
 # ---------- build ----------
 def build(bulk_rows, curated_dir, out_path):
@@ -188,21 +190,21 @@ def build(bulk_rows, curated_dir, out_path):
         bulk_by_abbr[abbr].append((sidv, ra, dec, mag))
     bulk_count = len(recs)
 
-    # global flat list for nearest-match (id, ra, dec)
-    bulk_flat = [(sidv, ra, dec) for abbr in bulk_by_abbr for (sidv, ra, dec, _) in bulk_by_abbr[abbr]]
-
     def match_bulk(qra, qdec, want_abbr):
+        candidates = bulk_by_abbr.get(want_abbr)
+        if not candidates:
+            raise SystemExit(f"match_bulk: no bulk stars loaded for constellation {want_abbr}")
         best = None; bestsep = 999.0
-        for sidv, ra, dec in bulk_flat:
+        for sidv, ra, dec, mag in candidates:
             s = ang_sep_deg(qra, qdec, ra, dec)
-            if s < bestsep: bestsep = s; best = (sidv, ra, dec)
+            if s < bestsep: bestsep = s; best = (sidv, ra, dec, mag)
         if best is None or bestsep > MATCH_TOL_DEG:
             raise SystemExit(f"curated star in {want_abbr} at ({qra:.4f},{qdec:.4f}) "
                              f"has no bulk match within {MATCH_TOL_DEG} deg (nearest {bestsep:.4f})")
         if bestsep > MATCH_WARN_DEG:
             print(f"  WARN: {want_abbr} curated ({qra:.4f},{qdec:.4f}) matched bulk id {best[0]} "
                   f"at sep {bestsep*60:.2f}'")
-        return best  # (id, ra, dec)
+        return best  # (id, ra, dec, mag)
 
     # ---- load curated JSONs ----
     files = sorted(f for f in os.listdir(curated_dir) if f.lower().endswith(".json"))
@@ -213,19 +215,13 @@ def build(bulk_rows, curated_dir, out_path):
 
     # resolve every curated star key -> matched bulk (id, ra, dec, mag)
     key2bulk = {}   # (abbr, key) -> (id, ra, dec, mag)
-    star_mag = {}   # (abbr, key) -> curated mag (for BRIGHT decision on skeleton nodes; use bulk-matched)
     for data in per_const:
         abbr = data["abbr"]
         if abbr not in ABBR: raise SystemExit(f"curated unknown abbr {abbr}")
         for s in data.get("stars", []):
             key = s["key"]
             qra = parse_hms(s["ra"]); qdec = parse_dms(s["dec"])
-            mid, mra, mdec = match_bulk(qra, qdec, abbr)
-            # find the matched bulk mag
-            mmag = next(m for (i, r, d, m) in bulk_by_abbr[abbr] if i == mid) \
-                   if any(i == mid for (i, r, d, m) in bulk_by_abbr[abbr]) \
-                   else float(s.get("mag", 9.0))
-            key2bulk[(abbr, key)] = (mid, mra, mdec, mmag)
+            key2bulk[(abbr, key)] = match_bulk(qra, qdec, abbr)
 
     # ---- curated skeleton nodes: LINE_NODE | AUX_ONLY, reserved pp, geometry from matched bulk ----
     skel_segments_expected = 0
@@ -236,6 +232,8 @@ def build(bulk_rows, curated_dir, out_path):
             if pp > 99 or (pp*100 + len(skel["nodes"])) >= 10000:
                 raise SystemExit(f"{abbr} skeleton pp {pp} would break cc invariant")
             nodes = skel["nodes"]
+            if len(nodes) > 99:
+                raise SystemExit(f"{abbr} skeleton pp {pp} has {len(nodes)} nodes (max 99)")
             if len(nodes) >= 2: skel_segments_expected += len(nodes) - 1
             for ss, key in enumerate(nodes, start=1):
                 mid, mra, mdec, mmag = key2bulk[(abbr, key)]

@@ -25,6 +25,9 @@ object StarFlags {
                                // from the rendered point set and from identify/search/skymap
 }
 
+/** True if this record should appear as a rendered point / identify / search / skymap target. */
+fun StarRecord.isRenderablePoint(): Boolean = flags and StarFlags.AUX_ONLY == 0
+
 data class ConstellationMeta(
     val id: ConstellationId,
     val abbreviation: String,

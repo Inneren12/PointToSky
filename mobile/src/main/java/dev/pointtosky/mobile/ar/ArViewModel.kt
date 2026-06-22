@@ -6,8 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.astro.catalog.ConstellationId
 import dev.pointtosky.core.astro.catalog.PtskCatalogLoader
-import dev.pointtosky.core.astro.catalog.StarFlags
 import dev.pointtosky.core.astro.catalog.StarRecord
+import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.SkyObjectOrConstellation
@@ -114,7 +114,7 @@ class ArViewModel(
             astroCatalog.value = catalogState
             staticStars.value =
                 catalogState?.catalog?.allStars()
-                    ?.filter { (it.flags and StarFlags.AUX_ONLY) == 0 }
+                    ?.filter { it.isRenderablePoint() }
                     ?.map(::mapToArStar)
                     .orEmpty()
         }

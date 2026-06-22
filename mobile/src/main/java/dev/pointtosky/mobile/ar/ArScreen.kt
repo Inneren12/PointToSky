@@ -55,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.pointtosky.core.astro.catalog.ConstellationId
 import dev.pointtosky.core.astro.catalog.StarRecord
+import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
@@ -719,6 +720,7 @@ internal fun calculateOverlay(
 
     val overlayStars: List<StarRecord> =
         (if (fromConstellation.isNotEmpty()) fromConstellation else baseStars)
+            .filter { star -> star.isRenderablePoint() }
             .filter { star ->
                 val limit = state.magLimit
                 limit <= 0.0 || star.magnitude.toDouble() <= limit
