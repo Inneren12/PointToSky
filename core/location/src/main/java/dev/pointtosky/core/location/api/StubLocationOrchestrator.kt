@@ -3,9 +3,14 @@ package dev.pointtosky.core.location.api
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.model.LocationFix
 import dev.pointtosky.core.location.model.ProviderType
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 
 class StubLocationOrchestrator(
@@ -20,6 +25,13 @@ class StubLocationOrchestrator(
         delegate.fixes,
         manualFix.filterNotNull(),
     )
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override val currentFix: Flow<LocationFix?> = manualFix
+        .flatMapLatest { manual ->
+            if (manual != null) flowOf<LocationFix?>(manual) else delegate.fixes.map { it as LocationFix? }
+        }
+        .distinctUntilChanged()
 
     override suspend fun start(config: LocationConfig) {
         delegate.start(config)

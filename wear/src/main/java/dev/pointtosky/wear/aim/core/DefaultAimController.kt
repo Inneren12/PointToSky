@@ -152,11 +152,12 @@ class DefaultAimController(
             CoroutineScope(dispatcher + SupervisorJob()).also { sc ->
                 // поток локации
                 sc.launch {
-                    // Seed once so a cached fix is usable before the first live emission.
-                    lastFix = location.getLastKnown()
-                    // Live updates. Until a real fix exists, lastFix stays null and tick() reports
-                    // NO_LOCATION instead of fabricating (0,0). location.start() is owned by MainActivity.
-                    location.fixes.collect { fix -> lastFix = fix }
+                    // Seed once (hardened: getLastKnown() can throw SecurityException on a revoked permission).
+                    lastFix = runCatching { location.getLastKnown() }.getOrNull()
+                    // Live updates INCLUDING null on loss. currentFix pushes null when location becomes
+                    // unavailable, which the non-null `fixes` flow could not signal.
+                    // location.start() stays owned by MainActivity.
+                    location.currentFix.collect { fix -> lastFix = fix }
                 }
                 // поток ориентации
                 sc.launch {

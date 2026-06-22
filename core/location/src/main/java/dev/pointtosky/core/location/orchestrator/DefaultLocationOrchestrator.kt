@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
@@ -71,6 +72,22 @@ class DefaultLocationOrchestrator(
             }
         }
         .onEach { fix -> latestFix.set(fix) }
+
+    // True when SOME source can currently provide location: a manual point is set, the fused
+    // provider is alive (even if momentarily quiet because the user is stationary), or phone
+    // fallback is enabled.
+    private val anyProviderAvailable: Flow<Boolean> = combine(
+        manualPrefs.manualPointFlow,
+        fusedAvailable,
+        manualPrefs.usePhoneFallbackFlow,
+    ) { manualPoint, fusedOk, useFallback -> manualPoint != null || fusedOk || useFallback }
+        .distinctUntilChanged()
+
+    override val currentFix: Flow<LocationFix?> = anyProviderAvailable
+        .flatMapLatest { available ->
+            if (available) fixes else flowOf<LocationFix?>(null)
+        }
+        .distinctUntilChanged()
 
     override suspend fun start(config: LocationConfig) {
         // Не поднимаем доступность оптимистически

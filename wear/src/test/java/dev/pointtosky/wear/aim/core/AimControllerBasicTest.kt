@@ -82,6 +82,7 @@ private class FakeLocation : LocationOrchestrator {
         )
     private val _fixes = MutableSharedFlow<LocationFix>(extraBufferCapacity = 4)
     override val fixes = _fixes.asSharedFlow()
+    override val currentFix = MutableStateFlow<LocationFix?>(_fix)
 
     override suspend fun start(config: LocationConfig) = Unit
 

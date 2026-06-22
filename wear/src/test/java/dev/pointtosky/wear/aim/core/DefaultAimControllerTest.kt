@@ -729,6 +729,115 @@ class DefaultAimControllerTest {
             controller.stop()
         }
 
+    @Test
+    fun `fix lost mid-session - drops to NO_LOCATION`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(null)
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> Horizontal(azDeg = 0.0, altDeg = 30.0) },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0)
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+            controller.start()
+
+            // Acquire mid-session: loop emit GPS fix + on-target frames until LOCKED.
+            val gpsFix =
+                LocationFix(
+                    point = GeoPoint(45.0, -113.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.GPS,
+                )
+            withTimeout(2_000) {
+                var t = 0L
+                while (controller.state.value.phase != AimPhase.LOCKED) {
+                    location.emit(gpsFix)
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                    delay(100)
+                    t += 100
+                }
+            }
+
+            // Lose it: setManual(null) sets _currentFix to null without emitting on fixes (mirrors
+            // the real orchestrator: loss is silent on the non-null flow).
+            location.setManual(null)
+
+            // Controller must settle on NO_LOCATION.
+            withTimeout(2_000) {
+                var t = 5_000L
+                while (controller.state.value.phase != AimPhase.NO_LOCATION) {
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                    delay(100)
+                    t += 100
+                }
+            }
+            assertEquals(AimPhase.NO_LOCATION, controller.state.value.phase)
+            controller.stop()
+        }
+
+    @Test
+    fun `stationary fix - stays guiding without re-emission`() =
+        runBlocking {
+            val orientation = FakeOrientationRepository()
+            val location = FakeLocationOrchestrator(null)
+            val timeSource = FakeTimeSource(Instant.EPOCH)
+            val ephem = FakeEphemerisComputer()
+            val controller =
+                DefaultAimController(
+                    orientation = orientation,
+                    location = location,
+                    time = timeSource,
+                    ephem = ephem,
+                    raDecToAltAz = { _, _, _ -> Horizontal(azDeg = 0.0, altDeg = 30.0) },
+                )
+
+            controller.setTarget(AimTarget.EquatorialTarget(Equatorial(0.0, 0.0)))
+            controller.setHoldToLockMs(0)
+            controller.setTolerance(AimTolerance(azDeg = 5.0, altDeg = 5.0))
+            controller.start()
+
+            // Acquire: emit fix once, then drive orientation frames until LOCKED.
+            val fix =
+                LocationFix(
+                    point = GeoPoint(45.0, -113.0),
+                    timeMs = 0,
+                    accuracyM = null,
+                    provider = ProviderType.GPS,
+                )
+            withTimeout(2_000) {
+                var t = 0L
+                while (controller.state.value.phase != AimPhase.LOCKED) {
+                    location.emit(fix)
+                    orientation.emit(orientationFrame(timestampMs = t, azDeg = 0.0, altDeg = 30.0))
+                    delay(100)
+                    t += 100
+                }
+            }
+
+            // Stationary: no further location.emit and no clear. A quiet provider ≠ lost location.
+            repeat(5) { i ->
+                delay(100)
+                orientation.emit(orientationFrame(timestampMs = 5_000L + i * 100L, azDeg = 0.0, altDeg = 30.0))
+                delay(50)
+                val phase = controller.state.value.phase
+                assertTrue(
+                    phase == AimPhase.LOCKED || phase == AimPhase.IN_TOLERANCE,
+                    "Quiet provider while stationary must not trigger NO_LOCATION; got $phase",
+                )
+            }
+            controller.stop()
+        }
+
     private fun orientationFrame(
         timestampMs: Long,
         azDeg: Double,
@@ -782,6 +891,11 @@ class DefaultAimControllerTest {
                 LocationFix(point = it, timeMs = 0, accuracyM = null, provider = ProviderType.MANUAL)
             }
 
+        private val _currentFix = MutableStateFlow<LocationFix?>(
+            initial?.let { LocationFix(point = it, timeMs = 0, accuracyM = null, provider = ProviderType.MANUAL) }
+        )
+        override val currentFix: Flow<LocationFix?> = _currentFix
+
         override val fixes: Flow<LocationFix> = _fixes
 
         override suspend fun start(config: LocationConfig) = Unit
@@ -791,13 +905,16 @@ class DefaultAimControllerTest {
         override suspend fun getLastKnown(): LocationFix? = lastFix
 
         override suspend fun setManual(point: GeoPoint?) {
-            lastFix = point?.let { LocationFix(it, timeMs = 0, accuracyM = null, provider = ProviderType.MANUAL) }
+            val fix = point?.let { LocationFix(it, timeMs = 0, accuracyM = null, provider = ProviderType.MANUAL) }
+            lastFix = fix
+            _currentFix.value = fix
         }
 
         override suspend fun preferPhoneFallback(enabled: Boolean) = Unit
 
         suspend fun emit(fix: LocationFix) {
             lastFix = fix
+            _currentFix.value = fix
             _fixes.emit(fix)
         }
     }
