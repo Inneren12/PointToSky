@@ -10,8 +10,9 @@ import java.io.IOException
 import java.nio.BufferUnderflowException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.charset.StandardCharsets
 import java.util.zip.CRC32
+import kotlin.math.abs
+import kotlin.math.min
 
 /**
  * Status indicating whether real or fake constellation boundaries are in use.
@@ -37,40 +38,70 @@ data class BoundariesLoadResult(
 )
 
 class BinaryConstellationBoundaries private constructor(
-    private val regions: List<Region>,
+    private val constellations: List<RuntimeConstellation>,
     val metadata: Metadata,
-    val isFallback: Boolean = false,
 ) : ConstellationBoundaries {
+
     override fun findByEq(eq: Equatorial): String? {
-        val normalizedRa = normalizeRa(eq.raDeg)
-        return regions.firstOrNull { region -> region.contains(normalizedRa, eq.decDeg) }?.iauCode
+        val ra = normalizeRa(eq.raDeg)
+        val dec = eq.decDeg
+        for (constellation in constellations) {
+            for (polygon in constellation.polygons) {
+                if (polygon.contains(ra, dec)) return constellation.code
+            }
+        }
+        return null
     }
 
-    private data class Region(
-        val iauCode: String,
-        val minRaDeg: Double,
-        val maxRaDeg: Double,
-        val minDecDeg: Double,
-        val maxDecDeg: Double,
+    private data class RuntimeConstellation(
+        val code: String,
+        val polygons: List<RuntimePolygon>,
+    )
+
+    private class RuntimePolygon(
+        private val ra: DoubleArray,           // normalized [0, 360)
+        private val dec: DoubleArray,
+        private val enclosesNorthPole: Boolean,
+        private val enclosesSouthPole: Boolean,
     ) {
-        fun contains(raDeg: Double, decDeg: Double): Boolean {
-            val raMatches = if (minRaDeg <= maxRaDeg) {
-                raDeg in minRaDeg..maxRaDeg
-            } else {
-                raDeg >= minRaDeg || raDeg <= maxRaDeg
+        fun contains(qRa: Double, qDec: Double): Boolean {
+            val n = ra.size
+            if (n == 0) return false
+            val up = qDec <= 0.0                // cast ray toward the opposite pole
+            var crossings = 0
+            for (i in 0 until n) {
+                val j = if (i + 1 < n) i + 1 else 0
+                val x1 = sdiff(ra[i], qRa)
+                val x2 = x1 + sdiff(ra[j], ra[i]) // unwrap edge end relative to its start
+                val y1 = dec[i] - qDec
+                val y2 = dec[j] - qDec
+                if ((x1 <= 0.0 && 0.0 < x2) || (x2 <= 0.0 && 0.0 < x1)) {
+                    val yc = y1 + (y2 - y1) * (-x1) / (x2 - x1)
+                    if ((up && yc > 0.0) || (!up && yc < 0.0)) crossings++
+                }
             }
-            val decMatches = decDeg in minDecDeg..maxDecDeg
-            return raMatches && decMatches
+            var inside = crossings % 2 == 1
+            if (up && enclosesNorthPole) inside = !inside
+            if (!up && enclosesSouthPole) inside = !inside
+            return inside
         }
     }
 
+    // Aabb is kept as a plain data holder so parseConstellations keeps the buffer aligned.
+    private data class Aabb(
+        val raMin: Float,
+        val raMax: Float,
+        val decMin: Float,
+        val decMax: Float,
+    )
+
     companion object {
-        private const val TAG: String = "BinaryConstellation"
-        private const val MAGIC_PREFIX: String = "PTSK"
-        private const val EXPECTED_TYPE: String = "CONS"
-        private const val HEADER_SIZE_BYTES: Int = 20
-        private const val SUPPORTED_VERSION: Int = 1
-        const val DEFAULT_PATH: String = "catalog/const_v1.bin"
+        private const val TAG = "BinaryConstellation"
+        private const val MAGIC = "PTSKCONS"
+        // 8(magic) + 2(version) + 2(reserved) + 2(constCount) + 4(polyCount) + 4(vertexCount) + 4(crc32)
+        private const val HEADER_SIZE = 26
+        private const val SUPPORTED_VERSION = 1
+        const val DEFAULT_PATH = "catalog/const_v1.bin"
 
         fun load(
             assetProvider: AssetProvider,
@@ -78,17 +109,13 @@ class BinaryConstellationBoundaries private constructor(
             fallback: ConstellationBoundaries = FakeConstellationBoundaries,
             logger: Logger = LogBus,
         ): BoundariesLoadResult {
-            // Helper function to return fallback with logging
             fun returnFallback(reason: String, exception: Exception? = null): BoundariesLoadResult {
                 if (exception != null) {
                     logger.e(TAG, "Constellation boundaries invalid, falling back to FakeConstellationBoundaries", exception, mapOf("path" to path, "reason" to reason))
                 } else {
                     logger.e(TAG, "Constellation boundaries invalid, falling back to FakeConstellationBoundaries", payload = mapOf("path" to path, "reason" to reason))
                 }
-                return BoundariesLoadResult(
-                    boundaries = fallback,
-                    status = ConstellationBoundariesStatus.Fake(reason)
-                )
+                return BoundariesLoadResult(boundaries = fallback, status = ConstellationBoundariesStatus.Fake(reason))
             }
 
             val bytes = try {
@@ -99,29 +126,39 @@ class BinaryConstellationBoundaries private constructor(
                 return returnFallback("Unexpected error while opening file", ex)
             }
 
-            val header = CatalogHeader.read(bytes) ?: run {
+            if (bytes.size < HEADER_SIZE) {
                 return returnFallback("Invalid header")
             }
-            if (header.type != EXPECTED_TYPE || header.version != SUPPORTED_VERSION) {
-                return returnFallback("Unsupported catalog type=${header.type} version=${header.version}")
+
+            val hdr = ByteBuffer.wrap(bytes, 0, HEADER_SIZE).order(ByteOrder.LITTLE_ENDIAN)
+            val magicBytes = ByteArray(8)
+            hdr.get(magicBytes)
+            if (magicBytes.toString(Charsets.US_ASCII) != MAGIC) {
+                return returnFallback("Invalid header")
             }
-            if (header.recordCount < 0) {
-                return returnFallback("Negative record count=${header.recordCount}")
+            val version = hdr.short.toInt() and 0xFFFF
+            if (version != SUPPORTED_VERSION) {
+                return returnFallback("Unsupported catalog version=$version")
+            }
+            hdr.short // reserved
+            val constellationCount = hdr.short.toInt() and 0xFFFF
+            val polygonCount = hdr.int
+            val vertexCount = hdr.int
+            val storedCrc = hdr.int.toLong() and 0xFFFF_FFFFL
+
+            if (polygonCount < 0 || vertexCount < 0) {
+                return returnFallback("Negative counts in header")
             }
 
-            val payloadOffset = HEADER_SIZE_BYTES
-            if (payloadOffset > bytes.size) {
-                return returnFallback("Header larger than file")
-            }
-            val payload = bytes.copyOfRange(payloadOffset, bytes.size)
+            val payload = bytes.copyOfRange(HEADER_SIZE, bytes.size)
             val computedCrc = CRC32().apply { update(payload) }.value and 0xFFFF_FFFFL
-            if (computedCrc != header.payloadCrc32) {
-                return returnFallback("CRC mismatch expected=${header.payloadCrc32} actual=$computedCrc")
+            if (computedCrc != storedCrc) {
+                return returnFallback("CRC mismatch expected=$storedCrc actual=$computedCrc")
             }
 
-            val regions = try {
-                val buffer = ByteBuffer.wrap(bytes, payloadOffset, bytes.size - payloadOffset).order(ByteOrder.LITTLE_ENDIAN)
-                parseRegions(buffer, header.recordCount)
+            val constellations = try {
+                val buffer = ByteBuffer.wrap(bytes, HEADER_SIZE, bytes.size - HEADER_SIZE).order(ByteOrder.LITTLE_ENDIAN)
+                parseConstellations(buffer, constellationCount, polygonCount, vertexCount)
             } catch (buf: BufferUnderflowException) {
                 return returnFallback("Unexpected EOF while parsing", buf)
             } catch (ex: Exception) {
@@ -130,95 +167,130 @@ class BinaryConstellationBoundaries private constructor(
 
             val metadata = Metadata(
                 sizeBytes = bytes.size,
-                recordCount = header.recordCount,
-                payloadCrc32 = header.payloadCrc32,
+                recordCount = constellationCount,
+                payloadCrc32 = storedCrc,
             )
-            logger.i(
-                TAG,
-                "Constellation boundaries loaded successfully",
-                payload = mapOf(
-                    "path" to path,
-                    "sizeBytes" to metadata.sizeBytes,
-                    "crc32" to metadata.payloadCrc32,
-                    "count" to metadata.recordCount,
-                ),
-            )
+            logger.i(TAG, "Constellation boundaries loaded successfully", payload = mapOf(
+                "path" to path,
+                "sizeBytes" to metadata.sizeBytes,
+                "crc32" to metadata.payloadCrc32,
+                "count" to metadata.recordCount,
+            ))
 
             return BoundariesLoadResult(
-                boundaries = BinaryConstellationBoundaries(regions, metadata, isFallback = false),
-                status = ConstellationBoundariesStatus.Real(metadata)
+                boundaries = BinaryConstellationBoundaries(constellations, metadata),
+                status = ConstellationBoundariesStatus.Real(metadata),
             )
         }
 
-        private fun parseRegions(buffer: ByteBuffer, recordCount: Int): List<Region> {
-            buffer.order(ByteOrder.LITTLE_ENDIAN)
-            val regions = ArrayList<Region>(recordCount.coerceAtLeast(0))
-            repeat(recordCount.coerceAtLeast(0)) {
-                val code = buffer.readUtf8String() ?: throw IllegalStateException("Missing IAU code")
-                val minRa = buffer.double
-                val maxRa = buffer.double
-                val minDec = buffer.double
-                val maxDec = buffer.double
-                regions += Region(
-                    iauCode = code,
-                    minRaDeg = normalizeRa(minRa),
-                    maxRaDeg = normalizeRa(maxRa),
-                    minDecDeg = minDec,
-                    maxDecDeg = maxDec,
-                )
+        private fun parseConstellations(
+            buffer: ByteBuffer,
+            constellationCount: Int,
+            polygonCount: Int,
+            vertexCount: Int,
+        ): List<RuntimeConstellation> {
+            val directories = ArrayList<DirectoryEntry>(constellationCount)
+            repeat(constellationCount) {
+                val codeBytes = ByteArray(4)
+                buffer.get(codeBytes)
+                val code = codeBytes.takeWhile { it != 0.toByte() }
+                    .toByteArray()
+                    .toString(Charsets.US_ASCII)
+                    .trim()
+                    .uppercase()
+                val polyStart = buffer.int
+                val polyCountEntry = buffer.int
+                val raMin = buffer.float
+                val raMax = buffer.float
+                val decMin = buffer.float
+                val decMax = buffer.float
+                directories += DirectoryEntry(code, polyStart, polyCountEntry, Aabb(raMin, raMax, decMin, decMax))
             }
-            return regions
+
+            val polygonEntries = ArrayList<PolygonEntry>(polygonCount)
+            repeat(polygonCount) {
+                val vertexStart = buffer.int
+                val vCount = buffer.int
+                val raMin = buffer.float
+                val raMax = buffer.float
+                val decMin = buffer.float
+                val decMax = buffer.float
+                polygonEntries += PolygonEntry(vertexStart, vCount, Aabb(raMin, raMax, decMin, decMax))
+            }
+
+            val vertices = FloatArray(vertexCount * 2)
+            for (i in 0 until vertexCount) {
+                vertices[i * 2] = buffer.float
+                vertices[i * 2 + 1] = buffer.float
+            }
+
+            val runtimePolygons = polygonEntries.map { buildRuntimePolygon(it, vertices) }
+
+            return directories.map { entry ->
+                val start = entry.polyStart
+                val end = start + entry.polyCount
+                val subset = if (start in runtimePolygons.indices) {
+                    runtimePolygons.subList(start, min(end, runtimePolygons.size))
+                } else {
+                    emptyList()
+                }
+                RuntimeConstellation(entry.code, subset)
+            }
         }
 
-        private fun ByteBuffer.readUtf8String(): String? {
-            if (remaining() < Int.SIZE_BYTES) {
-                return null
+        private fun buildRuntimePolygon(entry: PolygonEntry, vertices: FloatArray): RuntimePolygon {
+            val count = entry.vertexCount
+            if (count <= 0) return RuntimePolygon(DoubleArray(0), DoubleArray(0), false, false)
+
+            val start = entry.vertexStart
+            val ra = DoubleArray(count) { normalizeRa(vertices[(start + it) * 2].toDouble()) }
+            val dec = DoubleArray(count) { vertices[(start + it) * 2 + 1].toDouble() }
+
+            // Remove duplicate closing vertex if present
+            var n = count
+            if (n >= 2 && abs(ra[0] - ra[n - 1]) < 1e-6 && abs(dec[0] - dec[n - 1]) < 1e-6) n -= 1
+
+            val raT = ra.copyOf(n)
+            val decT = dec.copyOf(n)
+
+            // Precompute pole-enclosure flags via RA winding sum
+            var wind = 0.0
+            for (i in 0 until n) {
+                val j = if (i + 1 < n) i + 1 else 0
+                wind += sdiff(raT[j], raT[i])
             }
-            val length = int
-            if (length < 0 || remaining() < length) {
-                return null
-            }
-            val bytes = ByteArray(length)
-            get(bytes)
-            return String(bytes, StandardCharsets.UTF_8)
+            val meanDec = if (n == 0) 0.0 else decT.sum() / n
+            return RuntimePolygon(raT, decT, abs(wind) > 180.0 && meanDec > 0, abs(wind) > 180.0 && meanDec < 0)
+        }
+
+        // Signed shortest RA delta in (-180, 180]: sdiff(a, b) = a - b wrapped.
+        private fun sdiff(a: Double, b: Double): Double {
+            var d = (a - b) % 360.0
+            if (d < -180.0) d += 360.0
+            if (d >= 180.0) d -= 360.0
+            return d
         }
 
         private fun normalizeRa(value: Double): Double {
-            var result = value % 360.0
-            if (result < 0) {
-                result += 360.0
-            }
-            return result
+            var ra = value % 360.0
+            if (ra < 0) ra += 360.0
+            return if (ra == 360.0) 0.0 else ra
         }
-        private data class CatalogHeader(
-            val magic: String,
-            val type: String,
-            val version: Int,
-            val recordCount: Int,
-            val payloadCrc32: Long,
-        ) {
-            companion object {
-                fun read(bytes: ByteArray): CatalogHeader? {
-                    if (bytes.size < HEADER_SIZE_BYTES) return null
-                    val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-                    val magic = buffer.readAscii(4) ?: return null
-                    if (magic != MAGIC_PREFIX) return null
-                    val type = buffer.readAscii(4) ?: return null
-                    val version = buffer.int
-                    val recordCount = buffer.int
-                    val crc = buffer.int.toLong() and 0xFFFF_FFFFL
-                    return CatalogHeader(magic, type, version, recordCount, crc)
-                }
 
-                private fun ByteBuffer.readAscii(length: Int): String? {
-                    if (remaining() < length) return null
-                    val array = ByteArray(length)
-                    get(array)
-                    return String(array, StandardCharsets.US_ASCII)
-                }
-            }
-        }
+        private data class DirectoryEntry(
+            val code: String,
+            val polyStart: Int,
+            val polyCount: Int,
+            val aabb: Aabb,
+        )
+
+        private data class PolygonEntry(
+            val vertexStart: Int,
+            val vertexCount: Int,
+            val aabb: Aabb,
+        )
     }
+
     data class Metadata(
         val sizeBytes: Int,
         val recordCount: Int,
