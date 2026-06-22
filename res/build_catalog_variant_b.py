@@ -206,12 +206,17 @@ def build(bulk_rows, curated_dir, out_path):
                   f"at sep {bestsep*60:.2f}'")
         return best  # (id, ra, dec, mag)
 
-    # ---- load curated JSONs ----
+    # ---- load curated JSONs (fail on duplicate abbr) ----
     files = sorted(f for f in os.listdir(curated_dir) if f.lower().endswith(".json"))
-    per_const = []
+    per_const = []; seen_abbr = {}
     for fn in files:
         with open(os.path.join(curated_dir, fn), "r", encoding="utf-8") as fh:
-            per_const.append(json.load(fh))
+            data = json.load(fh)
+        abbr = data.get("abbr", "")
+        if abbr in seen_abbr:
+            raise SystemExit(f"duplicate abbr '{abbr}' in {fn} (also in {seen_abbr[abbr]})")
+        seen_abbr[abbr] = fn
+        per_const.append(data)
 
     # resolve every curated star key -> matched bulk (id, ra, dec, mag)
     key2bulk = {}   # (abbr, key) -> (id, ra, dec, mag)

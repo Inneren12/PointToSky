@@ -1,8 +1,17 @@
 package dev.pointtosky.core.astro.identify
 
+import dev.pointtosky.core.astro.catalog.AstroCatalog
+import dev.pointtosky.core.astro.catalog.Asterism
+import dev.pointtosky.core.astro.catalog.ArtOverlay
+import dev.pointtosky.core.astro.catalog.ConstellationId
+import dev.pointtosky.core.astro.catalog.ConstellationMeta
+import dev.pointtosky.core.astro.catalog.StarFlags
+import dev.pointtosky.core.astro.catalog.StarId
+import dev.pointtosky.core.astro.catalog.StarRecord
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.catalog.CatalogAdapter
 import dev.pointtosky.core.catalog.constellation.FakeConstellationBoundaries
+import dev.pointtosky.core.catalog.star.AstroStarCatalogAdapter
 import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.catalog.star.StarCatalog
 import kotlin.test.Test
@@ -33,6 +42,39 @@ class IdentifySolverTest {
 
         val constellationResult = assertIs<SkyObjectOrConstellation.Constellation>(result)
         assertEquals("TUC", constellationResult.iauCode)
+    }
+
+    @Test
+    fun `AUX_ONLY skeleton node is not returned even when closer and brighter than real star`() {
+        // The AUX_ONLY node at (0°,0°) is on the reticle and mag=0 — would win without filtering.
+        // The real bulk star at (0.5°,0°) is farther and dimmer.
+        // Verify the solver returns the bulk star, not the skeleton node.
+        val astro = object : AstroCatalog {
+            private val stars = listOf(
+                StarRecord(StarId(0), 0.0f, 0.0f, 0.0f, ConstellationId(0),
+                    flags = StarFlags.LINE_NODE or StarFlags.AUX_ONLY, name = "SkelNode"),
+                StarRecord(StarId(1), 0.5f, 0.0f, 1.0f, ConstellationId(0),
+                    flags = 0, name = "Betelgeuse"),
+            )
+            override fun allStars() = stars
+            override fun starById(raw: Int) = stars.firstOrNull { it.id.raw == raw }
+            override fun getConstellationMeta(id: ConstellationId) =
+                ConstellationMeta(id, "ORI", "Orion")
+            override fun starsByConstellation(id: ConstellationId) =
+                stars.filter { it.constellationId == id }
+            override fun asterismsByConstellation(id: ConstellationId) = emptyList<Asterism>()
+            override fun artOverlaysByConstellation(id: ConstellationId) = emptyList<ArtOverlay>()
+        }
+        val boundaries = FakeConstellationBoundaries()
+        val mySolver = IdentifySolver(
+            catalog = CatalogAdapter(AstroStarCatalogAdapter(astro), boundaries),
+            constellations = boundaries,
+        )
+
+        val result = mySolver.findBest(Equatorial(0.0, 0.0), searchRadiusDeg = 5.0, magLimit = null)
+
+        val obj = assertIs<SkyObjectOrConstellation.Object>(result)
+        assertEquals("Betelgeuse", obj.obj.name)
     }
 }
 
