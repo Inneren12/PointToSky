@@ -89,6 +89,7 @@ class DefaultAimControllerTest {
         }
 
     @Test
+    fun `dAz wraps across 0-360`() =
         runBlocking {
             val orientation = FakeOrientationRepository()
             val location = FakeLocationOrchestrator(GeoPoint(0.0, 0.0))
