@@ -15,9 +15,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.getSystemService
+import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+private const val ZENITH_UP_EPS = 0.05f // ~3° from straight up/down; below this, screen-up of the world is ill-defined
 
 data class RotationFrame(
     val rotationMatrix: FloatArray,
@@ -118,6 +122,27 @@ internal fun RotationFrame.correctedForTrueNorth(declinationDeg: Double): Rotati
         f[2],
     )
     return copy(rotationMatrix = cm, forwardWorld = cf)
+}
+
+/**
+ * Screen-space roll of the device about its view axis, in degrees, in Compose's clockwise-positive
+ * rotationZ convention: the angle by which a label must be rotated so its "up" points at the world
+ * zenith as projected onto the screen. Returns [fallback] when the device points within ~ZENITH_UP_EPS
+ * of straight up/down (projection ill-defined, would otherwise jitter).
+ *
+ * world-up in device coords = 3rd row of the device→world matrix = (m[6], m[7], m[8]); its screen
+ * projection is (m[6], m[7]); the clockwise angle to screen-up is atan2(m[6], m[7]). Valid because the
+ * screen is portrait-locked (display ROTATION_0), so the matrix axes are the screen axes. Independent of
+ * the declination correction (that left-multiplies Rz, which does not change row 2).
+ *
+ * Sign verified on three poses: upright → 0°; rolled 90° clockwise → −90°; rolled 90° counter-clockwise → +90°.
+ * Confirm on-device regardless; if labels rotate the wrong way, negate the result.
+ */
+internal fun deviceRollDegrees(rotationMatrix: FloatArray, fallback: Float = 0f): Float {
+    val x = rotationMatrix[6]
+    val y = rotationMatrix[7]
+    if (hypot(x, y) < ZENITH_UP_EPS) return fallback
+    return Math.toDegrees(atan2(x, y).toDouble()).toFloat()
 }
 
 private fun normalizeVector(vector: FloatArray): FloatArray {
