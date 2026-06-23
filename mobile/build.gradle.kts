@@ -151,6 +151,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 
     testImplementation(kotlin("test"))           // kotlin.test + JUnit binding
+    testImplementation("org.json:json:20240303") // real org.json for JVM unit tests (avoids android.jar stub)
     // если это инструментальные тесты (androidTest):
     androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
 // AndroidX Test для инструментальных тестов (ServiceScenario и пр.)
