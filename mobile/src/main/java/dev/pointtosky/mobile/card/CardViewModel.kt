@@ -29,13 +29,13 @@ class CardViewModel(
     private val cardId: String,
     private val repository: CardRepository,
     private val locationPrefs: LocationPrefs,
-    private val deviceLocationRepository: DeviceLocationRepository,
+    private val deviceLocationFlow: StateFlow<GeoPoint?>,
     private val clock: () -> Instant = { Instant.now() },
 ) : ViewModel() {
     val state: StateFlow<CardUiState> =
         combine(
             repository.observe(cardId),
-            deviceLocationRepository.deviceLocationFlow,
+            deviceLocationFlow,
             locationPrefs.manualPointFlow,
         ) { entry, devicePoint, manualPoint ->
             buildState(entry, manualPoint ?: devicePoint)
@@ -224,7 +224,7 @@ class CardViewModelFactory(
                 cardId = cardId,
                 repository = repository,
                 locationPrefs = locationPrefs,
-                deviceLocationRepository = deviceLocationRepository,
+                deviceLocationFlow = deviceLocationRepository.deviceLocationFlow,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class ${modelClass.name}")

@@ -62,6 +62,9 @@ fun CardRoute(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner, deviceLocationRepository) {
+        // Refresh immediately in case the lifecycle is already RESUMED when this
+        // effect is first run — the ON_RESUME observer below would miss that case.
+        deviceLocationRepository.onPermissionChanged()
         val observer =
             LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
