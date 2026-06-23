@@ -27,11 +27,13 @@ import dev.pointtosky.wear.ACTION_OPEN_AIM
 import dev.pointtosky.wear.R
 import dev.pointtosky.wear.datalayer.WearMessageBridge
 import dev.pointtosky.wear.settings.AimIdentifySettingsDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import org.json.JSONArray
+import kotlinx.coroutines.guava.future
+import kotlinx.coroutines.launch
 import org.json.JSONException
-import org.json.JSONObject
 import java.time.Instant
 
 open class TonightTileService : TileService() {
@@ -42,6 +44,9 @@ open class TonightTileService : TileService() {
         @Suppress("unused")
         const val EXTRA_TARGET_ID = "targetId"
         private const val PATH_PUSH = "/tile/tonight/push_model"
+
+        // App-scoped so fire-and-forget mirroring survives the per-request service teardown.
+        private val tileScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         private fun iconResIdString(icon: TonightIcon): String =
             when (icon) {
@@ -77,109 +82,65 @@ open class TonightTileService : TileService() {
         )
     }
 
-    override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
+    override fun onTileRequest(
+        requestParams: RequestBuilders.TileRequest,
+    ): ListenableFuture<TileBuilders.Tile> {
         val startRealtime = SystemClock.elapsedRealtime()
         LogBus.event("tile_get_tile_start")
-        return try {
-            val model = runBlocking { provider.getModel(Instant.now()) }
-            TonightTileDebug.update(model)
-
-            // S7.E: Mirroring — отправка короткой модели на телефон
-            runBlocking {
-                val settings = AimIdentifySettingsDataStore(applicationContext)
-                val mirroring = settings.tileMirroringEnabledFlow.first()
-                if (mirroring) {
-                    val json = buildPushModelJson(model)
-                    runCatching {
-                        WearMessageBridge.sendToPhone(
-                            applicationContext,
-                            PATH_PUSH,
-                            json.toByteArray(Charsets.UTF_8),
-                        )
-                    }.onSuccess {
-                        LogBus.event(
-                            name = "tile_push_model",
-                            payload = mapOf("targetsCount" to model.items.size),
-                        )
-                    }.onFailure { e ->
-                        LogBus.event(
-                            name = "tile_error",
-                            payload =
-                                mapOf(
-                                    "err" to e.toLogMessage(),
-                                    "stage" to "push_model",
-                                ),
-                        )
-                    }
-                }
+        val deviceParams = requestParams.deviceParameters
+        val appContext = applicationContext
+        return tileScope.future {
+            try {
+                val model = provider.getModel(Instant.now())
+                TonightTileDebug.update(model)
+                launchMirroring(appContext, model)
+                buildTonightTile(deviceParams, model)
+            } catch (e: JSONException) {
+                logTileError(e, "on_tile_request_json"); throw e
+            } catch (e: SecurityException) {
+                logTileError(e, "on_tile_request_security"); throw e
+            } catch (e: IllegalStateException) {
+                logTileError(e, "on_tile_request_state"); throw e
+            } finally {
+                LogBus.event("tile_get_tile_end", mapOf("durationMs" to SystemClock.elapsedRealtime() - startRealtime))
             }
-
-            // S7.B: используем Material PrimaryLayout с учётом форм-фактора
-            val root =
-                buildPrimaryLayoutRoot(
-                    context = this,
-                    model = model,
-                    deviceParams = requestParams.deviceParameters,
-                )
-            val layout =
-                LayoutElementBuilders.Layout
-                    .Builder()
-                    .setRoot(root)
-                    .build()
-            val entry =
-                TimelineBuilders.TimelineEntry
-                    .Builder()
-                    .setLayout(layout)
-                    .build()
-            val timeline =
-                TimelineBuilders.Timeline
-                    .Builder()
-                    .addTimelineEntry(entry)
-                    .build()
-            Futures.immediateFuture(
-                TileBuilders.Tile
-                    .Builder()
-                    .setResourcesVersion(RES_VER)
-                    // Резервный периодический апдейт от платформы (на случай промаха воркера)
-                    .setFreshnessIntervalMillis(45L * 60_000L)
-                    .setTimeline(timeline)
-                    .build(),
-            )
-        } catch (e: JSONException) {
-            LogBus.event(
-                name = "tile_error",
-                payload =
-                    mapOf(
-                        "err" to e.toLogMessage(),
-                        "stage" to "on_tile_request_json",
-                    ),
-            )
-            throw e
-        } catch (e: SecurityException) {
-            LogBus.event(
-                name = "tile_error",
-                payload =
-                    mapOf(
-                        "err" to e.toLogMessage(),
-                        "stage" to "on_tile_request_security",
-                    ),
-            )
-            throw e
-        } catch (e: IllegalStateException) {
-            LogBus.event(
-                name = "tile_error",
-                payload =
-                    mapOf(
-                        "err" to e.toLogMessage(),
-                        "stage" to "on_tile_request_state",
-                    ),
-            )
-            throw e
-        } finally {
-            val durationMs = SystemClock.elapsedRealtime() - startRealtime
-            LogBus.event("tile_get_tile_end", mapOf("durationMs" to durationMs))
         }
     }
+
+    private fun buildTonightTile(
+        deviceParams: DeviceParametersBuilders.DeviceParameters?,
+        model: TonightTileModel,
+    ): TileBuilders.Tile {
+        val root = buildPrimaryLayoutRoot(context = this, model = model, deviceParams = deviceParams)
+        val layout = LayoutElementBuilders.Layout.Builder().setRoot(root).build()
+        val entry = TimelineBuilders.TimelineEntry.Builder().setLayout(layout).build()
+        val timeline = TimelineBuilders.Timeline.Builder().addTimelineEntry(entry).build()
+        return TileBuilders.Tile
+            .Builder()
+            .setResourcesVersion(RES_VER)
+            .setFreshnessIntervalMillis(45L * 60_000L)
+            .setTimeline(timeline)
+            .build()
+    }
+
+    /** Best-effort mirror of the model to the phone; off-main, never blocks the tile response. */
+    private fun launchMirroring(appContext: Context, model: TonightTileModel) {
+        tileScope.launch(Dispatchers.IO) {
+            runCatching {
+                val settings = AimIdentifySettingsDataStore(appContext)
+                if (settings.tileMirroringEnabledFlow.first()) {
+                    val json = buildPushModelJson(model)
+                    WearMessageBridge.sendToPhone(appContext, PATH_PUSH, json.toByteArray(Charsets.UTF_8))
+                    LogBus.event("tile_push_model", mapOf("targetsCount" to model.items.size))
+                }
+            }.onFailure { e ->
+                LogBus.event("tile_error", mapOf("err" to e.toLogMessage(), "stage" to "push_model"))
+            }
+        }
+    }
+
+    private fun logTileError(e: Throwable, stage: String) =
+        LogBus.event("tile_error", mapOf("err" to e.toLogMessage(), "stage" to stage))
 
     @Deprecated("Tiles v1 API; kept for backward compatibility. Consider migrating to ProtoLayout.")
     override fun onResourcesRequest(
