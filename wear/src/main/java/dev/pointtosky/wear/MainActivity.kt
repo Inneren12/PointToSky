@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -30,11 +32,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
+import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.material.PositionIndicator
+import androidx.wear.compose.material.Scaffold
 import androidx.wear.compose.material.Text
+import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -555,76 +564,111 @@ fun HomeScreen(
     // дефолт для старых вызовов
     onSettingsClick: () -> Unit = {},
 ) {
-    Column(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+    val listState = rememberScalingLazyListState()
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    Scaffold(
+        timeText = { TimeText() },
+        positionIndicator = { PositionIndicator(scalingLazyListState = listState) },
+        modifier = modifier,
     ) {
-        Button(
-            onClick = onAimClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.primaryButtonColors(),
+        ScalingLazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .rotaryScrollable(
+                    behavior = RotaryScrollableDefaults.behavior(scrollableState = listState),
+                    focusRequester = focusRequester,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(text = stringResource(id = R.string.find_label))
-        }
-        Button(
-            onClick = onIdentifyClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.primaryButtonColors(),
-        ) {
-            Text(text = stringResource(id = R.string.identify_label))
-        }
-        Button(
-            onClick = onAstroDebugClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.secondaryButtonColors(),
-        ) {
-            Text(text = stringResource(id = R.string.astro_debug_label))
-        }
-        Button(
-            onClick = onCatalogDebugClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.secondaryButtonColors(),
-        ) {
-            Text(text = stringResource(id = R.string.catalog_debug_label))
-        }
-        Button(
-            onClick = onLocationClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.primaryButtonColors(),
-        ) {
-            Text(text = stringResource(id = R.string.location_settings))
-        }
-        Button(
-            onClick = onSensorsDebugClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.secondaryButtonColors(),
-        ) {
-            Text(text = stringResource(id = R.string.sensors_debug_label))
-        }
-        Button(
-            onClick = onTimeDebugClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.secondaryButtonColors(),
-        ) {
-            Text(text = stringResource(id = R.string.time_debug_label))
-        }
-        Button(
-            onClick = onCrashLogsClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.secondaryButtonColors(),
-        ) {
-            Text(text = stringResource(id = R.string.crash_logs_button))
-        }
-        Button(
-            onClick = onSettingsClick,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.primaryButtonColors(),
-        ) {
-            Text(text = stringResource(id = R.string.settings_label))
+            item {
+                Button(
+                    onClick = onAimClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.primaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.find_label))
+                }
+            }
+            item {
+                Button(
+                    onClick = onIdentifyClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.primaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.identify_label))
+                }
+            }
+            item {
+                Button(
+                    onClick = onAstroDebugClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.secondaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.astro_debug_label))
+                }
+            }
+            item {
+                Button(
+                    onClick = onCatalogDebugClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.secondaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.catalog_debug_label))
+                }
+            }
+            item {
+                Button(
+                    onClick = onLocationClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.primaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.location_settings))
+                }
+            }
+            item {
+                Button(
+                    onClick = onSensorsDebugClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.secondaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.sensors_debug_label))
+                }
+            }
+            item {
+                Button(
+                    onClick = onTimeDebugClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.secondaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.time_debug_label))
+                }
+            }
+            item {
+                Button(
+                    onClick = onCrashLogsClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.secondaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.crash_logs_button))
+                }
+            }
+            item {
+                Button(
+                    onClick = onSettingsClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.primaryButtonColors(),
+                ) {
+                    Text(text = stringResource(id = R.string.settings_label))
+                }
+            }
         }
     }
 }
