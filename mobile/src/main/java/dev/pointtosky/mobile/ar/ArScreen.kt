@@ -762,55 +762,43 @@ internal fun calculateOverlay(
 
     val constellationId = resolveConstellation(reticleEquatorial)
 
-    val baseStars = state.catalog?.catalog?.allStars().orEmpty()
-    val fromConstellation =
-        if (state.catalog != null && constellationId != null) {
-            state.catalog.catalog.starsByConstellation(constellationId)
-        } else {
-            emptyList()
+    // Full catalog — star points and labels span the whole frustum, not just the reticle's constellation.
+    val visibleStars: List<StarRecord> =
+        (state.catalog?.catalog?.allStars().orEmpty())
+            .filter { it.isRenderablePoint() }
+            .filter { val limit = state.magLimit; limit <= 0.0 || it.magnitude.toDouble() <= limit }
+
+    // Project ALL mag-filtered stars; projectEquatorial returns null for off-screen ones.
+    val projectedStars: List<OverlayObject> =
+        visibleStars.mapNotNull { star ->
+            val equatorial =
+                Equatorial(
+                    star.rightAscensionDeg.toDouble(),
+                    star.declinationDeg.toDouble(),
+                )
+            val projection = projectEquatorial(equatorial) ?: return@mapNotNull null
+            OverlayObject(
+                title = star.name,
+                magnitude = star.magnitude.toDouble(),
+                position = projection.position,
+                distance = projection.distance,
+                separationDeg = projection.separationDeg,
+            )
         }
 
-    val overlayStars: List<StarRecord> =
-        (if (fromConstellation.isNotEmpty()) fromConstellation else baseStars)
-            .filter { star -> star.isRenderablePoint() }
-            .filter { star ->
-                val limit = state.magLimit
-                limit <= 0.0 || star.magnitude.toDouble() <= limit
-            }
-
-    // Project all visible stars (brightest-first so capping keeps the best ones).
-    val projectedStars: List<OverlayObject> =
-        overlayStars
-            .sortedBy { it.magnitude }
-            .take(MAX_STAR_POINTS)
-            .mapNotNull { star ->
-                val equatorial =
-                    Equatorial(
-                        star.rightAscensionDeg.toDouble(),
-                        star.declinationDeg.toDouble(),
-                    )
-                val projection = projectEquatorial(equatorial) ?: return@mapNotNull null
-                OverlayObject(
-                    title = star.name,
-                    magnitude = star.magnitude.toDouble(),
-                    position = projection.position,
-                    distance = projection.distance,
-                    separationDeg = projection.separationDeg,
-                )
-            }
+    // Sort on-screen stars brightest-first; cap for points AFTER projection.
+    val byBrightness = projectedStars.sortedBy { it.magnitude }
 
     val starPoints: List<StarPointOverlay> =
-        projectedStars.map { StarPointOverlay(position = it.position, magnitude = it.magnitude) }
+        byBrightness.take(MAX_STAR_POINTS)
+            .map { StarPointOverlay(position = it.position, magnitude = it.magnitude) }
 
     // Hybrid label selection: reticle-nearest always first, then brightest non-colliding.
     val nearest = projectedStars.minByOrNull { it.separationDeg }
     val labels = mutableListOf<OverlayObject>()
     val placed = mutableListOf<Offset>()
-    if (nearest != null) {
-        labels += nearest
-        placed += nearest.position
-    }
-    for (candidate in projectedStars) {
+    nearest?.let { labels += it; placed += it.position }
+    for (candidate in byBrightness) {
         if (candidate === nearest) continue
         if (labels.size >= MAX_LABELS) break
         val cx = candidate.position.x
@@ -848,7 +836,6 @@ internal fun calculateOverlay(
         asterismState = asterismState.copy(available = emptyList())
     } else {
         val catalogState = state.catalog
-        val constellationId = resolveConstellation(reticleEquatorial)
         if (catalogState != null && constellationId != null) {
             val asterisms = catalogState.catalog.asterismsByConstellation(constellationId)
             val available =
