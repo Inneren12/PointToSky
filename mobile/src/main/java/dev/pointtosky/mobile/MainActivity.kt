@@ -8,10 +8,12 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -23,11 +25,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.pointtosky.core.catalog.runtime.CatalogLoadState
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
 import dev.pointtosky.core.datalayer.AppOpenAimTarget
@@ -91,10 +93,6 @@ class MainActivity : ComponentActivity() {
         PhoneCompassBridge(this)
     }
 
-    private val catalogRepository: CatalogRepository by lazy {
-        CatalogRepositoryProvider.get(applicationContext)
-    }
-
     private val mobileSettings: MobileSettings by lazy {
         MobileSettings.from(applicationContext)
     }
@@ -109,6 +107,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         handleIntent(intent)
         setContent {
+            LaunchedEffect(Unit) { CatalogRepositoryProvider.ensureLoaded(applicationContext) }
+            val catalogState by CatalogRepositoryProvider.state()
+                .collectAsStateWithLifecycle(initialValue = CatalogLoadState.Loading)
             val bridgeState by phoneLocationBridge.state.collectAsStateWithLifecycle()
             val destination by navigationState.collectAsStateWithLifecycle()
             val latestCardId by CardRepository.latestCardIdFlow().collectAsStateWithLifecycle(initialValue = null)
@@ -153,11 +154,11 @@ class MainActivity : ComponentActivity() {
             }
             PointToSkyMobileApp(
                 destination = destination,
+                catalogState = catalogState,
                 deps =
                     MobileAppDeps(
                         locationPrefs = locationPrefs,
                         shareState = bridgeState,
-                        catalogRepository = catalogRepository,
                         aimTargets = aimTargets,
                         phoneCompassEnabled = phoneCompassEnabled,
                         settingsState = settingsState,
@@ -336,7 +337,6 @@ class MainActivity : ComponentActivity() {
 data class MobileAppDeps(
     val locationPrefs: LocationPrefs,
     val shareState: PhoneLocationBridge.PhoneLocationBridgeState,
-    val catalogRepository: CatalogRepository,
     val aimTargets: List<AimTargetOption>,
     val phoneCompassEnabled: Boolean,
     val settingsState: MobileSettingsState,
@@ -390,6 +390,7 @@ data class MobileHomeActions(
 @Composable
 fun PointToSkyMobileApp(
     destination: MobileDestination,
+    catalogState: CatalogLoadState,
     deps: MobileAppDeps,
     actions: MobileAppActions,
 ) {
@@ -434,11 +435,13 @@ fun PointToSkyMobileApp(
                     )
 
                 MobileDestination.CatalogDebug ->
-                    CatalogDebugRoute(
-                        factory = CatalogDebugViewModelFactory(deps.catalogRepository),
-                        modifier = Modifier.fillMaxSize(),
-                        onBack = { actions.onNavigate(MobileDestination.Settings) },
-                    )
+                    WithCatalog(catalogState) { repo ->
+                        CatalogDebugRoute(
+                            factory = CatalogDebugViewModelFactory(repo),
+                            modifier = Modifier.fillMaxSize(),
+                            onBack = { actions.onNavigate(MobileDestination.Settings) },
+                        )
+                    }
 
                 MobileDestination.CrashLogs ->
                     CrashLogRoute(
@@ -446,12 +449,14 @@ fun PointToSkyMobileApp(
                     )
 
                 MobileDestination.Ar ->
-                    ArRoute(
-                        identifySolver = deps.catalogRepository.identifySolver,
-                        locationPrefs = deps.locationPrefs,
-                        onBack = { actions.onNavigate(MobileDestination.Home) },
-                        onSendAimTarget = actions.onSendAimTarget,
-                    )
+                    WithCatalog(catalogState) { repo ->
+                        ArRoute(
+                            identifySolver = repo.identifySolver,
+                            locationPrefs = deps.locationPrefs,
+                            onBack = { actions.onNavigate(MobileDestination.Home) },
+                            onSendAimTarget = actions.onSendAimTarget,
+                        )
+                    }
 
                 MobileDestination.WearMenu ->
                     WearMenuScreen(
@@ -467,21 +472,25 @@ fun PointToSkyMobileApp(
                     )
 
                 MobileDestination.SkyMap ->
-                    SkyMapRoute(
-                        catalogRepository = deps.catalogRepository,
-                        locationPrefs = deps.locationPrefs,
-                        onBack = { actions.onNavigate(MobileDestination.Home) },
-                        onOpenCard = actions.onOpenLatestCard,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    WithCatalog(catalogState) { repo ->
+                        SkyMapRoute(
+                            catalogRepository = repo,
+                            locationPrefs = deps.locationPrefs,
+                            onBack = { actions.onNavigate(MobileDestination.Home) },
+                            onOpenCard = actions.onOpenLatestCard,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
 
                 MobileDestination.Search ->
-                    SearchRoute(
-                        catalogRepository = deps.catalogRepository,
-                        onBack = { actions.onNavigate(MobileDestination.Home) },
-                        onOpenCard = { cardId -> actions.onNavigate(MobileDestination.Card(cardId)) },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    WithCatalog(catalogState) { repo ->
+                        SearchRoute(
+                            catalogRepository = repo,
+                            onBack = { actions.onNavigate(MobileDestination.Home) },
+                            onOpenCard = { cardId -> actions.onNavigate(MobileDestination.Card(cardId)) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
 
                 MobileDestination.Settings ->
                     SettingsScreen(
@@ -587,6 +596,24 @@ fun MobileHome(
     }
 }
 
+@Composable
+private fun WithCatalog(
+    state: CatalogLoadState,
+    content: @Composable (CatalogRepository) -> Unit,
+) {
+    when (state) {
+        is CatalogLoadState.Loading -> CatalogLoadingScreen()
+        is CatalogLoadState.Ready -> content(state.repository)
+    }
+}
+
+@Composable
+private fun CatalogLoadingScreen() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
+    }
+}
+
 @Immutable
 data class WearMenuProps(
     val aimTargets: List<AimTargetOption>,
@@ -689,14 +716,13 @@ private class PreviewLocationPrefs : LocationPrefs {
 @Preview(showSystemUi = true)
 @Composable
 fun MobileHomePreview() {
-    val context = LocalContext.current
     PointToSkyMobileApp(
         destination = MobileDestination.Home,
+        catalogState = CatalogLoadState.Loading,
         deps =
             MobileAppDeps(
                 locationPrefs = PreviewLocationPrefs(),
                 shareState = PhoneLocationBridge.PhoneLocationBridgeState.Empty,
-                catalogRepository = CatalogRepository.create(context),
                 aimTargets = emptyList(),
                 phoneCompassEnabled = false,
                 settingsState = MobileSettingsState(),
