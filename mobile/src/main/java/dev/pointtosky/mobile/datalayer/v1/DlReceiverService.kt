@@ -6,18 +6,34 @@ import dev.pointtosky.core.datalayer.CardOpenMessage
 import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.datalayer.PATH_CARD_OPEN
+import dev.pointtosky.core.datalayer.PATH_TILE_TONIGHT_PUSH_MODEL
 import dev.pointtosky.core.logging.LogBus
 import dev.pointtosky.mobile.card.CardDeepLinkLauncher
 import dev.pointtosky.mobile.card.CardObjectPayload
 import dev.pointtosky.mobile.card.CardRepository
 import dev.pointtosky.mobile.card.toEntry
 import dev.pointtosky.mobile.logging.MobileLog
+import dev.pointtosky.mobile.settings.MobileSettings
+import dev.pointtosky.mobile.settings.from
+import dev.pointtosky.mobile.tile.tonight.TonightMirrorStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * Приём на телефоне: шлём ACK обратно на часы и логируем полезную нагрузку.
  * Далее можно пробрасывать в UI (карточки, превью тайла, Aim и т.д.).
  */
 class DlReceiverService : WearableListenerService() {
+    private val settings: MobileSettings by lazy { MobileSettings.from(applicationContext) }
+
+    companion object {
+        // App-scoped: applying the mirror must survive the short-lived listener service's teardown.
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
+
     override fun onMessageReceived(event: MessageEvent) {
         val path = event.path
         val data = event.data
@@ -60,6 +76,26 @@ class DlReceiverService : WearableListenerService() {
                 if (path == PATH_CARD_OPEN) {
                     handleCardOpen(data, cid, event.sourceNodeId)
                 }
+                if (path == PATH_TILE_TONIGHT_PUSH_MODEL) {
+                    handleTilePush(data, event.sourceNodeId)
+                }
+            }
+        }
+    }
+
+    private fun handleTilePush(data: ByteArray, nodeId: String) {
+        scope.launch {
+            runCatching {
+                val s = settings.state.first()
+                if (!s.mirrorEnabled) return@launch
+                TonightMirrorStore.applyJson(String(data, Charsets.UTF_8), redacted = s.redactPayloads)
+            }.onFailure { error ->
+                MobileLog.bridgeError(
+                    path = PATH_TILE_TONIGHT_PUSH_MODEL,
+                    cid = null,
+                    nodeId = nodeId,
+                    error = error.message ?: error::class.java.simpleName,
+                )
             }
         }
     }
