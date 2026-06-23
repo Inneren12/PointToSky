@@ -190,6 +190,7 @@ dependencies {
     implementation("androidx.wear.tiles:tiles-material:1.3.0")
     implementation("androidx.wear.protolayout:protolayout-expression:1.1.0")
     implementation("com.google.guava:guava:32.1.2-android")
+    implementation(libs.kotlinx.coroutines.guava)
 
     // DataStore для кэша
     implementation("androidx.datastore:datastore-preferences:1.1.1")
