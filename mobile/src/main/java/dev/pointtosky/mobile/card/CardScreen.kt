@@ -23,20 +23,26 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -51,11 +57,34 @@ fun CardRoute(
     onShare: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val deviceLocationRepository = remember { DeviceLocationRepository(context.applicationContext) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, deviceLocationRepository) {
+        // Refresh immediately in case the lifecycle is already RESUMED when this
+        // effect is first run — the ON_RESUME observer below would miss that case.
+        deviceLocationRepository.onPermissionChanged()
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    deviceLocationRepository.onPermissionChanged()
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val factory =
-        remember(cardId, locationPrefs) {
-            CardViewModelFactory(cardId = cardId, repository = CardRepository, locationPrefs = locationPrefs)
+        remember(cardId, locationPrefs, deviceLocationRepository) {
+            CardViewModelFactory(
+                cardId = cardId,
+                repository = CardRepository,
+                locationPrefs = locationPrefs,
+                deviceLocationRepository = deviceLocationRepository,
+            )
         }
-    val viewModel: CardViewModel = viewModel(factory = factory)
+    val viewModel: CardViewModel = viewModel(key = cardId, factory = factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
     CardScreen(
         state = state,
