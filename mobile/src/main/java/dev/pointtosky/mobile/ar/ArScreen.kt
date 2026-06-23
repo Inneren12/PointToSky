@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -245,11 +246,16 @@ fun ArScreen(
 
                 Reticle(modifier = Modifier.align(Alignment.Center))
 
+                // Counter-rotate overlay labels so they stay upright relative to the real horizon
+                // while the projected constellation rotates with device roll (portrait-locked UI).
+                val labelRoll = rotationFrame?.let { deviceRollDegrees(it.rotationMatrix) } ?: 0f
+
                 if (state.showStarLabels) {
                     overlay?.labels?.forEach { label ->
                         ArObjectLabel(
                             data = label,
                             modifier = Modifier.align(Alignment.TopStart),
+                            rollDegrees = labelRoll,
                         )
                     }
                 }
@@ -258,6 +264,7 @@ fun ArScreen(
                     AsterismLabel(
                         data = label,
                         modifier = Modifier.align(Alignment.TopStart),
+                        rollDegrees = labelRoll,
                     )
                 }
 
@@ -445,6 +452,7 @@ private fun InfoPanel(
 private fun ArObjectLabel(
     data: OverlayObject,
     modifier: Modifier = Modifier,
+    rollDegrees: Float = 0f,
 ) {
     val density = LocalDensity.current
     val offset =
@@ -460,6 +468,7 @@ private fun ArObjectLabel(
         modifier =
             modifier
                 .offset { offset }
+                .graphicsLayer { rotationZ = rollDegrees }
                 .background(color = Color(0x99000000), shape = RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
@@ -486,6 +495,7 @@ private fun ArObjectLabel(
 private fun AsterismLabel(
     data: AsterismLabelOverlay,
     modifier: Modifier = Modifier,
+    rollDegrees: Float = 0f,
 ) {
     val density = LocalDensity.current
     val offset =
@@ -501,6 +511,7 @@ private fun AsterismLabel(
         modifier =
             modifier
                 .offset { offset }
+                .graphicsLayer { rotationZ = rollDegrees }
                 .background(
                     color = if (data.highlighted) Color(0xFF8BC34A).copy(alpha = 0.8f) else Color(0x99000000),
                     shape = RoundedCornerShape(12.dp),
