@@ -1,7 +1,5 @@
 package dev.pointtosky.wear
 
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorManager
@@ -27,7 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -47,12 +44,7 @@ import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.catalog.runtime.CatalogLoadState
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
-import dev.pointtosky.core.datalayer.AimSetTargetMessage
-import dev.pointtosky.core.datalayer.AppOpenMessage
 import dev.pointtosky.core.datalayer.AppOpenScreen
-import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
-import dev.pointtosky.core.datalayer.JsonCodec
-import dev.pointtosky.core.datalayer.SensorHeadingMessage
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.orchestrator.DefaultLocationOrchestrator
 import dev.pointtosky.core.location.prefs.LocationPrefs
@@ -67,9 +59,7 @@ import dev.pointtosky.wear.catalogdebug.CatalogDebugRoute
 import dev.pointtosky.wear.crash.CrashLogRoute
 import dev.pointtosky.wear.datalayer.AimLaunchRequest
 import dev.pointtosky.wear.datalayer.AppOpenRequest
-import dev.pointtosky.wear.datalayer.PhoneHeadingBridge
 import dev.pointtosky.wear.datalayer.WearBridge
-import dev.pointtosky.wear.datalayer.v1.DlIntents
 import dev.pointtosky.wear.identify.IdentifyRoute
 import dev.pointtosky.wear.identify.IdentifyViewModelFactory
 import dev.pointtosky.wear.identify.buildCardRouteFrom
@@ -93,11 +83,8 @@ import dev.pointtosky.wear.time.TimeDebugScreen
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import android.annotation.SuppressLint
 
 class MainActivity : ComponentActivity() {
-    private var dlReceiver: BroadcastReceiver? = null
-
     /** Для защиты от повторной обработки того же самого интента. */
     private var lastIntentSignature: Int? = null
     private val hasMagnetometer: Boolean by lazy {
@@ -175,57 +162,6 @@ class MainActivity : ComponentActivity() {
         // важно: чтобы Activity.intent тоже обновился
         setIntent(intent)
         handleBridgeIntent(intent)
-    }
-
-    @SuppressLint("WrongConstant")
-    override fun onStart() {
-        super.onStart()
-        if (dlReceiver != null) return
-        dlReceiver =
-            object : BroadcastReceiver() {
-                override fun onReceive(
-                    context: Context,
-                    intent: Intent,
-                ) {
-                    val payload = intent.getByteArrayExtra(DlIntents.EXTRA_PAYLOAD) ?: return
-
-                    // 1) SensorHeading: обновляем мост и выходим
-                    runCatching { JsonCodec.decode<SensorHeadingMessage>(payload) }
-                        .onSuccess { msg ->
-                            if (msg.v == DATA_LAYER_PROTOCOL_VERSION) {
-                                PhoneHeadingBridge.updateHeading(msg.azDeg, msg.ts)
-                                return
-                            }
-                        }
-
-                    // 2) AppOpen → мост сам разрулит, если нужно
-                    runCatching { JsonCodec.decode<AppOpenMessage>(payload) }
-                        .onSuccess {
-                            WearBridge.handleAppOpenMessage(applicationContext, it)
-                            return
-                        }
-
-                    // 3) AimSetTarget
-                    runCatching { JsonCodec.decode<AimSetTargetMessage>(payload) }
-                        .onSuccess { WearBridge.handleAimSetTargetMessage(applicationContext, it) }
-                }
-            }
-        ContextCompat.registerReceiver(
-            // context =
-            this,
-            // receiver =
-            dlReceiver,
-            // filter =
-            DlIntents.filter(),
-            // flags =
-            ContextCompat.RECEIVER_NOT_EXPORTED,
-        )
-    }
-
-    override fun onStop() {
-        super.onStop()
-        dlReceiver?.let { unregisterReceiver(it) }
-        dlReceiver = null
     }
 
     private fun handleBridgeIntent(intent: Intent?) {

@@ -28,11 +28,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- * Лёгкий фасад для событий запуска Aim на часах.
- * Больше не зависит от старого ReliableDataLayerBridge; используется BridgeV1ListenerService,
- * который вызывает [handleAimSetTargetJson] при сообщении /aim/set_target.
- */
+/** Фасад для событий запуска Aim/AppOpen на часах. */
 object WearBridge {
     private val aimRequests =
         MutableSharedFlow<AimLaunchRequest>(

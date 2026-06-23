@@ -1,5 +1,6 @@
 package dev.pointtosky.mobile.datalayer.v1
 
+import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 
@@ -17,7 +18,7 @@ internal object DlJson {
         err: String? = null,
     ): ByteArray {
         val o = JSONObject()
-        o.put("v", DlPaths.V)
+        o.put("v", DATA_LAYER_PROTOCOL_VERSION)
         o.put("refCid", refCid)
         o.put("ok", ok)
         if (!err.isNullOrBlank()) o.put("err", err)

@@ -5,6 +5,7 @@ import com.google.android.gms.wearable.WearableListenerService
 import dev.pointtosky.core.datalayer.CardOpenMessage
 import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
 import dev.pointtosky.core.datalayer.JsonCodec
+import dev.pointtosky.core.datalayer.PATH_ACK
 import dev.pointtosky.core.datalayer.PATH_CARD_OPEN
 import dev.pointtosky.core.datalayer.PATH_TILE_TONIGHT_PUSH_MODEL
 import dev.pointtosky.core.logging.LogBus
@@ -38,7 +39,7 @@ class DlReceiverService : WearableListenerService() {
         val path = event.path
         val data = event.data
         when (path) {
-            DlPaths.ACK -> {
+            PATH_ACK -> {
                 // Телефон тоже может ждать ACK для своих исходящих сообщений — на будущее.
                 val (refCid, ok) = DlJson.parseAck(data)
                 MobileLog.bridgeRecv(path = path, cid = refCid, nodeId = event.sourceNodeId)
@@ -52,7 +53,7 @@ class DlReceiverService : WearableListenerService() {
                 if (!cid.isNullOrBlank()) {
                     val ack = DlJson.buildAck(cid, ok = true)
                     MobileLog.bridgeSend(
-                        path = DlPaths.ACK,
+                        path = PATH_ACK,
                         cid = cid,
                         nodeId = event.sourceNodeId,
                         attempt = 1,
@@ -61,11 +62,11 @@ class DlReceiverService : WearableListenerService() {
                     DlMessageSender.sendMessage(
                         context = this,
                         nodeId = event.sourceNodeId,
-                        path = DlPaths.ACK,
+                        path = PATH_ACK,
                         payload = ack,
                     ) { error ->
                         MobileLog.bridgeError(
-                            path = DlPaths.ACK,
+                            path = PATH_ACK,
                             cid = cid,
                             nodeId = event.sourceNodeId,
                             error = error.message,

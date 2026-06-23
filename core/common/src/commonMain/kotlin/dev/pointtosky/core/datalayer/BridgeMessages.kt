@@ -118,13 +118,6 @@ data class CardOpenMessage(
 )
 
 @Serializable
-data class TileTonightPushModelMessage(
-    val v: Int = DATA_LAYER_PROTOCOL_VERSION,
-    val cid: String? = null,
-    val payload: JsonElement,
-)
-
-@Serializable
 data class SensorHeadingMessage(
     val v: Int = DATA_LAYER_PROTOCOL_VERSION,
     val cid: String,
