@@ -10,6 +10,7 @@ import android.os.Parcel
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,6 +35,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
+import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
@@ -42,6 +44,8 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.tooling.preview.devices.WearDevices
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.ephem.Body
+import dev.pointtosky.core.catalog.runtime.CatalogLoadState
+import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.catalog.runtime.debug.CatalogDebugViewModelFactory
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AppOpenMessage
@@ -376,6 +380,24 @@ private const val ROUTE_CRASH_LOGS = "crash_logs"
 private const val ROUTE_SETTINGS = "settings"
 
 @Composable
+private fun WithCatalog(
+    state: CatalogLoadState,
+    content: @Composable (CatalogRepository) -> Unit,
+) {
+    when (state) {
+        is CatalogLoadState.Loading -> CatalogLoadingScreen()
+        is CatalogLoadState.Ready -> content(state.repository)
+    }
+}
+
+@Composable
+private fun CatalogLoadingScreen() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
 fun PointToSkyWearApp(
     orientationRepository: OrientationRepository,
     locationPrefs: LocationPrefs,
@@ -388,7 +410,8 @@ fun PointToSkyWearApp(
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
     val appContext = context.applicationContext
-    val catalogRepository = remember(appContext) { CatalogRepositoryProvider.get(appContext) }
+    LaunchedEffect(appContext) { CatalogRepositoryProvider.ensureLoaded(appContext) }
+    val catalogState by CatalogRepositoryProvider.state().collectAsStateWithLifecycle()
     val settings = remember(appContext) { AimIdentifySettingsDataStore(appContext) }
     val coroutineScope = rememberCoroutineScope()
     val onboardingAccepted by onboardingPrefs.acceptedFlow.collectAsStateWithLifecycle(initialValue = false)
@@ -450,20 +473,22 @@ fun PointToSkyWearApp(
                     )
                 }
                 composable(ROUTE_IDENTIFY) {
-                    // Экран Identify (S6.C) с реальным каталогом и ориентацией
-                    val factory =
-                        remember(orientationRepository, locationRepository, catalogRepository, settings) {
-                            IdentifyViewModelFactory(
-                                orientationRepository = orientationRepository,
-                                locationRepository = locationRepository,
-                                catalogRepository = catalogRepository,
-                                settings = settings,
-                            )
-                        }
-                    IdentifyRoute(
-                        factory = factory,
-                        onOpenCard = { state -> navController.navigate(buildCardRouteFrom(state)) },
-                    )
+                    WithCatalog(catalogState) { catalogRepository ->
+                        // Экран Identify (S6.C) с реальным каталогом и ориентацией
+                        val factory =
+                            remember(orientationRepository, locationRepository, catalogRepository, settings) {
+                                IdentifyViewModelFactory(
+                                    orientationRepository = orientationRepository,
+                                    locationRepository = locationRepository,
+                                    catalogRepository = catalogRepository,
+                                    settings = settings,
+                                )
+                            }
+                        IdentifyRoute(
+                            factory = factory,
+                            onOpenCard = { state -> navController.navigate(buildCardRouteFrom(state)) },
+                        )
+                    }
                 }
                 composable(ROUTE_SETTINGS) {
                     SettingsRoute(
@@ -474,27 +499,31 @@ fun PointToSkyWearApp(
                 // Параметризованный экран карточки (S6.D)
                 cardDestination(locationRepository = locationRepository)
                 composable(ROUTE_ASTRO_DEBUG) {
-                    val factory =
-                        remember(orientationRepository, locationRepository, catalogRepository) {
-                            AstroDebugViewModelFactory(
-                                orientationRepository = orientationRepository,
-                                locationRepository = locationRepository,
-                                catalogRepository = catalogRepository,
-                            )
-                        }
-                    AstroDebugRoute(
-                        factory = factory,
-                    )
+                    WithCatalog(catalogState) { catalogRepository ->
+                        val factory =
+                            remember(orientationRepository, locationRepository, catalogRepository) {
+                                AstroDebugViewModelFactory(
+                                    orientationRepository = orientationRepository,
+                                    locationRepository = locationRepository,
+                                    catalogRepository = catalogRepository,
+                                )
+                            }
+                        AstroDebugRoute(
+                            factory = factory,
+                        )
+                    }
                 }
                 composable(ROUTE_CATALOG_DEBUG) {
-                    val factory: CatalogDebugViewModelFactory =
-                        remember(catalogRepository) {
-                            CatalogDebugViewModelFactory(catalogRepository)
-                        }
-                    CatalogDebugRoute(
-                        factory = factory,
-                        onBack = { navController.popBackStack() },
-                    )
+                    WithCatalog(catalogState) { catalogRepository ->
+                        val factory: CatalogDebugViewModelFactory =
+                            remember(catalogRepository) {
+                                CatalogDebugViewModelFactory(catalogRepository)
+                            }
+                        CatalogDebugRoute(
+                            factory = factory,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
                 }
 
                 composable(ROUTE_SENSORS_DEBUG) {
