@@ -21,6 +21,7 @@ import dev.pointtosky.mobile.datalayer.MobileBridge
 import dev.pointtosky.mobile.datalayer.v1.DlJson
 import dev.pointtosky.mobile.datalayer.v1.DlMessageSender
 import dev.pointtosky.mobile.datalayer.v1.DlReceiverService
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.search.SearchViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -86,7 +87,7 @@ class DataLayerE2ETest {
 
             val locationPrefs: LocationPrefs = LocationPrefs.fromContext(context)
             val cardViewModel =
-                CardViewModelFactory(cardId, CardRepository, locationPrefs)
+                CardViewModelFactory(cardId, CardRepository, locationPrefs, DeviceLocationRepository(context))
                     .create(CardViewModel::class.java)
 
             val cardState = cardViewModel.state.first { it is CardUiState.Ready } as CardUiState.Ready
