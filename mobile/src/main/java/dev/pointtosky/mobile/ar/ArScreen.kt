@@ -238,6 +238,13 @@ fun ArScreen(
                 }
 
                 overlay?.let {
+                    StarPointLayer(
+                        overlay = it,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                overlay?.let {
                     ConstellationLayer(
                         overlay = it,
                         modifier = Modifier.fillMaxSize(),
@@ -527,6 +534,29 @@ private fun AsterismLabel(
 }
 
 @Composable
+private fun StarPointLayer(
+    overlay: OverlayData,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val maxRadiusPx = STAR_POINT_MAX_RADIUS_DP.dp.toPx()
+        val minRadiusPx = STAR_POINT_MIN_RADIUS_DP.dp.toPx()
+        overlay.starPoints.forEach { star ->
+            val t = ((star.magnitude - STAR_MAG_BRIGHT) / (STAR_MAG_DIM - STAR_MAG_BRIGHT))
+                .coerceIn(0.0, 1.0)
+                .toFloat()
+            val radius = maxRadiusPx + (minRadiusPx - maxRadiusPx) * t
+            val alpha = STAR_POINT_ALPHA_MAX + (STAR_POINT_ALPHA_MIN - STAR_POINT_ALPHA_MAX) * t
+            drawCircle(
+                color = Color.White.copy(alpha = alpha),
+                radius = radius,
+                center = star.position,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ConstellationLayer(
     overlay: OverlayData,
     modifier: Modifier = Modifier,
@@ -748,8 +778,11 @@ internal fun calculateOverlay(
                 limit <= 0.0 || star.magnitude.toDouble() <= limit
             }
 
-    val objects =
+    // Project all visible stars (brightest-first so capping keeps the best ones).
+    val projectedStars: List<OverlayObject> =
         overlayStars
+            .sortedBy { it.magnitude }
+            .take(MAX_STAR_POINTS)
             .mapNotNull { star ->
                 val equatorial =
                     Equatorial(
@@ -764,8 +797,35 @@ internal fun calculateOverlay(
                     distance = projection.distance,
                     separationDeg = projection.separationDeg,
                 )
-            }.sortedBy { it.separationDeg }
-            .take(MAX_LABELS)
+            }
+
+    val starPoints: List<StarPointOverlay> =
+        projectedStars.map { StarPointOverlay(position = it.position, magnitude = it.magnitude) }
+
+    // Hybrid label selection: reticle-nearest always first, then brightest non-colliding.
+    val nearest = projectedStars.minByOrNull { it.separationDeg }
+    val labels = mutableListOf<OverlayObject>()
+    val placed = mutableListOf<Offset>()
+    if (nearest != null) {
+        labels += nearest
+        placed += nearest.position
+    }
+    for (candidate in projectedStars) {
+        if (candidate === nearest) continue
+        if (labels.size >= MAX_LABELS) break
+        val cx = candidate.position.x
+        val cy = candidate.position.y
+        val noCollision =
+            placed.all { p ->
+                val dx = (p.x - cx).toDouble()
+                val dy = (p.y - cy).toDouble()
+                sqrt(dx * dx + dy * dy) >= MIN_LABEL_SPACING_PX
+            }
+        if (noCollision) {
+            labels += candidate
+            placed += candidate.position
+        }
+    }
 
     val constellationSegments =
         if (state.showConstellations) {
@@ -851,8 +911,9 @@ internal fun calculateOverlay(
     return OverlayData(
         reticleHorizontal = reticleHorizontal,
         reticleEquatorial = reticleEquatorial,
-        labels = objects,
-        nearestLabel = objects.firstOrNull(),
+        labels = labels,
+        nearestLabel = nearest,
+        starPoints = starPoints,
         constellationSegments = constellationSegments,
         asterismSegments = asterismSegments,
         asterismLabels = asterismLabels,
@@ -871,11 +932,18 @@ internal data class OverlayObject(
 )
 
 @VisibleForTesting
+internal data class StarPointOverlay(
+    val position: Offset,
+    val magnitude: Double,
+)
+
+@VisibleForTesting
 internal data class OverlayData(
     val reticleHorizontal: Horizontal,
     val reticleEquatorial: Equatorial,
     val labels: List<OverlayObject>,
     val nearestLabel: OverlayObject?,
+    val starPoints: List<StarPointOverlay>,
     val constellationSegments: List<ScreenLineSegment>,
     val asterismSegments: List<ScreenLineSegment>,
     val asterismLabels: List<AsterismLabelOverlay>,
@@ -992,4 +1060,16 @@ private fun formatAngle(
 // Base vertical FOV; horizontal FOV is derived from the current aspect ratio.
 private const val VERTICAL_FOV_DEG = 56.0
 private const val MAX_SCREEN_DISTANCE = 1.2
-private const val MAX_LABELS = 24
+
+// Label declutter: max labels on screen; minimum screen-distance between any two label anchors.
+private const val MAX_LABELS = 9
+private const val MIN_LABEL_SPACING_PX = 108.0
+
+// Star-point layer: cap visible stars for Canvas perf; dot radius/alpha range by magnitude.
+private const val MAX_STAR_POINTS = 1500
+private const val STAR_POINT_MAX_RADIUS_DP = 4f
+private const val STAR_POINT_MIN_RADIUS_DP = 1.5f
+private const val STAR_MAG_BRIGHT = 0.0
+private const val STAR_MAG_DIM = 6.0
+private const val STAR_POINT_ALPHA_MAX = 1.0f
+private const val STAR_POINT_ALPHA_MIN = 0.5f
