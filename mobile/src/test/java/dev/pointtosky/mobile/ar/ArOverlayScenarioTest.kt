@@ -48,7 +48,7 @@ class ArOverlayScenarioTest {
         val farTarget =
             StarRecord(
                 id = StarId(2),
-                rightAscensionDeg = (reticleEquatorial.raDeg + 1.0).toFloat(),
+                rightAscensionDeg = (reticleEquatorial.raDeg + 15.0).toFloat(),
                 declinationDeg = reticleEquatorial.decDeg.toFloat(),
                 magnitude = 1.0f,
                 constellationId = constellationId,
