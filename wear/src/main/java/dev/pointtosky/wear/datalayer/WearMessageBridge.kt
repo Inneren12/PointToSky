@@ -1,8 +1,8 @@
 package dev.pointtosky.wear.datalayer
 
 import android.content.Context
-import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
+import kotlinx.coroutines.tasks.await
 
 object WearMessageBridge {
     /**
@@ -10,17 +10,17 @@ object WearMessageBridge {
      * Временная упрощённая версия (без ACK), чтобы исключить зависимость от удалённых классов.
      * Позже можно снова переключить на надёжный мост v1 (ACK + fallback).
      */
-    fun sendToPhone(
+    suspend fun sendToPhone(
         context: Context,
         path: String,
         payload: ByteArray,
     ) {
         runCatching {
             val nodeClient = Wearable.getNodeClient(context)
-            val nodes = Tasks.await(nodeClient.connectedNodes)
+            val nodes = nodeClient.connectedNodes.await()
             val msg = Wearable.getMessageClient(context)
             nodes.forEach { node ->
-                runCatching { Tasks.await(msg.sendMessage(node.id, path, payload)) }
+                runCatching { msg.sendMessage(node.id, path, payload).await() }
             }
         }
     }
