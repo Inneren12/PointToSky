@@ -125,7 +125,7 @@ open class TonightTileService : TileService() {
 
     /** Best-effort mirror of the model to the phone; off-main, never blocks the tile response. */
     private fun launchMirroring(appContext: Context, model: TonightTileModel) {
-        tileScope.launch {
+        tileScope.launch(Dispatchers.IO) {
             runCatching {
                 val settings = AimIdentifySettingsDataStore(appContext)
                 if (settings.tileMirroringEnabledFlow.first()) {
