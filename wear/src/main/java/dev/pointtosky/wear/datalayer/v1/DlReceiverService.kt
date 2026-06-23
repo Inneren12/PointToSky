@@ -3,6 +3,7 @@ package dev.pointtosky.wear.datalayer.v1
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import dev.pointtosky.core.datalayer.PATH_SENSOR_HEADING
 import dev.pointtosky.core.logging.LogBus
 
 /**
@@ -27,7 +28,7 @@ class DlReceiverService : WearableListenerService() {
             return
         }
         val cid = DlJson.parseCid(data)
-        if (!cid.isNullOrBlank()) {
+        if (!cid.isNullOrBlank() && path != PATH_SENSOR_HEADING) {
             // Отбиваем ACK отправителю
             val ack = DlJson.buildAck(cid, ok = true)
             Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, DlPaths.ACK, ack)
