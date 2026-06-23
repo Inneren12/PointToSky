@@ -15,6 +15,7 @@ import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.datalayer.AimTargetOption
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -28,14 +29,16 @@ class CardViewModel(
     private val cardId: String,
     private val repository: CardRepository,
     private val locationPrefs: LocationPrefs,
+    private val deviceLocationRepository: DeviceLocationRepository,
     private val clock: () -> Instant = { Instant.now() },
 ) : ViewModel() {
     val state: StateFlow<CardUiState> =
         combine(
             repository.observe(cardId),
+            deviceLocationRepository.deviceLocationFlow,
             locationPrefs.manualPointFlow,
-        ) { entry, manualPoint ->
-            buildState(entry, manualPoint)
+        ) { entry, devicePoint, manualPoint ->
+            buildState(entry, manualPoint ?: devicePoint)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
@@ -44,15 +47,15 @@ class CardViewModel(
 
     private fun buildState(
         entry: CardRepository.Entry?,
-        manualPoint: GeoPoint?,
+        resolvedPoint: GeoPoint?,
     ): CardUiState {
         val readyEntry =
             (entry as? CardRepository.Entry.Ready)?.model
                 ?: return CardUiState.Error(CardErrorReason.NOT_ENOUGH_DATA)
         val equatorial = readyEntry.equatorial
         val computedHorizontal: Horizontal? =
-            if (equatorial != null && manualPoint != null) {
-                computeHorizontal(equatorial, manualPoint)
+            if (equatorial != null && resolvedPoint != null) {
+                computeHorizontal(equatorial, resolvedPoint)
             } else {
                 null
             }
@@ -212,6 +215,7 @@ class CardViewModelFactory(
     private val cardId: String,
     private val repository: CardRepository,
     private val locationPrefs: LocationPrefs,
+    private val deviceLocationRepository: DeviceLocationRepository,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -220,6 +224,7 @@ class CardViewModelFactory(
                 cardId = cardId,
                 repository = repository,
                 locationPrefs = locationPrefs,
+                deviceLocationRepository = deviceLocationRepository,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class ${modelClass.name}")
