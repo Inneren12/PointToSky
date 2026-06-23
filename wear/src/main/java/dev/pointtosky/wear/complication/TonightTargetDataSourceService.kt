@@ -29,7 +29,6 @@ import dev.pointtosky.wear.tile.tonight.TonightTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
@@ -49,8 +48,8 @@ class TonightTargetDataSourceService : BaseComplicationDataSourceService() {
         RealTonightProvider(
             context = this,
             zoneRepo = zoneRepo,
-            // Лямбда у провайдера не suspend → забираем одно значение из Flow блокирующе
-            getLastKnownLocation = { runBlocking(Dispatchers.IO) { locationPrefs.manualPointFlow.firstOrNull() } },
+            // Лямбда у провайдера suspend → читаем одно значение из Flow на IO без блокировки потока
+            getLastKnownLocation = { withContext(Dispatchers.IO) { locationPrefs.manualPointFlow.firstOrNull() } },
         )
     }
 
