@@ -7,6 +7,7 @@ import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AppOpenMessage
 import dev.pointtosky.core.datalayer.DATA_LAYER_PROTOCOL_VERSION
 import dev.pointtosky.core.datalayer.JsonCodec
+import dev.pointtosky.core.datalayer.PATH_ACK
 import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
 import dev.pointtosky.core.datalayer.PATH_APP_OPEN
 import dev.pointtosky.core.datalayer.PATH_SENSOR_HEADING
@@ -28,7 +29,7 @@ class DlReceiverService : WearableListenerService() {
             LogBus.event("dl_recv_empty", mapOf("path" to path))
             return
         }
-        if (path == DlPaths.ACK) {
+        if (path == PATH_ACK) {
             val (refCid, ok) = DlJson.parseAck(data)
             if (!refCid.isNullOrBlank()) {
                 LogBus.event("dl_ack", mapOf("refCid" to refCid, "ok" to (ok ?: true)))
@@ -40,7 +41,7 @@ class DlReceiverService : WearableListenerService() {
         if (!cid.isNullOrBlank() && path != PATH_SENSOR_HEADING) {
             // Отбиваем ACK отправителю
             val ack = DlJson.buildAck(cid, ok = true)
-            Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, DlPaths.ACK, ack)
+            Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, PATH_ACK, ack)
         }
         LogBus.event("dl_recv", mapOf("path" to path, "cid" to cid.orEmpty()))
         // Прямой диспатч по пути — работает и из фона: сервис поднимается Play Services,
