@@ -38,23 +38,34 @@ fun WearOnboardingScreen(
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-            ) == PackageManager.PERMISSION_GRANTED,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ) == PackageManager.PERMISSION_GRANTED,
         )
     }
 
     val locationLauncher =
         rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestPermission(),
-        ) { granted ->
-            locationGranted = granted
+            contract = ActivityResultContracts.RequestMultiplePermissions(),
+        ) { result ->
+            locationGranted =
+                result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                    result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         }
 
     LaunchedEffect(Unit) {
-        locationGranted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
+        locationGranted =
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ) == PackageManager.PERMISSION_GRANTED
     }
 
     val listState = rememberScalingLazyListState()
@@ -111,7 +122,14 @@ fun WearOnboardingScreen(
                 )
             } else {
                 Button(
-                    onClick = { locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
+                    onClick = {
+                        locationLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION,
+                            ),
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(text = stringResource(id = R.string.onboarding_location_button))

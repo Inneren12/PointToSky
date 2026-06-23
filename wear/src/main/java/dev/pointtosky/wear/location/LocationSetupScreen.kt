@@ -309,11 +309,16 @@ private fun rememberPermissionUiState(): PermissionUiState {
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions(),
         ) { result ->
-            granted = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            granted =
+                result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                    result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
             if (!granted) {
                 val rationale =
                     activity?.let {
                         ActivityCompat.shouldShowRequestPermissionRationale(
+                            it,
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                        ) || ActivityCompat.shouldShowRequestPermissionRationale(
                             it,
                             Manifest.permission.ACCESS_COARSE_LOCATION,
                         )
@@ -335,6 +340,9 @@ private fun rememberPermissionUiState(): PermissionUiState {
                             activity?.let {
                                 ActivityCompat.shouldShowRequestPermissionRationale(
                                     it,
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                ) || ActivityCompat.shouldShowRequestPermissionRationale(
+                                    it,
                                     Manifest.permission.ACCESS_COARSE_LOCATION,
                                 )
                             } ?: false
@@ -352,7 +360,12 @@ private fun rememberPermissionUiState(): PermissionUiState {
         requestPermission = {
             hasRequested = true
             shouldOpenSettings = false
-            launcher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION))
+            launcher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ),
+            )
         },
         openSettings = { openAppSettings(context) },
     )
@@ -388,8 +401,12 @@ private fun Double.formatCoordinate(): String = String.format(Locale.US, "%.5f",
 private fun isLocationPermissionGranted(context: Context): Boolean =
     ContextCompat.checkSelfPermission(
         context,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        Manifest.permission.ACCESS_FINE_LOCATION,
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
 private fun openAppSettings(context: Context) {
     val intent =
