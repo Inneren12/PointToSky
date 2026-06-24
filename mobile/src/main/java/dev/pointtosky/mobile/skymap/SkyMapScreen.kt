@@ -47,7 +47,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.toIntSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
@@ -178,11 +177,18 @@ private fun SkyMapContent(
             formatter.format(state.instant.atZone(ZoneId.systemDefault()))
         }
 
-    val starPositions =
-        remember(state.stars, canvasSize, scale, offset) {
+    val baseStarPositions =
+        remember(state.stars, canvasSize) {
             state.stars.mapNotNull { star ->
-                val position = projectToCanvas(star.horizontal, canvasSize, scale, offset)
-                if (position != null) star to position else null
+                projectBase(star.horizontal, canvasSize)?.let { star to it }
+            }
+        }
+    val baseConstellationPositions =
+        remember(state.constellations, canvasSize) {
+            state.constellations.map { constellation ->
+                constellation.polygons.map { polygon ->
+                    polygon.map { point -> projectBase(point, canvasSize) }
+                }
             }
         }
     val tapRadiusPx = with(density) { 24.dp.toPx() }
@@ -210,26 +216,26 @@ private fun SkyMapContent(
                             scale = newScale
                             offset = newOffset
                         }
-                    }.pointerInput(starPositions, tapRadiusPx) {
+                    }.pointerInput(baseStarPositions, tapRadiusPx) {
                         detectTapGestures { tap ->
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val tapBase = (tap - center - offset) / scale
+                            val hitRadius = tapRadiusPx / scale
                             val nearest =
-                                starPositions.minByOrNull { (_, position) ->
-                                    (position - tap).getDistanceSquared()
+                                baseStarPositions.minByOrNull { (_, base) ->
+                                    (base - tapBase).getDistanceSquared()
                                 }
-                            if (nearest != null) {
-                                val distance = (nearest.second - tap).getDistance()
-                                if (distance <= tapRadiusPx) {
-                                    selectedId = nearest.first.id
-                                    onOpenCard()
-                                }
+                            if (nearest != null && (nearest.second - tapBase).getDistance() <= hitRadius) {
+                                selectedId = nearest.first.id
+                                onOpenCard()
                             }
                         }
                     },
         ) {
             drawSkyBackground(scale, offset, backgroundColor)
             drawAltitudeGrid(scale, offset, gridColor)
-            drawConstellations(state.constellations, scale, offset, constellationColor)
-            drawStars(starPositions, selectedId, starColor, highlightColor)
+            drawConstellations(baseConstellationPositions, scale, offset, constellationColor)
+            drawStars(baseStarPositions, selectedId, starColor, highlightColor, scale, offset)
         }
 
         Column(
@@ -353,20 +359,21 @@ private fun DrawScope.drawAltitudeGrid(
 }
 
 private fun DrawScope.drawConstellations(
-    constellations: List<ConstellationProjection>,
+    baseConstellationPositions: List<List<List<Offset?>>>,
     scale: Float,
     offset: Offset,
     color: Color,
 ) {
     val path = Path()
     val stroke = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-    constellations.forEach { constellation ->
-        constellation.polygons.forEach { polygon ->
+    val center = Offset(size.width / 2f, size.height / 2f)
+    baseConstellationPositions.forEach { polygons ->
+        polygons.forEach { polygon ->
             path.reset()
             var started = false
-            polygon.forEach { point ->
-                val position = projectToCanvas(point, size.toIntSize(), scale, offset)
-                if (position != null) {
+            polygon.forEach { base ->
+                if (base != null) {
+                    val position = center + base * scale + offset
                     if (!started) {
                         path.moveTo(position.x, position.y)
                         started = true
@@ -385,14 +392,18 @@ private fun DrawScope.drawConstellations(
 }
 
 private fun DrawScope.drawStars(
-    starPositions: List<Pair<ProjectedStar, Offset>>,
+    baseStarPositions: List<Pair<ProjectedStar, Offset>>,
     selectedId: Int?,
     starColor: Color,
     selectedColor: Color,
+    scale: Float,
+    offset: Offset,
 ) {
     val baseRadius = 4.dp.toPx()
+    val center = Offset(size.width / 2f, size.height / 2f)
 
-    starPositions.forEach { (star, projected) ->
+    baseStarPositions.forEach { (star, base) ->
+        val projected = center + base * scale + offset
         val brightness = (STAR_BASE_MAG - star.magnitude).toFloat().coerceAtLeast(0.3f)
         val radius = baseRadius * (0.4f + 0.3f * brightness)
         drawCircle(
@@ -411,20 +422,18 @@ private fun DrawScope.drawStars(
     }
 }
 
-private fun projectToCanvas(
+private fun projectBase(
     horizontal: Horizontal,
     size: IntSize,
-    scale: Float,
-    offset: Offset,
 ): Offset? {
     if (size.width == 0 || size.height == 0) return null
     val radius = min(size.width, size.height) / 2f
     val azRad = Math.toRadians(horizontal.azDeg)
     val normalized = ((90.0 - horizontal.altDeg) / 90.0).toFloat()
-    val x = sin(azRad).toFloat() * normalized * radius * scale + offset.x
-    val y = -cos(azRad).toFloat() * normalized * radius * scale + offset.y
-    val center = Offset(size.width / 2f, size.height / 2f)
-    return center + Offset(x, y)
+    return Offset(
+        x = sin(azRad).toFloat() * normalized * radius,
+        y = -cos(azRad).toFloat() * normalized * radius,
+    )
 }
 
 private fun formatCoordinate(
