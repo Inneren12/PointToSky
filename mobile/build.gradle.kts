@@ -209,6 +209,7 @@ dependencies {
 
     implementation(libs.play.services.wearable)
     implementation(libs.play.services.location)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)

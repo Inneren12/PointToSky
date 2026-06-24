@@ -1,9 +1,9 @@
 package dev.pointtosky.mobile.datalayer
 
 import android.content.Context
-import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
 import dev.pointtosky.mobile.logging.MobileLog
+import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
 /**
@@ -49,10 +49,10 @@ object MobileBridge {
             )
 
             @Throws(Exception::class)
-            fun connectedNodes(): List<Node>
+            suspend fun connectedNodes(): List<Node>
 
             @Throws(Exception::class)
-            fun sendMessage(
+            suspend fun sendMessage(
                 nodeId: String,
                 path: String,
                 payload: ByteArray,
@@ -66,7 +66,7 @@ object MobileBridge {
         /**
          * Отправляем всем подключённым нодам. Возвращаем примитивный Ack (без настоящего подтверждения).
          */
-        fun send(
+        suspend fun send(
             path: String,
             build: (cid: String) -> ByteArray,
         ): Ack? {
@@ -118,17 +118,17 @@ object MobileBridge {
         private class WearTransport(
             private val context: Context,
         ) : Transport {
-            override fun connectedNodes(): List<Transport.Node> {
-                val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+            override suspend fun connectedNodes(): List<Transport.Node> {
+                val nodes = Wearable.getNodeClient(context).connectedNodes.await()
                 return nodes.map { node -> Transport.Node(node.id) }
             }
 
-            override fun sendMessage(
+            override suspend fun sendMessage(
                 nodeId: String,
                 path: String,
                 payload: ByteArray,
             ) {
-                Tasks.await(Wearable.getMessageClient(context).sendMessage(nodeId, path, payload))
+                Wearable.getMessageClient(context).sendMessage(nodeId, path, payload).await()
             }
         }
     }

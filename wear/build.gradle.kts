@@ -182,6 +182,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.runtime:runtime")
     implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     implementation("androidx.wear.watchface:watchface-complications-data-source:1.2.1")
     implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")

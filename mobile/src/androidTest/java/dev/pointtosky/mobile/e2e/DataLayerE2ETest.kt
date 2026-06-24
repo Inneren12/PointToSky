@@ -188,10 +188,10 @@ class DataLayerE2ETest {
 
         val messages = CopyOnWriteArrayList<Message>()
 
-        override fun connectedNodes(): List<MobileBridge.Sender.Transport.Node> =
+        override suspend fun connectedNodes(): List<MobileBridge.Sender.Transport.Node> =
             listOf(MobileBridge.Sender.Transport.Node("wear"))
 
-        override fun sendMessage(
+        override suspend fun sendMessage(
             nodeId: String,
             path: String,
             payload: ByteArray,

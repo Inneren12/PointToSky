@@ -16,7 +16,7 @@ import dev.pointtosky.core.datalayer.PATH_AIM_SET_TARGET
  *   MobileBridge.Sender.send(path) { cid -> ByteArray }
  */
 object AimSender {
-    fun sendEquatorial(
+    suspend fun sendEquatorial(
         bridge: MobileBridge.Sender,
         raDeg: Double,
         decDeg: Double,
@@ -31,7 +31,7 @@ object AimSender {
             JsonCodec.encode(msg)
         }
 
-    fun sendBody(
+    suspend fun sendBody(
         bridge: MobileBridge.Sender,
         bodyName: String,
     ): MobileBridge.Sender.Ack? =
@@ -45,7 +45,7 @@ object AimSender {
             JsonCodec.encode(msg)
         }
 
-    fun sendStar(
+    suspend fun sendStar(
         bridge: MobileBridge.Sender,
         id: Int,
         raDeg: Double,
