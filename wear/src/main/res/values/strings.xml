@@ -46,6 +46,7 @@
     <string name="location_setup_request_permission">Allow location</string>
     <string name="location_setup_open_settings">Open settings</string>
     <string name="location_setup_permission_granted">Location permission is already granted.</string>
+    <string name="location_setup_use_precise">Use precise location</string>
     <string name="location_setup_manual_toggle">Enter coordinates manually</string>
     <string name="location_setup_manual_hint">Latitude and longitude in decimal degrees, e.g. 55.7558 / 37.6176</string>
     <string name="location_setup_lat_label">Latitude</string>
