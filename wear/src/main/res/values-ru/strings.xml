@@ -46,6 +46,7 @@
     <string name="location_setup_request_permission">Разрешить локацию</string>
     <string name="location_setup_open_settings">Открыть настройки</string>
     <string name="location_setup_permission_granted">Разрешение на геолокацию уже выдано.</string>
+    <string name="location_setup_use_precise">Использовать точную локацию</string>
     <string name="location_setup_manual_toggle">Ввести координаты вручную</string>
     <string name="location_setup_manual_hint">Широта и долгота в десятичных градусах, например 55.7558 / 37.6176</string>
     <string name="location_setup_lat_label">Широта</string>

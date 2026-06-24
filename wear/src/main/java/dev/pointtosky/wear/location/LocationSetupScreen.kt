@@ -114,16 +114,7 @@ fun LocationSetupScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        if (permissionState.granted) {
-            item {
-                Text(
-                    text = stringResource(id = R.string.location_setup_permission_granted),
-                    style = MaterialTheme.typography.body2,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        } else {
+        if (!permissionState.granted) {
             item {
                 Button(
                     onClick = permissionState.requestPermission,
@@ -140,6 +131,26 @@ fun LocationSetupScreen(
                         label = { Text(text = stringResource(id = R.string.location_setup_open_settings)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+            }
+        } else {
+            item {
+                Text(
+                    text = stringResource(id = R.string.location_setup_permission_granted),
+                    style = MaterialTheme.typography.body2,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (!permissionState.preciseGranted) {
+                item {
+                    Button(
+                        onClick = permissionState.requestPermission,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.secondaryButtonColors(),
+                    ) {
+                        Text(text = stringResource(id = R.string.location_setup_use_precise))
+                    }
                 }
             }
         }
@@ -291,6 +302,7 @@ fun LocationSetupScreen(
 
 private data class PermissionUiState(
     val granted: Boolean,
+    val preciseGranted: Boolean,
     val shouldOpenSettings: Boolean,
     val requestPermission: () -> Unit,
     val openSettings: () -> Unit,
@@ -302,6 +314,14 @@ private fun rememberPermissionUiState(): PermissionUiState {
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = remember(context) { context.findActivity() }
     var granted by remember { mutableStateOf(isLocationPermissionGranted(context)) }
+    var preciseGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED,
+        )
+    }
     var shouldOpenSettings by remember { mutableStateOf(false) }
     var hasRequested by remember { mutableStateOf(false) }
 
@@ -312,6 +332,7 @@ private fun rememberPermissionUiState(): PermissionUiState {
             granted =
                 result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                     result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            preciseGranted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
             if (!granted) {
                 val rationale =
                     activity?.let {
@@ -335,6 +356,11 @@ private fun rememberPermissionUiState(): PermissionUiState {
                 if (event == Lifecycle.Event.ON_RESUME) {
                     val grantedNow = isLocationPermissionGranted(context)
                     granted = grantedNow
+                    preciseGranted =
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                     if (!grantedNow && hasRequested) {
                         val rationale =
                             activity?.let {
@@ -356,6 +382,7 @@ private fun rememberPermissionUiState(): PermissionUiState {
 
     return PermissionUiState(
         granted = granted,
+        preciseGranted = preciseGranted,
         shouldOpenSettings = shouldOpenSettings,
         requestPermission = {
             hasRequested = true
