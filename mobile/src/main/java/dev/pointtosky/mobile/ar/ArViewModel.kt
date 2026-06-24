@@ -251,8 +251,8 @@ sealed interface ArUiState {
         val asterismUiState: AsterismUiState,
         val magLimit: Double,
         val showStarLabels: Boolean,
-        val showStarPoints: Boolean,
-        val reticleTargetOnly: Boolean,
+        val showStarPoints: Boolean = true,
+        val reticleTargetOnly: Boolean = false,
     ) : ArUiState
 }
 

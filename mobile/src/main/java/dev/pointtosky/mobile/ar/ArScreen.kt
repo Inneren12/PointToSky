@@ -257,11 +257,13 @@ fun ArScreen(
                     )
                 }
 
-                overlay?.let {
-                    ReticleTargetHighlight(
-                        overlay = it,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                if (state.reticleTargetOnly) {
+                    overlay?.let {
+                        ReticleTargetHighlight(
+                            overlay = it,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
 
                 Reticle(modifier = Modifier.align(Alignment.Center))
@@ -283,12 +285,14 @@ fun ArScreen(
                     )
                 }
 
-                overlay?.asterismLabels?.forEach { label ->
-                    AsterismLabel(
-                        data = label,
-                        modifier = Modifier.align(Alignment.TopStart),
-                        rollDegrees = labelRoll,
-                    )
+                if (!state.reticleTargetOnly) {
+                    overlay?.asterismLabels?.forEach { label ->
+                        AsterismLabel(
+                            data = label,
+                            modifier = Modifier.align(Alignment.TopStart),
+                            rollDegrees = labelRoll,
+                        )
+                    }
                 }
 
                 var settingsVisible by remember { mutableStateOf(false) }
