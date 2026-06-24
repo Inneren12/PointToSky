@@ -130,6 +130,8 @@
     <string name="ar_mag_limit_title">Max magnitude: %1$s</string>
     <string name="ar_settings_content_desc">AR settings</string>
     <string name="ar_hide_star_labels">Hide star names</string>
+    <string name="ar_show_star_points">Show star points</string>
+    <string name="ar_reticle_target_only">Reticle target only</string>
     <string name="settings_title">Settings</string>
     <string name="settings_mirror_title">Mirror to phone</string>
     <string name="settings_mirror_desc">Show Tonight tile data on the phone.</string>

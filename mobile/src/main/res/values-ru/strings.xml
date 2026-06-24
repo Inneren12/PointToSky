@@ -123,6 +123,8 @@
     <string name="ar_set_target_button">Выбрать %1$s целью на часах</string>
     <string name="ar_label_meta">mag %1$.1f • Δ%2$.1f°</string>
     <string name="ar_unknown_object">Неизвестный объект</string>
+    <string name="ar_show_star_points">Показывать точки звёзд</string>
+    <string name="ar_reticle_target_only">Только цель в прицеле</string>
     <string name="settings_title">Настройки</string>
     <string name="settings_mirror_title">Дублирование на телефон</string>
     <string name="settings_mirror_desc">Отображать данные тайла Tonight на телефоне.</string>

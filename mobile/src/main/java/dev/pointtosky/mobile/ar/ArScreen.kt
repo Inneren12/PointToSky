@@ -109,6 +109,8 @@ fun ArRoute(
         resolveConstellation = viewModel::resolveConstellationId,
         onMagLimitChange = viewModel::setMagLimit,
         onShowStarLabelsToggle = viewModel::setShowStarLabels,
+        onShowStarPointsToggle = viewModel::setShowStarPoints,
+        onReticleTargetOnlyToggle = viewModel::setReticleTargetOnly,
         onBack = onBack,
         onSetTarget = { target ->
             val option =
@@ -150,6 +152,8 @@ fun ArScreen(
     resolveConstellation: (Equatorial) -> ConstellationId?,
     onMagLimitChange: (Double) -> Unit,
     onShowStarLabelsToggle: (Boolean) -> Unit,
+    onShowStarPointsToggle: (Boolean) -> Unit,
+    onReticleTargetOnlyToggle: (Boolean) -> Unit,
     onBack: () -> Unit,
     onSetTarget: (ArTarget) -> Unit,
     modifier: Modifier = Modifier,
@@ -237,15 +241,24 @@ fun ArScreen(
                     }
                 }
 
+                if (state.showStarPoints && !state.reticleTargetOnly) {
+                    overlay?.let {
+                        StarPointLayer(
+                            overlay = it,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+
                 overlay?.let {
-                    StarPointLayer(
+                    ConstellationLayer(
                         overlay = it,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
 
                 overlay?.let {
-                    ConstellationLayer(
+                    ReticleTargetHighlight(
                         overlay = it,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -257,14 +270,17 @@ fun ArScreen(
                 // while the projected constellation rotates with device roll (portrait-locked UI).
                 val labelRoll = rotationFrame?.let { deviceRollDegrees(it.rotationMatrix) } ?: 0f
 
-                if (state.showStarLabels) {
-                    overlay?.labels?.forEach { label ->
-                        ArObjectLabel(
-                            data = label,
-                            modifier = Modifier.align(Alignment.TopStart),
-                            rollDegrees = labelRoll,
-                        )
-                    }
+                val labelsToShow = when {
+                    state.reticleTargetOnly -> overlay?.nearestLabel?.let { listOf(it) }.orEmpty()
+                    state.showStarLabels -> overlay?.labels.orEmpty()
+                    else -> emptyList()
+                }
+                labelsToShow.forEach { label ->
+                    ArObjectLabel(
+                        data = label,
+                        modifier = Modifier.align(Alignment.TopStart),
+                        rollDegrees = labelRoll,
+                    )
                 }
 
                 overlay?.asterismLabels?.forEach { label ->
@@ -298,10 +314,14 @@ fun ArScreen(
                         showAsterisms = state.showAsterisms,
                         magLimit = state.magLimit,
                         showStarLabels = state.showStarLabels,
+                        showStarPoints = state.showStarPoints,
+                        reticleTargetOnly = state.reticleTargetOnly,
                         onConstellationsToggle = onConstellationsToggle,
                         onAsterismsToggle = onAsterismsToggle,
                         onMagLimitChange = onMagLimitChange,
                         onShowStarLabelsToggle = onShowStarLabelsToggle,
+                        onShowStarPointsToggle = onShowStarPointsToggle,
+                        onReticleTargetOnlyToggle = onReticleTargetOnlyToggle,
                         modifier =
                             Modifier
                                 .align(Alignment.TopEnd)
@@ -557,6 +577,22 @@ private fun StarPointLayer(
 }
 
 @Composable
+private fun ReticleTargetHighlight(
+    overlay: OverlayData,
+    modifier: Modifier = Modifier,
+) {
+    val nearest = overlay.nearestLabel ?: return
+    Canvas(modifier = modifier) {
+        drawCircle(
+            color = Color(0xFFFFEB3B).copy(alpha = 0.85f),
+            radius = 20.dp.toPx(),
+            center = nearest.position,
+            style = Stroke(width = 2.dp.toPx()),
+        )
+    }
+}
+
+@Composable
 private fun ConstellationLayer(
     overlay: OverlayData,
     modifier: Modifier = Modifier,
@@ -600,10 +636,14 @@ private fun ArControlsPanel(
     showAsterisms: Boolean,
     magLimit: Double,
     showStarLabels: Boolean,
+    showStarPoints: Boolean,
+    reticleTargetOnly: Boolean,
     onConstellationsToggle: (Boolean) -> Unit,
     onAsterismsToggle: (Boolean) -> Unit,
     onMagLimitChange: (Double) -> Unit,
     onShowStarLabelsToggle: (Boolean) -> Unit,
+    onShowStarPointsToggle: (Boolean) -> Unit,
+    onReticleTargetOnlyToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -627,6 +667,16 @@ private fun ArControlsPanel(
             title = stringResource(R.string.ar_hide_star_labels),
             checked = !showStarLabels,
             onCheckedChange = { hide -> onShowStarLabelsToggle(!hide) },
+        )
+        ToggleRow(
+            title = stringResource(R.string.ar_show_star_points),
+            checked = showStarPoints,
+            onCheckedChange = onShowStarPointsToggle,
+        )
+        ToggleRow(
+            title = stringResource(R.string.ar_reticle_target_only),
+            checked = reticleTargetOnly,
+            onCheckedChange = onReticleTargetOnlyToggle,
         )
     }
 }

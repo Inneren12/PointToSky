@@ -44,6 +44,8 @@ class ArViewModel(
     private val showAsterisms = MutableStateFlow(true)
     private val magLimit = MutableStateFlow<Double>(6.0)
     private val showStarLabels = MutableStateFlow(true)
+    private val showStarPoints = MutableStateFlow(true)
+    private val reticleTargetOnly = MutableStateFlow(false)
     private val asterismState =
         MutableStateFlow(
             AsterismUiState(
@@ -79,6 +81,8 @@ class ArViewModel(
             asterismState,
             magLimit,
             showStarLabels,
+            showStarPoints,
+            reticleTargetOnly,
         ) { values: Array<Any?> ->
             @Suppress("UNCHECKED_CAST")
             val stars = values[0] as List<ArStar>
@@ -90,6 +94,8 @@ class ArViewModel(
             val asterisms = values[6] as AsterismUiState
             val magLimitValue = values[7] as Double
             val showStarLabelsValue = values[8] as Boolean
+            val showStarPointsValue = values[9] as Boolean
+            val reticleTargetOnlyValue = values[10] as Boolean
 
             buildState(
                 stars = stars,
@@ -101,6 +107,8 @@ class ArViewModel(
                 asterismUiState = asterisms,
                 magLimit = magLimitValue,
                 showStarLabels = showStarLabelsValue,
+                showStarPoints = showStarPointsValue,
+                reticleTargetOnly = reticleTargetOnlyValue,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -130,6 +138,8 @@ class ArViewModel(
         asterismUiState: AsterismUiState,
         magLimit: Double,
         showStarLabels: Boolean,
+        showStarPoints: Boolean,
+        reticleTargetOnly: Boolean,
     ): ArUiState {
         val lstDeg = lstAt(instant, location.point.lonDeg).lstDeg
         return ArUiState.Ready(
@@ -144,11 +154,21 @@ class ArViewModel(
             asterismUiState = asterismUiState,
             magLimit = magLimit,
             showStarLabels = showStarLabels,
+            showStarPoints = showStarPoints,
+            reticleTargetOnly = reticleTargetOnly,
         )
     }
 
     fun setShowConstellations(enabled: Boolean) {
         showConstellations.value = enabled
+    }
+
+    fun setShowStarPoints(enabled: Boolean) {
+        showStarPoints.value = enabled
+    }
+
+    fun setReticleTargetOnly(enabled: Boolean) {
+        reticleTargetOnly.value = enabled
     }
 
     fun setShowAsterisms(enabled: Boolean) {
@@ -231,6 +251,8 @@ sealed interface ArUiState {
         val asterismUiState: AsterismUiState,
         val magLimit: Double,
         val showStarLabels: Boolean,
+        val showStarPoints: Boolean,
+        val reticleTargetOnly: Boolean,
     ) : ArUiState
 }
 
