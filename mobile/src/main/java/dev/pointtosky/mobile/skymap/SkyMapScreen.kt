@@ -57,6 +57,7 @@ import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.location.DeviceLocationRepository
+import dev.pointtosky.mobile.render.BvColor
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -193,10 +194,11 @@ private fun SkyMapContent(
         }
     val tapRadiusPx = with(density) { 24.dp.toPx() }
 
-    val backgroundColor = MaterialTheme.colorScheme.surfaceVariant
-    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
-    val constellationColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
-    val starColor = Color.White
+    // Dark sky palette so B−V star colors read well (independent of the app's light Material theme).
+    val skyDiskColor = Color(0xFF0E1430)
+    val skySurroundColor = Color(0xFF05070F)
+    val gridColor = Color.White.copy(alpha = 0.12f)
+    val constellationColor = Color(0xFF7FA8D9).copy(alpha = 0.5f)
     val highlightColor = MaterialTheme.colorScheme.tertiary
 
     val selectedStar = state.stars.firstOrNull { it.id == selectedId }
@@ -206,7 +208,7 @@ private fun SkyMapContent(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(skySurroundColor)
                     .onSizeChanged { canvasSize = it }
                     .pointerInput(state.stars, scale, offset) {
                         detectTransformGestures { centroid, pan, zoom, _ ->
@@ -232,10 +234,10 @@ private fun SkyMapContent(
                         }
                     },
         ) {
-            drawSkyBackground(scale, offset, backgroundColor)
+            drawSkyBackground(scale, offset, skyDiskColor)
             drawAltitudeGrid(scale, offset, gridColor)
             drawConstellations(baseConstellationPositions, scale, offset, constellationColor)
-            drawStars(baseStarPositions, selectedId, starColor, highlightColor, scale, offset)
+            drawStars(baseStarPositions, selectedId, highlightColor, scale, offset)
         }
 
         Column(
@@ -394,7 +396,6 @@ private fun DrawScope.drawConstellations(
 private fun DrawScope.drawStars(
     baseStarPositions: List<Pair<ProjectedStar, Offset>>,
     selectedId: Int?,
-    starColor: Color,
     selectedColor: Color,
     scale: Float,
     offset: Offset,
@@ -406,8 +407,9 @@ private fun DrawScope.drawStars(
         val projected = center + base * scale + offset
         val brightness = (STAR_BASE_MAG - star.magnitude).toFloat().coerceAtLeast(0.3f)
         val radius = baseRadius * (0.4f + 0.3f * brightness)
+        val alpha = (0.55f + 0.18f * brightness).coerceIn(0.55f, 1f)
         drawCircle(
-            color = starColor,
+            color = BvColor.toColor(star.bv).copy(alpha = alpha),
             radius = radius,
             center = projected,
         )

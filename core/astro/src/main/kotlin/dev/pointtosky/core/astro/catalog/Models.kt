@@ -42,6 +42,7 @@ data class StarRecord(
     val constellationId: ConstellationId,
     val flags: Int,
     val name: String?,
+    val bv: Float? = null, // Johnson B−V color index; null if unknown
 )
 
 data class AsterismPoly(

@@ -47,6 +47,38 @@ class PtskCatalogLoaderTest {
     }
 
     @Test
+    fun `parser maps STAR bv field and NaN sentinel into StarRecord bv`() {
+        val parser = PtskCatalogParser()
+        val buffer = ByteBuffer.wrap(TestCatalogBuilder().build()).order(ByteOrder.LITTLE_ENDIAN)
+
+        val catalog = parser.parse(buffer)
+
+        // Betelgeuse was written with a finite B−V; it must round-trip.
+        val betelgeuse = assertNotNull(catalog.starById(1))
+        assertEquals(1.85f, betelgeuse.bv)
+        val rigel = assertNotNull(catalog.starById(2))
+        assertEquals(-0.03f, rigel.bv)
+
+        // A star written with NaN (the "no B−V" sentinel) maps to null.
+        val alnitak = assertNotNull(catalog.starById(101))
+        assertEquals(null, alnitak.bv)
+    }
+
+    @Test
+    fun `parser loads legacy v4 catalog without bv`() {
+        val parser = PtskCatalogParser()
+        val buffer = ByteBuffer.wrap(TestCatalogBuilder(version = 4).build())
+            .order(ByteOrder.LITTLE_ENDIAN)
+
+        val catalog = parser.parse(buffer)
+
+        assertEquals(5, catalog.starsByConstellation(ConstellationId(0)).size)
+        val betelgeuse = assertNotNull(catalog.starById(1))
+        assertEquals("Betelgeuse", betelgeuse.name)
+        assertEquals(null, betelgeuse.bv)   // v4 carries no bv field → null
+    }
+
+    @Test
     fun `asterisms and overlays contain required data`() {
         val parser = PtskCatalogParser()
         val buffer = ByteBuffer.wrap(TestCatalogBuilder().build()).order(ByteOrder.LITTLE_ENDIAN)
@@ -83,7 +115,7 @@ class PtskCatalogLoaderTest {
     }
 }
 
-private class TestCatalogBuilder {
+private class TestCatalogBuilder(private val version: Int = VERSION) {
     private val stringPool = StringPoolBuilder()
 
     private val constellationCount = 88
@@ -111,7 +143,7 @@ private class TestCatalogBuilder {
         val totalSize = headerSize + sections.sumOf { it.data.size }
         val buffer = ByteBuffer.allocate(totalSize).order(ByteOrder.LITTLE_ENDIAN)
         buffer.put(MAGIC.toByteArray(StandardCharsets.US_ASCII))
-        buffer.putInt(VERSION)
+        buffer.putInt(version)
         buffer.putInt(sections.size)
 
         var offset = headerSize
@@ -170,8 +202,8 @@ private class TestCatalogBuilder {
     }
 
     private val starDefs = listOf(
-        StarDef(StarId(1), 88.8f, 7.4f, 0.5f, 0, "Betelgeuse"),
-        StarDef(StarId(2), 78.6f, -8.2f, 0.3f, 0, "Rigel"),
+        StarDef(StarId(1), 88.8f, 7.4f, 0.5f, 0, "Betelgeuse", bv = 1.85f),
+        StarDef(StarId(2), 78.6f, -8.2f, 0.3f, 0, "Rigel", bv = -0.03f),
         StarDef(StarId(101), 85.2f, -1.9f, 1.7f, 0, "Alnitak"),
         StarDef(StarId(102), 84.1f, -1.2f, 1.7f, 0, "Alnilam"),
         StarDef(StarId(103), 83.0f, -0.3f, 2.2f, 0, "Mintaka"),
@@ -182,7 +214,8 @@ private class TestCatalogBuilder {
     )
 
     private fun buildStars(): ByteArray {
-        val buffer = ByteBuffer.allocate(starDefs.size * 28).order(ByteOrder.LITTLE_ENDIAN)
+        val recSize = if (version >= 5) 28 else 24
+        val buffer = ByteBuffer.allocate(starDefs.size * recSize).order(ByteOrder.LITTLE_ENDIAN)
         starDefs.forEach { star ->
             buffer.putInt(star.id.raw)
             buffer.putFloat(star.ra)
@@ -191,6 +224,7 @@ private class TestCatalogBuilder {
             buffer.putShort(star.constIndex.toShort())
             buffer.putShort(star.flags.toShort())
             buffer.putInt(stringPool.id(star.name))
+            if (version >= 5) buffer.putFloat(star.bv)
         }
         return buffer.array()
     }
@@ -312,6 +346,7 @@ private data class StarDef(
     val constIndex: Int,
     val name: String,
     val flags: Int = 0,
+    val bv: Float = Float.NaN,
 )
 
 private data class PolyDef(

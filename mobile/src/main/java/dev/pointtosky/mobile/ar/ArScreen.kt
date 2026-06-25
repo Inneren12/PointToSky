@@ -74,6 +74,7 @@ import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.datalayer.AimTargetOption
+import dev.pointtosky.mobile.render.BvColor
 import java.util.Locale
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -576,7 +577,7 @@ private fun StarPointLayer(
             val radius = maxRadiusPx + (minRadiusPx - maxRadiusPx) * t
             val alpha = STAR_POINT_ALPHA_MAX + (STAR_POINT_ALPHA_MIN - STAR_POINT_ALPHA_MAX) * t
             drawCircle(
-                color = Color.White.copy(alpha = alpha),
+                color = BvColor.toColor(star.bv).copy(alpha = alpha),
                 radius = radius,
                 center = star.position,
             )
@@ -854,6 +855,7 @@ internal fun calculateOverlay(
                 position = projection.position,
                 distance = projection.distance,
                 separationDeg = projection.separationDeg,
+                bv = star.bv,
             )
         }
 
@@ -862,7 +864,7 @@ internal fun calculateOverlay(
 
     val starPoints: List<StarPointOverlay> =
         byBrightness.take(MAX_STAR_POINTS)
-            .map { StarPointOverlay(position = it.position, magnitude = it.magnitude) }
+            .map { StarPointOverlay(position = it.position, magnitude = it.magnitude, bv = it.bv) }
 
     // Hybrid label selection: reticle-nearest always first, then brightest non-colliding.
     val nearest = projectedStars.minByOrNull { it.separationDeg }
@@ -988,12 +990,14 @@ internal data class OverlayObject(
     val position: Offset,
     val distance: Double,
     val separationDeg: Double,
+    val bv: Float? = null,
 )
 
 @VisibleForTesting
 internal data class StarPointOverlay(
     val position: Offset,
     val magnitude: Double,
+    val bv: Float? = null,
 )
 
 @VisibleForTesting

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-build_catalog_variant_b.py — PTSKCAT4 v4 star.bin = A2 BSC bulk + curated skeleton/asterisms/art.
+build_catalog_variant_b.py — PTSKCAT4 v5 star.bin = A2 BSC bulk + curated skeleton/asterisms/art.
 
 PHONE catalog producer for Variant B. Layers curated constellation content (Orion, Lyra, Ursa Major)
 on top of the dense A2 BSC catalog, read by core/astro PtskCatalogLoader.
@@ -63,7 +63,7 @@ ABBRS = [a for a, _ in CONST_LIST]
 BRIGHT    = 0x01
 LINE_NODE = 0x02
 AUX_ONLY  = 0x08
-STAR_RECORD_SIZE = 24
+STAR_RECORD_SIZE = 28
 ASTR_RECORD_SIZE = 20
 APLY_RECORD_SIZE = 12
 ASTN_RECORD_SIZE = 4
@@ -178,7 +178,7 @@ def build(bulk_rows, curated_dir, out_path):
     # ---- bulk STAR records (identical construction to A2) ----
     counter = collections.Counter(); recs = []; seen = set()
     bulk_by_abbr = collections.defaultdict(list)   # abbr -> list of (id, ra, dec, mag) for matching
-    for abbr, ra, dec, mag, lab in sorted(bulk_rows, key=lambda x: (ABBR[x[0]], x[3])):
+    for abbr, ra, dec, mag, lab, bv in sorted(bulk_rows, key=lambda x: (ABBR[x[0]], x[3])):
         cc = ABBR[abbr]; n = counter[cc]; counter[cc] += 1
         if n >= 10000: raise SystemExit(f"constellation {abbr} exceeds 10000 stars")
         sidv = cc*10000 + n
@@ -186,7 +186,7 @@ def build(bulk_rows, curated_dir, out_path):
         if sidv in seen: raise SystemExit(f"dup id {sidv}")
         seen.add(sidv)
         flags = BRIGHT if mag < 2.0 else 0
-        recs.append(struct.pack("<IfffHHI", sidv, ra, dec, mag, cc, flags, sid(lab)))
+        recs.append(struct.pack("<IfffHHIf", sidv, ra, dec, mag, cc, flags, sid(lab), bv))
         bulk_by_abbr[abbr].append((sidv, ra, dec, mag))
     bulk_count = len(recs)
 
@@ -247,7 +247,7 @@ def build(bulk_rows, curated_dir, out_path):
                 if nid in seen: raise SystemExit(f"skeleton node id {nid} collides")
                 seen.add(nid)
                 flags = LINE_NODE | AUX_ONLY | (BRIGHT if mmag < 2.0 else 0)
-                recs.append(struct.pack("<IfffHHI", nid, mra, mdec, mmag, cc, flags, 0))
+                recs.append(struct.pack("<IfffHHIf", nid, mra, mdec, mmag, cc, flags, 0, float("nan")))
     node_count = len(recs) - bulk_count
 
     # ---- asterisms (ASTR/APLY/ASTN) referencing bulk ids ----
@@ -300,7 +300,7 @@ def build(bulk_rows, curated_dir, out_path):
     for fc, ct, cnt in secs:
         if o % 4: pad = 4 - (o % 4); payload.extend(b"\x00"*pad); o += pad
         dirs.append((fc, hs+o, len(ct), cnt)); payload.extend(ct); o += len(ct)
-    b = io.BytesIO(); b.write(b"PTSKCAT4"); b.write(struct.pack("<I", 4)); b.write(struct.pack("<I", len(secs)))
+    b = io.BytesIO(); b.write(b"PTSKCAT4"); b.write(struct.pack("<I", 5)); b.write(struct.pack("<I", len(secs)))
     for fc, oo, ln, cnt in dirs: b.write(struct.pack("<4sIII", fc, oo, ln, cnt))
     b.write(payload)
     open(out_path, "wb").write(b.getvalue())
@@ -331,7 +331,8 @@ def main(argv):
             abbr = pip_assign(boundaries, ra, dec)
             if abbr is None: dropped += 1; continue
             from_pip += 1
-        rows.append((abbr, ra, dec, m, _label(r)))
+        bv = _f(r.get("B-V"))
+        rows.append((abbr, ra, dec, m, _label(r), bv if bv is not None else float("nan")))
     st = build(rows, cur, out)
     print(f"wrote {out}  [mag<= {mag}]  {st['size']} bytes")
     print(f"  bulk stars     : {st['bulk']}  ({from_field} field, {from_pip} PIP, {dropped} dropped)")
