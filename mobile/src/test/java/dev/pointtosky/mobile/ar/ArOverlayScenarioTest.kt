@@ -321,6 +321,94 @@ class ArOverlayScenarioTest {
         assertEquals(0.0, trueHorizontal.altDeg, 1e-4)
     }
 
+    @Test
+    fun `effectiveMagLimit negative suppresses all stars, infinity shows all`() {
+        val instant = Instant.parse("2024-01-01T00:00:00Z")
+        val location = GeoPoint(latDeg = 53.5461, lonDeg = -113.4938)
+        val lstDeg = lstAt(instant, location.lonDeg).lstDeg
+        val reticleHorizontal = Horizontal(azDeg = 180.0, altDeg = 45.0)
+        val reticleEquatorial = altAzToRaDec(reticleHorizontal, lstDeg, location.latDeg)
+        val constellationId = ConstellationId(0)
+
+        // A bright and a faint renderable star, both on-screen at the reticle position.
+        val brightStar = StarRecord(
+            id = StarId(10),
+            rightAscensionDeg = reticleEquatorial.raDeg.toFloat(),
+            declinationDeg = reticleEquatorial.decDeg.toFloat(),
+            magnitude = 1.0f,
+            constellationId = constellationId,
+            flags = 0,
+            name = "Bright",
+        )
+        val faintStar = StarRecord(
+            id = StarId(11),
+            rightAscensionDeg = reticleEquatorial.raDeg.toFloat(),
+            declinationDeg = reticleEquatorial.decDeg.toFloat(),
+            magnitude = 5.5f,
+            constellationId = constellationId,
+            flags = 0,
+            name = "Faint",
+        )
+
+        val catalog = object : AstroCatalog {
+            private val stars = listOf(brightStar, faintStar)
+            override fun getConstellationMeta(id: ConstellationId) =
+                ConstellationMeta(id, abbreviation = "TST", name = "Test")
+            override fun allStars() = stars
+            override fun starById(raw: Int) = stars.find { it.id.raw == raw }
+            override fun starsByConstellation(id: ConstellationId) =
+                if (id == constellationId) stars else emptyList()
+            override fun asterismsByConstellation(id: ConstellationId) = emptyList<Asterism>()
+            override fun artOverlaysByConstellation(id: ConstellationId) = emptyList<ArtOverlay>()
+        }
+        val catalogState = AstroCatalogState(
+            catalog = catalog,
+            starsById = mapOf(brightStar.id.raw to brightStar, faintStar.id.raw to faintStar),
+            constellationByAbbr = mapOf("TST" to constellationId),
+            skeletonLines = emptyList(),
+        )
+
+        val forwardWorld = horizontalToVector(reticleHorizontal)
+        val frame = RotationFrame(
+            rotationMatrix = makeRotationMatrixFromForward(forwardWorld),
+            forwardWorld = forwardWorld,
+            timestampNanos = 0L,
+        )
+        val viewport = IntSize(1080, 1080)
+
+        fun makeState(effectiveMagLimit: Double) = ArUiState.Ready(
+            instant = instant,
+            location = location,
+            locationResolved = true,
+            lstDeg = lstDeg,
+            stars = emptyList(),
+            catalog = catalogState,
+            showConstellations = false,
+            showAsterisms = false,
+            asterismUiState = AsterismUiState(isEnabled = false, highlighted = null, available = emptyList()),
+            magLimit = 6.0,
+            showStarLabels = true,
+            effectiveMagLimit = effectiveMagLimit,
+        )
+
+        // Daytime / bright twilight: effectiveMagLimit = −4.0 → no stars pass filter.
+        val daytimeOverlay = assertNotNull(calculateOverlay(makeState(-4.0), frame, viewport, { constellationId }))
+        assertTrue(daytimeOverlay.starPoints.isEmpty(),
+            "effectiveMagLimit=-4.0 must suppress all stars (got ${daytimeOverlay.starPoints.size})")
+
+        // No cap: effectiveMagLimit = +∞ → all renderable stars shown.
+        val noCap = assertNotNull(calculateOverlay(makeState(Double.POSITIVE_INFINITY), frame, viewport, { constellationId }))
+        assertTrue(noCap.starPoints.isNotEmpty(),
+            "effectiveMagLimit=+∞ must pass all renderable stars")
+
+        // Mid-limit: effectiveMagLimit = 3.0 → only the bright star (mag 1.0) passes.
+        val midOverlay = assertNotNull(calculateOverlay(makeState(3.0), frame, viewport, { constellationId }))
+        assertTrue(midOverlay.starPoints.all { it.magnitude <= 3.0 },
+            "effectiveMagLimit=3.0 must exclude stars fainter than 3.0")
+        assertEquals(1, midOverlay.starPoints.size,
+            "effectiveMagLimit=3.0 should pass only the bright star (mag 1.0)")
+    }
+
     private fun vectorToHorizontal(vector: FloatArray): dev.pointtosky.core.astro.coord.Horizontal {
         val z = vector[2].toDouble().coerceIn(-1.0, 1.0)
         val altDeg = Math.toDegrees(kotlin.math.asin(z))
