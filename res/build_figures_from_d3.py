@@ -100,12 +100,17 @@ def main():
             dup.append(abbr)
         a = acc.setdefault(abbr, {"sk": {}, "stars": [], "skel": []})
         for poly in polys:
-            keys = []
+            # Split the polyline into runs of consecutive MATCHED vertices. An unmatched
+            # vertex breaks the run so we never bridge across the gap (A-B-C with B missing
+            # must NOT become an A-C segment).
+            runs = [[]]
             for pt in poly:
                 qra = B._nra(pt[0])
                 s, sep = nearest(abbr, qra, pt[1])
                 if s is None or sep > TOL:
                     un[abbr] += 1
+                    if runs[-1]:
+                        runs.append([])
                     continue
                 seps.append(sep)
                 ident = (s["ra_str"], s["dec_str"])
@@ -114,10 +119,11 @@ def main():
                     a["sk"][ident] = k
                     a["stars"].append({"key": k, "name": s["label"],
                                        "ra": s["ra_str"], "dec": s["dec_str"], "mag": s["mag"]})
-                keys.append(a["sk"][ident])
-            dd = [k for i, k in enumerate(keys) if i == 0 or k != keys[i - 1]]
-            if len(dd) >= 2 and len(set(dd)) >= 2:
-                a["skel"].append({"pp": len(a["skel"]) + 1, "nodes": dd})
+                runs[-1].append(a["sk"][ident])
+            for run in runs:
+                dd = [k for i, k in enumerate(run) if i == 0 or k != run[i - 1]]
+                if len(dd) >= 2 and len(set(dd)) >= 2:
+                    a["skel"].append({"pp": len(a["skel"]) + 1, "nodes": dd})
 
     written = ts = tp = tg = empty = 0
     empties = []
@@ -126,13 +132,16 @@ def main():
             empty += 1
             empties.append(abbr)
             continue
+        # drop stars left unreferenced after splitting (orphans from dropped short runs)
+        used = {n for s in a["skel"] for n in s["nodes"]}
+        stars = [s for s in a["stars"] if s["key"] in used]
         out = {"abbr": abbr, "name": name_of.get(abbr, abbr),
-               "stars": a["stars"], "skeleton": a["skel"],
+               "stars": stars, "skeleton": a["skel"],
                "asterisms": [], "art_overlays": []}
         json.dump(out, open(os.path.join(out_dir, f"{abbr.lower()}.json"), "w", encoding="utf-8"),
                   ensure_ascii=False, indent=2)
         written += 1
-        ts += len(a["stars"])
+        ts += len(stars)
         tp += len(a["skel"])
         tg += sum(len(s["nodes"]) - 1 for s in a["skel"])
 
