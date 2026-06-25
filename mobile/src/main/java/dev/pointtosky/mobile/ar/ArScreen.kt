@@ -899,7 +899,9 @@ internal fun calculateOverlay(
     val visibleStars: List<StarRecord> =
         (state.catalog?.catalog?.allStars().orEmpty())
             .filter { it.isRenderablePoint() }
-            .filter { val limit = state.effectiveMagLimit; limit <= 0.0 || it.magnitude.toDouble() <= limit }
+            // effectiveMagLimit already encodes "no cap" as +∞, so apply it directly — no ≤ 0
+            // sentinel (a visibility limit can legitimately be ≤ 0, e.g. daytime, and must gate stars).
+            .filter { it.magnitude.toDouble() <= state.effectiveMagLimit }
 
     // Project ALL mag-filtered stars; projectEquatorial returns null for off-screen ones.
     val projectedStars: List<OverlayObject> =

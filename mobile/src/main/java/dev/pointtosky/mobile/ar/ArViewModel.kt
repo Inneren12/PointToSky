@@ -181,7 +181,11 @@ class ArViewModel(
             moonIllumination = moon.phase ?: 0.0,
             sunAltitudeDeg = sunAlt,
         )
-        val effectiveMagLimit = if (visibilityFilter) minOf(magLimit, limitingMag) else magLimit
+        // A user magLimit of 0 means "no user cap" (the slider's off sentinel); treat it as +∞ so it
+        // doesn't clamp the visibility limit. The visibility limit may legitimately be negative
+        // (e.g. daytime floors at −4), and must still suppress stars.
+        val userCap = if (magLimit <= 0.0) Double.POSITIVE_INFINITY else magLimit
+        val effectiveMagLimit = if (visibilityFilter) minOf(userCap, limitingMag) else userCap
         return ArUiState.Ready(
             instant = instant,
             location = location.point,
