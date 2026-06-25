@@ -19,6 +19,7 @@ import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.astro.visibility.estimateLimitingMagnitude
 import dev.pointtosky.core.location.model.GeoPoint
+import dev.pointtosky.mobile.visibility.VisibilitySettings
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
 import kotlinx.coroutines.CoroutineDispatcher
@@ -55,8 +56,8 @@ class ArViewModel(
     private val showStarLabels = MutableStateFlow(true)
     private val showStarPoints = MutableStateFlow(true)
     private val reticleTargetOnly = MutableStateFlow(false)
-    private val visibilityFilterEnabled = MutableStateFlow(false)
-    private val bortle = MutableStateFlow(Bortle.CLASS_4)
+    private val visibilityFilterEnabled = VisibilitySettings.enabled
+    private val bortle = VisibilitySettings.bortle
     private val asterismState =
         MutableStateFlow(
             AsterismUiState(
@@ -239,11 +240,11 @@ class ArViewModel(
     }
 
     fun setVisibilityFilterEnabled(enabled: Boolean) {
-        visibilityFilterEnabled.value = enabled
+        VisibilitySettings.enabled.value = enabled
     }
 
     fun setBortle(value: Bortle) {
-        bortle.value = value
+        VisibilitySettings.bortle.value = value
     }
 
     fun setShowStarLabels(enabled: Boolean) {
