@@ -13,7 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal const val MAGIC = "PTSKCAT4"
-internal const val VERSION = 5
+internal const val VERSION = 5                 // current write version (28-byte STAR with bv)
+internal const val MIN_SUPPORTED_VERSION = 4   // v4 = 24-byte STAR (no bv); read for backward compat (wear)
 
 private data class SectionDir(
     val fourcc: String,
@@ -228,7 +229,7 @@ internal class PtskCatalogParser {
         val magic = String(magicBytes, StandardCharsets.US_ASCII)
         require(magic == MAGIC) { "Unexpected magic: $magic" }
         val version = buffer.int
-        require(version == VERSION) { "Unsupported version: $version" }
+        require(version in MIN_SUPPORTED_VERSION..VERSION) { "Unsupported version: $version" }
         val sectionCount = buffer.int
         require(sectionCount >= 1) { "Section count must be positive" }
         val sections = (0 until sectionCount).map {
@@ -260,9 +261,10 @@ internal class PtskCatalogParser {
         val constSection = requireSection("CST0", 16)
         val constellations = parseConstellations(buffer, constSection, strings)
 
-        // STAR-запись: id(4) + ra(4) + dec(4) + mag(4) + const(2) + flags(2) + nameId(4) + bv(4) = 28 байт
-        val starSection = requireSection("STAR", 28)
-        val starsBin = parseStars(buffer, starSection)
+        // STAR record: 24 bytes in v4; +bv(4) = 28 bytes in v5+
+        val starRecordSize = if (version >= 5) 28 else 24
+        val starSection = requireSection("STAR", starRecordSize)
+        val starsBin = parseStars(buffer, starSection, version)
 
         val asterSection = requireSection("ASTR", 20)
         val polySection = requireSection("APLY", 12)
@@ -303,8 +305,9 @@ internal class PtskCatalogParser {
         return constellations
     }
 
-    private fun parseStars(buffer: ByteBuffer, section: SectionDir): List<StarRecordBin> {
+    private fun parseStars(buffer: ByteBuffer, section: SectionDir, version: Int): List<StarRecordBin> {
         buffer.position(section.offset)
+        val hasBv = version >= 5
         return List(section.count) {
             val id = StarId(buffer.int)
             val ra = buffer.float
@@ -313,7 +316,7 @@ internal class PtskCatalogParser {
             val constIndex = buffer.short.toInt() and 0xFFFF
             val flags = buffer.short.toInt() and 0xFFFF
             val nameId = PtskStringId(buffer.int)
-            val bv = buffer.float
+            val bv = if (hasBv) buffer.float else Float.NaN   // v4 has no bv field → NaN → null
             val constellationId = ConstellationId(constIndex)
             require(id.cc() == constellationId.index) {
                 "Star id constellation ${id.cc()} does not match record const index ${constellationId.index}"

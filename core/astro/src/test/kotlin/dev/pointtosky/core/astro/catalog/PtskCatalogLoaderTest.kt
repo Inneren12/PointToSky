@@ -65,6 +65,20 @@ class PtskCatalogLoaderTest {
     }
 
     @Test
+    fun `parser loads legacy v4 catalog without bv`() {
+        val parser = PtskCatalogParser()
+        val buffer = ByteBuffer.wrap(TestCatalogBuilder(version = 4).build())
+            .order(ByteOrder.LITTLE_ENDIAN)
+
+        val catalog = parser.parse(buffer)
+
+        assertEquals(5, catalog.starsByConstellation(ConstellationId(0)).size)
+        val betelgeuse = assertNotNull(catalog.starById(1))
+        assertEquals("Betelgeuse", betelgeuse.name)
+        assertEquals(null, betelgeuse.bv)   // v4 carries no bv field → null
+    }
+
+    @Test
     fun `asterisms and overlays contain required data`() {
         val parser = PtskCatalogParser()
         val buffer = ByteBuffer.wrap(TestCatalogBuilder().build()).order(ByteOrder.LITTLE_ENDIAN)
@@ -101,7 +115,7 @@ class PtskCatalogLoaderTest {
     }
 }
 
-private class TestCatalogBuilder {
+private class TestCatalogBuilder(private val version: Int = VERSION) {
     private val stringPool = StringPoolBuilder()
 
     private val constellationCount = 88
@@ -129,7 +143,7 @@ private class TestCatalogBuilder {
         val totalSize = headerSize + sections.sumOf { it.data.size }
         val buffer = ByteBuffer.allocate(totalSize).order(ByteOrder.LITTLE_ENDIAN)
         buffer.put(MAGIC.toByteArray(StandardCharsets.US_ASCII))
-        buffer.putInt(VERSION)
+        buffer.putInt(version)
         buffer.putInt(sections.size)
 
         var offset = headerSize
@@ -200,7 +214,8 @@ private class TestCatalogBuilder {
     )
 
     private fun buildStars(): ByteArray {
-        val buffer = ByteBuffer.allocate(starDefs.size * 28).order(ByteOrder.LITTLE_ENDIAN)
+        val recSize = if (version >= 5) 28 else 24
+        val buffer = ByteBuffer.allocate(starDefs.size * recSize).order(ByteOrder.LITTLE_ENDIAN)
         starDefs.forEach { star ->
             buffer.putInt(star.id.raw)
             buffer.putFloat(star.ra)
@@ -209,7 +224,7 @@ private class TestCatalogBuilder {
             buffer.putShort(star.constIndex.toShort())
             buffer.putShort(star.flags.toShort())
             buffer.putInt(stringPool.id(star.name))
-            buffer.putFloat(star.bv)
+            if (version >= 5) buffer.putFloat(star.bv)
         }
         return buffer.array()
     }
