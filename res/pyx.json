@@ -1,0 +1,39 @@
+{
+  "abbr": "Pyx",
+  "name": "Pyxis",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "β Pyxidis",
+      "ra": "08:40:06.2",
+      "dec": "-35:18:30",
+      "mag": 3.97
+    },
+    {
+      "key": "s2",
+      "name": "α Pyxidis",
+      "ra": "08:43:35.5",
+      "dec": "-33:11:11",
+      "mag": 3.68
+    },
+    {
+      "key": "s3",
+      "name": "γ Pyxidis",
+      "ra": "08:50:31.9",
+      "dec": "-27:42:36",
+      "mag": 4.01
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

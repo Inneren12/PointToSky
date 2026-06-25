@@ -1,0 +1,56 @@
+{
+  "abbr": "Cha",
+  "name": "Chamaeleon",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "α Chamaeleontis",
+      "ra": "08:18:31.6",
+      "dec": "-76:55:11",
+      "mag": 4.07
+    },
+    {
+      "key": "s2",
+      "name": "γ Chamaeleontis",
+      "ra": "10:35:28.1",
+      "dec": "-78:36:28",
+      "mag": 4.11
+    },
+    {
+      "key": "s3",
+      "name": "δ¹ Chamaeleontis",
+      "ra": "10:45:15.7",
+      "dec": "-80:28:11",
+      "mag": 5.47
+    },
+    {
+      "key": "s4",
+      "name": "β Chamaeleontis",
+      "ra": "12:18:20.7",
+      "dec": "-79:18:44",
+      "mag": 4.26
+    },
+    {
+      "key": "s5",
+      "name": "ε Chamaeleontis",
+      "ra": "11:59:37.3",
+      "dec": "-78:13:19",
+      "mag": 4.91
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s2"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

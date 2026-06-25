@@ -1,0 +1,40 @@
+{
+  "abbr": "Oct",
+  "name": "Octans",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "δ Octantis",
+      "ra": "14:26:54.9",
+      "dec": "-83:40:04",
+      "mag": 4.32
+    },
+    {
+      "key": "s2",
+      "name": "β Octantis",
+      "ra": "22:46:03.3",
+      "dec": "-81:22:54",
+      "mag": 4.15
+    },
+    {
+      "key": "s3",
+      "name": "ν Octantis",
+      "ra": "21:41:28.5",
+      "dec": "-77:23:24",
+      "mag": 3.76
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s1"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

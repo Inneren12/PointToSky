@@ -1,0 +1,47 @@
+{
+  "abbr": "Ari",
+  "name": "Aries",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "41 Arietis",
+      "ra": "02:49:59.0",
+      "dec": "+27:15:38",
+      "mag": 3.63
+    },
+    {
+      "key": "s2",
+      "name": "Hamal",
+      "ra": "02:07:10.4",
+      "dec": "+23:27:45",
+      "mag": 2.0
+    },
+    {
+      "key": "s3",
+      "name": "Sheratan",
+      "ra": "01:54:38.4",
+      "dec": "+20:48:29",
+      "mag": 2.64
+    },
+    {
+      "key": "s4",
+      "name": "Mesarthim",
+      "ra": "01:53:31.8",
+      "dec": "+19:17:37",
+      "mag": 4.75
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

@@ -1,0 +1,96 @@
+{
+  "abbr": "Cap",
+  "name": "Capricornus",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Al Giedi",
+      "ra": "20:17:38.9",
+      "dec": "-12:30:30",
+      "mag": 4.24
+    },
+    {
+      "key": "s2",
+      "name": "Dabih",
+      "ra": "20:21:00.7",
+      "dec": "-14:46:53",
+      "mag": 3.08
+    },
+    {
+      "key": "s3",
+      "name": "ρ Capricorni",
+      "ra": "20:28:51.6",
+      "dec": "-17:48:49",
+      "mag": 4.78
+    },
+    {
+      "key": "s4",
+      "name": "ψ Capricorni",
+      "ra": "20:46:05.7",
+      "dec": "-25:16:15",
+      "mag": 4.14
+    },
+    {
+      "key": "s5",
+      "name": "ω Capricorni",
+      "ra": "20:51:49.3",
+      "dec": "-26:55:09",
+      "mag": 4.11
+    },
+    {
+      "key": "s6",
+      "name": "ζ Capricorni",
+      "ra": "21:26:40.0",
+      "dec": "-22:24:41",
+      "mag": 3.74
+    },
+    {
+      "key": "s7",
+      "name": "Deneb Algedi",
+      "ra": "21:47:02.4",
+      "dec": "-16:07:38",
+      "mag": 2.87
+    },
+    {
+      "key": "s8",
+      "name": "Nashira",
+      "ra": "21:40:05.5",
+      "dec": "-16:39:44",
+      "mag": 3.68
+    },
+    {
+      "key": "s9",
+      "name": "ι Capricorni",
+      "ra": "21:22:14.8",
+      "dec": "-16:50:04",
+      "mag": 4.28
+    },
+    {
+      "key": "s10",
+      "name": "θ Capricorni",
+      "ra": "21:05:56.8",
+      "dec": "-17:13:58",
+      "mag": 4.07
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s6",
+        "s7",
+        "s8",
+        "s9",
+        "s10",
+        "s1"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

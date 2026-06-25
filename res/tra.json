@@ -1,0 +1,40 @@
+{
+  "abbr": "TrA",
+  "name": "Triangulum Australe",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Atria",
+      "ra": "16:48:39.9",
+      "dec": "-69:01:40",
+      "mag": 1.92
+    },
+    {
+      "key": "s2",
+      "name": "Betria",
+      "ra": "15:55:08.5",
+      "dec": "-63:25:50",
+      "mag": 2.85
+    },
+    {
+      "key": "s3",
+      "name": "Gatria",
+      "ra": "15:18:54.6",
+      "dec": "-68:40:46",
+      "mag": 2.89
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s1"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

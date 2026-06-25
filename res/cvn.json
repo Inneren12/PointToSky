@@ -1,0 +1,31 @@
+{
+  "abbr": "CVn",
+  "name": "Canes Venatici",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "α¹ Canum Venaticorum",
+      "ra": "12:56:00.4",
+      "dec": "+38:18:53",
+      "mag": 5.6
+    },
+    {
+      "key": "s2",
+      "name": "Chara",
+      "ra": "12:33:44.5",
+      "dec": "+41:21:27",
+      "mag": 4.26
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

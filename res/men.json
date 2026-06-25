@@ -1,0 +1,47 @@
+{
+  "abbr": "Men",
+  "name": "Mensa",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "α Mensae",
+      "ra": "06:10:14.4",
+      "dec": "-74:45:11",
+      "mag": 5.09
+    },
+    {
+      "key": "s2",
+      "name": "γ Mensae",
+      "ra": "05:31:52.9",
+      "dec": "-76:20:28",
+      "mag": 5.19
+    },
+    {
+      "key": "s3",
+      "name": "η Mensae",
+      "ra": "04:55:11.2",
+      "dec": "-74:56:13",
+      "mag": 5.47
+    },
+    {
+      "key": "s4",
+      "name": "β Mensae",
+      "ra": "05:02:43.0",
+      "dec": "-71:18:52",
+      "mag": 5.31
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

@@ -1,0 +1,61 @@
+{
+  "abbr": "Cnc",
+  "name": "Cancer",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Acubens",
+      "ra": "08:58:29.2",
+      "dec": "+11:51:28",
+      "mag": 4.25
+    },
+    {
+      "key": "s2",
+      "name": "Asellus Australis",
+      "ra": "08:44:41.1",
+      "dec": "+18:09:15",
+      "mag": 3.94
+    },
+    {
+      "key": "s3",
+      "name": "Asellus Borealis",
+      "ra": "08:43:17.1",
+      "dec": "+21:28:07",
+      "mag": 4.66
+    },
+    {
+      "key": "s4",
+      "name": "ι Cancri",
+      "ra": "08:46:41.8",
+      "dec": "+28:45:36",
+      "mag": 4.02
+    },
+    {
+      "key": "s5",
+      "name": "Altarf",
+      "ra": "08:16:30.9",
+      "dec": "+09:11:08",
+      "mag": 3.52
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4"
+      ]
+    },
+    {
+      "pp": 2,
+      "nodes": [
+        "s2",
+        "s5"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

@@ -1,0 +1,72 @@
+{
+  "abbr": "UMi",
+  "name": "Ursa Minor",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "ζ Ursae Minoris",
+      "ra": "15:44:03.5",
+      "dec": "+77:47:40",
+      "mag": 4.32
+    },
+    {
+      "key": "s2",
+      "name": "η Ursae Minoris",
+      "ra": "16:17:30.3",
+      "dec": "+75:45:19",
+      "mag": 4.95
+    },
+    {
+      "key": "s3",
+      "name": "Pherkad",
+      "ra": "15:20:43.7",
+      "dec": "+71:50:02",
+      "mag": 3.05
+    },
+    {
+      "key": "s4",
+      "name": "Kochab",
+      "ra": "14:50:42.3",
+      "dec": "+74:09:20",
+      "mag": 2.08
+    },
+    {
+      "key": "s5",
+      "name": "ε Ursae Minoris",
+      "ra": "16:45:58.1",
+      "dec": "+82:02:14",
+      "mag": 4.23
+    },
+    {
+      "key": "s6",
+      "name": "Yildun",
+      "ra": "17:32:12.9",
+      "dec": "+86:35:11",
+      "mag": 4.36
+    },
+    {
+      "key": "s7",
+      "name": "Polaris",
+      "ra": "02:31:48.7",
+      "dec": "+89:15:51",
+      "mag": 2.02
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s1",
+        "s5",
+        "s6",
+        "s7"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

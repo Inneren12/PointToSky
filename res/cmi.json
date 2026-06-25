@@ -1,0 +1,31 @@
+{
+  "abbr": "CMi",
+  "name": "Canis Minor",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Procyon",
+      "ra": "07:39:18.1",
+      "dec": "+05:13:30",
+      "mag": 0.38
+    },
+    {
+      "key": "s2",
+      "name": "Gomeisa",
+      "ra": "07:27:09.0",
+      "dec": "+08:17:22",
+      "mag": 2.9
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

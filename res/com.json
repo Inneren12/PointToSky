@@ -1,0 +1,39 @@
+{
+  "abbr": "Com",
+  "name": "Coma Berenices",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Diadem",
+      "ra": "13:09:59.3",
+      "dec": "+17:31:46",
+      "mag": 5.22
+    },
+    {
+      "key": "s2",
+      "name": "β Comae Berenices",
+      "ra": "13:11:52.4",
+      "dec": "+27:52:41",
+      "mag": 4.26
+    },
+    {
+      "key": "s3",
+      "name": "γ Comae Berenices",
+      "ra": "12:26:56.3",
+      "dec": "+28:16:06",
+      "mag": 4.36
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

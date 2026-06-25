@@ -1,0 +1,53 @@
+{
+  "abbr": "Sge",
+  "name": "Sagitta",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Sham",
+      "ra": "19:40:05.8",
+      "dec": "+18:00:50",
+      "mag": 4.37
+    },
+    {
+      "key": "s2",
+      "name": "δ Sagittae",
+      "ra": "19:47:23.3",
+      "dec": "+18:32:03",
+      "mag": 3.82
+    },
+    {
+      "key": "s3",
+      "name": "γ Sagittae",
+      "ra": "19:58:45.4",
+      "dec": "+19:29:32",
+      "mag": 3.47
+    },
+    {
+      "key": "s4",
+      "name": "β Sagittae",
+      "ra": "19:41:02.9",
+      "dec": "+17:28:34",
+      "mag": 4.37
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    },
+    {
+      "pp": 2,
+      "nodes": [
+        "s4",
+        "s2"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}
