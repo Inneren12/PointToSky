@@ -1,0 +1,81 @@
+{
+  "abbr": "PsA",
+  "name": "Piscis Austrinus",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "ε Piscis Austrini",
+      "ra": "22:40:39.4",
+      "dec": "-27:02:37",
+      "mag": 4.17
+    },
+    {
+      "key": "s2",
+      "name": "Fomalhaut",
+      "ra": "22:57:39.1",
+      "dec": "-29:37:20",
+      "mag": 1.16
+    },
+    {
+      "key": "s3",
+      "name": "δ Piscis Austrini",
+      "ra": "22:55:56.9",
+      "dec": "-32:32:23",
+      "mag": 4.21
+    },
+    {
+      "key": "s4",
+      "name": "γ Piscis Austrini",
+      "ra": "22:52:31.6",
+      "dec": "-32:52:32",
+      "mag": 4.46
+    },
+    {
+      "key": "s5",
+      "name": "β Piscis Austrini",
+      "ra": "22:31:30.3",
+      "dec": "-32:20:46",
+      "mag": 4.29
+    },
+    {
+      "key": "s6",
+      "name": "μ Piscis Austrini",
+      "ra": "22:08:23.0",
+      "dec": "-32:59:19",
+      "mag": 4.5
+    },
+    {
+      "key": "s7",
+      "name": "ι Piscis Austrini",
+      "ra": "21:44:56.8",
+      "dec": "-33:01:33",
+      "mag": 4.34
+    },
+    {
+      "key": "s8",
+      "name": "θ Piscis Austrini",
+      "ra": "21:47:44.2",
+      "dec": "-30:53:54",
+      "mag": 5.01
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s6",
+        "s7",
+        "s8",
+        "s6",
+        "s1"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

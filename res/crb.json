@@ -1,0 +1,71 @@
+{
+  "abbr": "CrB",
+  "name": "Corona Borealis",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "θ Coronae Borealis",
+      "ra": "15:32:55.8",
+      "dec": "+31:21:33",
+      "mag": 4.14
+    },
+    {
+      "key": "s2",
+      "name": "Nusakan",
+      "ra": "15:27:49.7",
+      "dec": "+29:06:21",
+      "mag": 3.68
+    },
+    {
+      "key": "s3",
+      "name": "Alphecca",
+      "ra": "15:34:41.3",
+      "dec": "+26:42:53",
+      "mag": 2.23
+    },
+    {
+      "key": "s4",
+      "name": "γ Coronae Borealis",
+      "ra": "15:42:44.6",
+      "dec": "+26:17:44",
+      "mag": 3.84
+    },
+    {
+      "key": "s5",
+      "name": "δ Coronae Borealis",
+      "ra": "15:49:35.7",
+      "dec": "+26:04:06",
+      "mag": 4.63
+    },
+    {
+      "key": "s6",
+      "name": "ε Coronae Borealis",
+      "ra": "15:57:35.3",
+      "dec": "+26:52:40",
+      "mag": 4.15
+    },
+    {
+      "key": "s7",
+      "name": "ι Coronae Borealis",
+      "ra": "16:01:26.6",
+      "dec": "+29:51:04",
+      "mag": 4.99
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s6",
+        "s7"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

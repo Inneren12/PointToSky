@@ -1,0 +1,93 @@
+{
+  "abbr": "Mon",
+  "name": "Monoceros",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "α Monocerotis",
+      "ra": "07:41:14.8",
+      "dec": "-09:33:04",
+      "mag": 3.93
+    },
+    {
+      "key": "s2",
+      "name": "ζ Monocerotis",
+      "ra": "08:08:35.6",
+      "dec": "-02:59:02",
+      "mag": 4.34
+    },
+    {
+      "key": "s3",
+      "name": "δ Monocerotis",
+      "ra": "07:11:51.9",
+      "dec": "-00:29:34",
+      "mag": 4.15
+    },
+    {
+      "key": "s4",
+      "name": "β Monocerotis",
+      "ra": "06:28:49.0",
+      "dec": "-07:01:58",
+      "mag": 4.6
+    },
+    {
+      "key": "s5",
+      "name": "γ Monocerotis",
+      "ra": "06:14:51.3",
+      "dec": "-06:16:29",
+      "mag": 3.98
+    },
+    {
+      "key": "s6",
+      "name": "18 Monocerotis",
+      "ra": "06:47:51.6",
+      "dec": "+02:24:44",
+      "mag": 4.47
+    },
+    {
+      "key": "s7",
+      "name": "ε Monocerotis",
+      "ra": "06:23:46.1",
+      "dec": "+04:35:34",
+      "mag": 4.44
+    },
+    {
+      "key": "s8",
+      "name": "13 Monocerotis",
+      "ra": "06:32:54.2",
+      "dec": "+07:19:59",
+      "mag": 4.5
+    },
+    {
+      "key": "s9",
+      "name": "15 Monocerotis",
+      "ra": "06:40:58.7",
+      "dec": "+09:53:44",
+      "mag": 4.66
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5"
+      ]
+    },
+    {
+      "pp": 2,
+      "nodes": [
+        "s3",
+        "s6",
+        "s7",
+        "s8",
+        "s9"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

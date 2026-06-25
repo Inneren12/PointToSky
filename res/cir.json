@@ -1,0 +1,39 @@
+{
+  "abbr": "Cir",
+  "name": "Circinus",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "β Circini",
+      "ra": "15:17:30.8",
+      "dec": "-58:48:04",
+      "mag": 4.07
+    },
+    {
+      "key": "s2",
+      "name": "α Circini",
+      "ra": "14:42:30.4",
+      "dec": "-64:58:31",
+      "mag": 3.19
+    },
+    {
+      "key": "s3",
+      "name": "γ Circini",
+      "ra": "15:23:22.7",
+      "dec": "-59:19:15",
+      "mag": 4.51
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

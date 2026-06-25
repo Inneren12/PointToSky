@@ -20,3 +20,7 @@ local.properties
 
 # Misc
 *.log
+
+# Python bytecode
+__pycache__/
+*.pyc

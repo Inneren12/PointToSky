@@ -1,0 +1,39 @@
+{
+  "abbr": "Equ",
+  "name": "Equuleus",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Kitalpha",
+      "ra": "21:15:49.4",
+      "dec": "+05:14:52",
+      "mag": 3.92
+    },
+    {
+      "key": "s2",
+      "name": "δ Equulei",
+      "ra": "21:14:28.9",
+      "dec": "+10:00:25",
+      "mag": 4.49
+    },
+    {
+      "key": "s3",
+      "name": "γ Equulei",
+      "ra": "21:10:20.5",
+      "dec": "+10:07:54",
+      "mag": 4.69
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

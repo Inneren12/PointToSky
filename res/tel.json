@@ -1,0 +1,39 @@
+{
+  "abbr": "Tel",
+  "name": "Telescopium",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "ε Telescopii",
+      "ra": "18:11:13.8",
+      "dec": "-45:57:16",
+      "mag": 4.53
+    },
+    {
+      "key": "s2",
+      "name": "α Telescopii",
+      "ra": "18:26:58.4",
+      "dec": "-45:58:06",
+      "mag": 3.51
+    },
+    {
+      "key": "s3",
+      "name": "ζ Telescopii",
+      "ra": "18:28:49.9",
+      "dec": "-49:04:15",
+      "mag": 4.13
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

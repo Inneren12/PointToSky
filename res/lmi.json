@@ -1,0 +1,56 @@
+{
+  "abbr": "LMi",
+  "name": "Leo Minor",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "21 Leonis Minoris",
+      "ra": "10:07:25.8",
+      "dec": "+35:14:41",
+      "mag": 4.48
+    },
+    {
+      "key": "s2",
+      "name": "30 Leonis Minoris",
+      "ra": "10:25:54.9",
+      "dec": "+33:47:46",
+      "mag": 4.74
+    },
+    {
+      "key": "s3",
+      "name": "Praecipua",
+      "ra": "10:53:18.7",
+      "dec": "+34:12:54",
+      "mag": 3.83
+    },
+    {
+      "key": "s4",
+      "name": "β Leonis Minoris",
+      "ra": "10:27:53.0",
+      "dec": "+36:42:26",
+      "mag": 4.21
+    },
+    {
+      "key": "s5",
+      "name": "10 Leonis Minoris",
+      "ra": "09:34:13.4",
+      "dec": "+36:23:51",
+      "mag": 4.55
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s1",
+        "s5"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

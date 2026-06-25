@@ -1,0 +1,65 @@
+{
+  "abbr": "Phe",
+  "name": "Phoenix",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Ankaa",
+      "ra": "00:26:17.0",
+      "dec": "-42:18:22",
+      "mag": 2.39
+    },
+    {
+      "key": "s2",
+      "name": "β Phoenicis",
+      "ra": "01:06:05.0",
+      "dec": "-46:43:07",
+      "mag": 3.31
+    },
+    {
+      "key": "s3",
+      "name": "γ Phoenicis",
+      "ra": "01:28:21.9",
+      "dec": "-43:19:06",
+      "mag": 3.41
+    },
+    {
+      "key": "s4",
+      "name": "δ Phoenicis",
+      "ra": "01:31:15.1",
+      "dec": "-49:04:22",
+      "mag": 3.95
+    },
+    {
+      "key": "s5",
+      "name": "ζ Phoenicis",
+      "ra": "01:08:23.1",
+      "dec": "-55:14:45",
+      "mag": 3.92
+    },
+    {
+      "key": "s6",
+      "name": "ε Phoenicis",
+      "ra": "00:09:24.7",
+      "dec": "-45:44:51",
+      "mag": 3.88
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s2",
+        "s6",
+        "s1"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

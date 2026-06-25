@@ -1,0 +1,39 @@
+{
+  "abbr": "For",
+  "name": "Fornax",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Fornacis",
+      "ra": "03:12:04.3",
+      "dec": "-28:59:13",
+      "mag": 3.87
+    },
+    {
+      "key": "s2",
+      "name": "β Fornacis",
+      "ra": "02:49:05.4",
+      "dec": "-32:24:21",
+      "mag": 4.46
+    },
+    {
+      "key": "s3",
+      "name": "ν Fornacis",
+      "ra": "02:04:29.4",
+      "dec": "-29:17:49",
+      "mag": 4.69
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

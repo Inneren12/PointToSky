@@ -1,0 +1,56 @@
+{
+  "abbr": "Del",
+  "name": "Delphinus",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "Deneb Dulfim",
+      "ra": "20:33:12.8",
+      "dec": "+11:18:12",
+      "mag": 4.03
+    },
+    {
+      "key": "s2",
+      "name": "Rotanev",
+      "ra": "20:37:33.0",
+      "dec": "+14:35:43",
+      "mag": 3.63
+    },
+    {
+      "key": "s3",
+      "name": "Sualocin",
+      "ra": "20:39:38.3",
+      "dec": "+15:54:43",
+      "mag": 3.77
+    },
+    {
+      "key": "s4",
+      "name": "γ¹ Delphini",
+      "ra": "20:46:38.7",
+      "dec": "+16:07:28",
+      "mag": 5.14
+    },
+    {
+      "key": "s5",
+      "name": "δ Delphini",
+      "ra": "20:43:27.5",
+      "dec": "+15:04:28",
+      "mag": 4.43
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s2"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

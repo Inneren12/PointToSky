@@ -1,0 +1,63 @@
+{
+  "abbr": "Hor",
+  "name": "Horologium",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "α Horologii",
+      "ra": "04:14:00.1",
+      "dec": "-42:17:40",
+      "mag": 3.86
+    },
+    {
+      "key": "s2",
+      "name": "ι Horologii",
+      "ra": "02:42:33.5",
+      "dec": "-50:48:01",
+      "mag": 5.41
+    },
+    {
+      "key": "s3",
+      "name": "η Horologii",
+      "ra": "02:37:24.4",
+      "dec": "-52:32:35",
+      "mag": 5.31
+    },
+    {
+      "key": "s4",
+      "name": "ζ Horologii",
+      "ra": "02:40:39.6",
+      "dec": "-54:33:00",
+      "mag": 5.21
+    },
+    {
+      "key": "s5",
+      "name": "μ Horologii",
+      "ra": "03:03:36.8",
+      "dec": "-59:44:16",
+      "mag": 5.11
+    },
+    {
+      "key": "s6",
+      "name": "β Horologii",
+      "ra": "02:58:47.8",
+      "dec": "-64:04:17",
+      "mag": 4.99
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s6"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

@@ -1,0 +1,47 @@
+{
+  "abbr": "Scl",
+  "name": "Sculptor",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "α Sculptoris",
+      "ra": "00:58:36.4",
+      "dec": "-29:21:27",
+      "mag": 4.31
+    },
+    {
+      "key": "s2",
+      "name": "δ Sculptoris",
+      "ra": "23:48:55.6",
+      "dec": "-28:07:49",
+      "mag": 4.57
+    },
+    {
+      "key": "s3",
+      "name": "γ Sculptoris",
+      "ra": "23:18:49.4",
+      "dec": "-32:31:55",
+      "mag": 4.41
+    },
+    {
+      "key": "s4",
+      "name": "β Sculptoris",
+      "ra": "23:32:58.3",
+      "dec": "-37:49:06",
+      "mag": 4.37
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

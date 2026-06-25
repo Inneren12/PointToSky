@@ -1,0 +1,55 @@
+{
+  "abbr": "Vul",
+  "name": "Vulpecula",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "1 Vulpeculae",
+      "ra": "19:16:13.0",
+      "dec": "+21:23:25",
+      "mag": 4.77
+    },
+    {
+      "key": "s2",
+      "name": "Lucida Anseris",
+      "ra": "19:28:42.3",
+      "dec": "+24:39:54",
+      "mag": 4.44
+    },
+    {
+      "key": "s3",
+      "name": "13 Vulpeculae",
+      "ra": "19:53:27.7",
+      "dec": "+24:04:47",
+      "mag": 4.58
+    },
+    {
+      "key": "s4",
+      "name": "15 Vulpeculae",
+      "ra": "20:01:06.1",
+      "dec": "+27:45:13",
+      "mag": 4.64
+    },
+    {
+      "key": "s5",
+      "name": "23 Vulpeculae",
+      "ra": "20:15:46.1",
+      "dec": "+27:48:51",
+      "mag": 4.52
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

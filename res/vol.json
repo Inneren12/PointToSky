@@ -1,0 +1,57 @@
+{
+  "abbr": "Vol",
+  "name": "Volans",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "α Volantis",
+      "ra": "09:02:26.8",
+      "dec": "-66:23:46",
+      "mag": 4.0
+    },
+    {
+      "key": "s2",
+      "name": "β Volantis",
+      "ra": "08:25:44.2",
+      "dec": "-66:08:13",
+      "mag": 3.77
+    },
+    {
+      "key": "s3",
+      "name": "ε Volantis",
+      "ra": "08:07:55.8",
+      "dec": "-68:37:02",
+      "mag": 4.35
+    },
+    {
+      "key": "s4",
+      "name": "δ Volantis",
+      "ra": "07:16:49.8",
+      "dec": "-67:57:26",
+      "mag": 3.98
+    },
+    {
+      "key": "s5",
+      "name": "γ² Volantis",
+      "ra": "07:08:44.9",
+      "dec": "-70:29:56",
+      "mag": 3.78
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s3",
+        "s1"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

@@ -1,0 +1,39 @@
+{
+  "abbr": "Pic",
+  "name": "Pictor",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "α Pictoris",
+      "ra": "06:48:11.4",
+      "dec": "-61:56:29",
+      "mag": 3.27
+    },
+    {
+      "key": "s2",
+      "name": "γ Pictoris",
+      "ra": "05:49:49.7",
+      "dec": "-56:10:00",
+      "mag": 4.51
+    },
+    {
+      "key": "s3",
+      "name": "β Pictoris",
+      "ra": "05:47:17.1",
+      "dec": "-51:03:59",
+      "mag": 3.85
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}

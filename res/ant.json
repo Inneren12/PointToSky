@@ -1,0 +1,39 @@
+{
+  "abbr": "Ant",
+  "name": "Antlia",
+  "stars": [
+    {
+      "key": "s1",
+      "name": "ε Antliae",
+      "ra": "09:29:14.7",
+      "dec": "-35:57:05",
+      "mag": 4.51
+    },
+    {
+      "key": "s2",
+      "name": "α Antliae",
+      "ra": "10:27:09.1",
+      "dec": "-31:04:04",
+      "mag": 4.25
+    },
+    {
+      "key": "s3",
+      "name": "ι Antliae",
+      "ra": "10:56:43.1",
+      "dec": "-37:08:16",
+      "mag": 4.6
+    }
+  ],
+  "skeleton": [
+    {
+      "pp": 1,
+      "nodes": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    }
+  ],
+  "asterisms": [],
+  "art_overlays": []
+}
