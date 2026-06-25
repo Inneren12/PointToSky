@@ -45,6 +45,7 @@ data class ScreenLineSegment(
     val start: Offset,
     val end: Offset,
     val highlighted: Boolean,
+    val colorIndex: Int = 0,
 )
 
 data class AsterismLabelOverlay(
