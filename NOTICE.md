@@ -5,11 +5,13 @@ This project uses astronomical reference data compiled from publicly available s
 ## Data sources
 - Yale Bright Star Catalogue (BSC5): star positions, magnitudes, and names.
 - Constellation boundaries and figure lines (skeletons): the d3-celestial project.
+- NASA Black Marble nighttime lights (VIIRS/NPP VNP46A4): light-pollution grid.
 
 ## Attribution
 - Yale Bright Star Catalogue (BSC5), 5th ed., Hoffleit & Warren — public domain. JSON form obtained from `brettonw/YaleBrightStarCatalog`.
 - Constellation boundaries — IAU (Delporte, 1930); obtained via d3-celestial.
 - Constellation figure lines (skeletons) — © Olaf Frohn, d3-celestial (https://github.com/ofrohn/d3-celestial).
+- Light-pollution grid — derived from NASA's Black Marble product suite (VIIRS/NPP), NASA EOSDIS. Reference: Román et al. 2018, Remote Sensing of Environment 210, 113–143. Skyglow model: Duriscoe et al. 2018, Journal of Quantitative Spectroscopy and Radiative Transfer 214, 133–145. (The real asset is not yet shipped; attribution is recorded here in advance.)
 
 Constellation boundary and figure-line data are both from the d3-celestial project and are used under the BSD-3-Clause license, reproduced in full below.
 
