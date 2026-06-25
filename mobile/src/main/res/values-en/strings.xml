@@ -48,4 +48,7 @@
     <string name="ar_constellation_mode_asterisms">Asterisms</string>
     <string name="ar_constellation_mode_figure">Constellation</string>
     <string name="ar_advanced_toggle">Advanced</string>
+    <string name="ar_visibility_filter_title">Visibility filter</string>
+    <string name="ar_visibility_readout">Visible to ~mag %1$s here, now</string>
+    <string name="ar_sky_darkness_title">Sky darkness (Bortle %1$d)</string>
 </resources>

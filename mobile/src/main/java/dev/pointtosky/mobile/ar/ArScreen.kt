@@ -63,6 +63,7 @@ import dev.pointtosky.core.astro.catalog.StarRecord
 import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
+import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
 import dev.pointtosky.core.astro.transform.altAzToRaDec
 import dev.pointtosky.core.astro.transform.raDecToAltAz
@@ -116,6 +117,8 @@ fun ArRoute(
         onShowStarLabelsToggle = viewModel::setShowStarLabels,
         onShowStarPointsToggle = viewModel::setShowStarPoints,
         onReticleTargetOnlyToggle = viewModel::setReticleTargetOnly,
+        onVisibilityFilterToggle = viewModel::setVisibilityFilterEnabled,
+        onBortleChange = viewModel::setBortle,
         onBack = onBack,
         onSetTarget = { target ->
             val option =
@@ -159,6 +162,8 @@ fun ArScreen(
     onShowStarLabelsToggle: (Boolean) -> Unit,
     onShowStarPointsToggle: (Boolean) -> Unit,
     onReticleTargetOnlyToggle: (Boolean) -> Unit,
+    onVisibilityFilterToggle: (Boolean) -> Unit,
+    onBortleChange: (Bortle) -> Unit,
     onBack: () -> Unit,
     onSetTarget: (ArTarget) -> Unit,
     modifier: Modifier = Modifier,
@@ -325,12 +330,17 @@ fun ArScreen(
                         showStarLabels = state.showStarLabels,
                         showStarPoints = state.showStarPoints,
                         reticleTargetOnly = state.reticleTargetOnly,
+                        visibilityFilterEnabled = state.visibilityFilterEnabled,
+                        bortle = state.bortle,
+                        limitingMag = state.limitingMag,
                         onConstellationModeChange = onConstellationModeChange,
                         onProModeChange = onProModeChange,
                         onMagLimitChange = onMagLimitChange,
                         onShowStarLabelsToggle = onShowStarLabelsToggle,
                         onShowStarPointsToggle = onShowStarPointsToggle,
                         onReticleTargetOnlyToggle = onReticleTargetOnlyToggle,
+                        onVisibilityFilterToggle = onVisibilityFilterToggle,
+                        onBortleChange = onBortleChange,
                         modifier =
                             Modifier
                                 .align(Alignment.TopEnd)
@@ -664,12 +674,17 @@ private fun ArControlsPanel(
     showStarLabels: Boolean,
     showStarPoints: Boolean,
     reticleTargetOnly: Boolean,
+    visibilityFilterEnabled: Boolean,
+    bortle: Bortle,
+    limitingMag: Double?,
     onConstellationModeChange: (ConstellationMode) -> Unit,
     onProModeChange: (Boolean) -> Unit,
     onMagLimitChange: (Double) -> Unit,
     onShowStarLabelsToggle: (Boolean) -> Unit,
     onShowStarPointsToggle: (Boolean) -> Unit,
     onReticleTargetOnlyToggle: (Boolean) -> Unit,
+    onVisibilityFilterToggle: (Boolean) -> Unit,
+    onBortleChange: (Bortle) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -716,6 +731,27 @@ private fun ArControlsPanel(
                 magLimit = magLimit,
                 onMagLimitChange = onMagLimitChange,
             )
+            if (limitingMag != null) {
+                Text(
+                    text = stringResource(
+                        R.string.ar_visibility_readout,
+                        String.format("%.1f", limitingMag),
+                    ),
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            ToggleRow(
+                title = stringResource(R.string.ar_visibility_filter_title),
+                checked = visibilityFilterEnabled,
+                onCheckedChange = onVisibilityFilterToggle,
+            )
+            if (visibilityFilterEnabled) {
+                BortleSlider(
+                    bortle = bortle,
+                    onBortleChange = onBortleChange,
+                )
+            }
             ToggleRow(
                 title = stringResource(R.string.ar_hide_star_labels),
                 checked = !showStarLabels,
@@ -756,6 +792,31 @@ private fun MagnitudeSlider(
             onValueChange = { onMagLimitChange(it.toDouble()) },
             valueRange = 0f..7f,
             steps = 14,
+        )
+    }
+}
+
+@Composable
+private fun BortleSlider(
+    bortle: Bortle,
+    onBortleChange: (Bortle) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val bortleNumber = bortle.ordinal + 1
+    Column(
+        modifier = modifier.padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.ar_sky_darkness_title, bortleNumber),
+            color = Color.White,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Slider(
+            value = bortleNumber.toFloat(),
+            onValueChange = { onBortleChange(Bortle.entries[(it.toInt() - 1).coerceIn(0, 8)]) },
+            valueRange = 1f..9f,
+            steps = 7,
         )
     }
 }
@@ -838,7 +899,7 @@ internal fun calculateOverlay(
     val visibleStars: List<StarRecord> =
         (state.catalog?.catalog?.allStars().orEmpty())
             .filter { it.isRenderablePoint() }
-            .filter { val limit = state.magLimit; limit <= 0.0 || it.magnitude.toDouble() <= limit }
+            .filter { val limit = state.effectiveMagLimit; limit <= 0.0 || it.magnitude.toDouble() <= limit }
 
     // Project ALL mag-filtered stars; projectEquatorial returns null for off-screen ones.
     val projectedStars: List<OverlayObject> =

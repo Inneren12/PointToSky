@@ -9,9 +9,15 @@ import dev.pointtosky.core.astro.catalog.PtskCatalogLoader
 import dev.pointtosky.core.astro.catalog.StarRecord
 import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
+import dev.pointtosky.core.astro.ephem.Body
+import dev.pointtosky.core.astro.ephem.EphemerisComputer
+import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.SkyObjectOrConstellation
 import dev.pointtosky.core.astro.time.lstAt
+import dev.pointtosky.core.astro.transform.raDecToAltAz
+import dev.pointtosky.core.astro.visibility.Bortle
+import dev.pointtosky.core.astro.visibility.estimateLimitingMagnitude
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
@@ -37,6 +43,7 @@ class ArViewModel(
     private val astroLoader: PtskCatalogLoader,
     locationPrefs: LocationPrefs,
     timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1_000L),
+    private val ephemerisComputer: EphemerisComputer = SimpleEphemerisComputer(),
     /** DI-диспетчер вместо прямого Dispatchers.IO (detekt: InjectDispatcher) */
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -48,6 +55,8 @@ class ArViewModel(
     private val showStarLabels = MutableStateFlow(true)
     private val showStarPoints = MutableStateFlow(true)
     private val reticleTargetOnly = MutableStateFlow(false)
+    private val visibilityFilterEnabled = MutableStateFlow(false)
+    private val bortle = MutableStateFlow(Bortle.CLASS_4)
     private val asterismState =
         MutableStateFlow(
             AsterismUiState(
@@ -85,6 +94,8 @@ class ArViewModel(
             showStarLabels,
             showStarPoints,
             reticleTargetOnly,
+            visibilityFilterEnabled,
+            bortle,
         ) { values: Array<Any?> ->
             @Suppress("UNCHECKED_CAST")
             val stars = values[0] as List<ArStar>
@@ -98,6 +109,8 @@ class ArViewModel(
             val showStarLabelsValue = values[8] as Boolean
             val showStarPointsValue = values[9] as Boolean
             val reticleTargetOnlyValue = values[10] as Boolean
+            val visibilityFilterValue = values[11] as Boolean
+            val bortleValue = values[12] as Bortle
 
             buildState(
                 stars = stars,
@@ -111,6 +124,8 @@ class ArViewModel(
                 showStarLabels = showStarLabelsValue,
                 showStarPoints = showStarPointsValue,
                 reticleTargetOnly = reticleTargetOnlyValue,
+                visibilityFilter = visibilityFilterValue,
+                bortle = bortleValue,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -142,8 +157,31 @@ class ArViewModel(
         showStarLabels: Boolean,
         showStarPoints: Boolean,
         reticleTargetOnly: Boolean,
+        visibilityFilter: Boolean,
+        bortle: Bortle,
     ): ArUiState {
         val lstDeg = lstAt(instant, location.point.lonDeg).lstDeg
+        val moon = ephemerisComputer.compute(Body.MOON, instant)
+        val sun = ephemerisComputer.compute(Body.SUN, instant)
+        val moonAlt = raDecToAltAz(
+            eq = moon.eq,
+            lstDeg = lstDeg,
+            latDeg = location.point.latDeg,
+            applyRefraction = false,
+        ).altDeg
+        val sunAlt = raDecToAltAz(
+            eq = sun.eq,
+            lstDeg = lstDeg,
+            latDeg = location.point.latDeg,
+            applyRefraction = false,
+        ).altDeg
+        val limitingMag = estimateLimitingMagnitude(
+            darkNelm = bortle.darkNelm,
+            moonAltitudeDeg = moonAlt,
+            moonIllumination = moon.phase ?: 0.0,
+            sunAltitudeDeg = sunAlt,
+        )
+        val effectiveMagLimit = if (visibilityFilter) minOf(magLimit, limitingMag) else magLimit
         return ArUiState.Ready(
             instant = instant,
             location = location.point,
@@ -155,6 +193,10 @@ class ArViewModel(
             showAsterisms = constellationMode == ConstellationMode.ASTERISMS,
             asterismUiState = asterismUiState,
             magLimit = magLimit,
+            effectiveMagLimit = effectiveMagLimit,
+            limitingMag = limitingMag,
+            visibilityFilterEnabled = visibilityFilter,
+            bortle = bortle,
             showStarLabels = showStarLabels,
             showStarPoints = showStarPoints,
             reticleTargetOnly = reticleTargetOnly,
@@ -190,6 +232,14 @@ class ArViewModel(
 
     fun setMagLimit(value: Double) {
         magLimit.value = value.coerceIn(0.0, 8.0)
+    }
+
+    fun setVisibilityFilterEnabled(enabled: Boolean) {
+        visibilityFilterEnabled.value = enabled
+    }
+
+    fun setBortle(value: Bortle) {
+        bortle.value = value
     }
 
     fun setShowStarLabels(enabled: Boolean) {
@@ -260,6 +310,10 @@ sealed interface ArUiState {
         val reticleTargetOnly: Boolean = false,
         val constellationMode: ConstellationMode = ConstellationMode.ASTERISMS,
         val proMode: Boolean = false,
+        val effectiveMagLimit: Double = 6.0,
+        val limitingMag: Double? = null,
+        val visibilityFilterEnabled: Boolean = false,
+        val bortle: Bortle = Bortle.CLASS_4,
     ) : ArUiState
 }
 
