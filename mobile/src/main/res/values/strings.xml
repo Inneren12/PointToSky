@@ -125,8 +125,11 @@
     <string name="ar_set_target_button">Set %1$s as watch target</string>
     <string name="ar_label_meta">mag %1$.1f • Δ%2$.1f°</string>
     <string name="ar_unknown_object">Unknown object</string>
-    <string name="ar_show_constellations">Show constellations</string>
-    <string name="ar_show_asterisms">Show asterisms</string>
+    <string name="ar_constellation_mode_label">Constellations</string>
+    <string name="ar_constellation_mode_off">Off</string>
+    <string name="ar_constellation_mode_asterisms">Asterisms</string>
+    <string name="ar_constellation_mode_figure">Constellation</string>
+    <string name="ar_advanced_toggle">Advanced</string>
     <string name="ar_mag_limit_title">Max magnitude: %1$s</string>
     <string name="ar_settings_content_desc">AR settings</string>
     <string name="ar_hide_star_labels">Hide star names</string>

@@ -24,9 +24,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -103,8 +107,8 @@ fun ArRoute(
 
     ArScreen(
         state = state,
-        onConstellationsToggle = viewModel::setShowConstellations,
-        onAsterismsToggle = viewModel::setShowAsterisms,
+        onConstellationModeChange = viewModel::setConstellationMode,
+        onProModeChange = viewModel::setProMode,
         onAsterismContext = viewModel::updateAsterismContext,
         resolveConstellation = viewModel::resolveConstellationId,
         onMagLimitChange = viewModel::setMagLimit,
@@ -146,8 +150,8 @@ data class ArTarget(
 @Composable
 fun ArScreen(
     state: ArUiState,
-    onConstellationsToggle: (Boolean) -> Unit,
-    onAsterismsToggle: (Boolean) -> Unit,
+    onConstellationModeChange: (ConstellationMode) -> Unit,
+    onProModeChange: (Boolean) -> Unit,
     onAsterismContext: (List<AsterismSummary>, AsterismId?) -> Unit,
     resolveConstellation: (Equatorial) -> ConstellationId?,
     onMagLimitChange: (Double) -> Unit,
@@ -314,14 +318,14 @@ fun ArScreen(
 
                 if (settingsVisible) {
                     ArControlsPanel(
-                        showConstellations = state.showConstellations,
-                        showAsterisms = state.showAsterisms,
+                        constellationMode = state.constellationMode,
+                        proMode = state.proMode,
                         magLimit = state.magLimit,
                         showStarLabels = state.showStarLabels,
                         showStarPoints = state.showStarPoints,
                         reticleTargetOnly = state.reticleTargetOnly,
-                        onConstellationsToggle = onConstellationsToggle,
-                        onAsterismsToggle = onAsterismsToggle,
+                        onConstellationModeChange = onConstellationModeChange,
+                        onProModeChange = onProModeChange,
                         onMagLimitChange = onMagLimitChange,
                         onShowStarLabelsToggle = onShowStarLabelsToggle,
                         onShowStarPointsToggle = onShowStarPointsToggle,
@@ -634,16 +638,21 @@ private fun ConstellationLayer(
     }
 }
 
+// PRODUCT NOTE / TODO(catalog-capabilities): The constellation selector and pro-mode controls are
+// currently shown unconditionally. With the A1 star-points-only catalog there are no LINE_NODE stars
+// and the ASTR/APLY/ASTN/ART0 sections are empty, so these toggles are inert. Capability-gating is
+// deferred to a separate UI PR.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ArControlsPanel(
-    showConstellations: Boolean,
-    showAsterisms: Boolean,
+    constellationMode: ConstellationMode,
+    proMode: Boolean,
     magLimit: Double,
     showStarLabels: Boolean,
     showStarPoints: Boolean,
     reticleTargetOnly: Boolean,
-    onConstellationsToggle: (Boolean) -> Unit,
-    onAsterismsToggle: (Boolean) -> Unit,
+    onConstellationModeChange: (ConstellationMode) -> Unit,
+    onProModeChange: (Boolean) -> Unit,
     onMagLimitChange: (Double) -> Unit,
     onShowStarLabelsToggle: (Boolean) -> Unit,
     onShowStarPointsToggle: (Boolean) -> Unit,
@@ -657,63 +666,59 @@ private fun ArControlsPanel(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ConstellationToggles(
-            showConstellations = showConstellations,
-            showAsterisms = showAsterisms,
-            onConstellationsToggle = onConstellationsToggle,
-            onAsterismsToggle = onAsterismsToggle,
+        Text(
+            text = stringResource(R.string.ar_constellation_mode_label),
+            color = Color.White,
+            style = MaterialTheme.typography.bodySmall,
         )
-        MagnitudeSlider(
-            magLimit = magLimit,
-            onMagLimitChange = onMagLimitChange,
-        )
+        val modes = ConstellationMode.entries
+        val modeLabels =
+            listOf(
+                stringResource(R.string.ar_constellation_mode_off),
+                stringResource(R.string.ar_constellation_mode_asterisms),
+                stringResource(R.string.ar_constellation_mode_figure),
+            )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            modes.forEachIndexed { index, mode ->
+                SegmentedButton(
+                    selected = constellationMode == mode,
+                    onClick = { onConstellationModeChange(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                    label = {
+                        Text(
+                            text = modeLabels[index],
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    },
+                )
+            }
+        }
         ToggleRow(
-            title = stringResource(R.string.ar_hide_star_labels),
-            checked = !showStarLabels,
-            onCheckedChange = { hide -> onShowStarLabelsToggle(!hide) },
+            title = stringResource(R.string.ar_advanced_toggle),
+            checked = proMode,
+            onCheckedChange = onProModeChange,
         )
-        ToggleRow(
-            title = stringResource(R.string.ar_show_star_points),
-            checked = showStarPoints,
-            onCheckedChange = onShowStarPointsToggle,
-        )
-        ToggleRow(
-            title = stringResource(R.string.ar_reticle_target_only),
-            checked = reticleTargetOnly,
-            onCheckedChange = onReticleTargetOnlyToggle,
-        )
-    }
-}
-
-// PRODUCT NOTE / TODO(catalog-capabilities): These constellation/asterism (and the art overlay)
-// controls are currently shown unconditionally. With the A1 star-points-only catalog there are no
-// LINE_NODE stars and the ASTR/APLY/ASTN/ART0 sections are empty, so these toggles are inert — they
-// flip state that produces no on-screen geometry. They should be hidden/disabled based on catalog
-// capabilities (has skeleton lines / has asterisms / has art), derived from AstroCatalogState. That
-// gating is intentionally deferred to a separate UI PR; it is not part of the behavior-preserving
-// LINE_NODE skeleton-gating change and would otherwise expand its scope.
-@Composable
-private fun ConstellationToggles(
-    showConstellations: Boolean,
-    showAsterisms: Boolean,
-    onConstellationsToggle: (Boolean) -> Unit,
-    onAsterismsToggle: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ToggleRow(
-            title = stringResource(id = R.string.ar_show_constellations),
-            checked = showConstellations,
-            onCheckedChange = onConstellationsToggle,
-        )
-        ToggleRow(
-            title = stringResource(id = R.string.ar_show_asterisms),
-            checked = showAsterisms,
-            onCheckedChange = onAsterismsToggle,
-        )
+        if (proMode) {
+            MagnitudeSlider(
+                magLimit = magLimit,
+                onMagLimitChange = onMagLimitChange,
+            )
+            ToggleRow(
+                title = stringResource(R.string.ar_hide_star_labels),
+                checked = !showStarLabels,
+                onCheckedChange = { hide -> onShowStarLabelsToggle(!hide) },
+            )
+            ToggleRow(
+                title = stringResource(R.string.ar_show_star_points),
+                checked = showStarPoints,
+                onCheckedChange = onShowStarPointsToggle,
+            )
+            ToggleRow(
+                title = stringResource(R.string.ar_reticle_target_only),
+                checked = reticleTargetOnly,
+                onCheckedChange = onReticleTargetOnlyToggle,
+            )
+        }
     }
 }
 
