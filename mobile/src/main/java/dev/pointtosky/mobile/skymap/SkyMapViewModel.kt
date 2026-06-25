@@ -108,6 +108,7 @@ class SkyMapViewModel(
                     magnitude = star.mag.toDouble(),
                     equatorial = Equatorial(star.raDeg.toDouble(), star.decDeg.toDouble()),
                     constellation = star.constellation,
+                    bv = star.bv,
                 )
             }
         }
@@ -130,6 +131,7 @@ class SkyMapViewModel(
                     equatorial = star.equatorial,
                     horizontal = horizontal,
                     constellation = star.constellation,
+                    bv = star.bv,
                 )
             }
         val projectedConstellations =
@@ -176,6 +178,7 @@ class SkyMapViewModel(
         val magnitude: Double,
         val equatorial: Equatorial,
         val constellation: String?,
+        val bv: Float? = null,
     )
 
     companion object {
@@ -206,6 +209,7 @@ data class ProjectedStar(
     val equatorial: Equatorial,
     val horizontal: Horizontal,
     val constellation: String?,
+    val bv: Float? = null,
 ) {
     val label: String? = name ?: designation
     val isAboveHorizon: Boolean get() = horizontal.altDeg >= 0.0

@@ -11,6 +11,7 @@ package dev.pointtosky.core.catalog.star
  * @property bayer Bayer designation (e.g. "α CMa") if present.
  * @property flamsteed Flamsteed designation (e.g. "13 Ori") if present.
  * @property constellation IAU constellation code (three letters) if known.
+ * @property bv Johnson B−V color index if known; null otherwise.
  */
 data class Star(
     val id: Int,
@@ -21,4 +22,5 @@ data class Star(
     val bayer: String?,
     val flamsteed: String?,
     val constellation: String?,
+    val bv: Float? = null,
 )

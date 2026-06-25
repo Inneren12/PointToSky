@@ -41,7 +41,8 @@ class AstroStarCatalogAdapter(
                     name = s.name,
                     bayer = null,
                     flamsteed = null,
-                    constellation = astro.getConstellationMeta(s.constellationId).abbreviation
+                    constellation = astro.getConstellationMeta(s.constellationId).abbreviation,
+                    bv = s.bv,
                 )
             }
             .toList()

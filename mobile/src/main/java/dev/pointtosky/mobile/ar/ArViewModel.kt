@@ -216,6 +216,7 @@ class ArViewModel(
         val label: String?,
         val magnitude: Double,
         val equatorial: Equatorial,
+        val bv: Float? = null,
     )
 
     private suspend fun loadAstroCatalog(): AstroCatalogState? =
@@ -268,6 +269,7 @@ private fun mapToArStar(star: StarRecord): ArViewModel.ArStar =
         label = star.name,
         magnitude = star.magnitude.toDouble(),
         equatorial = Equatorial(star.rightAscensionDeg.toDouble(), star.declinationDeg.toDouble()),
+        bv = star.bv,
     )
 
 class ArViewModelFactory(

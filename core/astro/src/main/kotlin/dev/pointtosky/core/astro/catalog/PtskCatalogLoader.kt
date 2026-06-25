@@ -13,7 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal const val MAGIC = "PTSKCAT4"
-internal const val VERSION = 4
+internal const val VERSION = 5
 
 private data class SectionDir(
     val fourcc: String,
@@ -30,6 +30,7 @@ private data class StarRecordBin(
     val constellationId: ConstellationId,
     val flags: Int,
     val nameId: PtskStringId,
+    val bv: Float,
 )
 
 private data class AsterismRecordBin(
@@ -259,8 +260,8 @@ internal class PtskCatalogParser {
         val constSection = requireSection("CST0", 16)
         val constellations = parseConstellations(buffer, constSection, strings)
 
-        // STAR-запись: id(4) + ra(4) + dec(4) + mag(4) + const(2) + flags(2) + nameId(4) = 24 байта
-        val starSection = requireSection("STAR", 24)
+        // STAR-запись: id(4) + ra(4) + dec(4) + mag(4) + const(2) + flags(2) + nameId(4) + bv(4) = 28 байт
+        val starSection = requireSection("STAR", 28)
         val starsBin = parseStars(buffer, starSection)
 
         val asterSection = requireSection("ASTR", 20)
@@ -312,11 +313,12 @@ internal class PtskCatalogParser {
             val constIndex = buffer.short.toInt() and 0xFFFF
             val flags = buffer.short.toInt() and 0xFFFF
             val nameId = PtskStringId(buffer.int)
+            val bv = buffer.float
             val constellationId = ConstellationId(constIndex)
             require(id.cc() == constellationId.index) {
                 "Star id constellation ${id.cc()} does not match record const index ${constellationId.index}"
             }
-            StarRecordBin(id, ra, dec, mag, constellationId, flags, nameId)
+            StarRecordBin(id, ra, dec, mag, constellationId, flags, nameId, bv)
         }
     }
 
@@ -401,6 +403,7 @@ internal class PtskCatalogParser {
             constellationId = constellationId,
             flags = flags,
             name = strings.get(nameId).ifEmpty { null },
+            bv = bv.takeUnless { it.isNaN() },
         )
 
     private fun AsterismRecordBin.toAsterism(strings: StringPool): Asterism =
