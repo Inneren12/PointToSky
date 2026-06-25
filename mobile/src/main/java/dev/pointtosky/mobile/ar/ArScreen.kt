@@ -600,6 +600,17 @@ private fun ReticleTargetHighlight(
     }
 }
 
+private val asterismPalette = listOf(
+    Color(0xFFFFC107), // amber
+    Color(0xFF4FC3F7), // light blue
+    Color(0xFF81C784), // green
+    Color(0xFFBA68C8), // purple
+    Color(0xFFFF8A65), // deep orange
+    Color(0xFF4DD0E1), // cyan
+    Color(0xFFF06292), // pink
+    Color(0xFFAED581), // lime
+)
+
 @Composable
 private fun ConstellationLayer(
     overlay: OverlayData,
@@ -617,8 +628,9 @@ private fun ConstellationLayer(
             )
         }
         overlay.asterismSegments.forEach { segment ->
+            val base = asterismPalette[segment.colorIndex % asterismPalette.size]
             drawLine(
-                color = if (segment.highlighted) Color(0xFFFFC107) else Color(0x66FFC107),
+                color = if (segment.highlighted) base else base.copy(alpha = 0.4f),
                 start = segment.start,
                 end = segment.end,
                 strokeWidth = if (segment.highlighted) asterismStroke else constellationStroke,
@@ -913,7 +925,7 @@ internal fun calculateOverlay(
                 }
             val highlighted = asterismState.highlighted ?: defaultHighlight
             asterismState = asterismState.copy(available = available, highlighted = highlighted)
-            asterisms.forEach { asterism ->
+            asterisms.forEachIndexed { index, asterism ->
                 val segments = buildAsterismSegments(asterism, catalogState.catalog)
                 val isHighlighted = asterismState.highlighted == asterism.name
                 segments.forEach { segment ->
@@ -924,6 +936,7 @@ internal fun calculateOverlay(
                             start = start,
                             end = end,
                             highlighted = isHighlighted,
+                            colorIndex = index,
                         )
                 }
 
