@@ -19,9 +19,9 @@ import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.astro.visibility.estimateLimitingMagnitude
 import dev.pointtosky.core.location.model.GeoPoint
-import dev.pointtosky.mobile.visibility.VisibilitySettings
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
+import dev.pointtosky.mobile.visibility.VisibilitySettings
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

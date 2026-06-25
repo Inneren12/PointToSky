@@ -249,7 +249,15 @@ private fun SkyMapContent(
             drawSkyBackground(scale, offset, skyDiskColor)
             drawAltitudeGrid(scale, offset, gridColor)
             drawConstellations(baseConstellationPositions, scale, offset, constellationColor)
-            drawStars(baseStarPositions, selectedId, highlightColor, scale, offset, state.visibilityFilterEnabled, state.limitingMag)
+            drawStars(
+                baseStarPositions,
+                selectedId,
+                highlightColor,
+                scale,
+                offset,
+                state.visibilityFilterEnabled,
+                state.limitingMag,
+            )
         }
 
         Column(
