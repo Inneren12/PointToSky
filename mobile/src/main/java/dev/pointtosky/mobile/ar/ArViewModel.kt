@@ -30,6 +30,8 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.Locale
 
+enum class ConstellationMode { OFF, ASTERISMS, FIGURE }
+
 class ArViewModel(
     private val identifySolver: IdentifySolver,
     private val astroLoader: PtskCatalogLoader,
@@ -40,8 +42,8 @@ class ArViewModel(
 ) : ViewModel() {
     private val staticStars = MutableStateFlow<List<ArStar>?>(null)
     private val astroCatalog = MutableStateFlow<AstroCatalogState?>(null)
-    private val showConstellations = MutableStateFlow(true)
-    private val showAsterisms = MutableStateFlow(true)
+    private val constellationMode = MutableStateFlow(ConstellationMode.ASTERISMS)
+    private val proMode = MutableStateFlow(false)
     private val magLimit = MutableStateFlow<Double>(6.0)
     private val showStarLabels = MutableStateFlow(true)
     private val showStarPoints = MutableStateFlow(true)
@@ -76,8 +78,8 @@ class ArViewModel(
             astroCatalog,
             locationSnapshot,
             timeSource.ticks,
-            showConstellations,
-            showAsterisms,
+            constellationMode,
+            proMode,
             asterismState,
             magLimit,
             showStarLabels,
@@ -89,8 +91,8 @@ class ArViewModel(
             val catalog = values[1] as AstroCatalogState?
             val location = values[2] as LocationSnapshot
             val instant = values[3] as Instant
-            val showConst = values[4] as Boolean
-            val showAster = values[5] as Boolean
+            val mode = values[4] as ConstellationMode
+            val pro = values[5] as Boolean
             val asterisms = values[6] as AsterismUiState
             val magLimitValue = values[7] as Double
             val showStarLabelsValue = values[8] as Boolean
@@ -102,8 +104,8 @@ class ArViewModel(
                 catalog = catalog,
                 location = location,
                 instant = instant,
-                showConstellations = showConst,
-                showAsterisms = showAster,
+                constellationMode = mode,
+                proMode = pro,
                 asterismUiState = asterisms,
                 magLimit = magLimitValue,
                 showStarLabels = showStarLabelsValue,
@@ -133,8 +135,8 @@ class ArViewModel(
         catalog: AstroCatalogState?,
         location: LocationSnapshot,
         instant: Instant,
-        showConstellations: Boolean,
-        showAsterisms: Boolean,
+        constellationMode: ConstellationMode,
+        proMode: Boolean,
         asterismUiState: AsterismUiState,
         magLimit: Double,
         showStarLabels: Boolean,
@@ -149,18 +151,25 @@ class ArViewModel(
             lstDeg = lstDeg,
             stars = stars,
             catalog = catalog,
-            showConstellations = showConstellations,
-            showAsterisms = showAsterisms,
+            showConstellations = constellationMode == ConstellationMode.FIGURE,
+            showAsterisms = constellationMode == ConstellationMode.ASTERISMS,
             asterismUiState = asterismUiState,
             magLimit = magLimit,
             showStarLabels = showStarLabels,
             showStarPoints = showStarPoints,
             reticleTargetOnly = reticleTargetOnly,
+            constellationMode = constellationMode,
+            proMode = proMode,
         )
     }
 
-    fun setShowConstellations(enabled: Boolean) {
-        showConstellations.value = enabled
+    fun setConstellationMode(mode: ConstellationMode) {
+        constellationMode.value = mode
+        asterismState.update { current -> current.copy(isEnabled = mode == ConstellationMode.ASTERISMS) }
+    }
+
+    fun setProMode(enabled: Boolean) {
+        proMode.value = enabled
     }
 
     fun setShowStarPoints(enabled: Boolean) {
@@ -169,11 +178,6 @@ class ArViewModel(
 
     fun setReticleTargetOnly(enabled: Boolean) {
         reticleTargetOnly.value = enabled
-    }
-
-    fun setShowAsterisms(enabled: Boolean) {
-        showAsterisms.value = enabled
-        asterismState.update { current -> current.copy(isEnabled = enabled) }
     }
 
     fun updateAsterismContext(available: List<AsterismSummary>, highlighted: AsterismId?) {
@@ -253,6 +257,8 @@ sealed interface ArUiState {
         val showStarLabels: Boolean,
         val showStarPoints: Boolean = true,
         val reticleTargetOnly: Boolean = false,
+        val constellationMode: ConstellationMode = ConstellationMode.ASTERISMS,
+        val proMode: Boolean = false,
     ) : ArUiState
 }
 

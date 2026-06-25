@@ -43,4 +43,9 @@
     <string name="crash_logs_share_missing">File not found.</string>
     <string name="ar_show_star_points">Show star points</string>
     <string name="ar_reticle_target_only">Reticle target only</string>
+    <string name="ar_constellation_mode_label">Constellations</string>
+    <string name="ar_constellation_mode_off">Off</string>
+    <string name="ar_constellation_mode_asterisms">Asterisms</string>
+    <string name="ar_constellation_mode_figure">Constellation</string>
+    <string name="ar_advanced_toggle">Advanced</string>
 </resources>

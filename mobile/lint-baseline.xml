@@ -2397,26 +2397,6 @@
     </issue>
     <issue
         id="MissingTranslation"
-        message="&quot;ar_show_constellations&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
-        errorLine1="    &lt;string name=&quot;ar_show_constellations&quot;&gt;Show constellations&lt;/string&gt;"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="128"
-            column="13"/>
-    </issue>
-    <issue
-        id="MissingTranslation"
-        message="&quot;ar_show_asterisms&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
-        errorLine1="    &lt;string name=&quot;ar_show_asterisms&quot;&gt;Show asterisms&lt;/string&gt;"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="129"
-            column="13"/>
-    </issue>
-    <issue
-        id="MissingTranslation"
         message="&quot;ar_mag_limit_title&quot; is not translated in &quot;ru&quot; (Russian) or &quot;en&quot; (English)"
         errorLine1="    &lt;string name=&quot;ar_mag_limit_title&quot;&gt;Max magnitude: %1$s&lt;/string&gt;"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
