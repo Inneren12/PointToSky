@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,7 +21,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -53,6 +56,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.pointtosky.core.astro.coord.Horizontal
+import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
@@ -105,6 +109,8 @@ fun SkyMapRoute(
         state = state,
         onBack = onBack,
         onOpenCard = onOpenCard,
+        onVisibilityFilterToggle = viewModel::setVisibilityFilterEnabled,
+        onBortleChange = viewModel::setBortle,
         modifier = modifier,
     )
 }
@@ -115,6 +121,8 @@ private fun SkyMapScreen(
     state: SkyMapState,
     onBack: () -> Unit,
     onOpenCard: () -> Unit,
+    onVisibilityFilterToggle: (Boolean) -> Unit,
+    onBortleChange: (Bortle) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -147,6 +155,8 @@ private fun SkyMapScreen(
                 SkyMapContent(
                     state = state,
                     onOpenCard = onOpenCard,
+                    onVisibilityFilterToggle = onVisibilityFilterToggle,
+                    onBortleChange = onBortleChange,
                     modifier =
                         Modifier
                             .padding(padding)
@@ -161,6 +171,8 @@ private fun SkyMapScreen(
 private fun SkyMapContent(
     state: SkyMapState.Ready,
     onOpenCard: () -> Unit,
+    onVisibilityFilterToggle: (Boolean) -> Unit,
+    onBortleChange: (Bortle) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -237,7 +249,15 @@ private fun SkyMapContent(
             drawSkyBackground(scale, offset, skyDiskColor)
             drawAltitudeGrid(scale, offset, gridColor)
             drawConstellations(baseConstellationPositions, scale, offset, constellationColor)
-            drawStars(baseStarPositions, selectedId, highlightColor, scale, offset)
+            drawStars(
+                baseStarPositions,
+                selectedId,
+                highlightColor,
+                scale,
+                offset,
+                state.visibilityFilterEnabled,
+                state.limitingMag,
+            )
         }
 
         Column(
@@ -271,6 +291,45 @@ private fun SkyMapContent(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline,
                         )
+                        Spacer(modifier = Modifier.size(4.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(id = R.string.ar_visibility_filter_title),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Switch(
+                                checked = state.visibilityFilterEnabled,
+                                onCheckedChange = onVisibilityFilterToggle,
+                            )
+                        }
+                        if (state.limitingMag != null) {
+                            Text(
+                                text = stringResource(
+                                    id = R.string.ar_visibility_readout,
+                                    String.format(Locale.US, "%.1f", state.limitingMag),
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                            )
+                        }
+                        if (state.visibilityFilterEnabled) {
+                            val bortleNumber = state.bortle.ordinal + 1
+                            Spacer(modifier = Modifier.size(4.dp))
+                            Text(
+                                text = stringResource(id = R.string.ar_sky_darkness_title, bortleNumber),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = bortleNumber.toFloat(),
+                                onValueChange = { onBortleChange(Bortle.entries[(it.toInt() - 1).coerceIn(0, 8)]) },
+                                valueRange = 1f..9f,
+                                steps = 7,
+                            )
+                        }
                     }
                 }
             }
@@ -399,6 +458,8 @@ private fun DrawScope.drawStars(
     selectedColor: Color,
     scale: Float,
     offset: Offset,
+    visibilityEnabled: Boolean = false,
+    limitingMag: Double? = null,
 ) {
     val baseRadius = 4.dp.toPx()
     val center = Offset(size.width / 2f, size.height / 2f)
@@ -407,7 +468,12 @@ private fun DrawScope.drawStars(
         val projected = center + base * scale + offset
         val brightness = (STAR_BASE_MAG - star.magnitude).toFloat().coerceAtLeast(0.3f)
         val radius = baseRadius * (0.4f + 0.3f * brightness)
-        val alpha = (0.55f + 0.18f * brightness).coerceIn(0.55f, 1f)
+        val visAlpha = if (!visibilityEnabled || limitingMag == null || star.magnitude <= limitingMag) {
+            1f
+        } else {
+            (1f - ((star.magnitude - limitingMag) / VIS_FADE_RANGE).toFloat()).coerceIn(VIS_MIN_ALPHA, 1f)
+        }
+        val alpha = ((0.55f + 0.18f * brightness) * visAlpha).coerceIn(0f, 1f)
         drawCircle(
             color = BvColor.toColor(star.bv).copy(alpha = alpha),
             radius = radius,
@@ -453,3 +519,5 @@ private fun formatCoordinate(
 }
 
 private const val STAR_BASE_MAG = 4.0
+private const val VIS_FADE_RANGE = 2.0
+private const val VIS_MIN_ALPHA = 0.12f
