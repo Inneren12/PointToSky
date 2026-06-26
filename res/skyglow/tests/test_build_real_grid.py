@@ -194,6 +194,14 @@ def test_scale_monotonicity():
 # Test 4 — nodata mask
 # ---------------------------------------------------------------------------
 
+def test_nodata_mask_wrong_shape_raises():
+    """A nodata_mask with the wrong shape raises ValueError with a useful message."""
+    radiance = _coarse_radiance()          # shape (18, 36)
+    bad_mask = np.zeros((10, 20), dtype=bool)
+    with pytest.raises(ValueError, match="nodata_mask shape"):
+        radiance_to_bortle_grid(radiance, _DEG_COARSE, nodata_mask=bad_mask)
+
+
 def test_nodata_mask():
     """Cells in nodata_mask become 0; all other cells stay 1–9."""
     radiance = _coarse_radiance()

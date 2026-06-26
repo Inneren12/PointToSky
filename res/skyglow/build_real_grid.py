@@ -94,8 +94,13 @@ def radiance_to_bortle_grid(
     grid = artificial_to_bortle(art, scale=scale)   # uint8, values 1..9
 
     if nodata_mask is not None:
+        mask = np.asarray(nodata_mask, dtype=bool)
+        if mask.shape != grid.shape:
+            raise ValueError(
+                f"nodata_mask shape {mask.shape} must match radiance shape {grid.shape}"
+            )
         grid = grid.copy()
-        grid[nodata_mask] = 0
+        grid[mask] = 0
 
     return grid
 
@@ -192,8 +197,6 @@ def _cli_main():
 
     try:
         import rasterio
-        from rasterio.merge import merge
-        from rasterio.enums import Resampling
     except ImportError:
         print(
             "rasterio is required for the CLI.  "

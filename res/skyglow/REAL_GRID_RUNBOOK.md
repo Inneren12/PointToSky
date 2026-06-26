@@ -33,7 +33,8 @@ earthaccess.login(strategy="interactive")   # prompts once; stores ~/.netrc
 VNP46A4 is the VIIRS/Suomi-NPP Black Marble Annual Moonlight-and-Cloud-Free
 Composite.  Use the `*_Composite_Snow_Free` radiance layer (nanowatts per
 cm² per steradian).  Tiles are 10°×10° and cover land only; absent ocean tiles
-are treated as zero radiance (Bortle 1), which is physically correct.
+are treated as zero local upward radiance; coastal glow is still introduced
+by convolution from nearby land pixels.
 
 ```python
 import earthaccess, pathlib
