@@ -125,6 +125,13 @@ _Z_MAX_KM = 30.0
 # Number of line-of-sight integration samples (trapezoidal).
 _N_Z = 400
 
+# Max number of distance values evaluated per block. Caps the live (chunk, _N_Z)
+# intermediates so memory stays bounded no matter how large the distance input
+# is (A3 passes whole global VIIRS distance grids -> millions of values).
+# ~8k x 400 x 8 bytes is ~26 MB per intermediate; with the ~8 live arrays in the
+# block this peaks around ~200 MB regardless of input size.
+MAX_DIST_CHUNK = 8_192
+
 
 @dataclass(frozen=True)
 class KernelParams:
@@ -219,6 +226,7 @@ def kernel(distance_km, params=None) -> np.ndarray:
     A = p.observer_altitude_km
 
     # Line-of-sight samples: vertical column from observer altitude upward.
+    # These height-dependent terms are independent of distance, so compute once.
     z = np.linspace(A + 1e-3, A + _Z_MAX_KM, _N_Z)  # (M,)
 
     # Per-height scattering coefficients [1/km] and their vertical-OD prefactors.
@@ -230,34 +238,41 @@ def kernel(distance_km, params=None) -> np.ndarray:
         tau_R * (math.exp(-A / H_R) - np.exp(-z / H_R))
         + tau_A * (math.exp(-A / H_A) - np.exp(-z / H_A))
     )  # (M,)
-
-    # Broadcast over distances (N, 1) x heights (1, M).
-    dd = d[:, None]                                  # (N, 1)
+    ext_obs = np.exp(-tau_obs)                       # (M,)
     zz = z[None, :]                                  # (1, M)
-    s = np.sqrt(dd * dd + zz * zz)                   # (N, M) slant range S->P
-
-    cos_theta = -zz / s                              # (N, M) scattering angle
-
-    # Slant-path extinction S->P (Garstang 1989). (1 - exp(-z/H)) factors are the
-    # per-height column fractions; (s/z) converts vertical column to slant path.
-    tau_src = (s / zz) * (
+    # Per-height slant-path column fraction (the d-independent part of tau_src).
+    col_frac = (
         tau_R * (1.0 - np.exp(-zz / H_R))
         + tau_A * (1.0 - np.exp(-zz / H_A))
-    )                                                # (N, M)
+    )                                                # (1, M)
 
-    scatter = (
-        kR[None, :] * _phase_rayleigh(cos_theta)
-        + kA[None, :] * _phase_aerosol(cos_theta, p.aerosol_g)
-    )                                                # (N, M)
+    # Evaluate block-wise over the flattened distance axis so the (chunk, M)
+    # intermediates stay bounded regardless of N (P1: avoids OOM at A3's VIIRS
+    # pixel scales, where N can reach millions). Values are identical to the
+    # whole-array computation; only the working-set size changes.
+    out = np.empty(d.shape[0], dtype=float)
+    for start in range(0, d.shape[0], MAX_DIST_CHUNK):
+        dd = d[start:start + MAX_DIST_CHUNK, None]   # (n, 1)
+        s = np.sqrt(dd * dd + zz * zz)               # (n, M) slant range S->P
+        cos_theta = -zz / s                          # (n, M) scattering angle
 
-    integrand = (
-        (1.0 / (s * s))
-        * np.exp(-tau_src)
-        * scatter
-        * np.exp(-tau_obs)[None, :]
-    )                                                # (N, M)
+        # Slant-path extinction S->P (Garstang 1989). (s/z) converts the vertical
+        # column fraction to the slant path.
+        tau_src = (s / zz) * col_frac                # (n, M)
 
-    out = np.trapezoid(integrand, z, axis=1)         # (N,)
+        scatter = (
+            kR[None, :] * _phase_rayleigh(cos_theta)
+            + kA[None, :] * _phase_aerosol(cos_theta, p.aerosol_g)
+        )                                            # (n, M)
+
+        integrand = (
+            (1.0 / (s * s))
+            * np.exp(-tau_src)
+            * scatter
+            * ext_obs[None, :]
+        )                                            # (n, M)
+
+        out[start:start + MAX_DIST_CHUNK] = np.trapezoid(integrand, z, axis=1)
 
     # Finite hard cutoff: force exactly 0 at/beyond cutoff_km.
     out = np.where(d >= p.cutoff_km, 0.0, out)

@@ -8,6 +8,8 @@ calibration is deferred to A3's known-site check).
 import numpy as np
 import pytest
 
+import importlib
+
 from res.skyglow.kernel import (
     AEROSOL_PRESETS,
     DEFAULT_CUTOFF_KM,
@@ -93,6 +95,45 @@ def test_aerosol_accepts_numeric_ratio():
 def test_unknown_preset_raises():
     with pytest.raises(ValueError):
         kernel(5.0, "soup")
+
+
+def test_chunk_invariance(monkeypatch):
+    """Block-wise evaluation must equal the whole-array result (P1).
+
+    Force a tiny chunk size so a modest distance array spans several blocks,
+    then assert kernel() on the whole array == concatenation of kernel() on its
+    sub-slices, and == the single-block result with a huge chunk size.
+    """
+    d = np.linspace(0.5, DEFAULT_CUTOFF_KM - 1.0, 1000)
+
+    # Whole array, default (large) chunk -> reference.
+    ref = kernel(d)
+
+    # Force several small chunks; values must be identical (same math, blocked).
+    # (Import the module via importlib: the package re-exports a `kernel`
+    # function, which shadows the submodule attribute on `res.skyglow`.)
+    kernel_mod = importlib.import_module("res.skyglow.kernel")
+    monkeypatch.setattr(kernel_mod, "MAX_DIST_CHUNK", 64)
+    chunked = kernel(d)
+    assert np.array_equal(chunked, ref)
+
+    # And the manual concatenation of independent sub-slices matches too.
+    pieces = np.concatenate([kernel(d[i:i + 137]) for i in range(0, d.size, 137)])
+    assert np.array_equal(pieces, ref)
+
+
+def test_finer_pixel_kernel_well_formed():
+    """Exercise the chunk path via a finer-pixel kernel (cheap, modest cutoff)."""
+    from res.skyglow.convolve import build_radial_kernel
+
+    k = build_radial_kernel(1.0, cutoff_km=40.0)  # 81x81 grid -> exercises blocks
+    c = k.shape[0] // 2
+    assert k[c, c] == k.max()
+    # Monotone non-increasing along a radius from the centre.
+    row = k[c, c:]
+    assert np.all(np.diff(row) <= 1e-12)
+    # Zero beyond the circular cutoff (corner).
+    assert k[0, 0] == 0.0
 
 
 def test_observer_altitude_param():

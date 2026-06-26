@@ -27,6 +27,16 @@ representative value) is sufficient; the ``latitudes`` argument is accepted and
 documented so A3 can refine the geometry against the real VIIRS grid without a
 signature change.  FFT convolution is shift-invariant, so a fully
 latitude-dependent kernel is out of scope here (flagged for A3).
+
+GLOBAL GRID / DATELINE
+----------------------
+On the global equirectangular grid the longitude axis wraps (lonLeft = -180,
+360 cols), but ``fftconvolve(..., mode="same")`` zero-pads every edge -> a
+source near +/-180 deg contributes nothing across the dateline, leaving an
+artificial dark seam.  Pass ``wrap_longitude=True`` to ``convolve_radiance`` so
+the column (longitude) axis is circularly padded by the kernel radius before
+convolving (rows/latitude stay zero-padded -- the poles do not wrap).  Default
+is ``False`` so non-global (regional) rasters are unaffected; A3 sets it True.
 """
 
 from __future__ import annotations
@@ -107,6 +117,7 @@ def convolve_radiance(
     latitudes=None,
     cutoff_km: float | None = None,
     normalize_kernel: bool = False,
+    wrap_longitude: bool = False,
 ) -> np.ndarray:
     """Convolve an upward-radiance raster into an artificial sky-brightness field.
 
@@ -121,6 +132,11 @@ def convolve_radiance(
             NOT applied in A1; passing it has no effect beyond a documented note.
         cutoff_km: override the finite kernel radius in km.
         normalize_kernel: pass through to ``build_radial_kernel``.
+        wrap_longitude: if True, circularly pad the column (longitude) axis by
+            the kernel radius before convolving so glow crosses the +/-180 deg
+            dateline seam (see GLOBAL GRID / DATELINE above).  Rows (latitude)
+            stay zero-padded -- the poles do not wrap.  Default False keeps
+            regional rasters unchanged; A3 sets True for the global grid.
 
     Returns:
         A 2-D artificial-brightness array, same shape as ``radiance``.
@@ -143,7 +159,15 @@ def convolve_radiance(
 
     # 'same' keeps the output aligned with the input raster; the finite-radius
     # kernel keeps the convolution bounded.
-    out = fftconvolve(radiance, k, mode="same")
+    if wrap_longitude:
+        # Circularly extend longitude by the kernel radius so sources near the
+        # dateline contribute across it, then crop back to the original cols.
+        r = k.shape[1] // 2
+        padded = np.pad(radiance, ((0, 0), (r, r)), mode="wrap")
+        full = fftconvolve(padded, k, mode="same")
+        out = full[:, r:r + radiance.shape[1]]
+    else:
+        out = fftconvolve(radiance, k, mode="same")
     # FFT round-off can produce tiny negatives where the true value is ~0.
     return np.clip(out, 0.0, None)
 

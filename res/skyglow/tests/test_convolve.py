@@ -122,6 +122,34 @@ def test_aerosol_param_passthrough():
     assert hazy[c, c] > clear[c, c]
 
 
+def test_wrap_longitude_crosses_dateline():
+    """A source in the last column glows into the first column when wrapping (P2)."""
+    # Tiny 1-row strip whose width is within the kernel cutoff, so the two ends
+    # are "close" in wrapped longitude.
+    cutoff = 60.0
+    krad = build_radial_kernel(KM_PER_PIXEL, cutoff_km=cutoff).shape[1] // 2
+    # Strip wider than the kernel radius so the source does NOT reach the first
+    # column directly (last->first direct distance = 2*krad px > cutoff), but the
+    # wrapped seam distance is just 1 px (well within the cutoff).
+    ncols = 2 * krad + 1
+    strip = np.zeros((1, ncols), dtype=float)
+    strip[0, -1] = 1.0  # source in the LAST column
+
+    wrapped = convolve_radiance(
+        strip, KM_PER_PIXEL, cutoff_km=cutoff, wrap_longitude=True
+    )
+    zeroed = convolve_radiance(
+        strip, KM_PER_PIXEL, cutoff_km=cutoff, wrap_longitude=False
+    )
+
+    # Wrapping: glow reaches the first column (no dark seam).
+    assert wrapped[0, 0] > 0.0
+    # Default: zero-padded edges leave the first column ~0 (current behaviour).
+    assert zeroed[0, 0] == pytest.approx(0.0, abs=1e-15)
+    # Output shape is preserved by the crop-back.
+    assert wrapped.shape == strip.shape
+
+
 def test_latitudes_arg_accepted_noop():
     shape = (41, 41)
     src = _point_source(shape, (20, 20))
