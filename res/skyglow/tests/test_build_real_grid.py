@@ -16,6 +16,7 @@ from res.skyglow.build_real_grid import (
     radiance_to_bortle_grid,
     sample_sites,
     write_real_grid,
+    _validate_global_deg,
 )
 from res.build_lightpollution_grid import MAGIC, write_grid
 
@@ -276,3 +277,64 @@ def test_output_dtype_and_range():
     assert grid.ndim == 2
     assert np.all(grid >= 1)
     assert np.all(grid <= 9)
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — cos(lat) source-area weighting
+# ---------------------------------------------------------------------------
+
+def test_area_weight_high_lat_not_brighter_than_equator():
+    """A uniform radiance field should not produce higher Bortle near the poles.
+
+    Without cos(lat) area weighting, high-latitude cells each contribute the
+    same raw radiance as equatorial cells despite covering less physical area,
+    causing spurious over-brightening toward the poles.  With the fix, a
+    uniform-radiance field must give equal or lower Bortle at 60° N compared to
+    the equator (cos(60°)=0.5 → half the source flux per cell).
+    """
+    # 1°/cell global grid so the kernel is non-degenerate.
+    nrows, ncols = 180, 360
+    radiance = np.ones((nrows, ncols), dtype=float)
+
+    grid = radiance_to_bortle_grid(radiance, _DEG_FINE, scale=1.0)
+
+    # Row indices (lat_top=90, deg=1):  row = floor((90 - lat) / 1)
+    row_equator = 90   # lat=0°: row=floor((90-0)/1)=90 → centre at -0.5°
+    row_60n = 30       # lat=60°: row=floor((90-60)/1)=30 → centre at 59.5°
+
+    bortle_equator = int(grid[row_equator, ncols // 2])
+    bortle_60n = int(grid[row_60n, ncols // 2])
+
+    assert bortle_60n <= bortle_equator, (
+        f"High-latitude Bortle ({bortle_60n}) should be <= equator ({bortle_equator}) "
+        f"for a uniform radiance field with area weighting"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 8 — _validate_global_deg
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("deg", [0.1, 0.25, 1.0, 2.0, 10.0])
+def test_validate_global_deg_valid(deg):
+    """Valid deg values must not raise."""
+    _validate_global_deg(deg)   # should not raise
+
+
+@pytest.mark.parametrize("deg", [
+    7.0,         # 360/7 is not an integer
+    0.0,         # zero
+    -1.0,        # negative
+    float("nan"),
+    float("inf"),
+])
+def test_validate_global_deg_invalid(deg):
+    """Invalid deg values must raise ValueError."""
+    with pytest.raises(ValueError):
+        _validate_global_deg(deg)
+
+
+def test_validate_global_deg_non_divisor():
+    """7.0 does not evenly divide 360 (360/7 ≈ 51.43)."""
+    with pytest.raises(ValueError, match="does not evenly divide"):
+        _validate_global_deg(7.0)

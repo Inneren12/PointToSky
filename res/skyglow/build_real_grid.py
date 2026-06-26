@@ -28,6 +28,28 @@ from res.build_lightpollution_grid import write_grid
 
 
 # ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+
+def _validate_global_deg(deg: float) -> None:
+    """Raise ValueError if *deg* does not evenly tile the global 360×180 grid.
+
+    Valid values must be finite, positive, and evenly divide both 360 and 180
+    (e.g. 0.1, 0.25, 1.0, 2.0, 10.0).
+    """
+    if not np.isfinite(deg) or deg <= 0:
+        raise ValueError(f"deg must be finite and positive, got {deg!r}")
+    ncols = 360.0 / deg
+    nrows = 180.0 / deg
+    if not np.isclose(ncols, round(ncols), rtol=0.0, atol=1e-9) or \
+       not np.isclose(nrows, round(nrows), rtol=0.0, atol=1e-9):
+        raise ValueError(
+            f"deg={deg!r} does not evenly divide both 360 and 180; "
+            f"got {ncols} cols and {nrows} rows"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Core (pure-NumPy, I/O-free — unit-testable without GDAL)
 # ---------------------------------------------------------------------------
 
@@ -47,8 +69,9 @@ def radiance_to_bortle_grid(
     ----------
     radiance:
         2-D array, row 0 = northernmost, col 0 = westernmost (PTSKLP01
-        convention).  Arbitrary units; values correspond to upward radiance
-        emitted per pixel.
+        convention).  Values are mean upward radiance per unit area (as
+        provided by VIIRS VNP46A4); each cell is weighted by cos(lat) before
+        convolution so that the total emitted flux per cell is correct.
     deg_per_cell:
         Cell size in degrees (same for lat and lon in an equirectangular grid).
     lat_top:
@@ -83,8 +106,15 @@ def radiance_to_bortle_grid(
     # Row-centre latitudes: row 0 centre = lat_top − 0.5·deg, decreasing south.
     lats = lat_top - (np.arange(nrows) + 0.5) * deg_per_cell
 
+    # Weight each source cell by cos(lat) to convert mean radiance per unit area
+    # (as VIIRS provides) to total emitted flux per cell.  Without this, cells at
+    # high latitudes contribute the same raw radiance as equatorial cells even though
+    # they cover a smaller ground area, overstating glow near the poles.
+    area_weight = np.cos(np.radians(np.clip(lats, -85.0, 85.0)))[:, None]
+    source_flux = rad * area_weight
+
     art = convolve_radiance(
-        rad,
+        source_flux,
         km_per_pixel,
         params=params,
         latitudes=lats,
@@ -225,6 +255,7 @@ def _cli_main():
     args = parser.parse_args()
 
     deg = args.deg
+    _validate_global_deg(deg)
     lat_top = 90.0
     lon_left = -180.0
 
