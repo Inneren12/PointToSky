@@ -9,22 +9,21 @@ import dev.pointtosky.core.astro.catalog.PtskCatalogLoader
 import dev.pointtosky.core.astro.catalog.StarRecord
 import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
-import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.EphemerisComputer
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.SkyObjectOrConstellation
 import dev.pointtosky.core.astro.time.lstAt
-import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.astro.visibility.LightPollutionGrid
-import dev.pointtosky.core.astro.visibility.estimateLimitingMagnitude
+import dev.pointtosky.core.astro.visibility.limitingMagnitudeAt
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.mobile.visibility.BortleSource
 import dev.pointtosky.mobile.visibility.LightPollutionProvider
 import dev.pointtosky.mobile.visibility.VisibilitySettings
+import dev.pointtosky.mobile.visibility.resolveEffectiveBortle
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -176,31 +175,20 @@ class ArViewModel(
         grid: LightPollutionGrid?,
     ): ArUiState {
         val lstDeg = lstAt(instant, location.point.lonDeg).lstDeg
-        val moon = ephemerisComputer.compute(Body.MOON, instant)
-        val sun = ephemerisComputer.compute(Body.SUN, instant)
-        val moonAlt = raDecToAltAz(
-            eq = moon.eq,
-            lstDeg = lstDeg,
+        val eff = resolveEffectiveBortle(
+            source = bortleSource,
+            manual = bortle,
+            locationResolved = location.resolved,
             latDeg = location.point.latDeg,
-            applyRefraction = false,
-        ).altDeg
-        val sunAlt = raDecToAltAz(
-            eq = sun.eq,
-            lstDeg = lstDeg,
-            latDeg = location.point.latDeg,
-            applyRefraction = false,
-        ).altDeg
-        val realGrid = grid?.takeUnless { it.isPlaceholder }
-        val autoBortle: Bortle? =
-            if (bortleSource == BortleSource.AUTO && location.resolved) {
-                realGrid?.bortleAt(location.point.latDeg, location.point.lonDeg)
-            } else null
-        val effectiveBortle = autoBortle ?: bortle
-        val limitingMag = estimateLimitingMagnitude(
-            darkNelm = effectiveBortle.darkNelm,
-            moonAltitudeDeg = moonAlt,
-            moonIllumination = moon.phase ?: 0.0,
-            sunAltitudeDeg = sunAlt,
+            lonDeg = location.point.lonDeg,
+            grid = grid,
+        )
+        val limitingMag = limitingMagnitudeAt(
+            ephemerisComputer,
+            instant,
+            location.point.latDeg,
+            location.point.lonDeg,
+            eff.effective.darkNelm,
         )
         // A user magLimit of 0 means "no user cap" (the slider's off sentinel); treat it as +∞ so it
         // doesn't clamp the visibility limit. The visibility limit may legitimately be negative
@@ -223,8 +211,8 @@ class ArViewModel(
             visibilityFilterEnabled = visibilityFilter,
             bortle = bortle,
             bortleSource = bortleSource,
-            autoBortle = autoBortle,
-            lightPollutionAvailable = realGrid != null,
+            autoBortle = eff.auto,
+            lightPollutionAvailable = eff.available,
             showStarLabels = showStarLabels,
             showStarPoints = showStarPoints,
             reticleTargetOnly = reticleTargetOnly,
