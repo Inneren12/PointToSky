@@ -138,6 +138,55 @@ class TestCombinedBrightness:
 
 
 # ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+class TestInputValidation:
+    def test_bortle_nan_scalar_raises(self):
+        with pytest.raises(ValueError, match="finite"):
+            bortle_from_sky_brightness_mag(np.nan)
+
+    def test_bortle_nan_in_array_raises(self):
+        with pytest.raises(ValueError, match="finite"):
+            bortle_from_sky_brightness_mag(np.array([21.9, np.nan, 18.0]))
+
+    def test_bortle_inf_raises(self):
+        with pytest.raises(ValueError, match="finite"):
+            bortle_from_sky_brightness_mag(np.inf)
+
+    def test_combined_negative_scale_raises(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            combined_sky_brightness_mag(1.0, scale=-0.1)
+
+    def test_combined_nan_scale_raises(self):
+        with pytest.raises(ValueError, match="finite"):
+            combined_sky_brightness_mag(1.0, scale=np.nan)
+
+    def test_combined_inf_scale_raises(self):
+        with pytest.raises(ValueError, match="finite"):
+            combined_sky_brightness_mag(1.0, scale=np.inf)
+
+    def test_combined_nan_input_raises(self):
+        with pytest.raises(ValueError, match="finite"):
+            combined_sky_brightness_mag(np.nan)
+
+    def test_combined_tiny_negative_clipped_to_zero(self):
+        # Values like -1e-12 from FFT round-off must not produce NaN.
+        art = np.array([-1e-12, 0.0, 1e-12])
+        mag = combined_sky_brightness_mag(art)
+        assert np.all(np.isfinite(mag))
+        # -1e-12 clips to 0.0, so result matches zero-artificial sky
+        assert mag[0] == pytest.approx(NATURAL_SKY_MAG)
+        assert mag[1] == pytest.approx(NATURAL_SKY_MAG)
+
+    def test_combined_tiny_negative_gives_bortle_1(self):
+        art = np.array([-1e-12, 0.0])
+        mag = combined_sky_brightness_mag(art)
+        classes = bortle_from_sky_brightness_mag(mag)
+        assert np.all(classes == 1)
+
+
+# ---------------------------------------------------------------------------
 # Monotonicity via scale knob
 # ---------------------------------------------------------------------------
 

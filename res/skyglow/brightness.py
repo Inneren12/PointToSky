@@ -124,17 +124,33 @@ def combined_sky_brightness_mag(artificial_relative, scale=1.0,
     artificial_relative:
         Relative artificial-sky luminance from ``convolve_radiance`` (A1).
         Arbitrary units; ``scale`` converts to natural-background units.
+        Tiny negative values from FFT round-off are clipped to zero before use.
     scale:
-        Calibration knob (set by A3).  Default 1.0.  Larger values amplify the
-        artificial contribution, pushing the result toward higher Bortle.
+        Calibration knob (set by A3).  Default 1.0.  Must be finite and >= 0.
+        Larger values amplify the artificial contribution, pushing the result
+        toward higher Bortle.
     natural_mag:
         Natural sky brightness (mag/arcsec²).  Defaults to ``NATURAL_SKY_MAG``.
 
     Returns
     -------
     mag/arcsec² of the total (natural + artificial) sky, same shape as input.
+
+    Raises
+    ------
+    ValueError
+        If ``scale`` is not finite or is negative, or if ``artificial_relative``
+        contains non-finite values.
     """
+    if not np.isfinite(scale):
+        raise ValueError(f"scale must be finite, got {scale!r}")
+    if scale < 0:
+        raise ValueError(f"scale must be non-negative, got {scale!r}")
     art = np.asarray(artificial_relative, dtype=float)
+    if not np.all(np.isfinite(art)):
+        raise ValueError("artificial_relative must contain only finite values")
+    # Clip tiny negatives from FFT/convolution round-off so L_total stays > 0.
+    art = np.maximum(art, 0.0)
     L_natural = mag_to_relative_luminance(natural_mag)
     L_total = L_natural + scale * art
     return relative_luminance_to_mag(L_total)
@@ -152,10 +168,19 @@ def bortle_from_sky_brightness_mag(mag):
 
     Vectorised: accepts scalar or any numpy array.  Returns int for scalar
     input and a uint8 numpy array for array input.
+
+    Raises
+    ------
+    ValueError
+        If ``mag`` contains any non-finite values (NaN or ±inf).  Non-finite
+        inputs would silently map to Bortle 9 (inner-city sky) without this
+        guard, corrupting the output grid with invalid classifications.
     """
     mag_arr = np.asarray(mag, dtype=float)
     scalar_input = mag_arr.ndim == 0
     mag_arr = np.atleast_1d(mag_arr)
+    if not np.all(np.isfinite(mag_arr)):
+        raise ValueError("mag must be finite (no NaN or inf)")
 
     result = np.full(mag_arr.shape, 9, dtype=np.uint8)
     # Iterate from the lowest threshold upward so that each successive
