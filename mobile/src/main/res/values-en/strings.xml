@@ -20,6 +20,8 @@
     <string name="policy_screen_disclaimer_summary">Reminder that Point-to-Sky must not be used for navigation.</string>
     <string name="policy_document_privacy_title">Privacy policy</string>
     <string name="policy_document_disclaimer_title">Disclaimer</string>
+    <string name="card_below_limit_badge">Below tonight\'s naked-eye limit</string>
+    <string name="card_below_limit_badge_mag">Below tonight\'s limit (~mag %1$s)</string>
     <string name="crash_logs_instruction">For ANR/crash diagnostics use Play Console → Play Vitals. This screen shows local JSONL logs.</string>
     <string name="crash_logs_message_dismiss">Dismiss message</string>
     <string name="crash_logs_zip_path">ZIP: %1$s</string>

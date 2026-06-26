@@ -23,6 +23,8 @@
     <string name="card_type_planet">Планета</string>
     <string name="card_type_moon">Луна</string>
     <string name="card_type_constellation">Созвездие</string>
+    <string name="card_below_limit_badge">Ниже сегодняшнего предела видимости</string>
+    <string name="card_below_limit_badge_mag">Ниже сегодняшнего предела (~%1$sᵐ)</string>
     <string name="card_share_chooser_title">Поделиться объектом</string>
     <string name="card_share_error">Нет подходящих приложений</string>
     <string name="aim_send_button">Отправить %1$s на часы</string>
