@@ -5,8 +5,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
+import dev.pointtosky.core.astro.ephem.EphemerisComputer
+import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.raDecToAltAz
+import dev.pointtosky.core.astro.visibility.Bortle
+import dev.pointtosky.core.astro.visibility.LightPollutionGrid
+import dev.pointtosky.core.astro.visibility.limitingMagnitudeAt
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetBodyPayload
 import dev.pointtosky.core.datalayer.AimTargetEquatorialPayload
@@ -16,6 +21,10 @@ import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.location.DeviceLocationRepository
+import dev.pointtosky.mobile.visibility.BortleSource
+import dev.pointtosky.mobile.visibility.LightPollutionProvider
+import dev.pointtosky.mobile.visibility.VisibilitySettings
+import dev.pointtosky.mobile.visibility.resolveEffectiveBortle
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -31,14 +40,28 @@ class CardViewModel(
     private val locationPrefs: LocationPrefs,
     private val deviceLocationFlow: StateFlow<GeoPoint?>,
     private val clock: () -> Instant = { Instant.now() },
+    private val ephemerisComputer: EphemerisComputer = SimpleEphemerisComputer(),
+    private val lightPollutionGrid: StateFlow<LightPollutionGrid?> = LightPollutionProvider.grid(),
 ) : ViewModel() {
     val state: StateFlow<CardUiState> =
         combine(
             repository.observe(cardId),
             deviceLocationFlow,
             locationPrefs.manualPointFlow,
-        ) { entry, devicePoint, manualPoint ->
-            buildState(entry, manualPoint ?: devicePoint)
+            VisibilitySettings.enabled,
+            VisibilitySettings.bortle,
+            VisibilitySettings.bortleSource,
+            lightPollutionGrid,
+        ) { values: Array<Any?> ->
+            @Suppress("UNCHECKED_CAST")
+            val entry = values[0] as CardRepository.Entry?
+            val devicePoint = values[1] as GeoPoint?
+            val manualPoint = values[2] as GeoPoint?
+            val enabled = values[3] as Boolean
+            val manualBortle = values[4] as Bortle
+            val bortleSource = values[5] as BortleSource
+            val grid = values[6] as LightPollutionGrid?
+            buildState(entry, manualPoint ?: devicePoint, enabled, manualBortle, bortleSource, grid)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
@@ -48,18 +71,44 @@ class CardViewModel(
     private fun buildState(
         entry: CardRepository.Entry?,
         resolvedPoint: GeoPoint?,
+        enabled: Boolean,
+        manualBortle: Bortle,
+        bortleSource: BortleSource,
+        grid: LightPollutionGrid?,
     ): CardUiState {
         val readyEntry =
             (entry as? CardRepository.Entry.Ready)?.model
                 ?: return CardUiState.Error(CardErrorReason.NOT_ENOUGH_DATA)
         val equatorial = readyEntry.equatorial
+        val instant = clock()
         val computedHorizontal: Horizontal? =
             if (equatorial != null && resolvedPoint != null) {
-                computeHorizontal(equatorial, resolvedPoint)
+                computeHorizontal(equatorial, resolvedPoint, instant)
             } else {
                 null
             }
         val horizontal = computedHorizontal ?: readyEntry.horizontal
+        val (limitingMag, belowLimit) = if (resolvedPoint != null) {
+            val eff = resolveEffectiveBortle(
+                source = bortleSource,
+                manual = manualBortle,
+                locationResolved = true,
+                latDeg = resolvedPoint.latDeg,
+                lonDeg = resolvedPoint.lonDeg,
+                grid = grid,
+            )
+            val lm = limitingMagnitudeAt(
+                ephemerisComputer,
+                instant,
+                resolvedPoint.latDeg,
+                resolvedPoint.lonDeg,
+                eff.effective.darkNelm,
+            )
+            val below = enabled && readyEntry.magnitude != null && readyEntry.magnitude > lm
+            lm to below
+        } else {
+            null to false
+        }
         val title = titleFor(readyEntry)
         val shareText =
             buildShareText(
@@ -83,15 +132,17 @@ class CardViewModel(
             bestWindow = readyEntry.bestWindow,
             targetOption = targetOption,
             shareText = shareText,
+            limitingMag = limitingMag,
+            belowVisibilityLimit = belowLimit,
         )
     }
 
     private fun computeHorizontal(
         eq: Equatorial,
         point: GeoPoint,
+        instant: Instant,
     ): Horizontal? =
         runCatching {
-            val instant = clock()
             val lst = lstAt(instant, point.lonDeg).lstDeg
             raDecToAltAz(eq, lst, point.latDeg, applyRefraction = false)
         }.getOrNull()
@@ -250,6 +301,8 @@ sealed interface CardUiState {
         val bestWindow: CardBestWindow?,
         val targetOption: AimTargetOption?,
         val shareText: String,
+        val limitingMag: Double? = null,
+        val belowVisibilityLimit: Boolean = false,
     ) : CardUiState
 }
 
