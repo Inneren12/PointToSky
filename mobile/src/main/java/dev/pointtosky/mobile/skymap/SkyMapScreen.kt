@@ -61,11 +61,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
-import dev.pointtosky.mobile.visibility.BortleSource
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
+import dev.pointtosky.mobile.visibility.BortleSource
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -160,6 +160,7 @@ private fun SkyMapScreen(
             is SkyMapState.Ready ->
                 SkyMapContent(
                     state = state,
+                    lightPollutionAvailable = state.lightPollutionAvailable,
                     onOpenCard = onOpenCard,
                     onVisibilityFilterToggle = onVisibilityFilterToggle,
                     onBortleChange = onBortleChange,
@@ -178,6 +179,7 @@ private fun SkyMapScreen(
 @Composable
 private fun SkyMapContent(
     state: SkyMapState.Ready,
+    lightPollutionAvailable: Boolean,
     onOpenCard: () -> Unit,
     onVisibilityFilterToggle: (Boolean) -> Unit,
     onBortleChange: (Bortle) -> Unit,
@@ -327,44 +329,79 @@ private fun SkyMapContent(
                         }
                         if (state.visibilityFilterEnabled) {
                             Spacer(modifier = Modifier.size(4.dp))
-                            val sources = BortleSource.entries
-                            val sourceLabels = listOf(
-                                stringResource(id = R.string.ar_bortle_source_auto),
-                                stringResource(id = R.string.ar_bortle_source_manual),
-                            )
-                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                sources.forEachIndexed { index, source ->
-                                    SegmentedButton(
-                                        selected = state.bortleSource == source,
-                                        onClick = { onBortleSourceChange(source) },
-                                        shape = SegmentedButtonDefaults.itemShape(
-                                            index = index,
-                                            count = sources.size,
-                                        ),
-                                        label = {
-                                            Text(
-                                                text = sourceLabels[index],
-                                                style = MaterialTheme.typography.bodySmall,
-                                            )
-                                        },
-                                    )
+                            if (!lightPollutionAvailable) {
+                                val bortleNumber = state.bortle.ordinal + 1
+                                Text(
+                                    text = stringResource(id = R.string.ar_sky_darkness_title, bortleNumber),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Slider(
+                                    value = bortleNumber.toFloat(),
+                                    onValueChange = {
+                                        onBortleChange(Bortle.entries[(it.toInt() - 1).coerceIn(0, 8)])
+                                    },
+                                    valueRange = 1f..9f,
+                                    steps = 7,
+                                )
+                            } else {
+                                val sources = BortleSource.entries
+                                val sourceLabels = listOf(
+                                    stringResource(id = R.string.ar_bortle_source_auto),
+                                    stringResource(id = R.string.ar_bortle_source_manual),
+                                )
+                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                    sources.forEachIndexed { index, source ->
+                                        SegmentedButton(
+                                            selected = state.bortleSource == source,
+                                            onClick = { onBortleSourceChange(source) },
+                                            shape = SegmentedButtonDefaults.itemShape(
+                                                index = index,
+                                                count = sources.size,
+                                            ),
+                                            label = {
+                                                Text(
+                                                    text = sourceLabels[index],
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                )
+                                            },
+                                        )
+                                    }
                                 }
-                            }
-                            if (state.bortleSource == BortleSource.AUTO) {
-                                if (state.autoBortle != null) {
-                                    Text(
-                                        text = stringResource(
-                                            id = R.string.ar_bortle_auto_detected,
-                                            state.autoBortle.ordinal + 1,
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
+                                if (state.bortleSource == BortleSource.AUTO) {
+                                    if (state.autoBortle != null) {
+                                        Text(
+                                            text = stringResource(
+                                                id = R.string.ar_bortle_auto_detected,
+                                                state.autoBortle.ordinal + 1,
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    } else {
+                                        Text(
+                                            text = stringResource(id = R.string.ar_bortle_auto_unavailable),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline,
+                                        )
+                                        val bortleNumber = state.bortle.ordinal + 1
+                                        Text(
+                                            text = stringResource(
+                                                id = R.string.ar_sky_darkness_title,
+                                                bortleNumber,
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        Slider(
+                                            value = bortleNumber.toFloat(),
+                                            onValueChange = {
+                                                onBortleChange(
+                                                    Bortle.entries[(it.toInt() - 1).coerceIn(0, 8)],
+                                                )
+                                            },
+                                            valueRange = 1f..9f,
+                                            steps = 7,
+                                        )
+                                    }
                                 } else {
-                                    Text(
-                                        text = stringResource(id = R.string.ar_bortle_auto_unavailable),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.outline,
-                                    )
                                     val bortleNumber = state.bortle.ordinal + 1
                                     Text(
                                         text = stringResource(id = R.string.ar_sky_darkness_title, bortleNumber),
@@ -379,20 +416,6 @@ private fun SkyMapContent(
                                         steps = 7,
                                     )
                                 }
-                            } else {
-                                val bortleNumber = state.bortle.ordinal + 1
-                                Text(
-                                    text = stringResource(id = R.string.ar_sky_darkness_title, bortleNumber),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Slider(
-                                    value = bortleNumber.toFloat(),
-                                    onValueChange = {
-                                        onBortleChange(Bortle.entries[(it.toInt() - 1).coerceIn(0, 8)])
-                                    },
-                                    valueRange = 1f..9f,
-                                    steps = 7,
-                                )
                             }
                         }
                     }

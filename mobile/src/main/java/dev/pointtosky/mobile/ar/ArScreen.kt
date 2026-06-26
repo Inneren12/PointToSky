@@ -63,12 +63,11 @@ import dev.pointtosky.core.astro.catalog.StarRecord
 import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
-import dev.pointtosky.core.astro.visibility.Bortle
-import dev.pointtosky.mobile.visibility.BortleSource
+import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
 import dev.pointtosky.core.astro.transform.altAzToRaDec
 import dev.pointtosky.core.astro.transform.raDecToAltAz
-import dev.pointtosky.core.astro.identify.IdentifySolver
+import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetEquatorialPayload
 import dev.pointtosky.core.datalayer.AimTargetKind
@@ -77,6 +76,7 @@ import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.render.BvColor
+import dev.pointtosky.mobile.visibility.BortleSource
 import java.util.Locale
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -337,6 +337,7 @@ fun ArScreen(
                         bortle = state.bortle,
                         bortleSource = state.bortleSource,
                         autoBortle = state.autoBortle,
+                        lightPollutionAvailable = state.lightPollutionAvailable,
                         limitingMag = state.limitingMag,
                         onConstellationModeChange = onConstellationModeChange,
                         onProModeChange = onProModeChange,
@@ -684,6 +685,7 @@ private fun ArControlsPanel(
     bortle: Bortle,
     bortleSource: BortleSource,
     autoBortle: Bortle?,
+    lightPollutionAvailable: Boolean,
     limitingMag: Double?,
     onConstellationModeChange: (ConstellationMode) -> Unit,
     onProModeChange: (Boolean) -> Unit,
@@ -756,13 +758,17 @@ private fun ArControlsPanel(
                 onCheckedChange = onVisibilityFilterToggle,
             )
             if (visibilityFilterEnabled) {
-                BortleSourceToggle(
-                    bortleSource = bortleSource,
-                    autoBortle = autoBortle,
-                    bortle = bortle,
-                    onBortleSourceChange = onBortleSourceChange,
-                    onBortleChange = onBortleChange,
-                )
+                if (!lightPollutionAvailable) {
+                    BortleSlider(bortle = bortle, onBortleChange = onBortleChange)
+                } else {
+                    BortleSourceToggle(
+                        bortleSource = bortleSource,
+                        autoBortle = autoBortle,
+                        bortle = bortle,
+                        onBortleSourceChange = onBortleSourceChange,
+                        onBortleChange = onBortleChange,
+                    )
+                }
             }
             ToggleRow(
                 title = stringResource(R.string.ar_hide_star_labels),

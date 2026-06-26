@@ -9,19 +9,20 @@ format and resolver code paths during development.
 
 The real asset will be produced by a separate offline packer that reads
 NASA VIIRS/NPP VNP46A4 annual composites, applies the Duriscoe et al. (2018)
-skyglow model, and writes the result via write_grid().
+skyglow model, and writes the result via write_grid(placeholder=False).
 
-Binary format (little-endian, equirectangular):
+Binary format v2 (little-endian, equirectangular):
   off  type        field
    0   8 bytes     magic = "PTSKLP01" (ASCII)
-   8   int32       version = 1
+   8   int32       version = 2
   12   int32       rows
   16   int32       cols
   20   float64     latTopDeg   (north edge of row 0)
   28   float64     lonLeftDeg  (west edge of col 0)
   36   float64     degPerCell
-  44   int32       compLen     (bytes in the following zlib stream)
-  48   compLen     zlib-compressed payload
+  44   int32       flags  (bit 0 = placeholder / synthetic data)
+  48   int32       compLen     (bytes in the following zlib stream)
+  52   compLen     zlib-compressed payload
 
 Payload = rows*cols bytes, row-major, row 0 = northernmost, col 0 = westernmost.
   0        = nodata / ocean
@@ -34,11 +35,11 @@ import struct
 import zlib
 
 MAGIC = b"PTSKLP01"
-_HEADER_FMT = "<8s i i i d d d i"
+_HEADER_FMT = "<8s i i i d d d i i"
 
 
-def write_grid(path, rows, cols, lat_top, lon_left, deg_per_cell, values_bytes):
-    """Write a PTSKLP01 light-pollution grid binary file.
+def write_grid(path, rows, cols, lat_top, lon_left, deg_per_cell, values_bytes, placeholder=False):
+    """Write a PTSKLP01 v2 light-pollution grid binary file.
 
     Args:
         path: output file path (str or Path)
@@ -49,20 +50,24 @@ def write_grid(path, rows, cols, lat_top, lon_left, deg_per_cell, values_bytes):
         deg_per_cell: degrees per cell (e.g. 1.0 for 1°×1° global)
         values_bytes: flat bytes, len == rows*cols, row-major north-first;
                       0 = nodata/ocean, 1..9 = Bortle class
+        placeholder: set True for synthetic / development grids; the app will
+                     suppress Auto-detection until a non-placeholder grid ships.
     """
     assert len(values_bytes) == rows * cols, (
         f"values_bytes length {len(values_bytes)} != rows*cols {rows * cols}"
     )
     compressed = zlib.compress(values_bytes, level=9)
+    flags = 1 if placeholder else 0
     header = struct.pack(
         _HEADER_FMT,
         MAGIC,
-        1,                  # version
+        2,                  # version
         rows,
         cols,
         float(lat_top),
         float(lon_left),
         float(deg_per_cell),
+        flags,
         len(compressed),
     )
     path = pathlib.Path(path)
@@ -74,7 +79,7 @@ def write_grid(path, rows, cols, lat_top, lon_left, deg_per_cell, values_bytes):
     print(
         f"Wrote {path}  ({rows}×{cols} grid, "
         f"payload {rows * cols} B → compressed {len(compressed)} B, "
-        f"file {total} B)"
+        f"file {total} B, placeholder={placeholder})"
     )
 
 
@@ -149,4 +154,4 @@ if __name__ == "__main__":
         pathlib.Path(__file__).parent.parent
         / "mobile/src/main/assets/lightpollution/bortle.bin"
     )
-    write_grid(out, rows, cols, lat_top, lon_left, deg, values)
+    write_grid(out, rows, cols, lat_top, lon_left, deg, values, placeholder=True)

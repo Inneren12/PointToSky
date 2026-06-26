@@ -8,6 +8,19 @@ import kotlin.math.floor
  *
  * Obtain via [parse]; lookup via [bortleAt].  Pure JVM — no Android dependencies.
  * Asset loading is handled by a separate provider (5a-ii-C).
+ *
+ * Format v2 (little-endian, equirectangular):
+ *   off  type     field
+ *    0   8s       magic = "PTSKLP01"
+ *    8   int32    version = 2
+ *   12   int32    rows
+ *   16   int32    cols
+ *   20   float64  latTopDeg
+ *   28   float64  lonLeftDeg
+ *   36   float64  degPerCell
+ *   44   int32    flags  (bit 0 = placeholder / synthetic data)
+ *   48   int32    compLen
+ *   52   compLen  zlib payload
  */
 class LightPollutionGrid private constructor(
     private val rows: Int,
@@ -16,6 +29,7 @@ class LightPollutionGrid private constructor(
     private val lonLeftDeg: Double,
     private val degPerCell: Double,
     private val cells: ByteArray,
+    val isPlaceholder: Boolean,
 ) {
     /**
      * Return the [Bortle] class at [latDeg]/[lonDeg], or `null` for nodata (ocean) cells
@@ -33,8 +47,8 @@ class LightPollutionGrid private constructor(
 
     companion object {
         private val MAGIC = "PTSKLP01".toByteArray(Charsets.US_ASCII)
-        private const val EXPECTED_VERSION = 1
-        private const val HEADER_SIZE = 48
+        private const val EXPECTED_VERSION = 2
+        private const val HEADER_SIZE = 52
 
         /**
          * Parse a PTSKLP01 binary from [bytes].
@@ -59,7 +73,8 @@ class LightPollutionGrid private constructor(
             val latTop = bytes.leDouble(20)
             val lonLeft = bytes.leDouble(28)
             val degPerCell = bytes.leDouble(36)
-            val compLen = bytes.leInt(44)
+            val flags = bytes.leInt(44)
+            val compLen = bytes.leInt(48)
 
             require(bytes.size >= HEADER_SIZE + compLen) {
                 "File truncated: expected at least ${HEADER_SIZE + compLen} bytes, got ${bytes.size}"
@@ -78,7 +93,7 @@ class LightPollutionGrid private constructor(
                 inflater.end()
             }
 
-            return LightPollutionGrid(rows, cols, latTop, lonLeft, degPerCell, inflated)
+            return LightPollutionGrid(rows, cols, latTop, lonLeft, degPerCell, inflated, (flags and 0x1) != 0)
         }
 
         private fun ByteArray.leInt(off: Int): Int =
