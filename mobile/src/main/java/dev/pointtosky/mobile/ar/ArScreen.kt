@@ -75,6 +75,7 @@ import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.datalayer.AimTargetOption
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
 import dev.pointtosky.mobile.visibility.BortleSource
 import java.util.Locale
@@ -97,6 +98,7 @@ fun ArRoute(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val deviceLocationRepository = remember { DeviceLocationRepository(context.applicationContext) }
     val viewModel: ArViewModel =
         viewModel(
             factory =
@@ -104,6 +106,7 @@ fun ArRoute(
                     identifySolver = identifySolver,
                     assetManager = context.assets,
                     locationPrefs = locationPrefs,
+                    deviceLocationRepository = deviceLocationRepository,
                 ),
         )
     val state by viewModel.state.collectAsStateWithLifecycle()

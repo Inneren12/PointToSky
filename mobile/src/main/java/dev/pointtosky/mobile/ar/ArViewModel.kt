@@ -1,6 +1,7 @@
 package dev.pointtosky.mobile.ar
 
 import android.content.res.AssetManager
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -20,6 +21,7 @@ import dev.pointtosky.core.astro.visibility.limitingMagnitudeAt
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.visibility.BortleSource
 import dev.pointtosky.mobile.visibility.LightPollutionProvider
 import dev.pointtosky.mobile.visibility.VisibilitySettings
@@ -31,7 +33,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -43,8 +44,9 @@ enum class ConstellationMode { OFF, ASTERISMS, FIGURE }
 
 class ArViewModel(
     private val identifySolver: IdentifySolver,
-    private val astroLoader: PtskCatalogLoader,
+    private val astroLoader: PtskCatalogLoader?,
     locationPrefs: LocationPrefs,
+    deviceLocationFlow: StateFlow<GeoPoint?>,
     timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1_000L),
     private val ephemerisComputer: EphemerisComputer = SimpleEphemerisComputer(),
     /** DI-диспетчер вместо прямого Dispatchers.IO (detekt: InjectDispatcher) */
@@ -72,20 +74,25 @@ class ArViewModel(
             ),
         )
 
-    private val manualPointFlow = locationPrefs.manualPointFlow
-    private val locationSnapshot: StateFlow<LocationSnapshot> =
-        manualPointFlow
-            .map { manual ->
-                if (manual != null) {
-                    LocationSnapshot(point = manual, resolved = true)
-                } else {
-                    LocationSnapshot(point = DEFAULT_LOCATION, resolved = false)
-                }
-            }.stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.Eagerly,
-                initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false),
-            )
+    @get:VisibleForTesting
+    internal val locationSnapshot: StateFlow<LocationSnapshot> =
+        combine(
+            deviceLocationFlow,
+            locationPrefs.manualPointFlow,
+        ) { device, manual ->
+            when {
+                manual != null ->
+                    LocationSnapshot(point = manual, resolved = true, source = LocationSource.MANUAL)
+                device != null ->
+                    LocationSnapshot(point = device, resolved = true, source = LocationSource.DEVICE)
+                else ->
+                    LocationSnapshot(point = DEFAULT_LOCATION, resolved = false, source = LocationSource.DEFAULT)
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = LocationSnapshot(point = DEFAULT_LOCATION, resolved = false, source = LocationSource.DEFAULT),
+        )
 
     val state: StateFlow<ArUiState> =
         combine(
@@ -276,10 +283,13 @@ class ArViewModel(
         }
     }
 
-    private data class LocationSnapshot(
+    internal data class LocationSnapshot(
         val point: GeoPoint,
         val resolved: Boolean,
+        val source: LocationSource,
     )
+
+    internal enum class LocationSource { MANUAL, DEVICE, DEFAULT }
 
     data class ArStar(
         val id: Int,
@@ -289,9 +299,10 @@ class ArViewModel(
         val bv: Float? = null,
     )
 
-    private suspend fun loadAstroCatalog(): AstroCatalogState? =
-        withContext(ioDispatcher) {
-            val catalog = astroLoader.load() ?: return@withContext null
+    private suspend fun loadAstroCatalog(): AstroCatalogState? {
+        val loader = astroLoader ?: return null
+        return withContext(ioDispatcher) {
+            val catalog = loader.load() ?: return@withContext null
             val stars = catalog.allStars()
             val constellationByAbbr =
                 (0..87).associate { index ->
@@ -305,6 +316,7 @@ class ArViewModel(
                 skeletonLines = buildConstellationSkeletonLines(stars),
             )
         }
+    }
 
     companion object {
         private val DEFAULT_LOCATION = GeoPoint(latDeg = 0.0, lonDeg = 0.0)
@@ -353,6 +365,7 @@ class ArViewModelFactory(
     private val identifySolver: IdentifySolver,
     private val assetManager: AssetManager,
     private val locationPrefs: LocationPrefs,
+    private val deviceLocationRepository: DeviceLocationRepository,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ArViewModel::class.java)) {
@@ -361,6 +374,7 @@ class ArViewModelFactory(
                 identifySolver = identifySolver,
                 astroLoader = PtskCatalogLoader(assetManager),
                 locationPrefs = locationPrefs,
+                deviceLocationFlow = deviceLocationRepository.deviceLocationFlow,
             ) as T
         }
 
