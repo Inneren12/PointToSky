@@ -51,4 +51,8 @@
     <string name="ar_visibility_filter_title">Visibility filter</string>
     <string name="ar_visibility_readout">Visible to ~mag %1$s here, now</string>
     <string name="ar_sky_darkness_title">Sky darkness (Bortle %1$d)</string>
+    <string name="ar_bortle_source_auto">Auto</string>
+    <string name="ar_bortle_source_manual">Manual</string>
+    <string name="ar_bortle_auto_detected">Auto-detected: Bortle %1$d</string>
+    <string name="ar_bortle_auto_unavailable">Couldn\'t detect from your location — using manual</string>
 </resources>

@@ -4,12 +4,14 @@ import java.util.zip.Deflater
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Pure JVM round-trip tests for [LightPollutionGrid].
  *
- * A small Kotlin helper mirrors the Python writer (same PTSKLP01 format) so
+ * A small Kotlin helper mirrors the Python writer (same PTSKLP01 v2 format) so
  * tests are fully self-contained with no file I/O.
  *
  * Test grid layout (2 rows × 4 cols, deg=90, latTop=90, lonLeft=-180):
@@ -20,7 +22,7 @@ import kotlin.test.assertNull
  */
 class LightPollutionGridTest {
 
-    // ── Wire format builder (mirrors Python write_grid) ───────────────────────
+    // ── Wire format builder (mirrors Python write_grid v2) ───────────────────
 
     private fun buildGridBytes(
         rows: Int,
@@ -29,18 +31,20 @@ class LightPollutionGridTest {
         lonLeft: Double,
         deg: Double,
         cells: ByteArray,
+        placeholder: Boolean = false,
     ): ByteArray {
         val compressed = deflate(cells)
-        val buf = ByteArray(48 + compressed.size)
+        val buf = ByteArray(52 + compressed.size)
         "PTSKLP01".toByteArray(Charsets.US_ASCII).copyInto(buf, 0)
-        putLeInt(buf, 8, 1)
+        putLeInt(buf, 8, 2)
         putLeInt(buf, 12, rows)
         putLeInt(buf, 16, cols)
         putLeDouble(buf, 20, latTop)
         putLeDouble(buf, 28, lonLeft)
         putLeDouble(buf, 36, deg)
-        putLeInt(buf, 44, compressed.size)
-        compressed.copyInto(buf, 48)
+        putLeInt(buf, 44, if (placeholder) 1 else 0)
+        putLeInt(buf, 48, compressed.size)
+        compressed.copyInto(buf, 52)
         return buf
     }
 
@@ -161,5 +165,23 @@ class LightPollutionGridTest {
         val bytes = buildGridBytes(2, 4, 90.0, -180.0, 90.0, CELLS_2X4).copyOf()
         putLeInt(bytes, 16, 5)  // cols=5 → expected=10, actual inflated=8 → throw
         assertFailsWith<IllegalArgumentException> { LightPollutionGrid.parse(bytes) }
+    }
+
+    // ── Placeholder flag round-trip ───────────────────────────────────────────
+
+    @Test
+    fun placeholderFlagTrueRoundTrips() {
+        val grid = LightPollutionGrid.parse(
+            buildGridBytes(2, 4, 90.0, -180.0, 90.0, CELLS_2X4, placeholder = true),
+        )
+        assertTrue(grid.isPlaceholder)
+    }
+
+    @Test
+    fun placeholderFlagFalseRoundTrips() {
+        val grid = LightPollutionGrid.parse(
+            buildGridBytes(2, 4, 90.0, -180.0, 90.0, CELLS_2X4, placeholder = false),
+        )
+        assertFalse(grid.isPlaceholder)
     }
 }

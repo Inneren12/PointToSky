@@ -128,6 +128,10 @@
     <string name="ar_visibility_filter_title">Фильтр видимости</string>
     <string name="ar_visibility_readout">Видно до ~%1$s⁠m здесь и сейчас</string>
     <string name="ar_sky_darkness_title">Темнота неба (Bortle %1$d)</string>
+    <string name="ar_bortle_source_auto">Авто</string>
+    <string name="ar_bortle_source_manual">Вручную</string>
+    <string name="ar_bortle_auto_detected">Определено автоматически: Bortle %1$d</string>
+    <string name="ar_bortle_auto_unavailable">Не удалось определить по местоположению — используется ручное</string>
     <string name="ar_constellation_mode_label">Созвездия</string>
     <string name="ar_constellation_mode_off">Выкл</string>
     <string name="ar_constellation_mode_asterisms">Астеризмы</string>

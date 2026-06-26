@@ -63,11 +63,11 @@ import dev.pointtosky.core.astro.catalog.StarRecord
 import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
-import dev.pointtosky.core.astro.visibility.Bortle
+import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
 import dev.pointtosky.core.astro.transform.altAzToRaDec
 import dev.pointtosky.core.astro.transform.raDecToAltAz
-import dev.pointtosky.core.astro.identify.IdentifySolver
+import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.datalayer.AimSetTargetMessage
 import dev.pointtosky.core.datalayer.AimTargetEquatorialPayload
 import dev.pointtosky.core.datalayer.AimTargetKind
@@ -76,6 +76,7 @@ import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.render.BvColor
+import dev.pointtosky.mobile.visibility.BortleSource
 import java.util.Locale
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -119,6 +120,7 @@ fun ArRoute(
         onReticleTargetOnlyToggle = viewModel::setReticleTargetOnly,
         onVisibilityFilterToggle = viewModel::setVisibilityFilterEnabled,
         onBortleChange = viewModel::setBortle,
+        onBortleSourceChange = viewModel::setBortleSource,
         onBack = onBack,
         onSetTarget = { target ->
             val option =
@@ -164,6 +166,7 @@ fun ArScreen(
     onReticleTargetOnlyToggle: (Boolean) -> Unit,
     onVisibilityFilterToggle: (Boolean) -> Unit,
     onBortleChange: (Bortle) -> Unit,
+    onBortleSourceChange: (BortleSource) -> Unit,
     onBack: () -> Unit,
     onSetTarget: (ArTarget) -> Unit,
     modifier: Modifier = Modifier,
@@ -332,6 +335,9 @@ fun ArScreen(
                         reticleTargetOnly = state.reticleTargetOnly,
                         visibilityFilterEnabled = state.visibilityFilterEnabled,
                         bortle = state.bortle,
+                        bortleSource = state.bortleSource,
+                        autoBortle = state.autoBortle,
+                        lightPollutionAvailable = state.lightPollutionAvailable,
                         limitingMag = state.limitingMag,
                         onConstellationModeChange = onConstellationModeChange,
                         onProModeChange = onProModeChange,
@@ -341,6 +347,7 @@ fun ArScreen(
                         onReticleTargetOnlyToggle = onReticleTargetOnlyToggle,
                         onVisibilityFilterToggle = onVisibilityFilterToggle,
                         onBortleChange = onBortleChange,
+                        onBortleSourceChange = onBortleSourceChange,
                         modifier =
                             Modifier
                                 .align(Alignment.TopEnd)
@@ -676,6 +683,9 @@ private fun ArControlsPanel(
     reticleTargetOnly: Boolean,
     visibilityFilterEnabled: Boolean,
     bortle: Bortle,
+    bortleSource: BortleSource,
+    autoBortle: Bortle?,
+    lightPollutionAvailable: Boolean,
     limitingMag: Double?,
     onConstellationModeChange: (ConstellationMode) -> Unit,
     onProModeChange: (Boolean) -> Unit,
@@ -685,6 +695,7 @@ private fun ArControlsPanel(
     onReticleTargetOnlyToggle: (Boolean) -> Unit,
     onVisibilityFilterToggle: (Boolean) -> Unit,
     onBortleChange: (Bortle) -> Unit,
+    onBortleSourceChange: (BortleSource) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -747,10 +758,17 @@ private fun ArControlsPanel(
                 onCheckedChange = onVisibilityFilterToggle,
             )
             if (visibilityFilterEnabled) {
-                BortleSlider(
-                    bortle = bortle,
-                    onBortleChange = onBortleChange,
-                )
+                if (!lightPollutionAvailable) {
+                    BortleSlider(bortle = bortle, onBortleChange = onBortleChange)
+                } else {
+                    BortleSourceToggle(
+                        bortleSource = bortleSource,
+                        autoBortle = autoBortle,
+                        bortle = bortle,
+                        onBortleSourceChange = onBortleSourceChange,
+                        onBortleChange = onBortleChange,
+                    )
+                }
             }
             ToggleRow(
                 title = stringResource(R.string.ar_hide_star_labels),
@@ -793,6 +811,55 @@ private fun MagnitudeSlider(
             valueRange = 0f..7f,
             steps = 14,
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BortleSourceToggle(
+    bortleSource: BortleSource,
+    autoBortle: Bortle?,
+    bortle: Bortle,
+    onBortleSourceChange: (BortleSource) -> Unit,
+    onBortleChange: (Bortle) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        val sources = BortleSource.entries
+        val sourceLabels = listOf(
+            stringResource(R.string.ar_bortle_source_auto),
+            stringResource(R.string.ar_bortle_source_manual),
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            sources.forEachIndexed { index, source ->
+                SegmentedButton(
+                    selected = bortleSource == source,
+                    onClick = { onBortleSourceChange(source) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = sources.size),
+                    label = {
+                        Text(text = sourceLabels[index], style = MaterialTheme.typography.bodySmall)
+                    },
+                )
+            }
+        }
+        if (bortleSource == BortleSource.AUTO) {
+            if (autoBortle != null) {
+                Text(
+                    text = stringResource(R.string.ar_bortle_auto_detected, autoBortle.ordinal + 1),
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.ar_bortle_auto_unavailable),
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                BortleSlider(bortle = bortle, onBortleChange = onBortleChange)
+            }
+        } else {
+            BortleSlider(bortle = bortle, onBortleChange = onBortleChange)
+        }
     }
 }
 
