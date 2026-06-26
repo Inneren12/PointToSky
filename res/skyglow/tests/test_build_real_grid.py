@@ -338,3 +338,9 @@ def test_validate_global_deg_non_divisor():
     """7.0 does not evenly divide 360 (360/7 ≈ 51.43)."""
     with pytest.raises(ValueError, match="does not evenly divide"):
         _validate_global_deg(7.0)
+
+
+def test_write_real_grid_rejects_non_divisor_deg(tmp_path):
+    """write_real_grid must raise ValueError for a deg that doesn't tile the globe."""
+    with pytest.raises(ValueError, match="does not evenly divide"):
+        write_real_grid(tmp_path / "bad.bin", _coarse_radiance(), 7.0)

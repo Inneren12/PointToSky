@@ -151,7 +151,12 @@ def write_real_grid(
     Calls ``radiance_to_bortle_grid`` then ``write_grid(placeholder=False)``.
     ``placeholder=False`` sets flags bit 0 = 0, causing the app to treat this
     as a real data asset and activate the Auto-Bortle feature.
+
+    ``deg_per_cell`` must evenly divide both 360 and 180 so the output tile
+    aligns with the PTSKLP01 global grid.  ``radiance_to_bortle_grid`` is
+    lower-level and does not enforce this, allowing regional or non-global use.
     """
+    _validate_global_deg(deg_per_cell)
     grid = radiance_to_bortle_grid(
         radiance,
         deg_per_cell,
