@@ -118,6 +118,8 @@ class CardViewModel(
                 equatorial = equatorial,
                 horizontal = horizontal,
                 bestWindow = readyEntry.bestWindow,
+                belowVisibilityLimit = belowLimit,
+                limitingMag = limitingMag,
             )
         val targetOption = buildTargetOption(readyEntry, title, equatorial)
         return CardUiState.Ready(
@@ -209,6 +211,8 @@ class CardViewModel(
         equatorial: Equatorial?,
         horizontal: Horizontal?,
         bestWindow: CardBestWindow?,
+        belowVisibilityLimit: Boolean = false,
+        limitingMag: Double? = null,
     ): String {
         val locale = Locale.getDefault()
         val builder = StringBuilder()
@@ -239,6 +243,14 @@ class CardViewModel(
         if (!windowText.isNullOrBlank()) {
             builder.append("\n")
             builder.append(windowText)
+        }
+        if (belowVisibilityLimit) {
+            builder.append("\n")
+            if (limitingMag != null) {
+                builder.append(String.format(locale, "Below tonight's naked-eye limit (~mag %.1f)", limitingMag))
+            } else {
+                builder.append("Below tonight's naked-eye limit")
+            }
         }
         return builder.toString()
     }

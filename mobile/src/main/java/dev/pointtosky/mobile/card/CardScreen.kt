@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -183,6 +184,22 @@ private fun CardContent(
                 text = typeLabel(state.type, state.body),
                 style = MaterialTheme.typography.bodyLarge,
             )
+        }
+
+        if (state.belowVisibilityLimit) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(
+                    text = state.limitingMag?.let {
+                        stringResource(R.string.card_below_limit_badge_mag, formatDegree(it, includeDegreeSymbol = false))
+                    } ?: stringResource(R.string.card_below_limit_badge),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
         }
 
         DetailRow(

@@ -23,6 +23,8 @@
     <string name="card_type_planet">Planet</string>
     <string name="card_type_moon">Moon</string>
     <string name="card_type_constellation">Constellation</string>
+    <string name="card_below_limit_badge">Below tonight\'s naked-eye limit</string>
+    <string name="card_below_limit_badge_mag">Below tonight\'s limit (~mag %1$s)</string>
     <string name="card_share_chooser_title">Share object</string>
     <string name="card_share_error">No compatible apps</string>
     <string name="aim_send_button">Send %1$s to watch</string>
