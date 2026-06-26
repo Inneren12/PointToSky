@@ -40,7 +40,7 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":core:astro-core"))
+    api(project(":core:astro-core"))
     implementation(project(":core:time"))
     implementation(project(":core:logging"))
     testImplementation(kotlin("test"))
