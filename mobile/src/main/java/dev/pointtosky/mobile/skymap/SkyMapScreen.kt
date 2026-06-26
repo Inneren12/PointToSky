@@ -61,11 +61,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
-import dev.pointtosky.mobile.visibility.BortleSource
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
+import dev.pointtosky.mobile.visibility.BortleSource
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -325,7 +325,22 @@ private fun SkyMapContent(
                                 color = MaterialTheme.colorScheme.outline,
                             )
                         }
-                        if (state.visibilityFilterEnabled) {
+                        if (state.visibilityFilterEnabled && !state.lightPollutionAvailable) {
+                            Spacer(modifier = Modifier.size(4.dp))
+                            val bortleNumber = state.bortle.ordinal + 1
+                            Text(
+                                text = stringResource(id = R.string.ar_sky_darkness_title, bortleNumber),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Slider(
+                                value = bortleNumber.toFloat(),
+                                onValueChange = {
+                                    onBortleChange(Bortle.entries[(it.toInt() - 1).coerceIn(0, 8)])
+                                },
+                                valueRange = 1f..9f,
+                                steps = 7,
+                            )
+                        } else if (state.visibilityFilterEnabled) {
                             Spacer(modifier = Modifier.size(4.dp))
                             val sources = BortleSource.entries
                             val sourceLabels = listOf(

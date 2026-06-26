@@ -190,9 +190,10 @@ class ArViewModel(
             latDeg = location.point.latDeg,
             applyRefraction = false,
         ).altDeg
+        val realGrid = grid?.takeUnless { it.isPlaceholder }
         val autoBortle: Bortle? =
             if (bortleSource == BortleSource.AUTO && location.resolved) {
-                grid?.bortleAt(location.point.latDeg, location.point.lonDeg)
+                realGrid?.bortleAt(location.point.latDeg, location.point.lonDeg)
             } else null
         val effectiveBortle = autoBortle ?: bortle
         val limitingMag = estimateLimitingMagnitude(
@@ -223,6 +224,7 @@ class ArViewModel(
             bortle = bortle,
             bortleSource = bortleSource,
             autoBortle = autoBortle,
+            lightPollutionAvailable = realGrid != null,
             showStarLabels = showStarLabels,
             showStarPoints = showStarPoints,
             reticleTargetOnly = reticleTargetOnly,
@@ -346,6 +348,7 @@ sealed interface ArUiState {
         val bortle: Bortle = Bortle.CLASS_4,
         val bortleSource: BortleSource = BortleSource.AUTO,
         val autoBortle: Bortle? = null,
+        val lightPollutionAvailable: Boolean = false,
     ) : ArUiState
 }
 

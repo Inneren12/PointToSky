@@ -4,7 +4,9 @@ import java.util.zip.Deflater
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Pure JVM round-trip tests for [LightPollutionGrid].
@@ -29,18 +31,20 @@ class LightPollutionGridTest {
         lonLeft: Double,
         deg: Double,
         cells: ByteArray,
+        placeholder: Boolean = false,
     ): ByteArray {
         val compressed = deflate(cells)
-        val buf = ByteArray(48 + compressed.size)
+        val buf = ByteArray(52 + compressed.size)
         "PTSKLP01".toByteArray(Charsets.US_ASCII).copyInto(buf, 0)
-        putLeInt(buf, 8, 1)
+        putLeInt(buf, 8, 2)
         putLeInt(buf, 12, rows)
         putLeInt(buf, 16, cols)
         putLeDouble(buf, 20, latTop)
         putLeDouble(buf, 28, lonLeft)
         putLeDouble(buf, 36, deg)
-        putLeInt(buf, 44, compressed.size)
-        compressed.copyInto(buf, 48)
+        putLeInt(buf, 44, if (placeholder) 1 else 0)
+        putLeInt(buf, 48, compressed.size)
+        compressed.copyInto(buf, 52)
         return buf
     }
 
@@ -143,6 +147,23 @@ class LightPollutionGridTest {
         assertNull(grid.bortleAt(25.0, 15.0))                     // lat below grid
         assertNull(grid.bortleAt(45.0, 5.0))                      // lon left of grid
         assertNull(grid.bortleAt(45.0, 35.0))                     // lon right of grid
+    }
+
+    // ── Placeholder flag round-trip ───────────────────────────────────────────
+
+    @Test
+    fun placeholderFlagRoundTrips() {
+        val placeholder =
+            LightPollutionGrid.parse(
+                buildGridBytes(2, 4, 90.0, -180.0, 90.0, CELLS_2X4, placeholder = true),
+            )
+        assertTrue(placeholder.isPlaceholder)
+
+        val real =
+            LightPollutionGrid.parse(
+                buildGridBytes(2, 4, 90.0, -180.0, 90.0, CELLS_2X4, placeholder = false),
+            )
+        assertFalse(real.isPlaceholder)
     }
 
     // ── Malformed input ───────────────────────────────────────────────────────

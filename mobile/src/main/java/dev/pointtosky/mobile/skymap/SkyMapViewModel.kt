@@ -149,9 +149,10 @@ class SkyMapViewModel(
     ): SkyMapState {
         val lst = lstAt(instant, location.point.lonDeg).lstDeg
         val lat = location.point.latDeg
+        val realGrid = grid?.takeUnless { it.isPlaceholder }
         val autoBortle: Bortle? =
             if (bortleSource == BortleSource.AUTO && location.resolved) {
-                grid?.bortleAt(location.point.latDeg, location.point.lonDeg)
+                realGrid?.bortleAt(location.point.latDeg, location.point.lonDeg)
             } else null
         val effectiveBortle = autoBortle ?: bortle
         val limitingMag: Double? = if (visibilityEnabled) {
@@ -197,6 +198,7 @@ class SkyMapViewModel(
             bortle = bortle,
             bortleSource = bortleSource,
             autoBortle = autoBortle,
+            lightPollutionAvailable = realGrid != null,
         )
     }
 
@@ -261,6 +263,7 @@ sealed interface SkyMapState {
         val bortle: Bortle = Bortle.CLASS_4,
         val bortleSource: BortleSource = BortleSource.AUTO,
         val autoBortle: Bortle? = null,
+        val lightPollutionAvailable: Boolean = false,
     ) : SkyMapState
 }
 
