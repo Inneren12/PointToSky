@@ -150,11 +150,76 @@ def test_wrap_longitude_crosses_dateline():
     assert wrapped.shape == strip.shape
 
 
-def test_latitudes_arg_accepted_noop():
+def test_latitudes_none_is_byte_identical():
+    """latitudes=None (default) produces exactly the same result as omitting it."""
     shape = (41, 41)
     src = _point_source(shape, (20, 20))
-    lats = np.linspace(60.0, 20.0, shape[0])
     base = convolve_radiance(src, KM_PER_PIXEL)
-    with_lat = convolve_radiance(src, KM_PER_PIXEL, latitudes=lats)
-    # A1: latitudes is signature-ready but a no-op; result is unchanged.
-    assert np.allclose(base, with_lat)
+    with_none = convolve_radiance(src, KM_PER_PIXEL, latitudes=None)
+    assert np.array_equal(base, with_none)
+
+
+def _nonzero_extent(profile, threshold=1e-12):
+    """Return the half-width in pixels from the peak where profile > threshold."""
+    center = int(np.argmax(profile))
+    extent = 0
+    for i in range(1, len(profile)):
+        lo = center - i
+        hi = center + i
+        if lo < 0 or hi >= len(profile):
+            break
+        if profile[lo] <= threshold and profile[hi] <= threshold:
+            break
+        extent = i
+    return extent
+
+
+def test_cos_lat_halo_isotropic_at_equator():
+    """At the equator (lat=0) the glow halo is ~isotropic in pixel space."""
+    # 0.2 deg/cell → kernel spans ~13 px in each direction (cutoff=300 km).
+    deg = 0.2
+    km_ns = 111.32 * deg          # ~22.3 km/pixel N-S
+    cutoff = 300.0
+    nrows, ncols = 41, 41
+    center_r, center_c = nrows // 2, ncols // 2
+    src = np.zeros((nrows, ncols))
+    src[center_r, center_c] = 1.0
+    lats = (center_r - np.arange(nrows)) * deg   # row 0 ≈ +4°, last row ≈ −4°
+
+    out = convolve_radiance(src, km_ns, latitudes=lats, cutoff_km=cutoff,
+                            lat_band_deg=1.0)
+
+    ns_ext = _nonzero_extent(out[:, center_c])
+    ew_ext = _nonzero_extent(out[center_r, :])
+
+    assert ns_ext > 0 and ew_ext > 0, "no detectable halo"
+    ratio = ew_ext / ns_ext
+    # At equator km_ew == km_ns → isotropic kernel → both extents identical.
+    assert 0.7 <= ratio <= 1.3, f"equator halo ratio {ratio:.2f} not ~1"
+
+
+def test_cos_lat_halo_wider_at_60deg():
+    """At lat=60° the E-W halo is ~2× wider in pixels than the N-S halo.
+
+    cos(60°)=0.5 → km_ew = 0.5·km_ns → the kernel spans 2× as many pixels
+    in the E-W direction as in N-S, falsifying a missing/incorrect correction.
+    """
+    deg = 0.2
+    km_ns = 111.32 * deg          # ~22.3 km/pixel N-S
+    cutoff = 300.0
+    nrows, ncols = 41, 81         # extra columns for the 2× wider E-W kernel
+    center_r, center_c = nrows // 2, ncols // 2
+    src = np.zeros((nrows, ncols))
+    src[center_r, center_c] = 1.0
+    lats = 60.0 + (center_r - np.arange(nrows)) * deg
+
+    out = convolve_radiance(src, km_ns, latitudes=lats, cutoff_km=cutoff,
+                            lat_band_deg=1.0)
+
+    ns_ext = _nonzero_extent(out[:, center_c])
+    ew_ext = _nonzero_extent(out[center_r, :])
+
+    assert ns_ext > 0 and ew_ext > 0, "no detectable halo"
+    ratio = ew_ext / ns_ext
+    # Accept [1.5, 2.5] to tolerate ±1 px discretisation at the boundary.
+    assert 1.5 <= ratio <= 2.5, f"lat-60 halo ratio {ratio:.2f} not ~2"
