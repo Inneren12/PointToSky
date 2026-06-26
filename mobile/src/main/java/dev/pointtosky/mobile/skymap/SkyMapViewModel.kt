@@ -7,14 +7,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
-import dev.pointtosky.core.astro.ephem.Body
 import dev.pointtosky.core.astro.ephem.EphemerisComputer
 import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.astro.visibility.LightPollutionGrid
-import dev.pointtosky.core.astro.visibility.estimateLimitingMagnitude
+import dev.pointtosky.core.astro.visibility.limitingMagnitudeAt
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.catalog.star.Star
 import dev.pointtosky.core.location.model.GeoPoint
@@ -24,6 +23,7 @@ import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.visibility.BortleSource
 import dev.pointtosky.mobile.visibility.LightPollutionProvider
 import dev.pointtosky.mobile.visibility.VisibilitySettings
+import dev.pointtosky.mobile.visibility.resolveEffectiveBortle
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -149,19 +149,19 @@ class SkyMapViewModel(
     ): SkyMapState {
         val lst = lstAt(instant, location.point.lonDeg).lstDeg
         val lat = location.point.latDeg
-        val realGrid = grid?.takeUnless { it.isPlaceholder }
-        val autoBortle: Bortle? =
-            if (bortleSource == BortleSource.AUTO && location.resolved) {
-                realGrid?.bortleAt(location.point.latDeg, location.point.lonDeg)
-            } else null
-        val effectiveBortle = autoBortle ?: bortle
+        val eff = resolveEffectiveBortle(
+            source = bortleSource,
+            manual = bortle,
+            locationResolved = location.resolved,
+            latDeg = location.point.latDeg,
+            lonDeg = location.point.lonDeg,
+            grid = grid,
+        )
         val limitingMag: Double? = if (visibilityEnabled) {
-            val moon = ephemerisComputer.compute(Body.MOON, instant)
-            val sun = ephemerisComputer.compute(Body.SUN, instant)
-            val moonAlt = raDecToAltAz(moon.eq, lst, lat, applyRefraction = false).altDeg
-            val sunAlt = raDecToAltAz(sun.eq, lst, lat, applyRefraction = false).altDeg
-            estimateLimitingMagnitude(effectiveBortle.darkNelm, moonAlt, moon.phase ?: 0.0, sunAlt)
-        } else null
+            limitingMagnitudeAt(ephemerisComputer, instant, lat, location.point.lonDeg, eff.effective.darkNelm)
+        } else {
+            null
+        }
         val projectedStars =
             data.stars.map { star ->
                 val horizontal = raDecToAltAz(star.equatorial, lst, lat)
@@ -197,8 +197,8 @@ class SkyMapViewModel(
             limitingMag = limitingMag,
             bortle = bortle,
             bortleSource = bortleSource,
-            autoBortle = autoBortle,
-            lightPollutionAvailable = realGrid != null,
+            autoBortle = eff.auto,
+            lightPollutionAvailable = eff.available,
         )
     }
 
