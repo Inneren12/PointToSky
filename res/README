@@ -18,5 +18,26 @@ build_lightpollution_grid.py
     Duriscoe et al. (2018) skyglow model.  That pipeline will call write_grid()
     from the same script and replace this placeholder without changing the format.
 
+skyglow/  (Python package: numpy + scipy only)
+    Clean-room skyglow propagation kernel + FFT convolution — the scientific
+    core that turns an upward-radiance field into an artificial sky-brightness
+    field (Garstang 1986/1989 + Duriscoe et al. 2018; see skyglow/kernel.py for
+    the implemented functional form and full citations).
+
+      kernel.py    radial single-scattering propagation kernel; the `aerosol`
+                   atmospheric-clarity parameter is the primary tunable knob.
+      convolve.py  build a discretised radial kernel and FFT-convolve a radiance
+                   raster into an artificial V-band sky-luminance field.
+      tests/       pytest shape/mechanics tests (synthetic arrays only).
+
+    Run:  pip install numpy scipy pytest --break-system-packages
+          pytest res/skyglow/
+    (CI is Gradle-only and does not run these Python tests.)
+
+    A1 is shape-validated only.  Absolute calibration (dark-sky park -> Bortle
+    1-2, major city -> Bortle 8-9), real NASA VIIRS VNP46A4 input, and the
+    brightness -> mag/arcsec^2 -> Bortle mapping are deferred to later phases
+    (A2 / A3).
+
 Other scripts (build_bsc_ptskcat4.py, build_const_ptskcons.py, …) produce the
 star catalogue and constellation assets; see their file headers for details.
