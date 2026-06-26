@@ -17,10 +17,13 @@ import dev.pointtosky.core.astro.identify.SkyObjectOrConstellation
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.visibility.Bortle
+import dev.pointtosky.core.astro.visibility.LightPollutionGrid
 import dev.pointtosky.core.astro.visibility.estimateLimitingMagnitude
 import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
+import dev.pointtosky.mobile.visibility.BortleSource
+import dev.pointtosky.mobile.visibility.LightPollutionProvider
 import dev.pointtosky.mobile.visibility.VisibilitySettings
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +50,7 @@ class ArViewModel(
     private val ephemerisComputer: EphemerisComputer = SimpleEphemerisComputer(),
     /** DI-диспетчер вместо прямого Dispatchers.IO (detekt: InjectDispatcher) */
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    lightPollutionGrid: StateFlow<LightPollutionGrid?> = LightPollutionProvider.grid(),
 ) : ViewModel() {
     private val staticStars = MutableStateFlow<List<ArStar>?>(null)
     private val astroCatalog = MutableStateFlow<AstroCatalogState?>(null)
@@ -58,6 +62,8 @@ class ArViewModel(
     private val reticleTargetOnly = MutableStateFlow(false)
     private val visibilityFilterEnabled = VisibilitySettings.enabled
     private val bortle = VisibilitySettings.bortle
+    private val bortleSource = VisibilitySettings.bortleSource
+    private val lightPollutionGrid = lightPollutionGrid
     private val asterismState =
         MutableStateFlow(
             AsterismUiState(
@@ -97,6 +103,8 @@ class ArViewModel(
             reticleTargetOnly,
             visibilityFilterEnabled,
             bortle,
+            bortleSource,
+            lightPollutionGrid,
         ) { values: Array<Any?> ->
             @Suppress("UNCHECKED_CAST")
             val stars = values[0] as List<ArStar>
@@ -112,6 +120,8 @@ class ArViewModel(
             val reticleTargetOnlyValue = values[10] as Boolean
             val visibilityFilterValue = values[11] as Boolean
             val bortleValue = values[12] as Bortle
+            val bortleSourceValue = values[13] as BortleSource
+            val gridValue = values[14] as LightPollutionGrid?
 
             buildState(
                 stars = stars,
@@ -127,6 +137,8 @@ class ArViewModel(
                 reticleTargetOnly = reticleTargetOnlyValue,
                 visibilityFilter = visibilityFilterValue,
                 bortle = bortleValue,
+                bortleSource = bortleSourceValue,
+                grid = gridValue,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -160,6 +172,8 @@ class ArViewModel(
         reticleTargetOnly: Boolean,
         visibilityFilter: Boolean,
         bortle: Bortle,
+        bortleSource: BortleSource,
+        grid: LightPollutionGrid?,
     ): ArUiState {
         val lstDeg = lstAt(instant, location.point.lonDeg).lstDeg
         val moon = ephemerisComputer.compute(Body.MOON, instant)
@@ -176,8 +190,13 @@ class ArViewModel(
             latDeg = location.point.latDeg,
             applyRefraction = false,
         ).altDeg
+        val autoBortle: Bortle? =
+            if (bortleSource == BortleSource.AUTO && location.resolved) {
+                grid?.bortleAt(location.point.latDeg, location.point.lonDeg)
+            } else null
+        val effectiveBortle = autoBortle ?: bortle
         val limitingMag = estimateLimitingMagnitude(
-            darkNelm = bortle.darkNelm,
+            darkNelm = effectiveBortle.darkNelm,
             moonAltitudeDeg = moonAlt,
             moonIllumination = moon.phase ?: 0.0,
             sunAltitudeDeg = sunAlt,
@@ -202,6 +221,8 @@ class ArViewModel(
             limitingMag = limitingMag,
             visibilityFilterEnabled = visibilityFilter,
             bortle = bortle,
+            bortleSource = bortleSource,
+            autoBortle = autoBortle,
             showStarLabels = showStarLabels,
             showStarPoints = showStarPoints,
             reticleTargetOnly = reticleTargetOnly,
@@ -245,6 +266,10 @@ class ArViewModel(
 
     fun setBortle(value: Bortle) {
         VisibilitySettings.bortle.value = value
+    }
+
+    fun setBortleSource(s: BortleSource) {
+        VisibilitySettings.bortleSource.value = s
     }
 
     fun setShowStarLabels(enabled: Boolean) {
@@ -319,6 +344,8 @@ sealed interface ArUiState {
         val limitingMag: Double? = null,
         val visibilityFilterEnabled: Boolean = false,
         val bortle: Bortle = Bortle.CLASS_4,
+        val bortleSource: BortleSource = BortleSource.AUTO,
+        val autoBortle: Bortle? = null,
     ) : ArUiState
 }
 

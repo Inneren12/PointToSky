@@ -13,6 +13,7 @@ import dev.pointtosky.core.astro.ephem.SimpleEphemerisComputer
 import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.visibility.Bortle
+import dev.pointtosky.core.astro.visibility.LightPollutionGrid
 import dev.pointtosky.core.astro.visibility.estimateLimitingMagnitude
 import dev.pointtosky.core.catalog.runtime.CatalogRepository
 import dev.pointtosky.core.catalog.star.Star
@@ -20,6 +21,8 @@ import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.core.time.SystemTimeSource
 import dev.pointtosky.mobile.location.DeviceLocationRepository
+import dev.pointtosky.mobile.visibility.BortleSource
+import dev.pointtosky.mobile.visibility.LightPollutionProvider
 import dev.pointtosky.mobile.visibility.VisibilitySettings
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -42,10 +45,12 @@ class SkyMapViewModel(
     private val timeSource: SystemTimeSource = SystemTimeSource(periodMs = 1_000L),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val ephemerisComputer: EphemerisComputer = SimpleEphemerisComputer(),
+    lightPollutionGrid: StateFlow<LightPollutionGrid?> = LightPollutionProvider.grid(),
 ) : ViewModel() {
     private val appContext = context.applicationContext
 
     private val staticData = MutableStateFlow<StaticSkyData?>(null)
+    private val lightPollutionGrid = lightPollutionGrid
 
     private val locationSnapshot: StateFlow<LocationSnapshot> =
         combine(
@@ -86,6 +91,8 @@ class SkyMapViewModel(
             timeSource.ticks,
             VisibilitySettings.enabled,
             VisibilitySettings.bortle,
+            VisibilitySettings.bortleSource,
+            lightPollutionGrid,
         ) { values: Array<Any?> ->
             @Suppress("UNCHECKED_CAST")
             val data = values[0] as StaticSkyData
@@ -93,7 +100,9 @@ class SkyMapViewModel(
             val instant = values[2] as Instant
             val visibilityEnabled = values[3] as Boolean
             val bortle = values[4] as Bortle
-            buildState(data, location, instant, visibilityEnabled, bortle)
+            val bortleSource = values[5] as BortleSource
+            val grid = values[6] as LightPollutionGrid?
+            buildState(data, location, instant, visibilityEnabled, bortle, bortleSource, grid)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
@@ -135,15 +144,22 @@ class SkyMapViewModel(
         instant: Instant,
         visibilityEnabled: Boolean,
         bortle: Bortle,
+        bortleSource: BortleSource,
+        grid: LightPollutionGrid?,
     ): SkyMapState {
         val lst = lstAt(instant, location.point.lonDeg).lstDeg
         val lat = location.point.latDeg
+        val autoBortle: Bortle? =
+            if (bortleSource == BortleSource.AUTO && location.resolved) {
+                grid?.bortleAt(location.point.latDeg, location.point.lonDeg)
+            } else null
+        val effectiveBortle = autoBortle ?: bortle
         val limitingMag: Double? = if (visibilityEnabled) {
             val moon = ephemerisComputer.compute(Body.MOON, instant)
             val sun = ephemerisComputer.compute(Body.SUN, instant)
             val moonAlt = raDecToAltAz(moon.eq, lst, lat, applyRefraction = false).altDeg
             val sunAlt = raDecToAltAz(sun.eq, lst, lat, applyRefraction = false).altDeg
-            estimateLimitingMagnitude(bortle.darkNelm, moonAlt, moon.phase ?: 0.0, sunAlt)
+            estimateLimitingMagnitude(effectiveBortle.darkNelm, moonAlt, moon.phase ?: 0.0, sunAlt)
         } else null
         val projectedStars =
             data.stars.map { star ->
@@ -179,6 +195,8 @@ class SkyMapViewModel(
             visibilityFilterEnabled = visibilityEnabled,
             limitingMag = limitingMag,
             bortle = bortle,
+            bortleSource = bortleSource,
+            autoBortle = autoBortle,
         )
     }
 
@@ -188,6 +206,10 @@ class SkyMapViewModel(
 
     fun setBortle(value: Bortle) {
         VisibilitySettings.bortle.value = value
+    }
+
+    fun setBortleSource(s: BortleSource) {
+        VisibilitySettings.bortleSource.value = s
     }
 
     private data class StaticSkyData(
@@ -237,6 +259,8 @@ sealed interface SkyMapState {
         val visibilityFilterEnabled: Boolean = false,
         val limitingMag: Double? = null,
         val bortle: Bortle = Bortle.CLASS_4,
+        val bortleSource: BortleSource = BortleSource.AUTO,
+        val autoBortle: Bortle? = null,
     ) : SkyMapState
 }
 
