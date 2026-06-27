@@ -20,6 +20,7 @@ local.properties
 
 # Misc
 *.log
+mobile/stdout
 
 # Python bytecode
 __pycache__/

@@ -194,7 +194,10 @@ private fun CardContent(
             ) {
                 Text(
                     text = state.limitingMag?.let {
-                        stringResource(R.string.card_below_limit_badge_mag, formatDegree(it, includeDegreeSymbol = false))
+                        stringResource(
+                            R.string.card_below_limit_badge_mag,
+                            formatDegree(it, includeDegreeSymbol = false),
+                        )
                     } ?: stringResource(R.string.card_below_limit_badge),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),

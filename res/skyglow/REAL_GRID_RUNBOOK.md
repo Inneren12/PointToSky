@@ -52,7 +52,32 @@ earthaccess.download(results, local_path=str(download_dir))
 ```
 
 Each tile is an HDF5 file.  The key dataset is
-`/HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/AllAngle_Composite_Snow_Free`.
+`/HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/AllAngle_Composite_Snow_Free`.
+(The subgroup is literally named `Data Fields`, with the space.)
+
+**Year-filter gotcha.**  A multi-year `search_data`/`download` yields one tile
+*per year per cell*.  Filter to a single year (e.g. file pattern `*A2023*`)
+before mosaicking, or the merge double-counts tiles and the mean is wrong.
+
+---
+
+### VNP46A4 specifics
+
+Hard-won facts about the product, collected here so they are not re-derived:
+
+- **Layer:**
+  `/HDFEOS/GRIDS/VIIRS_Grid_DNB_2d/Data Fields/AllAngle_Composite_Snow_Free`.
+- **Fill value = −999.9** (NOT 65535).  The valid-data mask is `radiance >= 0`.
+- **Native tile = 2400×2400 @ 0.004166°/px.**  Block-average **24×** to reach
+  **100×100 @ 0.1°/cell** per tile.
+- **Tile (h, v) → corners:** `west = −180 + h·10`, `north = 90 − v·10`.
+  Canvas placement on the 1800×3600 global grid: `r0 = v·100`, `c0 = h·100`.
+- **`scale_factor = 1.0`** in-file — irrelevant here, it is absorbed by the
+  calibration `scale` (Step 5).
+- **GDAL is not required.**  Radiance reads directly with `h5py` + `numpy`, and
+  the actual global asset was built that way (no GeoTIFF intermediate).  The
+  GDAL/rasterio path below is one valid alternative to produce the mosaic that
+  `build_real_grid.py` consumes.
 
 ---
 
@@ -71,7 +96,8 @@ for f in viirs_tiles/*.h5; do
 done
 
 # Merge all tiles into one global raster.
-gdal_merge.py -o viirs_global_raw.tif -n 65535 -a_nodata 65535 \
+# VNP46A4 fill is -999.9 (valid mask is >= 0), NOT 65535.
+gdal_merge.py -o viirs_global_raw.tif -n -999.9 -a_nodata -999.9 \
     viirs_tiles/*.tif
 
 # Aggregate (mean) to 0.1°/cell equirectangular, north-up.
@@ -96,7 +122,7 @@ python -m res.skyglow.build_real_grid viirs_mosaic_0.1deg.tif \
     --deg 0.1 --scale S --out bortle.bin
 ```
 
-Replace `S` with your initial scale estimate.  Start with `scale=3.0` and
+Replace `S` with your initial scale estimate.  Start around `scale≈1000` and
 iterate (see Step 5).
 
 ---
@@ -129,7 +155,7 @@ bright_refs = [
     ("Central London",     51.51,  -0.13),   # target Bortle 8–9
 ]
 
-for scale in [1.0, 2.0, 3.0, 4.0, 5.0]:
+for scale in [500.0, 1000.0, 1500.0, 2000.0, 3000.0]:
     grid = radiance_to_bortle_grid(radiance, deg_per_cell=0.1, scale=scale)
     dark_vals  = sample_sites(grid, 0.1, dark_refs)
     bright_vals = sample_sites(grid, 0.1, bright_refs)
@@ -152,6 +178,14 @@ for scale in [1.0, 2.0, 3.0, 4.0, 5.0]:
 Scale ↑ brightens everything (cities approach 9, but dark refs creep up).
 Scale ↓ keeps dark refs at 1 (but cities may not reach 9).  Find the value
 that satisfies both simultaneously.
+
+**Empirical anchor.**  The regional build calibrated to **scale ≈ 1000**
+(Calgary/Edmonton → B6; dark prairies / Banff → B1–2), which is why the sweep
+above brackets ~1000 rather than single digits.  Start near 1000.  Note that
+`scale` is **unit-dependent on the radiance input** — its exact value tracks
+the ingestion path (e.g. `h5py` raw radiance vs. a GDAL-resampled mosaic), so
+treat ~1000 as the *regional* empirical anchor, not a hard global constant.
+The global value is confirmed in the separate validation pass (Step 6).
 
 ---
 
