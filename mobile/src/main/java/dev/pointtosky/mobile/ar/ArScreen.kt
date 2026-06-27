@@ -35,6 +35,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.pointtosky.core.astro.catalog.ConstellationId
@@ -75,6 +79,7 @@ import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.datalayer.AimTargetOption
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
 import dev.pointtosky.mobile.visibility.BortleSource
 import java.util.Locale
@@ -97,6 +102,19 @@ fun ArRoute(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val deviceLocationRepository = remember { DeviceLocationRepository(context.applicationContext) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, deviceLocationRepository) {
+        deviceLocationRepository.onPermissionChanged()
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    deviceLocationRepository.onPermissionChanged()
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val viewModel: ArViewModel =
         viewModel(
             factory =
@@ -104,6 +122,7 @@ fun ArRoute(
                     identifySolver = identifySolver,
                     assetManager = context.assets,
                     locationPrefs = locationPrefs,
+                    deviceLocationRepository = deviceLocationRepository,
                 ),
         )
     val state by viewModel.state.collectAsStateWithLifecycle()

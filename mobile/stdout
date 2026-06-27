@@ -1,5 +1,5 @@
-C:\B\PointToSky\PointToSky\mobile\lint-baseline.xml: Information: 127 errors and 60 warnings were filtered out because they are listed in the baseline file, lint-baseline.xml [LintBaseline]
-C:\B\PointToSky\PointToSky\mobile\lint-baseline.xml: Information: 21 errors/warnings were listed in the baseline file (lint-baseline.xml) but not found in the project; perhaps they have been fixed? Unmatched issue types: GradleDependency, MissingTranslation (17), UseTomlInstead (2), WearableBindListener [LintBaselineFixed]
+/home/user/PointToSky/mobile/lint-baseline.xml: Information: 145 errors and 54 warnings were filtered out because they are listed in the baseline file, lint-baseline.xml [LintBaseline]
+/home/user/PointToSky/mobile/lint-baseline.xml: Information: 27 errors/warnings were listed in the baseline file (lint-baseline.xml) but not found in the project; perhaps they have been fixed? Unmatched issue types: GradleDependency (9), MissingTranslation (17), WearableBindListener [LintBaselineFixed]
 
    Explanation for issues of type "LintBaselineFixed":
    If a lint baseline describes a problem which is no longer reported, then
@@ -8,10 +8,16 @@ C:\B\PointToSky\PointToSky\mobile\lint-baseline.xml: Information: 21 errors/warn
    that if the issue is reintroduced at some point, lint will complain rather
    than just silently starting to match the old baseline entry again.)
 
-C:\B\PointToSky\PointToSky\core\catalog\src\main\kotlin\dev\pointtosky\core\catalog\runtime\debug\CatalogDebugViewModel.kt:128: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/ar/ArScreen.kt:768: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
+                        String.format("%.1f", limitingMag),
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/ar/ArScreen.kt:823: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
+            text = stringResource(R.string.ar_mag_limit_title, String.format("%.1f", magLimit)),
+                                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/core/catalog/src/main/kotlin/dev/pointtosky/core/catalog/runtime/debug/CatalogDebugViewModel.kt:128: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
 fun formatMagnitude(value: Double): String = String.format("%.2f", value)
                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\core\catalog\src\main\kotlin\dev\pointtosky\core\catalog\runtime\debug\CatalogDebugViewModel.kt:129: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
+/home/user/PointToSky/core/catalog/src/main/kotlin/dev/pointtosky/core/catalog/runtime/debug/CatalogDebugViewModel.kt:129: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
 fun formatDegrees(value: Double): String = String.format("%.2f°", value)
                                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -30,7 +36,7 @@ fun formatDegrees(value: Double): String = String.format("%.2f°", value)
 
    https://developer.android.com/reference/java/util/Locale.html#default_locale
 
-C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:2: Warning: A newer version of com.android.library than 8.7.2 is available: 8.13.1. (There is also a newer version of 8.7.𝑥 available, if upgrading to 8.13.1 is difficult: 8.7.3) [AndroidGradlePluginVersion]
+/home/user/PointToSky/core/catalog/build.gradle.kts:2: Warning: A newer version of com.android.library than 8.7.2 is available: 9.2.1. (There is also a newer version of 8.7.𝑥 available, if upgrading to 9.2.1 is difficult: 8.7.3) [AndroidGradlePluginVersion]
     id("com.android.library") version "8.7.2"
                                       ~~~~~~~
 
@@ -41,30 +47,54 @@ C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:2: Warning: A newer ver
    with an older version. However, you may simply not be aware that a more
    recent version is available, and that is what this lint check helps find.
 
-C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:3: Warning: A newer version of org.jetbrains.kotlin.android than 2.0.20 is available: 2.0.21 [GradleDependency]
-    id("org.jetbrains.kotlin.android") version "2.0.20"
-                                               ~~~~~~~~
-C:\B\PointToSky\PointToSky\core\location\build.gradle.kts:48: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-core than 1.8.1 is available: 1.9.0 [GradleDependency]
+/home/user/PointToSky/core/location/build.gradle.kts:48: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-core than 1.8.1 is available: 1.9.0 [GradleDependency]
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\core\logging\build.gradle.kts:57: Warning: A newer version of com.google.firebase:firebase-bom than 33.5.1 is available: 34.5.0 [GradleDependency]
+/home/user/PointToSky/core/logging/build.gradle.kts:57: Warning: A newer version of com.google.firebase:firebase-bom than 33.5.1 is available: 34.15.0 [GradleDependency]
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\core\logging\build.gradle.kts:62: Warning: A newer version of androidx.core:core-ktx than 1.13.1 is available: 1.17.0 [GradleDependency]
+/home/user/PointToSky/core/logging/build.gradle.kts:62: Warning: A newer version of androidx.core:core-ktx than 1.13.1 is available: 1.19.0 [GradleDependency]
     implementation("androidx.core:core-ktx:1.13.1")
                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:67: Warning: A newer version of androidx.lifecycle:lifecycle-viewmodel-ktx than 2.8.6 is available: 2.9.4 [GradleDependency]
+/home/user/PointToSky/core/catalog/build.gradle.kts:68: Warning: A newer version of androidx.lifecycle:lifecycle-viewmodel-ktx than 2.8.6 is available: 2.11.0 [GradleDependency]
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\core\catalog\build.gradle.kts:68: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-core than 1.8.1 is available: 1.9.0 [GradleDependency]
+/home/user/PointToSky/core/catalog/build.gradle.kts:69: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-core than 1.8.1 is available: 1.9.0 [GradleDependency]
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:149: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-test than 1.8.1 is available: 1.9.0 [GradleDependency]
+/home/user/PointToSky/mobile/build.gradle.kts:151: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-test than 1.8.1 is available: 1.9.0 [GradleDependency]
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:165: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-serialization-json than 1.6.3 is available: 1.7.3 [GradleDependency]
+/home/user/PointToSky/mobile/build.gradle.kts:156: Warning: A newer version of androidx.test.ext:junit-ktx than 1.2.1 is available: 1.3.0 [GradleDependency]
+    androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:170: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-serialization-json than 1.6.3 is available: 1.7.1 [GradleDependency]
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:191: Warning: A newer version of com.google.android.material:material than 1.12.0 is available: 1.14.0 [GradleDependency]
+    implementation("com.google.android.material:material:1.12.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:193: Warning: A newer version of androidx.camera:camera-core than 1.3.4 is available: 1.6.1 [GradleDependency]
+    implementation("androidx.camera:camera-core:1.3.4")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:194: Warning: A newer version of androidx.camera:camera-camera2 than 1.3.4 is available: 1.6.1 [GradleDependency]
+    implementation("androidx.camera:camera-camera2:1.3.4")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:195: Warning: A newer version of androidx.camera:camera-lifecycle than 1.3.4 is available: 1.6.1 [GradleDependency]
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:196: Warning: A newer version of androidx.camera:camera-view than 1.3.4 is available: 1.6.1 [GradleDependency]
+    implementation("androidx.camera:camera-view:1.3.4")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:208: Warning: A newer version of com.google.android.gms:play-services-wearable than 18.1.0 is available: 20.0.1 [GradleDependency]
+    implementation("com.google.android.gms:play-services-wearable:18.1.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:222: Warning: A newer version of androidx.compose:compose-bom than 2024.09.01 is available: 2026.06.00 [GradleDependency]
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.01"))
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/build.gradle.kts:225: Warning: A newer version of androidx.compose:compose-bom than 2024.09.01 is available: 2026.06.00 [GradleDependency]
+    debugImplementation(platform("androidx.compose:compose-bom:2024.09.01"))
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
    Explanation for issues of type "GradleDependency":
    This detector looks for usages of libraries where the version you are using
@@ -73,13 +103,85 @@ C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:165: Warning: A newer version
    However, you may simply not be aware that a more recent version is
    available, and that is what this lint check helps find.
 
-C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:210: Warning: Use the existing version catalog reference (libs.androidx.test.ext.junit) instead [UseTomlInstead]
+/home/user/PointToSky/mobile/src/main/AndroidManifest.xml:26: Warning: Expecting android:screenOrientation="unspecified" or "fullSensor" for this activity so the user can use the application in any orientation and provide a great experience on Chrome OS devices [LockedOrientationActivity]
+            android:screenOrientation="portrait">
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "LockedOrientationActivity":
+   The <activity> element should not be locked to any orientation so that
+   users can take advantage of the multi-window environments and larger
+   screens available on Android. To fix the issue, consider declaring the
+   corresponding activity element with `screenOrientation="unspecified"`or
+   fullSensor attribute.
+
+   https://developer.android.com/topic/arc/window-management
+
+/home/user/PointToSky/mobile/src/main/AndroidManifest.xml:26: Warning: Should not restrict activity to fixed orientation. This may not be suitable for different form factors, causing the app to be letterboxed. [DiscouragedApi]
+            android:screenOrientation="portrait">
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "DiscouragedApi":
+   Discouraged APIs are allowed and are not deprecated, but they may be unfit
+   for common use (e.g. due to slow performance or subtle behavior).
+
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/skymap/ConstellationOutlineLoader.kt:19: Warning: Using 'Log' instead of 'Timber' [LogNotTimber from com.jakewharton.timber:timber:{version}]
+                    android.util.Log.e("ConstellationOutlineLoader", "Failed to parse $path", e)
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/location/DeviceLocationRepository.kt:46: Warning: Using 'Log' instead of 'Timber' [LogNotTimber from com.jakewharton.timber:timber:{version}]
+                Log.d(TAG, "Location permission changed: $granted")
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/location/DeviceLocationRepository.kt:56: Warning: Using 'Log' instead of 'Timber' [LogNotTimber from com.jakewharton.timber:timber:{version}]
+                            Log.w(TAG, "Location permission missing in callbackFlow; emitting null")
+                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/location/DeviceLocationRepository.kt:69: Warning: Using 'Log' instead of 'Timber' [LogNotTimber from com.jakewharton.timber:timber:{version}]
+                                        Log.d(TAG, "Emitting location update: $point")
+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/location/DeviceLocationRepository.kt:82: Warning: Using 'Log' instead of 'Timber' [LogNotTimber from com.jakewharton.timber:timber:{version}]
+                                        Log.d(TAG, "Emitting last known location: $point")
+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/location/DeviceLocationRepository.kt:93: Warning: Using 'Log' instead of 'Timber' [LogNotTimber from com.jakewharton.timber:timber:{version}]
+                            Log.e(TAG, "SecurityException while requesting location updates", se)
+                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/src/main/java/dev/pointtosky/mobile/skymap/SkyMapViewModel.kt:76: Warning: Using 'Log' instead of 'Timber' [LogNotTimber from com.jakewharton.timber:timber:{version}]
+            Log.d(
+            ^
+
+   Explanation for issues of type "LogNotTimber":
+   Since Timber is included in the project, it is likely that calls to Log
+   should instead be going to Timber.
+
+   Vendor: JakeWharton/timber
+   Identifier: com.jakewharton.timber:timber:{version}
+   Feedback: https://github.com/JakeWharton/timber/issues
+
+/home/user/PointToSky/mobile/src/main/res/values/strings.xml:37: Warning: The resource R.string.use_phone_compass_on appears to be unused [UnusedResources]
+    <string name="use_phone_compass_on">Use phone compass (on)</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/PointToSky/mobile/src/main/res/values/strings.xml:38: Warning: The resource R.string.use_phone_compass_off appears to be unused [UnusedResources]
+    <string name="use_phone_compass_off">Use phone compass (off)</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnusedResources":
+   Unused resources make applications larger and slow down builds.
+
+
+   The unused resource check can ignore tests. If you want to include
+   resources that are only referenced from tests, consider packaging them in a
+   test source set instead.
+
+   You can include test sources in the unused resource check by setting the
+   system property lint.unused-resources.include-tests =true, and to exclude
+   them (usually for performance reasons), use
+   lint.unused-resources.exclude-tests =true.
+   ,
+
+/home/user/PointToSky/mobile/build.gradle.kts:217: Warning: Use the existing version catalog reference (libs.androidx.test.ext.junit) instead [UseTomlInstead]
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:211: Warning: Use the existing version catalog reference (libs.androidx.test.runner) instead [UseTomlInstead]
+/home/user/PointToSky/mobile/build.gradle.kts:218: Warning: Use the existing version catalog reference (libs.androidx.test.runner) instead [UseTomlInstead]
     androidTestImplementation("androidx.test:runner:1.6.2")
                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:222: Warning: Use the existing version catalog reference (libs.androidx.test.ext.junit) instead [UseTomlInstead]
+/home/user/PointToSky/mobile/build.gradle.kts:229: Warning: Use the existing version catalog reference (libs.androidx.test.ext.junit) instead [UseTomlInstead]
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -89,4 +191,4 @@ C:\B\PointToSky\PointToSky\mobile\build.gradle.kts:222: Warning: Use the existin
    declarations outside of the TOML file and suggests moving them (and in the
    IDE, provides a quickfix to performing the operation automatically).
 
-0 errors, 14 warnings (127 errors, 60 warnings filtered by baseline lint-baseline.xml)
+0 errors, 35 warnings (145 errors, 54 warnings filtered by baseline lint-baseline.xml)
