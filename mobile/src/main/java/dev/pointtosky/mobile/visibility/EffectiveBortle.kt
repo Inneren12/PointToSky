@@ -2,23 +2,25 @@ package dev.pointtosky.mobile.visibility
 
 import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.astro.visibility.LightPollutionGrid
+import dev.pointtosky.core.astro.visibility.SkyBrightness
 
 /**
- * Resolved Bortle for a location: the [effective] class actually used, the [auto] grid lookup (null
- * unless AUTO + a resolved location + a real grid produced one), and whether a real (non-placeholder)
- * grid was [available].
+ * Resolved sky brightness for a location: the [effective] value actually used, the [auto] grid
+ * lookup (null unless AUTO + a resolved location + a real grid produced one), and whether a real
+ * (non-placeholder) grid was [available].
  */
 data class EffectiveBortle(
-    val effective: Bortle,
-    val auto: Bortle?,
+    val effective: SkyBrightness,
+    val auto: SkyBrightness?,
     val available: Boolean,
 )
 
 /**
- * Resolve the effective Bortle from the source/grid/manual inputs, mirroring the logic shared by the
- * AR overlay, the sky map, and the object card. Pure — callers pass the [grid] so this stays free of
- * singletons. Placeholder grids are ignored (treated as unavailable). AUTO falls back to [manual]
- * when the location is unresolved or the grid yields no value (e.g. ocean / out-of-range).
+ * Resolve the effective sky brightness from the source/grid/manual inputs, mirroring the logic
+ * shared by the AR overlay, the sky map, and the object card. Pure — callers pass the [grid] so
+ * this stays free of singletons. Placeholder grids are ignored (treated as unavailable). AUTO falls
+ * back to [manual]'s representative SQM when the location is unresolved or the grid yields no value
+ * (e.g. ocean / out-of-range).
  */
 fun resolveEffectiveBortle(
     source: BortleSource,
@@ -30,9 +32,10 @@ fun resolveEffectiveBortle(
 ): EffectiveBortle {
     val realGrid = grid?.takeUnless { it.isPlaceholder }
     val auto = if (source == BortleSource.AUTO && locationResolved) {
-        realGrid?.bortleAt(latDeg, lonDeg)
+        realGrid?.sqmAt(latDeg, lonDeg)
     } else {
         null
     }
-    return EffectiveBortle(effective = auto ?: manual, auto = auto, available = realGrid != null)
+    val manualSky = SkyBrightness(manual.representativeSqm)
+    return EffectiveBortle(effective = auto ?: manualSky, auto = auto, available = realGrid != null)
 }

@@ -3,17 +3,18 @@ package dev.pointtosky.core.astro.visibility
 import kotlin.math.sin
 
 /** Bortle dark-sky class → approximate naked-eye limiting magnitude (NELM) under a moonless,
- *  fully dark sky. Friendly labels live in the UI layer; this is the standard 1–9 scale. */
-enum class Bortle(val darkNelm: Double) {
-    CLASS_1(7.8),  // excellent dark-sky site
-    CLASS_2(7.3),
-    CLASS_3(6.8),  // rural
-    CLASS_4(6.3),  // rural/suburban transition (default)
-    CLASS_5(5.8),  // suburban
-    CLASS_6(5.3),  // bright suburban
-    CLASS_7(4.8),  // suburban/urban transition
-    CLASS_8(4.3),  // city
-    CLASS_9(4.0),  // inner city
+ *  fully dark sky, plus the representative SQM (mag/arcsec²) at the middle of the class's band.
+ *  Friendly labels live in the UI layer; this is the standard 1–9 scale. */
+enum class Bortle(val darkNelm: Double, val representativeSqm: Double) {
+    CLASS_1(7.8, 21.90),  // excellent dark-sky site
+    CLASS_2(7.3, 21.625),
+    CLASS_3(6.8, 21.375),  // rural
+    CLASS_4(6.3, 20.825),  // rural/suburban transition (default)
+    CLASS_5(5.8, 19.75),  // suburban
+    CLASS_6(5.3, 18.80),  // bright suburban
+    CLASS_7(4.8, 18.25),  // suburban/urban transition
+    CLASS_8(4.3, 17.75),  // city
+    CLASS_9(4.0, 17.25),  // inner city
 }
 
 /**

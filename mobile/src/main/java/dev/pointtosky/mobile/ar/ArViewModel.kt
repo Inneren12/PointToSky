@@ -218,7 +218,7 @@ class ArViewModel(
             visibilityFilterEnabled = visibilityFilter,
             bortle = bortle,
             bortleSource = bortleSource,
-            autoBortle = eff.auto,
+            autoBortle = eff.auto?.fractionalBortle,
             lightPollutionAvailable = eff.available,
             showStarLabels = showStarLabels,
             showStarPoints = showStarPoints,
@@ -347,7 +347,7 @@ sealed interface ArUiState {
         val visibilityFilterEnabled: Boolean = false,
         val bortle: Bortle = Bortle.CLASS_4,
         val bortleSource: BortleSource = BortleSource.AUTO,
-        val autoBortle: Bortle? = null,
+        val autoBortle: Double? = null,
         val lightPollutionAvailable: Boolean = false,
     ) : ArUiState
 }

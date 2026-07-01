@@ -197,7 +197,7 @@ class SkyMapViewModel(
             limitingMag = limitingMag,
             bortle = bortle,
             bortleSource = bortleSource,
-            autoBortle = eff.auto,
+            autoBortle = eff.auto?.fractionalBortle,
             lightPollutionAvailable = eff.available,
         )
     }
@@ -262,7 +262,7 @@ sealed interface SkyMapState {
         val limitingMag: Double? = null,
         val bortle: Bortle = Bortle.CLASS_4,
         val bortleSource: BortleSource = BortleSource.AUTO,
-        val autoBortle: Bortle? = null,
+        val autoBortle: Double? = null,
         val lightPollutionAvailable: Boolean = false,
     ) : SkyMapState
 }
