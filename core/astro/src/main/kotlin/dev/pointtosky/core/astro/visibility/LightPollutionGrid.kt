@@ -4,15 +4,15 @@ import java.util.zip.Inflater
 import kotlin.math.floor
 
 /**
- * Parsed PTSKLP01 light-pollution grid.  Maps a geographic coordinate to a [Bortle] class.
+ * Parsed PTSKLP01 light-pollution grid.  Maps a geographic coordinate to a continuous [SkyBrightness].
  *
- * Obtain via [parse]; lookup via [bortleAt].  Pure JVM — no Android dependencies.
+ * Obtain via [parse]; lookup via [sqmAt].  Pure JVM — no Android dependencies.
  * Asset loading is handled by a separate provider (5a-ii-C).
  *
- * Format v2 (little-endian, equirectangular):
+ * Format v3 (little-endian, equirectangular):
  *   off  type     field
  *    0   8s       magic = "PTSKLP01"
- *    8   int32    version = 2
+ *    8   int32    version = 3
  *   12   int32    rows
  *   16   int32    cols
  *   20   float64  latTopDeg
@@ -21,6 +21,9 @@ import kotlin.math.floor
  *   44   int32    flags  (bit 0 = placeholder / synthetic data)
  *   48   int32    compLen
  *   52   compLen  zlib payload
+ *
+ * Payload cell semantics: `0` = nodata (ocean); `1..255` = SQM via
+ * `sqm_mag = SQM_MIN + (byte − 1) * SQM_STEP`.
  */
 class LightPollutionGrid private constructor(
     private val rows: Int,
@@ -32,23 +35,25 @@ class LightPollutionGrid private constructor(
     val isPlaceholder: Boolean,
 ) {
     /**
-     * Return the [Bortle] class at [latDeg]/[lonDeg], or `null` for nodata (ocean) cells
+     * Return the [SkyBrightness] at [latDeg]/[lonDeg], or `null` for nodata (ocean) cells
      * and coordinates outside this grid's extent.  Longitude is normalised modulo 360°.
      */
-    fun bortleAt(latDeg: Double, lonDeg: Double): Bortle? {
+    fun sqmAt(latDeg: Double, lonDeg: Double): SkyBrightness? {
         // Normalise lon so the offset from lonLeftDeg is in [0, cols*degPerCell).
         val lonOffset = ((lonDeg - lonLeftDeg) % 360.0 + 360.0) % 360.0
         val col = floor(lonOffset / degPerCell).toInt()
         val row = floor((latTopDeg - latDeg) / degPerCell).toInt()
         if (row !in 0 until rows || col !in 0 until cols) return null
-        val v = cells[row * cols + col].toInt() and 0xFF
-        return if (v in 1..9) Bortle.entries[v - 1] else null
+        val b = cells[row * cols + col].toInt() and 0xFF
+        return if (b == 0) null else SkyBrightness(SQM_MIN + (b - 1) * SQM_STEP)
     }
 
     companion object {
         private val MAGIC = "PTSKLP01".toByteArray(Charsets.US_ASCII)
-        private const val EXPECTED_VERSION = 2
+        private const val EXPECTED_VERSION = 3
         private const val HEADER_SIZE = 52
+        const val SQM_MIN = 16.0
+        const val SQM_STEP = 0.1
 
         /**
          * Parse a PTSKLP01 binary from [bytes].

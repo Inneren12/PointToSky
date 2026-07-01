@@ -132,7 +132,7 @@
     <string name="ar_sky_darkness_title">Темнота неба (Bortle %1$d)</string>
     <string name="ar_bortle_source_auto">Авто</string>
     <string name="ar_bortle_source_manual">Вручную</string>
-    <string name="ar_bortle_auto_detected">Определено автоматически: Bortle %1$d</string>
+    <string name="ar_bortle_auto_detected">Определено автоматически: Bortle %1$s</string>
     <string name="ar_bortle_auto_unavailable">Не удалось определить по местоположению — используется ручное</string>
     <string name="ar_constellation_mode_label">Созвездия</string>
     <string name="ar_constellation_mode_off">Выкл</string>

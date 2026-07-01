@@ -372,7 +372,7 @@ private fun SkyMapContent(
                                         Text(
                                             text = stringResource(
                                                 id = R.string.ar_bortle_auto_detected,
-                                                state.autoBortle.ordinal + 1,
+                                                String.format(Locale.US, "%.1f", state.autoBortle),
                                             ),
                                             style = MaterialTheme.typography.bodySmall,
                                         )

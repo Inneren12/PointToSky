@@ -703,7 +703,7 @@ private fun ArControlsPanel(
     visibilityFilterEnabled: Boolean,
     bortle: Bortle,
     bortleSource: BortleSource,
-    autoBortle: Bortle?,
+    autoBortle: Double?,
     lightPollutionAvailable: Boolean,
     limitingMag: Double?,
     onConstellationModeChange: (ConstellationMode) -> Unit,
@@ -837,7 +837,7 @@ private fun MagnitudeSlider(
 @Composable
 private fun BortleSourceToggle(
     bortleSource: BortleSource,
-    autoBortle: Bortle?,
+    autoBortle: Double?,
     bortle: Bortle,
     onBortleSourceChange: (BortleSource) -> Unit,
     onBortleChange: (Bortle) -> Unit,
@@ -864,7 +864,10 @@ private fun BortleSourceToggle(
         if (bortleSource == BortleSource.AUTO) {
             if (autoBortle != null) {
                 Text(
-                    text = stringResource(R.string.ar_bortle_auto_detected, autoBortle.ordinal + 1),
+                    text = stringResource(
+                        R.string.ar_bortle_auto_detected,
+                        String.format(Locale.US, "%.1f", autoBortle),
+                    ),
                     color = Color.White,
                     style = MaterialTheme.typography.bodySmall,
                 )

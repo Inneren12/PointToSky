@@ -3,6 +3,7 @@ package dev.pointtosky.mobile.visibility
 import dev.pointtosky.core.astro.visibility.Bortle
 import dev.pointtosky.core.astro.visibility.LightPollutionGrid
 import java.util.zip.Deflater
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -10,19 +11,23 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Pure unit tests for [resolveEffectiveBortle]. A small PTSKLP01 v2 builder (mirroring the grid
+ * Pure unit tests for [resolveEffectiveBortle]. A small PTSKLP01 v3 builder (mirroring the grid
  * writer) keeps these self-contained — no file I/O, no Android.
  */
 class EffectiveBortleTest {
 
-    // 2×4 global grid; cell [0,0] = CLASS_1 at lat 45, lon −135.
-    private val cells = byteArrayOf(1, 5, 0, 3, 2, 0, 7, 4)
+    // 2×4 global grid; cell [0,0] byte=51 at lat 45, lon −135.
+    private val cells = byteArrayOf(51, 91, 0, 31, 21, 0, 111, 41)
     private val realGrid = LightPollutionGrid.parse(buildGridBytes(placeholder = false))
     private val placeholderGrid = LightPollutionGrid.parse(buildGridBytes(placeholder = true))
 
     private val lat = 45.0
     private val lon = -135.0
     private val manual = Bortle.CLASS_4
+
+    private fun assertNear(expected: Double, actual: Double) {
+        assertTrue(abs(actual - expected) <= 1e-9, "Expected $expected but was $actual")
+    }
 
     @Test
     fun placeholderGridIsUnavailableAndFallsBackToManual() {
@@ -37,7 +42,7 @@ class EffectiveBortleTest {
 
         assertNull(result.auto)
         assertFalse(result.available)
-        assertEquals(manual, result.effective)
+        assertNear(manual.representativeSqm, result.effective.sqmMag)
     }
 
     @Test
@@ -51,8 +56,9 @@ class EffectiveBortleTest {
             grid = realGrid,
         )
 
-        assertEquals(Bortle.CLASS_1, result.auto)
-        assertEquals(Bortle.CLASS_1, result.effective)
+        val expectedSqm = LightPollutionGrid.SQM_MIN + (51 - 1) * LightPollutionGrid.SQM_STEP
+        assertNear(expectedSqm, result.auto!!.sqmMag)
+        assertNear(expectedSqm, result.effective.sqmMag)
         assertTrue(result.available)
     }
 
@@ -68,7 +74,7 @@ class EffectiveBortleTest {
         )
 
         assertNull(result.auto)
-        assertEquals(manual, result.effective)
+        assertNear(manual.representativeSqm, result.effective.sqmMag)
         assertTrue(result.available)
     }
 
@@ -84,17 +90,33 @@ class EffectiveBortleTest {
         )
 
         assertNull(result.auto)
-        assertEquals(manual, result.effective)
+        assertNear(manual.representativeSqm, result.effective.sqmMag)
         assertTrue(result.available)
     }
 
-    // ── PTSKLP01 v2 wire-format builder (mirrors the Python writer) ────────────
+    @Test
+    fun nodataCellFallsBackToManual() {
+        // [0,2] at lat 45, lon 45 is nodata (byte 0).
+        val result = resolveEffectiveBortle(
+            source = BortleSource.AUTO,
+            manual = manual,
+            locationResolved = true,
+            latDeg = 45.0,
+            lonDeg = 45.0,
+            grid = realGrid,
+        )
+
+        assertNull(result.auto)
+        assertNear(manual.representativeSqm, result.effective.sqmMag)
+    }
+
+    // ── PTSKLP01 v3 wire-format builder (mirrors the Python writer) ────────────
 
     private fun buildGridBytes(placeholder: Boolean): ByteArray {
         val compressed = deflate(cells)
         val buf = ByteArray(52 + compressed.size)
         "PTSKLP01".toByteArray(Charsets.US_ASCII).copyInto(buf, 0)
-        putLeInt(buf, 8, 2)
+        putLeInt(buf, 8, 3)
         putLeInt(buf, 12, 2) // rows
         putLeInt(buf, 16, 4) // cols
         putLeDouble(buf, 20, 90.0) // latTop
