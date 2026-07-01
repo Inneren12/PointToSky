@@ -41,10 +41,10 @@ class SqmConversionsTest {
     @Test
     fun bortleFromSqmMonotonicallyDecreasesWithSqm() {
         val sqms = listOf(17.0, 17.5, 18.0, 18.5, 19.0, 19.5, 20.0, 20.5, 21.0, 21.5, 22.0)
-        var prev = Double.NEGATIVE_INFINITY
+        var prev = Double.POSITIVE_INFINITY
         for (sqm in sqms) {
             val b = bortleFromSqm(sqm)
-            assertTrue(b >= prev - 1e-12, "fractionalBortle decreased as sqm rose to $sqm")
+            assertTrue(b <= prev + 1e-12, "fractionalBortle increased as sqm rose to $sqm")
             prev = b
         }
     }
