@@ -10,17 +10,14 @@ import dev.pointtosky.core.location.model.GeoPoint
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.visibility.BortleSource
 import dev.pointtosky.mobile.visibility.VisibilitySettings
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import java.time.Instant
 import kotlin.test.assertNotNull
@@ -32,18 +29,17 @@ import kotlin.test.assertFalse
 @OptIn(ExperimentalCoroutinesApi::class)
 class CardViewModelTest {
 
-    private val testDispatcher = UnconfinedTestDispatcher()
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
 
     @Before
     fun setUp() {
-        Dispatchers.setMain(testDispatcher)
         CardRepository.resetForTests()
         VisibilitySettings.reset()
     }
 
     @After
     fun tearDown() {
-        Dispatchers.resetMain()
         CardRepository.resetForTests()
         VisibilitySettings.reset()
     }
