@@ -43,8 +43,8 @@ import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
-import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.datalayer.AimTargetOption
+import dev.pointtosky.mobile.location.DeviceLocationRepository
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -194,7 +194,10 @@ private fun CardContent(
             ) {
                 Text(
                     text = state.limitingMag?.let {
-                        stringResource(R.string.card_below_limit_badge_mag, formatDegree(it, includeDegreeSymbol = false))
+                        stringResource(
+                            R.string.card_below_limit_badge_mag,
+                            formatDegree(it, includeDegreeSymbol = false),
+                        )
                     } ?: stringResource(R.string.card_below_limit_badge),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),

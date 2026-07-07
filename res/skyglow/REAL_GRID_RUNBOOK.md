@@ -8,6 +8,11 @@ the counterpart to the Python code in `build_real_grid.py` (Part A).
 `earthaccess rasterio numpy scipy`, and a machine with enough disk space for the
 raw tiles (≈15 GB for the global VNP46A4 annual composite).
 
+**Generated artifacts stay local.** Downloaded/merged VIIRS data and build
+output are large and must not be committed. Keep them under `out/` and
+`viirs_global/` (both gitignored), and note that raw tiles (`*.h5`) and any
+cached diagnostic canvases (`*.canvas.npy`) are also gitignored repo-wide.
+
 ---
 
 ## Step 1 — Earthdata login
@@ -93,7 +98,15 @@ zlib compresses the mostly-uniform ocean/rural world to a small asset.  Finer
 
 ```bash
 python -m res.skyglow.build_real_grid viirs_mosaic_0.1deg.tif \
-    --deg 0.1 --scale S --out bortle.bin
+    --deg 0.1 --scale S --out out/bortle.bin
+```
+
+`build_bortle_bin.py` is a thin CLI alias for the same command, named after
+the output artifact:
+
+```bash
+python -m res.skyglow.build_bortle_bin viirs_mosaic_0.1deg.tif \
+    --deg 0.1 --scale S --out out/bortle.bin
 ```
 
 Replace `S` with your initial scale estimate.  Start with `scale=3.0` and
@@ -138,6 +151,14 @@ for scale in [1.0, 2.0, 3.0, 4.0, 5.0]:
     print("  Bright refs:", {n: b for n, b in bright_vals})
 ```
 
+`calibrate_scale.py` runs the same sweep as a script, so this no longer needs
+to be typed out by hand:
+
+```bash
+python -m res.skyglow.calibrate_scale viirs_mosaic_0.1deg.tif \
+    --deg 0.1 --scales 1.0 2.0 3.0 4.0 5.0
+```
+
 **Acceptance criterion (within ±1 Bortle class at each reference):**
 
 | Site               | Target    |
@@ -166,7 +187,7 @@ commit message.
 ## Step 7 — Commit the real asset
 
 ```bash
-cp bortle.bin mobile/src/main/assets/lightpollution/bortle.bin
+cp out/bortle.bin mobile/src/main/assets/lightpollution/bortle.bin
 git add mobile/src/main/assets/lightpollution/bortle.bin
 git commit -m "feat(bortle): ship real VIIRS-derived Bortle grid (scale=S)
 
