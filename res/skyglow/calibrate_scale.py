@@ -49,10 +49,20 @@ def run_sweep(radiance, deg_per_cell, scales):
 
 
 def _load_radiance(path):
+    """Read band 1 of *path*, filling nodata/masked pixels with 0.0.
+
+    Mirrors the nodata handling in build_real_grid._cli_main() (which passes
+    src_nodata=src.nodata, dst_nodata=0.0 to reproject()): nodata sentinels
+    such as 65535 must never be treated as valid radiance, or calibration
+    picks a scale against a much brighter field than the one actually
+    written by the build CLI.
+    """
+    import numpy as np
     import rasterio
 
     with rasterio.open(path) as src:
-        return src.read(1).astype(float)
+        band = src.read(1, masked=True).astype(float)
+        return np.ma.filled(band, 0.0)
 
 
 def _cli_main():
