@@ -91,12 +91,13 @@ class EffectiveBortleTest {
 
         assertNull(result.auto)
         assertNear(manual.representativeSqm, result.effective.sqmMag)
-        assertTrue(result.available)
+        // Coverage is unknown without a resolved location, so the signal is honest: unavailable.
+        assertFalse(result.available)
     }
 
     @Test
     fun nodataCellFallsBackToManual() {
-        // [0,2] at lat 45, lon 45 is nodata (byte 0).
+        // [0,2] at lat 45, lon 45 is nodata (byte 0), so the grid yields no value here.
         val result = resolveEffectiveBortle(
             source = BortleSource.AUTO,
             manual = manual,
@@ -107,21 +108,62 @@ class EffectiveBortleTest {
         )
 
         assertNull(result.auto)
+        assertFalse(result.available)
+        assertNear(manual.representativeSqm, result.effective.sqmMag)
+    }
+
+    @Test
+    fun realGridOutsideCoverageIsUnavailable() {
+        // Regional 2×2 tile covering lat [30,50) × lon [10,30); (45, 5) is a valid coordinate
+        // just west of the tile, so the grid yields no value there — like a point outside a
+        // regional asset. Availability must be honest even though the grid is non-placeholder.
+        val regionCells = byteArrayOf(41, 51, 61, 71)
+        val regionGrid = LightPollutionGrid.parse(
+            buildGridBytes(
+                placeholder = false,
+                rows = 2,
+                cols = 2,
+                latTop = 50.0,
+                lonLeft = 10.0,
+                degPerCell = 10.0,
+                cellBytes = regionCells,
+            ),
+        )
+
+        val result = resolveEffectiveBortle(
+            source = BortleSource.AUTO,
+            manual = manual,
+            locationResolved = true,
+            latDeg = 45.0,
+            lonDeg = 5.0,
+            grid = regionGrid,
+        )
+
+        assertNull(result.auto)
+        assertFalse(result.available)
         assertNear(manual.representativeSqm, result.effective.sqmMag)
     }
 
     // ── PTSKLP01 v3 wire-format builder (mirrors the Python writer) ────────────
 
-    private fun buildGridBytes(placeholder: Boolean): ByteArray {
-        val compressed = deflate(cells)
+    private fun buildGridBytes(
+        placeholder: Boolean,
+        rows: Int = 2,
+        cols: Int = 4,
+        latTop: Double = 90.0,
+        lonLeft: Double = -180.0,
+        degPerCell: Double = 90.0,
+        cellBytes: ByteArray = cells,
+    ): ByteArray {
+        val compressed = deflate(cellBytes)
         val buf = ByteArray(52 + compressed.size)
         "PTSKLP01".toByteArray(Charsets.US_ASCII).copyInto(buf, 0)
         putLeInt(buf, 8, 3)
-        putLeInt(buf, 12, 2) // rows
-        putLeInt(buf, 16, 4) // cols
-        putLeDouble(buf, 20, 90.0) // latTop
-        putLeDouble(buf, 28, -180.0) // lonLeft
-        putLeDouble(buf, 36, 90.0) // degPerCell
+        putLeInt(buf, 12, rows)
+        putLeInt(buf, 16, cols)
+        putLeDouble(buf, 20, latTop)
+        putLeDouble(buf, 28, lonLeft)
+        putLeDouble(buf, 36, degPerCell)
         putLeInt(buf, 44, if (placeholder) 1 else 0)
         putLeInt(buf, 48, compressed.size)
         compressed.copyInto(buf, 52)

@@ -7,7 +7,8 @@ import dev.pointtosky.core.astro.visibility.SkyBrightness
 /**
  * Resolved sky brightness for a location: the [effective] value actually used, the [auto] grid
  * lookup (null unless AUTO + a resolved location + a real grid produced one), and whether a real
- * (non-placeholder) grid was [available].
+ * grid actually produced a value at this location ([available]) — i.e. the point is within
+ * coverage, not merely that the asset is non-placeholder.
  */
 data class EffectiveBortle(
     val effective: SkyBrightness,
@@ -37,5 +38,6 @@ fun resolveEffectiveBortle(
         null
     }
     val manualSky = SkyBrightness(manual.representativeSqm)
-    return EffectiveBortle(effective = auto ?: manualSky, auto = auto, available = realGrid != null)
+    val covered = locationResolved && realGrid != null && realGrid.sqmAt(latDeg, lonDeg) != null
+    return EffectiveBortle(effective = auto ?: manualSky, auto = auto, available = covered)
 }
