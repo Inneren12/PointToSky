@@ -20,7 +20,15 @@ local.properties
 
 # Misc
 *.log
+mobile/stdout
 
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Skyglow/SQM grid pipeline — generated or downloaded locally, not tracked.
+# See res/skyglow/REAL_GRID_RUNBOOK.md.
+out/
+viirs_global/
+*.h5
+*.canvas.npy
