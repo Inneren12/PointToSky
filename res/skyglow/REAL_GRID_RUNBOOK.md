@@ -255,3 +255,8 @@ The following are explicitly deferred and do not need to be done here:
 - Per-region tiles or Pro-tier gating (deferred to feature 5a-ii-D).
 - On-device validation pass.
 - App / Kotlin changes (the asset activates the feature by itself).
+- A standalone `test_resolution.py` (comparing output at different `--deg`
+  values) and `diag_*.py` diagnostics (e.g. visualizing/inspecting a built
+  `bortle.bin`). Neither exists in the repo or its history, and there is no
+  documented usage to reconstruct them from; add them here if/when a concrete
+  need and spec exists.
