@@ -50,20 +50,11 @@ fun main(args: Array<String>) {
     println("catalog-packer: metadata -> ${metaPath.absolute()}")
 }
 
-private fun packPtskCat0(cli: CliOptions) {
-    if (cli.source != CatalogSource.HYG) {
-        System.err.println("Error: --format=ptskcat0 only supports --source=hyg")
-        return
-    }
+internal fun packPtskCat0(cli: CliOptions) {
+    require(cli.source == CatalogSource.HYG) { "--format=ptskcat0 only supports --source=hyg" }
 
-    val result = try {
-        val stars = HygRealCatalogParser.read(cli.input)
-        PtskCat0Writer.write(stars, cli.magLimit)
-    } catch (ex: Exception) {
-        System.err.println("Packing failed: ${ex.message}")
-        ex.printStackTrace(System.err)
-        return
-    }
+    val stars = HygRealCatalogParser.read(cli.input)
+    val result = PtskCat0Writer.write(stars, cli.magLimit)
 
     cli.output.parent?.let { Files.createDirectories(it) }
     Files.write(cli.output, result.bytes)
