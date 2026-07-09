@@ -113,6 +113,9 @@
     <string name="catalog_debug_probe_timestamp">Обновлено: %1$s</string>
     <string name="catalog_debug_self_test_action">Самопроверка</string>
     <string name="catalog_debug_self_test_title">Диагностика</string>
+    <string name="catalog_debug_realstar_title">Видимость реальных звёзд</string>
+    <string name="catalog_debug_realstar_loading">Загрузка…</string>
+    <string name="catalog_debug_realstar_failed">Видимость реальных звёзд: ошибка\n%1$s</string>
     <string name="catalog_debug_back">Назад</string>
     <string name="ar_mode">AR режим</string>
     <string name="ar_permission_title">Нужно разрешение на камеру</string>

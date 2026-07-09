@@ -1433,6 +1433,39 @@
 
     <issue
         id="MissingTranslation"
+        message="&quot;catalog_debug_realstar_title&quot; is not translated in &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_realstar_title&quot;>Real-star visibility&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="118"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_realstar_loading&quot; is not translated in &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_realstar_loading&quot;>Loading…&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="119"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;catalog_debug_realstar_failed&quot; is not translated in &quot;en&quot; (English)"
+        errorLine1="    &lt;string name=&quot;catalog_debug_realstar_failed&quot;>Real-star visibility: failed\n%1$s&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="120"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
         message="&quot;catalog_debug_back&quot; is not translated in &quot;en&quot; (English)"
         errorLine1="    &lt;string name=&quot;catalog_debug_back&quot;>Назад&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
