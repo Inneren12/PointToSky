@@ -2,6 +2,8 @@ package dev.pointtosky.tools.catalog
 
 import dev.pointtosky.tools.catalog.model.CatalogSource
 import dev.pointtosky.tools.catalog.model.PackRequest
+import dev.pointtosky.tools.catalog.ptskcat0.HygRealCatalogParser
+import dev.pointtosky.tools.catalog.ptskcat0.PtskCat0Writer
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.absolute
@@ -12,6 +14,11 @@ fun main(args: Array<String>) {
     } catch (ex: IllegalArgumentException) {
         System.err.println("Error: ${ex.message}")
         System.err.println(CliParser.usage())
+        return
+    }
+
+    if (cli.format == PackFormat.PTSKCAT0) {
+        packPtskCat0(cli)
         return
     }
 
@@ -43,6 +50,42 @@ fun main(args: Array<String>) {
     println("catalog-packer: metadata -> ${metaPath.absolute()}")
 }
 
+private fun packPtskCat0(cli: CliOptions) {
+    if (cli.source != CatalogSource.HYG) {
+        System.err.println("Error: --format=ptskcat0 only supports --source=hyg")
+        return
+    }
+
+    val result = try {
+        val stars = HygRealCatalogParser.read(cli.input)
+        PtskCat0Writer.write(stars, cli.magLimit)
+    } catch (ex: Exception) {
+        System.err.println("Packing failed: ${ex.message}")
+        ex.printStackTrace(System.err)
+        return
+    }
+
+    cli.output.parent?.let { Files.createDirectories(it) }
+    Files.write(cli.output, result.bytes)
+
+    println("catalog-packer: wrote ${result.bytes.size} bytes to ${cli.output.absolute()}")
+    println("catalog-packer: count=${result.count} magLimit=${cli.magLimit}")
+}
+
+internal enum class PackFormat {
+    PTSKSTAR,
+    PTSKCAT0,
+    ;
+
+    companion object {
+        fun from(value: String): PackFormat = when (value.lowercase()) {
+            "ptskstar" -> PTSKSTAR
+            "ptskcat0" -> PTSKCAT0
+            else -> throw IllegalArgumentException("Unsupported format: $value")
+        }
+    }
+}
+
 internal data class CliOptions(
     val source: CatalogSource,
     val input: Path,
@@ -50,6 +93,7 @@ internal data class CliOptions(
     val magLimit: Double,
     val rdpEpsilon: Double,
     val withConCodes: Boolean,
+    val format: PackFormat,
 )
 
 internal object CliParser {
@@ -100,6 +144,7 @@ internal object CliParser {
         val magLimit = values["mag-limit"]?.toDoubleOrNull() ?: DEFAULT_MAG_LIMIT
         val rdpEpsilon = values["rdp-epsilon"]?.toDoubleOrNull() ?: DEFAULT_RDP_EPSILON
         val withConCodes = switches.contains("with-con-codes") || values["with-con-codes"]?.toBoolean() == true
+        val format = values["format"]?.let { PackFormat.from(it) } ?: PackFormat.PTSKSTAR
 
         return CliOptions(
             source = source,
@@ -108,6 +153,7 @@ internal object CliParser {
             magLimit = magLimit,
             rdpEpsilon = rdpEpsilon,
             withConCodes = withConCodes,
+            format = format,
         )
     }
 
@@ -117,6 +163,10 @@ internal object CliParser {
         appendLine("  --mag-limit=6.5       Limit by apparent magnitude (default 6.5)")
         appendLine("  --rdp-epsilon=0.05    Placeholder flag reserved for boundary simplification")
         appendLine("  --with-con-codes      Preserve constellation codes when present")
+        appendLine("  --format=ptskstar|ptskcat0   Output format (default ptskstar)")
+        appendLine("                                ptskcat0 requires --source=hyg; packs a real,")
+        appendLine("                                mag-sorted HYG catalog for VF-1/CAM (see")
+        appendLine("                                docs/star_catalog_ptskcat0_format.md)")
     }
 }
 
