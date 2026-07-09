@@ -65,7 +65,9 @@ class RealStarVisibilityFilterTest {
         for (i in selection.indices) {
             assertTrue(cat.magAt(i) <= 6.5)
         }
-        assertTrue(cat.magAt(selection.count) > 6.5)
+        if (selection.count < cat.count) {
+            assertTrue(cat.magAt(selection.count) > 6.5)
+        }
     }
 
     @Test
