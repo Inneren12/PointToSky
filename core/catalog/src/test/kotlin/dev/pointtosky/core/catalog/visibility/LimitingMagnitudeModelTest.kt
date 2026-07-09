@@ -1,5 +1,6 @@
 package dev.pointtosky.core.catalog.visibility
 
+import dev.pointtosky.core.astro.visibility.darkNelmFromSqm
 import dev.pointtosky.core.catalog.binary.PtskCat0Catalog
 import dev.pointtosky.core.catalog.binary.RealStarVisibilityFilter
 import org.junit.Assert.assertEquals
@@ -65,21 +66,36 @@ class LimitingMagnitudeModelTest {
     }
 
     @Test
-    fun `darkest SQM reading yields the Bortle 1 endpoint`() {
-        assertEquals(
-            LimitingMagnitudeModel.fromBortle(1),
-            LimitingMagnitudeModel.fromSqm(22.0),
-            1e-9,
-        )
+    fun `fromSqm delegates to the SkyBrightness dark-NELM calibration`() {
+        // Cross-check against dev.pointtosky.core.astro.visibility.darkNelmFromSqm directly
+        // so this test fails if the two ever drift apart, without hardcoding its anchors here.
+        for (sqm in listOf(21.75, 21.0, 19.10, 18.0, 17.5, 16.5)) {
+            assertEquals(darkNelmFromSqm(sqm), LimitingMagnitudeModel.fromSqm(sqm), 1e-9)
+        }
     }
 
     @Test
-    fun `brightest SQM reading yields the Bortle 9 endpoint`() {
-        assertEquals(
-            LimitingMagnitudeModel.fromBortle(9),
-            LimitingMagnitudeModel.fromSqm(16.0),
-            1e-9,
-        )
+    fun `SQM 17_5 (Bortle 8_5 urban sky) matches the existing calibration anchor, not the old broad interpolation`() {
+        // Bortle 8.5 / NELM ~4.1-4.2 per SkyBrightness.kt's anchors — previously the old
+        // full-range 16..22 linear interpolation over-selected and returned ~4.6 here.
+        val limit = LimitingMagnitudeModel.fromSqm(17.5)
+
+        assertEquals(4.15, limit, 1e-9)
+        assertTrue("expected ~4.15 (Bortle 8.5), old broken model returned ~4.6", limit < 4.3)
+    }
+
+    @Test
+    fun `darkest SQM reading yields the calibration's darkest NELM`() {
+        // Beyond the darkest anchor (21.75), bortleFromSqm clamps to Bortle 1.0, whose
+        // NELM anchor is exactly 7.8 (see SkyBrightness.kt NELM_ANCHORS).
+        assertEquals(7.8, LimitingMagnitudeModel.fromSqm(22.0), 1e-9)
+    }
+
+    @Test
+    fun `brightest SQM reading yields the calibration's brightest NELM`() {
+        // Beyond the brightest anchor (17.50), bortleFromSqm clamps to Bortle 9.0, whose
+        // NELM anchor is exactly 4.0 (see SkyBrightness.kt NELM_ANCHORS).
+        assertEquals(4.0, LimitingMagnitudeModel.fromSqm(16.0), 1e-9)
     }
 
     @Test
@@ -87,6 +103,15 @@ class LimitingMagnitudeModelTest {
         val dim = LimitingMagnitudeModel.fromSqm(18.0)
         val dark = LimitingMagnitudeModel.fromSqm(21.0)
         assertTrue(dark > dim)
+    }
+
+    @Test
+    fun `bright urban SQM does not over-select relative to Bortle 8_9 anchors`() {
+        val bortle8Nelm = LimitingMagnitudeModel.fromSqm(17.5) // ~Bortle 8.5
+        val bortle9Nelm = LimitingMagnitudeModel.fromSqm(16.0) // clamped to Bortle 9.0
+
+        assertTrue(bortle8Nelm > bortle9Nelm)
+        assertTrue(bortle8Nelm < 4.3)
     }
 
     @Test
@@ -159,6 +184,29 @@ class LimitingMagnitudeModelTest {
 
         val limit = LimitingMagnitudeModel.fromBortle(5)
         assertEquals(5.6, limit, 0.0)
+
+        val selection = RealStarVisibilityFilter.select(catalog, limit)
+
+        assertEquals(4, selection.count)
+        for (i in selection.indices) {
+            assertTrue(catalog.magAt(i) <= limit)
+        }
+    }
+
+    @Test
+    fun `fromSqm output can drive RealStarVisibilityFilter select`() {
+        val records = listOf(
+            Rec(-1.0, 1),
+            Rec(2.0, 2),
+            Rec(4.0, 3),
+            Rec(4.15, 4),
+            Rec(6.5, 5),
+            Rec(8.0, 6),
+        )
+        val catalog = PtskCat0Catalog.parse(buildCatalogBytes(records))
+
+        val limit = LimitingMagnitudeModel.fromSqm(17.5) // Bortle 8.5 urban sky
+        assertEquals(4.15, limit, 1e-9)
 
         val selection = RealStarVisibilityFilter.select(catalog, limit)
 

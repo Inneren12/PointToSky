@@ -1,5 +1,7 @@
 package dev.pointtosky.core.catalog.visibility
 
+import dev.pointtosky.core.astro.visibility.darkNelmFromSqm
+
 /**
  * Pure, deterministic sky-quality -> limiting-magnitude model (VF-1c).
  *
@@ -16,9 +18,6 @@ object LimitingMagnitudeModel {
      * magnitude limit ([dev.pointtosky.core.catalog.binary.PtskCat0Catalog.magLimit]).
      */
     val SUPPORTED_RANGE: ClosedFloatingPointRange<Double> = 0.0..8.0
-
-    /** Plausible sky-brightness meter (SQM) input range, in mag/arcsec^2. */
-    val SQM_RANGE: ClosedFloatingPointRange<Double> = 16.0..22.0
 
     private val BORTLE_LIMITING_MAGNITUDE: Map<Int, Double> = mapOf(
         1 to 7.6,
@@ -46,22 +45,19 @@ object LimitingMagnitudeModel {
 
     /**
      * Naked-eye limiting magnitude from a direct sky-quality-meter reading
-     * ([sqm], mag/arcsec^2). [sqm] is clamped to [SQM_RANGE] first, then mapped
-     * linearly onto the same endpoints as [fromBortle]'s Bortle 9 and Bortle 1
-     * values, so a darker (higher) SQM reading yields a fainter (higher)
-     * limiting magnitude. This is a simple monotonic approximation, not a
-     * photometrically precise conversion.
+     * ([sqm], mag/arcsec^2). Delegates to the repository's canonical SQM
+     * calibration, [darkNelmFromSqm] (see `core/astro/.../SkyBrightness.kt`),
+     * so this model doesn't drift from the light-pollution-grid calibration
+     * used elsewhere. That function already extrapolates and clamps
+     * out-of-range SQM to the Bortle 1..9 equivalent, so no separate SQM
+     * range clamp is applied here — if the calibration anchors change,
+     * update `SkyBrightness.kt`, and this delegation picks it up automatically.
      *
      * @throws IllegalArgumentException if [sqm] is `NaN` or infinite.
      */
     fun fromSqm(sqm: Double): Double {
         require(sqm.isFinite()) { "sqm must be a finite number, was $sqm" }
 
-        val clampedSqm = sqm.coerceIn(SQM_RANGE)
-        val brightestMag = BORTLE_LIMITING_MAGNITUDE.getValue(9)
-        val darkestMag = BORTLE_LIMITING_MAGNITUDE.getValue(1)
-        val t = (clampedSqm - SQM_RANGE.start) / (SQM_RANGE.endInclusive - SQM_RANGE.start)
-        val mag = brightestMag + t * (darkestMag - brightestMag)
-        return mag.coerceIn(SUPPORTED_RANGE)
+        return darkNelmFromSqm(sqm).coerceIn(SUPPORTED_RANGE)
     }
 }
