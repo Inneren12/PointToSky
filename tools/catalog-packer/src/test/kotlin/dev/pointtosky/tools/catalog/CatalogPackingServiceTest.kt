@@ -17,10 +17,13 @@ class CatalogPackingServiceTest {
 
     @Test
     fun `packs sample HYG rows`() {
+        // HYG's `ra` column is hours, not degrees (see docs/star_catalog_ptskcat0_format.md
+        // and HygCatalogParser, which multiplies a plain `ra` column by 15). Altair's real RA
+        // is 297.6958 deg = 19.846386666... h; the second row is 120.5 deg = 8.033333... h.
         val csv = """
             id,hip,hd,proper,ra,dec,mag,con,bayer,flamsteed
-            1,91262,173780,Altair,297.6958,8.8683,0.76,Aql,Alpha,53
-            2,0,0,,120.5,-10.1,6.4,Mon,,14
+            1,91262,173780,Altair,19.846386666666665,8.8683,0.76,Aql,Alpha,53
+            2,0,0,,8.033333333333334,-10.1,6.4,Mon,,14
         """.trimIndent()
 
         val csvPath = Files.createTempFile("hyg", ".csv")

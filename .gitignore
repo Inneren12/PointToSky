@@ -32,3 +32,9 @@ out/
 viirs_global/
 *.h5
 *.canvas.npy
+
+# HYG source CSV for :tools:catalog-packer — downloaded locally by whoever
+# runs the packer, never committed. Packed PTSKCAT0 output assets ARE
+# committed (mobile/wear assets); only the raw source CSV is ignored.
+tools/catalog-packer/data/
+hyg_v42.csv

@@ -1,9 +1,9 @@
 package dev.pointtosky.tools.catalog
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
 
 class ValidationConstantsTest {
 
@@ -14,7 +14,7 @@ class ValidationConstantsTest {
             decDeg = 45.0,
             mag = 5.0
         )
-        assertNull("Valid input should have no error", error)
+        assertNull(error, "Valid input should have no error")
     }
 
     @Test
@@ -38,90 +38,90 @@ class ValidationConstantsTest {
     @Test
     fun `RA out of range should fail`() {
         var error = ValidationConstants.validateStarInput(-1.0, 0.0, 0.0)
-        assertNotNull("RA < 0 should fail", error)
+        assertNotNull(error, "RA < 0 should fail")
 
         error = ValidationConstants.validateStarInput(-10.0, 0.0, 0.0)
-        assertNotNull("RA < 0 should fail", error)
+        assertNotNull(error, "RA < 0 should fail")
 
         error = ValidationConstants.validateStarInput(360.0, 0.0, 0.0)
-        assertNotNull("RA >= 360 should fail", error)
+        assertNotNull(error, "RA >= 360 should fail")
 
         error = ValidationConstants.validateStarInput(400.0, 0.0, 0.0)
-        assertNotNull("RA > 360 should fail", error)
+        assertNotNull(error, "RA > 360 should fail")
     }
 
     @Test
     fun `Dec out of range should fail`() {
         var error = ValidationConstants.validateStarInput(0.0, -91.0, 0.0)
-        assertNotNull("Dec < -90 should fail", error)
+        assertNotNull(error, "Dec < -90 should fail")
 
         error = ValidationConstants.validateStarInput(0.0, 91.0, 0.0)
-        assertNotNull("Dec > 90 should fail", error)
+        assertNotNull(error, "Dec > 90 should fail")
     }
 
     @Test
     fun `magnitude out of range should fail`() {
         var error = ValidationConstants.validateStarInput(0.0, 0.0, ValidationConstants.MAG_MIN - 1.0)
-        assertNotNull("Mag below minimum should fail", error)
+        assertNotNull(error, "Mag below minimum should fail")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, ValidationConstants.MAG_MAX + 1.0)
-        assertNotNull("Mag above maximum should fail", error)
+        assertNotNull(error, "Mag above maximum should fail")
     }
 
     @Test
     fun `extreme magnitude values should fail`() {
         // Far beyond reasonable physical values
         var error = ValidationConstants.validateStarInput(0.0, 0.0, 99.0)
-        assertNotNull("Mag = 99.0 should fail", error)
+        assertNotNull(error, "Mag = 99.0 should fail")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, -50.0)
-        assertNotNull("Mag = -50.0 should fail", error)
+        assertNotNull(error, "Mag = -50.0 should fail")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, 1000.0)
-        assertNotNull("Mag = 1000.0 should fail", error)
+        assertNotNull(error, "Mag = 1000.0 should fail")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, -100.0)
-        assertNotNull("Mag = -100.0 should fail", error)
+        assertNotNull(error, "Mag = -100.0 should fail")
     }
 
     @Test
     fun `magnitudes slightly within sanity range should pass`() {
         // Near boundaries but valid
         var error = ValidationConstants.validateStarInput(0.0, 0.0, -1.5)
-        assertNull("Mag = -1.5 should pass", error)
+        assertNull(error, "Mag = -1.5 should pass")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, 14.9)
-        assertNull("Mag = 14.9 should pass", error)
+        assertNull(error, "Mag = 14.9 should pass")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, -1.99)
-        assertNull("Mag = -1.99 should pass", error)
+        assertNull(error, "Mag = -1.99 should pass")
     }
 
     @Test
     fun `NaN values should fail`() {
         var error = ValidationConstants.validateStarInput(Double.NaN, 0.0, 0.0)
-        assertNotNull("NaN RA should fail", error)
+        assertNotNull(error, "NaN RA should fail")
 
         error = ValidationConstants.validateStarInput(0.0, Double.NaN, 0.0)
-        assertNotNull("NaN Dec should fail", error)
+        assertNotNull(error, "NaN Dec should fail")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, Double.NaN)
-        assertNotNull("NaN magnitude should fail", error)
+        assertNotNull(error, "NaN magnitude should fail")
     }
 
     @Test
     fun `infinite values should fail`() {
         var error = ValidationConstants.validateStarInput(Double.POSITIVE_INFINITY, 0.0, 0.0)
-        assertNotNull("Infinite RA should fail", error)
+        assertNotNull(error, "Infinite RA should fail")
 
         error = ValidationConstants.validateStarInput(0.0, Double.POSITIVE_INFINITY, 0.0)
-        assertNotNull("Infinite Dec should fail", error)
+        assertNotNull(error, "Infinite Dec should fail")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, Double.POSITIVE_INFINITY)
-        assertNotNull("Infinite magnitude should fail", error)
+        assertNotNull(error, "Infinite magnitude should fail")
 
         error = ValidationConstants.validateStarInput(0.0, 0.0, Double.NEGATIVE_INFINITY)
-        assertNotNull("Negative infinite magnitude should fail", error)
+        assertNotNull(error, "Negative infinite magnitude should fail")
     }
 
     @Test
@@ -144,6 +144,6 @@ class ValidationConstantsTest {
     fun `bright stars should be valid`() {
         // Sirius is approximately -1.46
         val error = ValidationConstants.validateStarInput(101.3, -16.7, -1.46)
-        assertNull("Bright stars like Sirius should be valid", error)
+        assertNull(error, "Bright stars like Sirius should be valid")
     }
 }
