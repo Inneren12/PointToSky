@@ -31,6 +31,7 @@ import dev.pointtosky.core.catalog.runtime.debug.ProbeResultUi
 import dev.pointtosky.core.catalog.runtime.debug.formatBytes
 import dev.pointtosky.core.catalog.runtime.debug.formatDegrees
 import dev.pointtosky.core.catalog.runtime.debug.formatMagnitude
+import dev.pointtosky.core.catalog.visibility.debug.RealStarVisibilityDebugInfo
 import dev.pointtosky.mobile.R
 import java.time.Instant
 import java.time.ZoneId
@@ -45,8 +46,10 @@ fun CatalogDebugRoute(
 ) {
     val viewModel: CatalogDebugViewModel = viewModel(factory = factory)
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val realStarState by RealStarVisibilityDebugProvider.state.collectAsStateWithLifecycle()
     CatalogDebugScreen(
         state = state,
+        realStarState = realStarState,
         onRaChange = viewModel::updateRa,
         onDecChange = viewModel::updateDec,
         onRadiusChange = viewModel::updateRadius,
@@ -61,6 +64,7 @@ fun CatalogDebugRoute(
 @Composable
 fun CatalogDebugScreen(
     state: CatalogDebugUiState,
+    realStarState: RealStarVisibilityDebugUiState,
     onRaChange: (String) -> Unit,
     onDecChange: (String) -> Unit,
     onRadiusChange: (String) -> Unit,
@@ -84,6 +88,17 @@ fun CatalogDebugScreen(
                 )
                 Text(text = buildStarInfo(state), style = MaterialTheme.typography.bodyMedium)
                 Text(text = buildConstellationInfo(state), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(id = R.string.catalog_debug_realstar_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    RealStarVisibilitySection(realStarState)
+                }
             }
         }
         item {
@@ -213,6 +228,39 @@ private fun buildConstellationInfo(state: CatalogDebugUiState): String {
         "Constellations: fallback boundaries • load ${diagnostics.boundaryLoadDurationMs} ms"
     }
 }
+
+@Composable
+private fun RealStarVisibilitySection(realStarState: RealStarVisibilityDebugUiState) {
+    when (realStarState) {
+        is RealStarVisibilityDebugUiState.Loading ->
+            Text(
+                text = stringResource(id = R.string.catalog_debug_realstar_loading),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        is RealStarVisibilityDebugUiState.Success ->
+            realStarSuccessLines(realStarState.info).forEach { line ->
+                Text(text = line, style = MaterialTheme.typography.bodyMedium)
+            }
+        is RealStarVisibilityDebugUiState.Failure ->
+            Text(
+                text =
+                    stringResource(
+                        id = R.string.catalog_debug_realstar_failed,
+                        realStarState.message,
+                    ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+    }
+}
+
+private fun realStarSuccessLines(info: RealStarVisibilityDebugInfo): List<String> =
+    listOf(
+        "Catalog: ${info.catalogCount} stars, magLimit ${formatMagnitude(info.catalogMagLimit)}",
+        "Input: Bortle 5",
+        "Limit: ${formatMagnitude(info.limitingMagnitude)}",
+        "Visible: ${info.visibleCount}",
+    )
 
 private fun formatProbeResult(result: ProbeResultUi): String {
     val mag = formatMagnitude(result.magnitude)

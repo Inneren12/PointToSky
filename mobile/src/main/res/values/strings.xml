@@ -115,6 +115,9 @@
     <string name="catalog_debug_probe_timestamp">Updated: %1$s</string>
     <string name="catalog_debug_self_test_action">Self-test</string>
     <string name="catalog_debug_self_test_title">Diagnostics</string>
+    <string name="catalog_debug_realstar_title">Real-star visibility</string>
+    <string name="catalog_debug_realstar_loading">Loading…</string>
+    <string name="catalog_debug_realstar_failed">Real-star visibility: failed\n%1$s</string>
     <string name="catalog_debug_back">Back</string>
     <string name="ar_mode">AR mode</string>
     <string name="ar_permission_title">Camera permission required</string>
