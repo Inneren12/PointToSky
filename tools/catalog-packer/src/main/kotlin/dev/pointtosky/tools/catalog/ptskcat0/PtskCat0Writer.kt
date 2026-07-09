@@ -40,6 +40,12 @@ object PtskCat0Writer {
             .filter { it.mag <= magLimit }
             .sortedWith(compareBy({ it.mag }, { it.hip }, { it.id }))
 
+        check(filtered.isNotEmpty()) {
+            "PTSKCAT0 pack would contain zero stars (magLimit=$magLimit, input rows=${stars.size}). " +
+                "Refusing to write an empty catalog — check for bad/missing HYG CSV headers " +
+                "(id/hip/ra/dec/mag) or a --mag-limit that's too restrictive."
+        }
+
         val records = ByteArrayOutputStream(filtered.size * RECORD_SIZE)
         val names = ArrayList<Pair<Int, String>>()
         val recordBuffer = ByteBuffer.allocate(RECORD_SIZE).order(ByteOrder.LITTLE_ENDIAN)

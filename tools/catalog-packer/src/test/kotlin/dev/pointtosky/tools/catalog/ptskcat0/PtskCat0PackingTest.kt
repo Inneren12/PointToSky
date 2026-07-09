@@ -173,4 +173,30 @@ class PtskCat0PackingTest {
             HygRealCatalogParser.read(writeCsv(csv))
         }
     }
+
+    @Test
+    fun `rejects an empty pack when there are no input stars`() {
+        val ex = assertThrows(IllegalStateException::class.java) {
+            PtskCat0Writer.write(emptyList(), magLimit = 6.5)
+        }
+        assertTrue(ex.message!!.contains("zero stars"))
+        assertTrue(ex.message!!.contains("6.5"))
+    }
+
+    @Test
+    fun `rejects an empty pack when the mag limit filters out every star`() {
+        val csv = """
+            id,hip,ra,dec,mag
+            1,1,1.0,10.0,9.0
+            2,2,2.0,20.0,10.0
+        """
+        val stars = HygRealCatalogParser.read(writeCsv(csv))
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            PtskCat0Writer.write(stars, magLimit = 6.5)
+        }
+        assertTrue(ex.message!!.contains("zero stars"))
+        assertTrue(ex.message!!.contains("mag"))
+        assertTrue(ex.message!!.contains("6.5"))
+    }
 }
