@@ -1,11 +1,32 @@
 package dev.pointtosky.mobile.logging
 
+import dev.pointtosky.core.catalog.visibility.debug.RealStarVisibilityDebugInfo
 import dev.pointtosky.core.logging.LogBus
 
 /**
  * Centralised helpers for structured mobile logging events.
  */
 object MobileLog {
+    fun realStarVisibilityDebug(info: RealStarVisibilityDebugInfo) {
+        LogBus.event(
+            name = "real_star_visibility_debug",
+            payload =
+                mapOf(
+                    "catalogCount" to info.catalogCount,
+                    "catalogMagLimit" to info.catalogMagLimit,
+                    "limitingMagnitude" to info.limitingMagnitude,
+                    "visibleCount" to info.visibleCount,
+                ),
+        )
+    }
+
+    fun realStarVisibilityDebugFailed(message: String) {
+        LogBus.event(
+            name = "real_star_visibility_debug_failed",
+            payload = mapOf("error" to message),
+        )
+    }
+
     fun cardOpen(
         source: String,
         id: String?,
