@@ -4,6 +4,9 @@ build/
 **/build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# Kotlin compiler daemon cache
+.kotlin/
+
 # Android Studio
 .idea/
 *.iml
