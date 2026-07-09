@@ -36,9 +36,17 @@ pieces, in order:
    `Failure`) for runtime/debug wiring; see
    [Safety boundaries](#4-safety-boundaries) for what this is and isn't.
 
-`RealStarVisibilityService.select` loads the catalog once per call — the
-service holds no cache. Callers that need repeated selections (e.g. a debug
-screen re-running the probe) pay a fresh asset load each time.
+As of this writing, `RealStarVisibilityService.select` loads the catalog on
+every call via `provider.load()` and does not cache the result itself —
+verified by `RealStarVisibilityServiceTest`'s "provider is called exactly
+once per select call" test, which asserts the provider's load count
+increments on each `select()`. This is current behavior, not a guarantee:
+callers must not depend on `select` being cache-free or on any particular
+number of `provider.load()` calls, since a future revision may add caching
+inside the service without that being a breaking change to this contract.
+If a caller needs repeated selections without paying repeated load cost
+today, it should cache the `RealStarVisibilityResult` (or the `catalog`)
+itself rather than relying on `select` to do so.
 
 ## 2. Input semantics
 
@@ -108,12 +116,29 @@ data class RealStarVisibilityResult(
   catalog used for brightness-based filtering and future star-pattern
   matching (CAM-1..4) — the two catalogs are not interchangeable.
 - **The debug Catalog screen is diagnostic only.** `RealStarVisibilityDebugProvider`
-  runs a one-shot, off-main-thread probe on app start (default input
-  `SkyQualityInput.Bortle(5)`), logs the result, and publishes it as
-  `RealStarVisibilityDebugUiState` for display in the mobile Catalog Debug
-  screen. This confirms the pipeline loads the bundled asset and computes
-  counts correctly — it is proof the pipeline works, not a rendering path.
-  It does not feed the renderer or PTSKCAT4.
+  runs a one-shot probe on app start (default input `SkyQualityInput.Bortle(5)`),
+  logs the result, and publishes it as `RealStarVisibilityDebugUiState` for
+  display in the mobile Catalog Debug screen. This confirms the pipeline
+  loads the bundled asset and computes counts correctly — it is proof the
+  pipeline works, not a rendering path. It does not feed the renderer or
+  PTSKCAT4.
+  - **Off-main.** `ensureLoaded` is called from a `LaunchedEffect` in
+    `MainActivity`, but the actual `provider.load()`/`select()` work runs on
+    a `CoroutineScope(SupervisorJob() + Dispatchers.IO)`, not the caller's
+    thread.
+  - **No unwanted cold-start cost.** `ensureLoaded` is idempotent (guarded by
+    a `@Volatile started` flag with double-checked locking) and returns
+    immediately after launching the coroutine — it does not block app start
+    waiting for the catalog to load, and a second call is a no-op.
+  - **Never crashes the caller.** `RealStarVisibilityDebugProbe` catches
+    `RealStarCatalogLoadException` and surfaces it as a `Failure` snapshot;
+    `RealStarVisibilityDebugProvider.applySnapshot` further wraps the whole
+    compute/publish/log path in `catch (e: Exception)`, so a failure in
+    logging itself is exactly as non-fatal as a failure in `compute()`.
+  - **Tested.** `RealStarVisibilityDebugProbeTest` (`:core:catalog`) covers
+    the Success/Failure snapshot paths; `RealStarVisibilityDebugProviderTest`
+    (`:mobile`) drives `applySnapshot` directly (no `Context`/asset needed)
+    to cover Success, Failure, and unexpected-exception state publishing.
 
 ## 5. Future integration notes
 
