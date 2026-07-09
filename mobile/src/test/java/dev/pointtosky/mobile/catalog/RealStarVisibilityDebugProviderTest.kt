@@ -44,7 +44,7 @@ class RealStarVisibilityDebugProviderTest {
     }
 
     @Test
-    fun `unexpected exception is caught and published as Failure state`() {
+    fun `unexpected exception from compute is caught and published as Failure state`() {
         RealStarVisibilityDebugProvider.applySnapshot {
             throw IllegalStateException("kaboom")
         }
@@ -55,4 +55,12 @@ class RealStarVisibilityDebugProviderTest {
         assertTrue(message.contains("kaboom"))
         assertTrue(message.contains("IllegalStateException"))
     }
+
+    // Not directly unit-testable: applySnapshot() wraps compute(), the _state
+    // publish, and the MobileLog.realStarVisibilityDebug(Failed) calls in one
+    // try/catch, so a logging failure is exactly as non-fatal as a compute()
+    // failure. MobileLog isn't injectable (LogBus.event is a singleton that
+    // no-ops when no writer is installed, as in this JVM test), so a
+    // logging-specific throw can't be simulated here; the test above already
+    // exercises the same outer catch that would handle it.
 }

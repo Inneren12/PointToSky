@@ -66,32 +66,39 @@ object RealStarVisibilityDebugProvider {
     }
 
     /**
-     * Computes a snapshot via [compute], logs it, and publishes it to [state].
+     * Computes a snapshot via [compute], publishes it to [state], and logs it.
      * Exposed for tests so the state-update/logging behavior can be verified
      * without an Android [Context] or a real PTSKCAT0 asset.
+     *
+     * The whole publish path — [compute], the [_state] update, and the
+     * [MobileLog] call — is wrapped in a single `try/catch (e: Exception)` so
+     * this startup probe can never crash its caller: a failure in logging
+     * itself is just as non-fatal as a failure in [compute]. [state] is
+     * published before [MobileLog] is called, so the debug UI still sees the
+     * Success/Failure snapshot even if logging then fails. `Throwable` is
+     * intentionally not caught — only recoverable [Exception]s are treated
+     * as a debug-probe failure.
      */
     @VisibleForTesting
     internal fun applySnapshot(compute: () -> RealStarVisibilityDebugSnapshot) {
-        val snapshot =
-            try {
-                compute()
-            } catch (e: Exception) {
-                // Startup probe must never crash the app; RealStarCatalogLoadException is
-                // already handled as a Failure snapshot by the probe itself, this guards
-                // against anything else escaping provider construction or service.select().
-                RealStarVisibilityDebugSnapshot.Failure(
-                    "Unexpected real-star visibility debug probe failure: ${e::class.simpleName}: ${e.message}",
-                )
+        try {
+            when (val snapshot = compute()) {
+                is RealStarVisibilityDebugSnapshot.Success -> {
+                    _state.value = RealStarVisibilityDebugUiState.Success(snapshot.info)
+                    MobileLog.realStarVisibilityDebug(snapshot.info)
+                }
+                is RealStarVisibilityDebugSnapshot.Failure -> {
+                    _state.value = RealStarVisibilityDebugUiState.Failure(snapshot.message)
+                    MobileLog.realStarVisibilityDebugFailed(snapshot.message)
+                }
             }
-        when (snapshot) {
-            is RealStarVisibilityDebugSnapshot.Success -> {
-                MobileLog.realStarVisibilityDebug(snapshot.info)
-                _state.value = RealStarVisibilityDebugUiState.Success(snapshot.info)
-            }
-            is RealStarVisibilityDebugSnapshot.Failure -> {
-                MobileLog.realStarVisibilityDebugFailed(snapshot.message)
-                _state.value = RealStarVisibilityDebugUiState.Failure(snapshot.message)
-            }
+        } catch (e: Exception) {
+            // Startup probe must never crash the app; RealStarCatalogLoadException is
+            // already handled as a Failure snapshot by the probe itself, this guards
+            // against anything else escaping compute(), the state publish, or MobileLog.
+            _state.value = RealStarVisibilityDebugUiState.Failure(
+                "Unexpected real-star visibility debug publish failure: ${e.javaClass.simpleName}: ${e.message}",
+            )
         }
     }
 }
