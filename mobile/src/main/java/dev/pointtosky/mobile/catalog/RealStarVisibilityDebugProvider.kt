@@ -40,12 +40,21 @@ object RealStarVisibilityDebugProvider {
             started = true
             val appContext = context.applicationContext
             scope.launch {
-                val provider = AssetRealStarCatalogProvider(AndroidAssetProvider(appContext))
-                val service = RealStarVisibilityService(provider)
-                val probe = RealStarVisibilityDebugProbe(service)
-                when (val snapshot = probe.snapshot(DEFAULT_INPUT)) {
-                    is RealStarVisibilityDebugSnapshot.Success -> MobileLog.realStarVisibilityDebug(snapshot.info)
-                    is RealStarVisibilityDebugSnapshot.Failure -> MobileLog.realStarVisibilityDebugFailed(snapshot.message)
+                try {
+                    val provider = AssetRealStarCatalogProvider(AndroidAssetProvider(appContext))
+                    val service = RealStarVisibilityService(provider)
+                    val probe = RealStarVisibilityDebugProbe(service)
+                    when (val snapshot = probe.snapshot(DEFAULT_INPUT)) {
+                        is RealStarVisibilityDebugSnapshot.Success -> MobileLog.realStarVisibilityDebug(snapshot.info)
+                        is RealStarVisibilityDebugSnapshot.Failure -> MobileLog.realStarVisibilityDebugFailed(snapshot.message)
+                    }
+                } catch (e: Exception) {
+                    // Startup probe must never crash the app; RealStarCatalogLoadException is
+                    // already handled as a Failure snapshot above, this guards against anything
+                    // else escaping provider construction, service.select(), or logging.
+                    MobileLog.realStarVisibilityDebugFailed(
+                        "Unexpected real-star visibility debug probe failure: ${e::class.simpleName}: ${e.message}",
+                    )
                 }
             }
         }
