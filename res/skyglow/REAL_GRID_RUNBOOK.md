@@ -1,262 +1,183 @@
-# Real Bortle Grid — Data Runbook (Part B)
+# Real Bortle Grid — Data Runbook (v3 / SQM)
 
-This document describes the offline data-preparation procedure that produces a
-real, non-placeholder `bortle.bin` from NASA VIIRS Black Marble data.  It is
-the counterpart to the Python code in `build_real_grid.py` (Part A).
+Produces a real, non-placeholder **PTSKLP01 v3** `bortle.bin` (continuous SQM
+payload) from NASA VIIRS Black Marble data. Counterpart to the build code in
+`build_bortle_bin.py`. The v3 asset pairs with the `LightPollutionGrid.sqmAt()`
+decoder; the app derives fractional Bortle and NELM from the stored SQM.
 
-**Prerequisites:** Earthdata account, Python environment with
-`earthaccess rasterio numpy scipy`, and a machine with enough disk space for the
-raw tiles (≈15 GB for the global VNP46A4 annual composite).
+> **This supersedes the old v2 procedure.** The previous runbook produced an
+> integer-Bortle v2 grid via a GeoTIFF/GDAL mosaic at 0.1°, calibrated on
+> Tokyo/Manhattan Bortle classes. That path is **deprecated** — it emits a v2
+> asset that the current v3 decoder rejects. See *Legacy v2 path* at the end.
 
-**Generated artifacts stay local.** Downloaded/merged VIIRS data and build
-output are large and must not be committed. Keep them under `out/` and
-`viirs_global/` (both gitignored), and note that raw tiles (`*.h5`) and any
-cached diagnostic canvases (`*.canvas.npy`) are also gitignored repo-wide.
+**What changed and why (as-built):**
+- **Stores SQM, not integer Bortle.** Format v3; the app computes fractional
+  Bortle + NELM read-side.
+- **Native-resolution convolution, then downsample to 0.0125°** — *not* a 0.1°
+  block-average. The resolution experiments showed that 0.1° averaging spreads
+  compact sources (towns, greenhouses) over ~11 km and suppresses their
+  self-glow, manufacturing a false "too-steep" radiance→SQM slope. At native
+  input the slope is flat (dark ≈ atlas, bright ≈ atlas); 0.0125° output keeps
+  ~80% of the fidelity at a small asset size.
+- **Calibrated on 12 Alberta atlas-SQM points** (lightpollutionmap.app),
+  against atlas **SQM**, not atlas Bortle (the two diverge up to ~2 classes at
+  the dark end).
+- **Direct HDF5 read (h5py)** — no rasterio/GDAL/GeoTIFF mosaic.
+- **Regional** (single tile h06v03, Alberta). Multi-tile / global coverage is
+  future work (roadmap **L-2**); regional download + graceful null handling is
+  **L-4**.
+
+**Generated artifacts stay local.** Raw tiles (`viirs_global/`), build output
+(`out/`), `*.h5` and `*.canvas.npy` are gitignored and must not be committed.
+Only the final `bortle.bin` asset is committed (Step 6).
+
+**Prerequisites:** Earthdata account; Python with `numpy` and `h5py`
+(no rasterio/GDAL needed).
 
 ---
 
 ## Step 1 — Earthdata login
 
-Register at <https://urs.earthdata.nasa.gov> if you do not already have an
-account.
+Register / sign in at <https://urs.earthdata.nasa.gov>. One-time setup that
+LAADS downloads require:
+- Complete your profile (**User Type / Organization / Study Area**) at
+  `urs.earthdata.nasa.gov/profile` — an incomplete profile makes LAADS return
+  an HTML stub instead of the file.
+- Authorize the **LAADS DAAC** application under *Applications → Authorized Apps*.
+
+---
+
+## Step 2 — Download the VNP46A4 tile
+
+VNP46A4 is the VIIRS/Suomi-NPP Black Marble **annual** moonlight-and-cloud-free
+composite; the layer used is `AllAngle_Composite_Snow_Free` (fill −999.9,
+2400×2400 float per tile, 15-arcsec grid). For the Alberta build you need one
+tile: **`VNP46A4.A<year>001.h06v03.002.*.h5`** (e.g. `A2025001`), placed in
+`viirs_global/`.
+
+**Browser (simplest, ~180 MB):** on <https://ladsweb.modaps.eosdis.nasa.gov>
+find product **VNP46A4**, filter by tile **h06v03** and year, download the
+`.h5` into `viirs_global/`.
+
+**curl with a token** (generate a token at `urs.earthdata.nasa.gov`; keep it in
+an env var, never in the shell history):
+```bash
+# archive set 5200, day-of-year 001; find the exact h06v03 filename:
+curl -s -L -H "Authorization: Bearer $EDL_TOKEN" \
+  "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/5200/VNP46A4/2025/001/" | grep h06v03
+# then download it:
+curl -L --location-trusted -H "Authorization: Bearer $EDL_TOKEN" -o viirs_global/<FILE>.h5 \
+  "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/5200/VNP46A4/2025/001/<FILE>.h5"
+```
+Sanity-check the download (≈180 MB, not an ~11 KB HTML stub or a 0-byte file):
+```bash
+ls -la viirs_global/*h06v03*<year>*
+```
+
+---
+
+## Step 3 — Build the v3 asset
 
 ```bash
-pip install earthaccess rasterio numpy scipy
+PYTHONUTF8=1 python -m res.skyglow.build_bortle_bin viirs_global out/bortle.bin <year>
 ```
 
-Run the login wizard once to cache credentials:
+The builder performs the locked pipeline end to end: read the native
+2400×2400 radiance → cos-lat area-weight → `convolve_radiance` (300 km cutoff,
+regional) → downsample the glow ×3 to 0.0125° → least-squares refit of `scale`
+on the 12-point atlas-SQM series (fit uses the scale-regime points,
+SQM < 21.7) → `combined_sky_brightness_mag` → encode SQM to the v3 byte
+payload → write `bortle.bin` → round-trip self-check.
 
-```python
-import earthaccess
-earthaccess.login(strategy="interactive")   # prompts once; stores ~/.netrc
-```
+The 12 calibration points (lat, lon, atlas_SQM) are baked into
+`build_bortle_bin.py` (`POINTS`); atlas SQM values come from
+lightpollutionmap.app.
 
 ---
 
-## Step 2 — Download VNP46A4 tiles
+## Step 4 — Verify the output
 
-VNP46A4 is the VIIRS/Suomi-NPP Black Marble Annual Moonlight-and-Cloud-Free
-Composite.  Use the `*_Composite_Snow_Free` radiance layer (nanowatts per
-cm² per steradian).  Tiles are 10°×10° and cover land only; absent ocean tiles
-are treated as zero local upward radiance; coastal glow is still introduced
-by convolution from nearby land pixels.
+The script prints its own diagnostics; a healthy build shows:
+- header `v3 800x800 latTop=60 lonLeft=-120 deg=0.01250`;
+- `scale (LSQ …) ≈ 2.64` (computed fresh from the data each run);
+- a residual table where dark points (Jasper, Kicking Horse, Columbia Icefield,
+  Nordegg) land at **Bortle 1** and the mid-dark residual mean is near **0**;
+- `round-trip OK: max decode error … ≤ 0.05` (quantization).
 
-```python
-import earthaccess, pathlib
-
-results = earthaccess.search_data(
-    short_name="VNP46A4",
-    temporal=("2023-01", "2023-12"),   # pick a recent full year
-    count=10000,
-)
-# Optionally filter by bounding box for a regional run:
-#   bounding_box=(-180, -90, 180, 90)   # global
-download_dir = pathlib.Path("viirs_tiles")
-download_dir.mkdir(exist_ok=True)
-earthaccess.download(results, local_path=str(download_dir))
-```
-
-Each tile is an HDF5 file.  The key dataset is
-`/HDFEOS/GRIDS/VNP_Grid_DNB/Data Fields/AllAngle_Composite_Snow_Free`.
-
----
-
-## Step 3 — Mosaic and aggregate to working resolution
-
-Convert tiles to GeoTIFF, merge into a single global raster, and aggregate
-(mean) to the working resolution.  The output must follow the PTSKLP01
-convention: **row 0 = north** (lat\_top = +90), **col 0 = west**
-(lon\_left = −180).
-
+Confirm the on-disk header is v3:
 ```bash
-# Extract the snow-free radiance band from every tile and convert to GeoTIFF.
-for f in viirs_tiles/*.h5; do
-    gdal_translate NETCDF:"$f":AllAngle_Composite_Snow_Free \
-        "${f%.h5}.tif" -a_srs EPSG:4326
-done
-
-# Merge all tiles into one global raster.
-gdal_merge.py -o viirs_global_raw.tif -n 65535 -a_nodata 65535 \
-    viirs_tiles/*.tif
-
-# Aggregate (mean) to 0.1°/cell equirectangular, north-up.
-# Adjust --tr to change the output resolution knob (see Resolution note below).
-gdalwarp -r average -tr 0.1 0.1 \
-    -te -180 -90 180 90 \
-    -t_srs EPSG:4326 \
-    viirs_global_raw.tif viirs_mosaic_0.1deg.tif
+head -c 12 out/bortle.bin | xxd     # ...3031 0300 0000  = "PTSKLP01" + version 3
+ls -la out/bortle.bin               # ≈ 54 KB
 ```
-
-**Resolution knob.**  The suggested default is **0.1°/cell** (1800×3600 grid).
-The glow kernel is smooth over tens of km so 0.1° captures the halo well, and
-zlib compresses the mostly-uniform ocean/rural world to a small asset.  Finer
-(0.05°) = sharper cities but a larger file; coarser (0.25°) = smaller file.
+`0300 0000` at bytes 8–11 is mandatory — a `0200 0000` (v2) asset breaks the
+v3 decoder.
 
 ---
 
-## Step 4 — Run the build script
+## Step 5 — Calibration reference & acceptance
 
-```bash
-python -m res.skyglow.build_real_grid viirs_mosaic_0.1deg.tif \
-    --deg 0.1 --scale S --out out/bortle.bin
-```
+`scale` is the single knob converting the convolution's relative units into
+natural-background units (`L_total = 1 + scale·A`, `mag = 21.9 − 2.5·log10 L`).
+It is fit by least squares against the atlas SQM at the scale-regime points.
 
-`build_bortle_bin.py` is a thin CLI alias for the same command, named after
-the output artifact:
-
-```bash
-python -m res.skyglow.build_bortle_bin viirs_mosaic_0.1deg.tif \
-    --deg 0.1 --scale S --out out/bortle.bin
-```
-
-Replace `S` with your initial scale estimate.  Start with `scale=3.0` and
-iterate (see Step 5).
+Acceptance: residuals within roughly **±0.15 mag** across the full range, with a
+**flat slope** — dark sites ≈ atlas and bright sites ≈ atlas simultaneously
+(the resolution finding; a single scale that fits both is only possible at
+native input resolution). Known benign outlier: Kneehill/Acme reads brighter
+than its older atlas value because the greenhouse there brightened between data
+years (recency, not a model or spectral error).
 
 ---
 
-## Step 5 — Calibrate `scale`
-
-`scale` is the single calibration knob introduced in A2.  It converts the
-A1 convolution's arbitrary relative units into the natural-sky-background
-unit system.  Higher scale → brighter/higher Bortle everywhere.
-
-Run the calibration helper against a set of known dark and bright sites:
-
-```python
-from res.skyglow.build_real_grid import radiance_to_bortle_grid, sample_sites
-import numpy as np, rasterio
-
-with rasterio.open("viirs_mosaic_0.1deg.tif") as src:
-    radiance = src.read(1).astype(float)
-    # Ensure north-up orientation (rasterio returns row 0 = north if geotiff
-    # has a negative y-pixel size, which gdal_merge produces by default).
-
-dark_refs = [
-    ("Cherry Springs SP",  41.66, -77.82),   # target Bortle 2
-    ("Death Valley",       36.50, -117.10),  # target Bortle 1–2
-    ("NamibRand",         -25.00,  16.00),   # target Bortle 1
-]
-bright_refs = [
-    ("Manhattan",          40.78, -73.97),   # target Bortle 8–9
-    ("Tokyo centre",       35.68, 139.76),   # target Bortle 9
-    ("Central London",     51.51,  -0.13),   # target Bortle 8–9
-]
-
-for scale in [1.0, 2.0, 3.0, 4.0, 5.0]:
-    grid = radiance_to_bortle_grid(radiance, deg_per_cell=0.1, scale=scale)
-    dark_vals  = sample_sites(grid, 0.1, dark_refs)
-    bright_vals = sample_sites(grid, 0.1, bright_refs)
-    print(f"\nscale={scale}")
-    print("  Dark refs:  ", {n: b for n, b in dark_vals})
-    print("  Bright refs:", {n: b for n, b in bright_vals})
-```
-
-`calibrate_scale.py` runs the same sweep as a script, so this no longer needs
-to be typed out by hand:
-
-```bash
-python -m res.skyglow.calibrate_scale viirs_mosaic_0.1deg.tif \
-    --deg 0.1 --scales 1.0 2.0 3.0 4.0 5.0
-```
-
-**Acceptance criterion (within ±1 Bortle class at each reference):**
-
-| Site               | Target    |
-|--------------------|-----------|
-| Cherry Springs SP  | B2        |
-| Death Valley       | B1–2      |
-| NamibRand          | B1        |
-| Manhattan          | B8–9      |
-| Tokyo centre       | B9        |
-| Central London     | B8–9      |
-
-Scale ↑ brightens everything (cities approach 9, but dark refs creep up).
-Scale ↓ keeps dark refs at 1 (but cities may not reach 9).  Find the value
-that satisfies both simultaneously.
-
----
-
-## Step 6 — Validate on a wider spot-check
-
-Run the calibration helper on ≥ 12 geographically diverse sites spanning the
-full Bortle range.  Record the chosen `scale` and the validation table in the
-commit message.
-
----
-
-## Step 7 — Commit the real asset
+## Step 6 — Commit the asset
 
 ```bash
 cp out/bortle.bin mobile/src/main/assets/lightpollution/bortle.bin
 git add mobile/src/main/assets/lightpollution/bortle.bin
-git commit -m "feat(bortle): ship real VIIRS-derived Bortle grid (scale=S)
-
-Replaces the synthetic placeholder with a calibrated non-placeholder grid.
-placeholder=False (flags=0) activates the Auto-Bortle feature: AR + sky-map
-show the Auto/Manual toggle and auto-detected Bortle drives visibility filter.
-
-Validation (scale=S, VNP46A4 2023 composite, 0.1°/cell):
-Cherry Springs SP: B2, Death Valley: B1, NamibRand: B1
-Manhattan: B9, Tokyo: B9, London: B8"
+git commit -m "feat(bortle): ship v3 SQM light-pollution grid (VNP46A4 <year>, h06v03, scale=S)"
 ```
 
-Because `placeholder=False` → `flags = 0` → `LightPollutionGrid.isPlaceholder
-= false` → `LightPollutionProvider.realGrid` becomes non-null →
-`lightPollutionAvailable = true`, the AR overlay and sky-map Auto/Manual
-toggle self-activate from the asset alone.  **No app or Kotlin code changes
-are needed.**
+**Ship the v3 asset and the v3 decoder together** — a v3 asset requires the
+v3 `sqmAt()` decoder, and vice versa. `placeholder=False` (flags=0) activates
+the Auto sky-brightness feature; note that the asset is a regional tile, so
+availability is honest per-location (the app reports unavailable outside
+coverage and falls back to manual).
 
 ---
 
-## Step 8 — Attribution (NOTICE.md)
+## Step 7 — Attribution (NOTICE.md)
 
-Add the following attribution block to `NOTICE.md`:
-
+Keep the data/model attribution block:
 ```
-## Data Sources
-
 ### NASA VIIRS Black Marble (VNP46A4)
 Product: VNP46A4 Annual Moonlight-and-Cloud-Free Night Lights Composite
 Provider: NASA EOSDIS / LAADS DAAC
 DOI: https://doi.org/10.5067/VIIRS/VNP46A4.001
-Description: VIIRS/Suomi-NPP Black Marble annual composite using the
-  AllAngle_Composite_Snow_Free radiance layer.
-
-VNP46A4 is a U.S. Government work in the public domain (NASA data policy:
-https://science.nasa.gov/earth-science/earth-science-data/data-information-policy/).
-It is free for any use including commercial; attribution is courteous rather
-than legally required. VIIRS was chosen over the Falchi et al. (2016) atlas
-specifically because the atlas is CC BY-NC-SA, whereas VIIRS imposes no
-commercial restriction.
+Public domain (NASA data policy); free for any use including commercial.
 
 ### Skyglow propagation model
-The kernel in res/skyglow/kernel.py is a clean-room implementation derived from:
+Kernel in res/skyglow/kernel.py — clean-room from Garstang 1986/1989 and
+Duriscoe et al. 2018 (JQSRT 214:133).
 
-- Garstang, R.H. 1986, "Model for Artificial Night-Sky Illumination",
-  PASP 98:364.
-- Garstang, R.H. 1989, "Night-sky brightness at observatories and sites",
-  PASP 101:306.
-- Duriscoe, D.M. et al. 2018, "A simplified model of all-sky artificial
-  sky glow derived from VIIRS Day/Night band data", JQSRT 214:133–145.
-
-### Bortle scale thresholds
-Standard SQM ↔ Bortle correspondence from:
-- Cinzano, P. et al. 2001, MNRAS 328:689.
-- Schaefer, B.E. 1990, PASP 102:212.
+### Bortle / SQM thresholds
+Standard SQM↔Bortle from Cinzano et al. 2001 (MNRAS 328:689) and
+Schaefer 1990 (PASP 102:212).
 ```
 
 ---
 
-## Out of scope
+## Legacy v2 path (deprecated — do not use for shipping)
 
-The following are explicitly deferred and do not need to be done here:
+`build_real_grid.py` (`radiance_to_bortle_grid` → `artificial_to_bortle` →
+`write_grid(placeholder=False)`) and its `calibrate_scale.py` sweep produce an
+**integer-Bortle v2** grid at 0.1° calibrated on Tokyo/Manhattan. That output is
+**incompatible with the current v3 decoder** and is retained only because its
+pure-NumPy helpers are still imported by unit tests. Do not use it to build a
+shipping asset; use `build_bortle_bin.py` (v3) above.
 
-- Land / water mask (genuinely dark ocean correctly maps to Bortle 1).
-- Per-region tiles or Pro-tier gating (deferred to feature 5a-ii-D).
+## Out of scope (future work)
+
+- Multi-tile / global coverage (roadmap **L-2** — southern Alberta / Lethbridge
+  needs tile h06v04).
+- Regional on-demand download + "download ahead" + offline fallback (**L-4**).
 - On-device validation pass.
-- App / Kotlin changes (the asset activates the feature by itself).
-- A standalone `test_resolution.py` (comparing output at different `--deg`
-  values) and `diag_*.py` diagnostics (e.g. visualizing/inspecting a built
-  `bortle.bin`). Neither exists in the repo or its history, and there is no
-  documented usage to reconstruct them from; add them here if/when a concrete
-  need and spec exists.
