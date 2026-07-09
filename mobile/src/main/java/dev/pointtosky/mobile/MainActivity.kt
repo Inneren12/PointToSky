@@ -47,6 +47,7 @@ import dev.pointtosky.mobile.card.CardRoute
 import dev.pointtosky.mobile.card.parseCardIdFromIntent
 import dev.pointtosky.mobile.catalog.CatalogDebugRoute
 import dev.pointtosky.mobile.catalog.CatalogRepositoryProvider
+import dev.pointtosky.mobile.catalog.RealStarVisibilityDebugProvider
 import dev.pointtosky.mobile.visibility.LightPollutionProvider
 import dev.pointtosky.mobile.crash.CrashLogRoute
 import dev.pointtosky.mobile.datalayer.AimTargetOption
@@ -110,6 +111,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             LaunchedEffect(Unit) { CatalogRepositoryProvider.ensureLoaded(applicationContext) }
             LaunchedEffect(Unit) { LightPollutionProvider.ensureLoaded(applicationContext) }
+            LaunchedEffect(Unit) { RealStarVisibilityDebugProvider.ensureLoaded(applicationContext) }
             val catalogState by CatalogRepositoryProvider.state()
                 .collectAsStateWithLifecycle(initialValue = CatalogLoadState.Loading)
             val bridgeState by phoneLocationBridge.state.collectAsStateWithLifecycle()
