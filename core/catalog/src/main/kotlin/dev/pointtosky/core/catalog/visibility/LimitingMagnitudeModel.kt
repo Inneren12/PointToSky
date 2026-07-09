@@ -14,8 +14,11 @@ import dev.pointtosky.core.astro.visibility.darkNelmFromSqm
 object LimitingMagnitudeModel {
 
     /**
-     * Output range this model clamps to. Matches the packed real-star catalog's
-     * magnitude limit ([dev.pointtosky.core.catalog.binary.PtskCat0Catalog.magLimit]).
+     * Output range this model clamps to — the upper bound this app ever asks
+     * a real-star catalog for. Individual packed assets may carry a lower
+     * [dev.pointtosky.core.catalog.binary.PtskCat0Catalog.magLimit], and
+     * runtime/wear callers may clamp further still; this is only an outer
+     * safety bound, not a promise that every asset supports 8.0.
      */
     val SUPPORTED_RANGE: ClosedFloatingPointRange<Double> = 0.0..8.0
 
