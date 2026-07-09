@@ -30,8 +30,9 @@ class AssetRealStarCatalogProvider(
             assetProvider.open(path).use { it.readBytes() }
         } catch (e: FileNotFoundException) {
             throw RealStarCatalogLoadException(
-                "PTSKCAT0 real-star catalog asset not found at '$path'. Expected it bundled " +
-                    "under this module's src/main/assets/$path — check app/module asset packaging.",
+                "PTSKCAT0 real-star catalog asset not found at '$path'. Expected it to be " +
+                    "bundled under the consuming app/module assets as '$path' — check " +
+                    "mobile/wear asset packaging.",
                 e,
             )
         } catch (e: IOException) {
