@@ -1,10 +1,12 @@
 package dev.pointtosky.core.catalog.binary
 
 import dev.pointtosky.core.catalog.ByteArrayAssetProvider
+import dev.pointtosky.core.catalog.io.AssetProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.roundToInt
@@ -104,5 +106,23 @@ class AssetRealStarCatalogProviderTest {
         val error = assertThrows(RealStarCatalogLoadException::class.java) { provider.load() }
 
         assertTrue(error.message.orEmpty().contains("PTSKCAT0"))
+    }
+
+    @Test
+    fun `non-IOException from asset provider is wrapped with clear message`() {
+        val provider = AssetRealStarCatalogProvider(
+            object : AssetProvider {
+                override fun open(path: String): InputStream = throw IllegalStateException("boom")
+                override fun exists(path: String): Boolean = true
+                override fun list(path: String): List<String> = emptyList()
+            },
+        )
+
+        val error = assertThrows(RealStarCatalogLoadException::class.java) { provider.load() }
+
+        assertTrue(error.cause is IllegalStateException)
+        assertTrue(error.message.orEmpty().contains("catalog/stars_real.bin"))
+        assertTrue(error.message.orEmpty().contains("PTSKCAT0"))
+        assertTrue(error.message.orEmpty().contains("asset packaging"))
     }
 }

@@ -41,6 +41,12 @@ class AssetRealStarCatalogProvider(
                     "Check app/module asset packaging.",
                 e,
             )
+        } catch (e: Exception) {
+            throw RealStarCatalogLoadException(
+                "Unexpected error opening/reading PTSKCAT0 real-star catalog asset '$path': " +
+                    "${e.message}. Check mobile/wear asset packaging.",
+                e,
+            )
         }
 
         return try {
