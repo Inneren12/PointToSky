@@ -113,18 +113,31 @@ class RealStarVisibilityServiceTest {
     }
 
     @Test
-    fun `direct limiting magnitude outside the supported range is not clamped`() {
+    fun `direct limiting magnitude above the supported range is clamped`() {
         val provider = fakeProvider()
         val service = RealStarVisibilityService(provider)
 
         val result = service.select(SkyQualityInput.LimitingMagnitude(100.0))
 
-        // Not clamped to LimitingMagnitudeModel.SUPPORTED_RANGE (0.0..8.0): the raw
-        // value is preserved, and RealStarVisibilityFilter treats it as "select every
-        // record brighter-or-equal", which for this catalog is all of them.
-        assertEquals(100.0, result.limitingMagnitude, 0.0)
+        // Clamped to LimitingMagnitudeModel.SUPPORTED_RANGE (0.0..8.0): 100.0 is
+        // finite, so it is coerced down to the upper bound, 8.0, before reaching
+        // RealStarVisibilityFilter.
+        assertEquals(8.0, result.limitingMagnitude, 0.0)
         assertTrue(100.0 !in LimitingMagnitudeModel.SUPPORTED_RANGE)
         assertEquals(sampleRecords.size, result.selection.count)
+    }
+
+    @Test
+    fun `direct limiting magnitude below the supported range is clamped`() {
+        val provider = fakeProvider()
+        val service = RealStarVisibilityService(provider)
+
+        val result = service.select(SkyQualityInput.LimitingMagnitude(-5.0))
+
+        // Clamped up to the lower bound, 0.0. Only the sample record brighter than
+        // (i.e. with a lower magnitude than) 0.0 is selected.
+        assertEquals(0.0, result.limitingMagnitude, 0.0)
+        assertEquals(1, result.selection.count)
     }
 
     @Test
@@ -199,6 +212,25 @@ class RealStarVisibilityServiceTest {
             service.select(SkyQualityInput.Bortle(0))
         }
         assertTrue("provider.load() should not run for invalid input", !loadCalled)
+    }
+
+    @Test
+    fun `provider is called exactly once per select call`() {
+        val catalog = PtskCat0Catalog.parse(buildCatalogBytes(sampleRecords))
+        var loadCount = 0
+        val provider = object : RealStarCatalogProvider {
+            override fun load(): PtskCat0Catalog {
+                loadCount++
+                return catalog
+            }
+        }
+        val service = RealStarVisibilityService(provider)
+
+        service.select(SkyQualityInput.Bortle(5))
+        assertEquals(1, loadCount)
+
+        service.select(SkyQualityInput.LimitingMagnitude(4.0))
+        assertEquals(2, loadCount)
     }
 
     @Test

@@ -16,13 +16,13 @@ sealed interface SkyQualityInput {
 
     /**
      * A limiting magnitude supplied directly by the caller, bypassing
-     * [LimitingMagnitudeModel]. Passed through to
-     * [RealStarVisibilityFilter.select] as-is — deliberately NOT clamped to
-     * [LimitingMagnitudeModel.SUPPORTED_RANGE], so [Double.POSITIVE_INFINITY] /
-     * [Double.NEGATIVE_INFINITY] keep the filter's "no limit" / "no stars"
-     * semantics, and a caller who intentionally asks for a value outside the
-     * app-supported range gets exactly what they asked for. Only `NaN` is
-     * rejected.
+     * [LimitingMagnitudeModel]'s Bortle/SQM conversion. `NaN` is rejected.
+     * [Double.POSITIVE_INFINITY] / [Double.NEGATIVE_INFINITY] are passed through
+     * unchanged, preserving [RealStarVisibilityFilter]'s "no limit" / "no stars"
+     * semantics. Any other, finite value is clamped to
+     * [LimitingMagnitudeModel.SUPPORTED_RANGE] before being passed to the filter,
+     * so a direct limiting magnitude stays within the same outer bound as the
+     * Bortle/SQM conversions.
      */
     data class LimitingMagnitude(val value: Double) : SkyQualityInput
 }
@@ -65,7 +65,11 @@ class RealStarVisibilityService(
             is SkyQualityInput.Sqm -> LimitingMagnitudeModel.fromSqm(input.value)
             is SkyQualityInput.LimitingMagnitude -> {
                 require(!input.value.isNaN()) { "limitingMagnitude must not be NaN, was ${input.value}" }
-                input.value
+                if (input.value.isInfinite()) {
+                    input.value
+                } else {
+                    input.value.coerceIn(LimitingMagnitudeModel.SUPPORTED_RANGE)
+                }
             }
         }
 
