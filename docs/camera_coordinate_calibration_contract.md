@@ -1,0 +1,598 @@
+# Camera Coordinate & Calibration Contract (CAM-0b)
+
+**Status:** Spec / recon proposal. No production code is defined here.
+**Scope:** Define the minimal coordinate-frame and camera-calibration contract
+that CAM-1 (camera-based star matching) needs before implementation begins.
+**Audience:** Whoever implements CAM-1 and its supporting core module.
+
+This document is the CAM-0b deliverable. It builds on:
+
+- `docs/star_catalog_ptskcat0_format.md` — the PTSKCAT0 real-star catalog
+  format (CAT-1).
+- `docs/real_star_visibility_contract.md` — the `RealStarVisibilityService`
+  visible-star selection (VF-1) and its VF-2a renderer adapter.
+- The CAM-0a code inventory. No standalone CAM-0a document exists in the
+  repository, so §0 below folds the relevant inventory into this spec so that
+  every claim about "existing code" is grounded in a concrete file.
+
+It deliberately does **not** implement camera matching. It specifies the
+frames, the transform chain, the intrinsics contract, the sync contract, and
+the CAM-1 input/output data models, then recommends a first implementation
+slice.
+
+---
+
+## 0. CAM-0a inventory (existing camera / AR / projection / sensor code)
+
+Everything CAM-1 will build on already exists as the **AR overlay** pipeline
+in `:mobile`, plus the astronomy transforms in `:core:astro-core`. The table
+is the ground truth for the rest of this document.
+
+| Concern | File | Key symbols |
+|---|---|---|
+| Camera preview | `mobile/src/main/java/dev/pointtosky/mobile/ar/CameraPreview.kt` | `CameraPreview` — CameraX `Preview` only, `PreviewView.ScaleType.FILL_CENTER`, `DEFAULT_BACK_CAMERA` |
+| Sensor attitude | `mobile/src/main/java/dev/pointtosky/mobile/ar/RotationFrame.kt` | `RotationFrame`, `rememberRotationFrame()` (`TYPE_ROTATION_VECTOR`, `SENSOR_DELAY_GAME`), `correctedForTrueNorth()`, `deviceRollDegrees()` |
+| Display remap | `mobile/src/main/java/dev/pointtosky/mobile/ar/DisplayRemap.kt` | `remapForDisplay()` (`SensorManager.remapCoordinateSystem`) |
+| Projection + overlay | `mobile/src/main/java/dev/pointtosky/mobile/ar/ArScreen.kt` | `calculateOverlay()`, `projectDeviceVector()`, `projectionParams()`, `horizontalToVector()`, `vectorToHorizontal()`, `VERTICAL_FOV_DEG = 56.0` |
+| Overlay models | `mobile/src/main/java/dev/pointtosky/mobile/ar/AstroOverlayModels.kt` | `ScreenLineSegment`, `OverlayData`, star/asterism overlays |
+| AR view model | `mobile/src/main/java/dev/pointtosky/mobile/ar/ArViewModel.kt` | `ArViewModel`, `ArUiState.Ready`, `ArStar` |
+| Eq↔Hor transform | `core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/transform/EquatorialHorizontalTransform.kt` | `raDecToAltAz()`, `altAzToRaDec()`, `Meteo` |
+| Sidereal time | `core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/time/SiderealTime.kt` | `gmstDeg()`, `lstDeg()`, `lstAt()` |
+| Coordinate types | `core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/coord/Coordinates.kt` | `Equatorial`, `Horizontal`, `GeoPoint`, `Sidereal` |
+| Angular separation | `core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/identify/Identify.kt` | `angularSeparationDeg()`, `IdentifySolver.findBest()` |
+| Real catalog (CAT-1) | `core/catalog/src/main/java/dev/pointtosky/core/catalog/binary/PtskCat0Catalog.kt` | `PtskCat0Catalog` (struct-of-arrays: `raDegAt/decDegAt/magAt/bvAt/hipAt/nameAt`) |
+| Visible set (VF-1) | `core/catalog/src/main/kotlin/dev/pointtosky/core/catalog/visibility/RealStarVisibilityService.kt` | `select(SkyQualityInput): RealStarVisibilityResult` |
+| Visible adapter (VF-2a) | `core/catalog/src/main/kotlin/dev/pointtosky/core/catalog/visibility/render/VisibleRealStarSnapshot.kt` | `VisibleRealStar`, `VisibleRealStarSnapshot`, `VisibleRealStarProvider` |
+
+**Critical inventory findings that shape this spec:**
+
+1. **There is no camera-image pipeline.** `CameraPreview` binds only a CameraX
+   `Preview` surface. There is **no** `ImageAnalysis`, no `ImageProxy`, no
+   pixel buffer, and no frame timestamp reaching Kotlin. A grep for
+   `CameraCharacteristics`, `ImageAnalysis`, `LENS_INFO`, `SENSOR_INFO`, and
+   `imageInfo` across the whole tree returns nothing.
+2. **The projection uses a hardcoded FOV**, not the real lens:
+   `VERTICAL_FOV_DEG = 56.0` (`ArScreen.kt:1276`), with horizontal FOV derived
+   from the *viewport* aspect ratio (`projectionParams`, `ArScreen.kt:1201`).
+3. **The overlay is aligned to the display viewport, not the camera image.**
+   Projection maps to Compose `Offset` pixels over `overlaySize` (the AR
+   `Box`), while `PreviewView` uses `FILL_CENTER`, which center-crops the
+   camera frame by an unknown scale. The overlay currently "works" only
+   because both the preview and the overlay fill the same box; the actual
+   camera→display crop/scale is never modeled. This is the single biggest gap
+   for pixel-accurate star matching.
+
+---
+
+## 1. Coordinate frames
+
+Six frames participate. For each: definition, units, axis convention,
+handedness, and where it lives in code today.
+
+### 1.1 Catalog frame — equatorial J2000 (RA/Dec)
+
+- **Type:** `Equatorial(raDeg, decDeg)`
+  (`core/astro-core/.../coord/Coordinates.kt:9`).
+- **Units:** RA `0°..360°`, Dec `-90°..+90°`, decimal degrees.
+- **Epoch:** J2000 (PTSKCAT0 header `Epoch = 2000`;
+  `docs/star_catalog_ptskcat0_format.md`). Catalog carries **no proper
+  motion** and **no per-record epoch** — a single global J2000.
+- **Source:** `PtskCat0Catalog.raDegAt(i)/decDegAt(i)` for CAT-1; VF-2a's
+  `VisibleRealStar.raDeg/decDeg` for the visible subset.
+- **Handedness:** right-handed celestial sphere; RA increases eastward.
+
+### 1.2 Observer frame — horizontal (Alt/Az)
+
+- **Type:** `Horizontal(azDeg, altDeg)` (`Coordinates.kt:20`).
+- **Units:** Az `0°..360°` **clockwise from geographic North**; Alt
+  `-90°..+90°` above the horizon.
+- **Depends on:** observer `GeoPoint(latDeg, lonDeg)` and local sidereal time
+  `Sidereal(lstDeg)`.
+- **Source:** `raDecToAltAz(eq, lstDeg, latDeg, applyRefraction, meteo)`.
+- **Handedness note:** azimuth is a *compass* angle (clockwise), not a
+  math-positive (counter-clockwise) angle. Every conversion to/from a Cartesian
+  vector must respect this.
+
+### 1.3 Device / world frame — Android ENU
+
+- **Definition:** the "world" frame produced by
+  `SensorManager.getRotationMatrixFromVector` after `remapForDisplay`. It is
+  **ENU**: `+X = East`, `+Y = North`, `+Z = Up (away from Earth centre)`.
+  Right-handed.
+- **North caveat:** the rotation vector's Y axis points at **magnetic**
+  North. True North is obtained by rotating about `+Z` by the magnetic
+  declination — see `RotationFrame.correctedForTrueNorth()`
+  (`RotationFrame.kt:107`), which mirrors the watch's
+  `Horizontal.toTrueNorth`.
+- **Alt/Az ↔ ENU vector** (in `ArScreen.kt:1249`,
+  `horizontalToVector`):
+  `v = (cosAlt·sinAz, cosAlt·cosAz, sinAlt)` → confirms `X=East, Y=North,
+  Z=Up`, `az = atan2(x, y)`.
+- **Matrix:** `RotationFrame.rotationMatrix` is **device→world** (row-major
+  3×3). Its transpose is **world→device**.
+
+### 1.4 Camera frame — device axes after display remap
+
+- **Definition:** the phone's own axes as re-expressed for the current display
+  rotation by `remapForDisplay` (`DisplayRemap.kt`). Convention used by the
+  projector (`projectDeviceVector`, `ArScreen.kt:1210`):
+  `+X = screen right`, `+Y = screen up`, `+Z = out of the screen toward the
+  user`. The **camera looks along −Z**.
+- **Camera forward:** `forwardWorld = (−m[2], −m[5], −m[8])`
+  (`RotationFrame.kt:62`) — the third column of device→world negated, i.e. the
+  world direction the back camera points at.
+- **Assumption baked in:** the optical axis is treated as exactly the device
+  `−Z` axis, and the lens is assumed to be co-axial and non-tilted relative to
+  the IMU. Any camera-to-IMU extrinsic offset is currently zero. (Acceptable
+  for CAM-1 MVP; see §3.)
+
+### 1.5 Image pixel frame — camera sensor image
+
+- **Current status: does not exist in code.** No image buffer is delivered, so
+  there is no image-pixel frame today.
+- **Intended definition for CAM-1:** integer pixel `(u, v)` over the analyzed
+  camera frame, origin top-left, `+u` right, `+v` down, resolution =
+  `ImageProxy` width/height (after any analyzer rotation). Principal point
+  `(cx, cy)` ≈ image centre unless intrinsics say otherwise.
+- This frame is where detected bright points (if used) and projected star
+  predictions must be compared for matching.
+
+### 1.6 Display / screen frame — Compose pixels
+
+- **Type:** Compose `Offset(x, y)` in device-independent pixels, origin
+  top-left, `+x` right, `+y` down.
+- **Produced by** `projectDeviceVector` (`ArScreen.kt:1224`):
+  `screenX = halfWidth·(1 + ndcX)`, `screenY = halfHeight·(1 − ndcY)`. Note the
+  **Y flip** (`1 − ndcY`): NDC up is +, screen down is +.
+- **Extent:** `overlaySize` — the AR `Box` in `ArScreen`, portrait-locked in
+  practice (roll handling assumes display `ROTATION_0`; see
+  `deviceRollDegrees` docstring, `RotationFrame.kt:127`).
+- **Not the same as the image pixel frame** (§1.5) because of `FILL_CENTER`
+  crop/scale. Reconciling them is a CAM-1 deliverable (§3).
+
+---
+
+## 2. Transform chain
+
+Intended chain, end to end:
+
+```
+RA/Dec (J2000)                     §1.1
+  └─(A) + LST + latitude        →  Alt/Az                 §1.2
+        └─(B) spherical→cartesian → ENU world vector      §1.3
+              └─(C) world→device (Rᵀ) → device/camera vector §1.4
+                    └─(D) pinhole project → normalized camera coords (NDC)
+                          └─(E) NDC → image pixels / screen pixels §1.5/§1.6
+```
+
+Per step: existing code · missing code · sign/handedness risks · tests needed.
+
+### Step A — RA/Dec + time/location → Alt/Az
+
+- **Existing:** `raDecToAltAz()` (Meeus relations, Saemundsson refraction) and
+  `lstAt()`/`gmstDeg()` (IAU-1982 GMST, ≈0.1° accurate near J2000). AR builds
+  LST via `lstAt(instant, lon)` in `ArViewModel.buildState`.
+- **Missing:** nothing structural. For matching, decide a single refraction
+  policy (see risks).
+- **Sign/handedness risks:**
+  - Azimuth is clockwise-from-North; do not feed it to a math-CCW routine.
+  - **Refraction inconsistency:** `raDecToAltAz` defaults `applyRefraction =
+    true`, but the AR projector calls it with `applyRefraction = false`
+    (`ArScreen.kt:967`), while the reticle's inverse `altAzToRaDec` has no
+    refraction term at all. CAM-1 must pick one convention (recommend
+    refraction **off** for geometric matching; it is <0.6° except very low and
+    biases altitude only) and document it.
+  - Hour-angle sign: `τ = LST − RA`; a swapped sign mirrors east/west.
+- **Tests needed:** already covered by
+  `core/astro/.../transform/EquatorialHorizontalTransformTest.kt` and
+  `.../time/SiderealTimeTest.kt`. Add: a **round-trip** assertion
+  (`altAzToRaDec(raDecToAltAz(x))` ≈ x with refraction off) and a couple of
+  **absolute golden** cases (known star Alt/Az at a fixed instant/site).
+
+### Step B — Alt/Az → ENU world vector
+
+- **Existing:** `horizontalToVector()` (`ArScreen.kt:1249`) and its inverse
+  `vectorToHorizontal()` (`ArScreen.kt:1260`).
+- **Missing:** these are `private` inside `:mobile`. CAM-1 should promote a
+  shared, tested version into `:core:astro-core` (e.g. alongside the transform
+  package) so both rendering and matching use one implementation.
+- **Sign/handedness risks:**
+  - `az = atan2(x, y)` with `x=East, y=North`. Swapping the atan2 args, or
+    using `atan2(y, x)`, rotates azimuth by 90° and/or mirrors it.
+  - `z = sin(alt)`; a sign error flips the sky top-to-bottom.
+- **Tests needed:** cardinal-direction table (N→(0,1,0), E→(1,0,0),
+  zenith→(0,0,1)); `vectorToHorizontal(horizontalToVector(h)) ≈ h`.
+
+### Step C — world → device/camera vector
+
+- **Existing:** `RotationFrame` (attitude), `remapForDisplay` (display
+  rotation), `correctedForTrueNorth` (declination), and `transpose()` →
+  `worldToDevice = transpose(rotationMatrix)` in `calculateOverlay`
+  (`ArScreen.kt:952`).
+- **Missing:** camera-to-IMU extrinsic (assumed identity). A hook for a small
+  calibration rotation (the CAM-1 output, §5) to be applied here.
+- **Sign/handedness risks:**
+  - **Magnetic vs true North:** forgetting `correctedForTrueNorth` biases every
+    azimuth by the local declination (can be >10°).
+  - **Display remap:** the `AXIS_*` mapping per `Surface.ROTATION_*`
+    (`DisplayRemap.kt`) must match the resolution of the analyzed image; if the
+    image analyzer applies its own rotation, remap and image rotation can
+    double-count or cancel. Verify against the image, not just the preview.
+  - **Camera = −Z:** `forwardWorld` negates the matrix column; dropping the
+    negation points the reticle at the sky behind the phone.
+  - Row-major vs column-major: `rotationMatrix` is row-major device→world; its
+    transpose is world→device. Mislabeling inverts the rotation.
+- **Tests needed:** `remapForDisplay` invariance (already partly covered by
+  `ProjectionOrientationTest`); a declination-offset test asserting a known
+  world azimuth lands on the expected device bearing; a "camera points at the
+  vector under the reticle" round-trip.
+
+### Step D — device vector → normalized camera coords (NDC)
+
+- **Existing:** `projectDeviceVector()` (`ArScreen.kt:1210`) and
+  `projectionParams()` (`ArScreen.kt:1201`): pinhole with
+  `ndcX = (x/−z)/tanHFov`, `ndcY = (y/−z)/tanVFov`; rejects `z ≥ −0.01`
+  (behind camera) and `distance > MAX_SCREEN_DISTANCE`.
+- **Missing (the core CAM-1 gap):**
+  - Real focal length / FOV instead of `VERTICAL_FOV_DEG = 56.0` (§3).
+  - Principal-point offset (currently assumed dead-centre).
+  - Lens distortion (currently none).
+- **Sign/handedness risks:**
+  - Y flip lives here (`1 − ndcY`); getting it wrong mirrors vertically.
+  - `tanHFov = tanVFov · aspect` assumes square pixels and that FOV scales with
+    the *viewport* aspect — wrong once the camera image aspect ≠ viewport
+    aspect (the `FILL_CENTER` problem).
+  - Using the wrong FOV scales all separations, so matches drift outward from
+    centre (a pure scale error is the classic FOV bug).
+- **Tests needed:** on-axis star projects to exactly `(cx, cy)`; a star at
+  half-FOV projects to the frame edge; FOV-scaling test (double FOV → half the
+  pixel offset); mirror test (a star to the observer's left must land on the
+  correct screen side for the back camera).
+
+### Step E — NDC → image pixels / screen pixels
+
+- **Existing:** linear map to Compose pixels over `overlaySize`
+  (`ArScreen.kt:1224`).
+- **Missing:** the **image↔display mapping**. `PreviewView.FILL_CENTER`
+  center-crops the camera frame to fill the view; matching against detected
+  points must run in the *image* frame (§1.5) and then map into the display
+  frame (or vice-versa) using the crop/scale. This mapping does not exist yet.
+- **Sign/handedness risks:**
+  - Crop direction: FILL_CENTER can crop either width or height depending on
+    aspect; picking the wrong axis shifts everything.
+  - DPI/px vs image-px: overlay is in dp-derived px; image is in sensor px.
+  - Front/back camera mirroring: only the **back** camera is used
+    (`DEFAULT_BACK_CAMERA`), which is not mirrored — but any future front-camera
+    path would need an explicit horizontal flip.
+- **Tests needed:** a crop/scale unit test for each aspect regime (image wider
+  than view, taller than view, equal); a golden mapping a known image pixel to
+  a known screen offset and back.
+
+---
+
+## 3. Camera intrinsics
+
+### 3.1 Current state
+
+| Intrinsic | Today | Source |
+|---|---|---|
+| Focal length / FOV | Hardcoded `VERTICAL_FOV_DEG = 56.0`; H-FOV = `atan(tanVFov·aspect)` | `ArScreen.kt:1276`, `projectionParams` |
+| Sensor size | Not modeled | — |
+| Principal point | Assumed image centre `(w/2, h/2)` | `projectDeviceVector` |
+| Image resolution | Uses **viewport** (`overlaySize`), not the camera image | `calculateOverlay` |
+| Display crop/scale | Ignored (`FILL_CENTER` crop unaccounted) | `CameraPreview` |
+| Lens distortion | None | — |
+
+### 3.2 How to obtain / approximate (CAM-1)
+
+Read Camera2 `CameraCharacteristics` for the bound CameraX camera (via
+`Camera2CameraInfo.from(cameraInfo)`), then:
+
+- **FOV / focal length (required):** compute from
+  `LENS_INFO_AVAILABLE_FOCAL_LENGTHS` (mm) and
+  `SENSOR_INFO_PHYSICAL_SIZE` (mm):
+  `FOVₓ = 2·atan(sensorWidth / (2·f))`, likewise vertical. This replaces the
+  hardcoded 56°. Fall back to 56° V-FOV only if characteristics are missing.
+- **Sensor size (required as input to FOV):** `SENSOR_INFO_PHYSICAL_SIZE`,
+  cross-checked against `SENSOR_INFO_ACTIVE_ARRAY_SIZE` and the crop from the
+  chosen `ImageAnalysis` resolution.
+- **Image resolution (required):** the `ImageAnalysis` output size
+  (`ImageProxy.width/height` after analyzer rotation) — this, not the viewport,
+  is the frame to match in.
+- **Principal point (approximate for MVP):** image centre. Prefer
+  `LENS_INTRINSIC_CALIBRATION` `[cx, cy]` when
+  `LENS_INFO_AVAILABLE_APERTURES`/calibration data are present and
+  `LENS_POSE_REFERENCE` indicates a real calibration; otherwise centre.
+- **Display crop/scale (required):** derive from the ratio of the
+  `ImageAnalysis` aspect to the `PreviewView` aspect under `FILL_CENTER`.
+  Provide a pure function mapping image-px ↔ display-px.
+- **Lens distortion (defer):** ignore radial distortion for CAM-1; most phone
+  main cameras are <1–2 px near centre. Record `LENS_DISTORTION` if present but
+  do not apply it in the MVP.
+
+### 3.3 Required for CAM-1 minimum viable matching vs deferred
+
+**Required (MVP):**
+
+- Real per-device FOV (from focal + sensor), replacing the 56° constant.
+- The analyzed image resolution and its aspect.
+- Principal point = image centre.
+- Image↔display crop/scale mapping (so predictions and detections share a
+  frame).
+- A documented refraction convention (§2, Step A).
+
+**Deferred (post-MVP):**
+
+- Lens distortion correction.
+- Non-central principal point from `LENS_INTRINSIC_CALIBRATION`.
+- Camera-to-IMU extrinsic rotation (assume identity; the CAM-1 calibration
+  correction absorbs small residuals).
+- Per-frame autofocus focal-length changes (main cameras vary little; sample
+  focal length once per session unless it reports otherwise).
+
+---
+
+## 4. Timestamp & synchronization
+
+### 4.1 Current state
+
+- **Attitude timestamp exists:** `RotationFrame.timestampNanos = event.timestamp`
+  (`RotationFrame.kt:73`), from `SensorEvent.timestamp` (nanoseconds; on most
+  devices `SystemClock.elapsedRealtimeNanos`, but the base clock is **not
+  guaranteed** across sensors/vendors).
+- **Frame timestamp does not exist:** the CameraX `Preview`-only path exposes no
+  frame timestamp. `ImageProxy.imageInfo.timestamp` is unavailable because
+  there is no `ImageAnalysis`.
+
+### 4.2 Intended pairing (CAM-1 with an image pipeline)
+
+1. Add an `ImageAnalysis` use case; each `ImageProxy` carries
+   `imageInfo.timestamp` (ns) and `imageInfo.rotationDegrees`.
+2. Buffer recent `RotationFrame`s in a small ring (e.g. last ~10, ~200 ms at
+   `SENSOR_DELAY_GAME`).
+3. For a captured frame, select the attitude sample **nearest in time** to the
+   frame timestamp (linear-interpolate the rotation via slerp if the gap is
+   large). Reject the pairing if the nearest attitude is older than a threshold
+   (e.g. >50 ms) or the device is rotating fast (attitude rate over a gate).
+4. Because sensor and camera clocks may not share a base, prefer treating both
+   as `elapsedRealtimeNanos` and, if a systematic offset is detected, expose a
+   single calibratable delta rather than assuming zero.
+
+### 4.3 Safe CAM-1 fallback (no reliable pairing)
+
+Star positions change slowly (~15°/hour ≈ 0.004°/s). So the MVP can avoid tight
+sync entirely:
+
+- **Require the device to be near-still** for a match attempt (gate on attitude
+  angular rate below a small threshold, e.g. <1°/s), and use the **latest
+  available** `RotationFrame` at the moment the frame is analyzed.
+- Report the attitude-to-frame age in the output metadata so callers can reject
+  stale matches.
+- This trades a small, bounded pointing error for zero clock-alignment work and
+  is sufficient to validate matching before investing in true sync.
+
+---
+
+## 5. Matching inputs / outputs (CAM-1 data model)
+
+These are **proposed** shapes to live in a new pure module (suggest
+`:core:catalog` visibility/render neighborhood or a new `:core:camera-match`
+Kotlin module) so they are unit-testable without Android. Field names are
+illustrative; types are the contract.
+
+### 5.1 Input model
+
+```kotlin
+/** Everything CAM-1 needs to attempt a match for one frame. Pure data. */
+data class CameraMatchInput(
+    // Visible star candidates (from VF-1 / VF-2a): equatorial J2000 + mag.
+    val candidates: List<VisibleRealStar>,      // dev.pointtosky.core.catalog.visibility.render.VisibleRealStar
+
+    // Camera intrinsics for the analyzed frame (see §3).
+    val intrinsics: CameraIntrinsics,
+
+    // Device attitude paired with the frame (see §4).
+    val attitude: DeviceAttitude,
+
+    // Frame metadata (resolution, timestamp, rotation, crop mapping).
+    val frame: FrameMetadata,
+
+    // Optional detected bright points in IMAGE pixels (§1.5). Empty = predict-only.
+    val detectedPoints: List<ImagePoint> = emptyList(),
+
+    // Observing context for RA/Dec → Alt/Az.
+    val lstDeg: Double,
+    val latDeg: Double,
+    val refraction: Boolean = false,             // fixed convention, see §2 Step A
+)
+
+data class CameraIntrinsics(
+    val hFovDeg: Double,
+    val vFovDeg: Double,
+    val principalPoint: ImagePoint,              // ≈ image centre for MVP
+    val imageWidthPx: Int,
+    val imageHeightPx: Int,
+    val distortion: Distortion? = null,          // null = pinhole (MVP)
+)
+
+data class DeviceAttitude(
+    val worldToDevice: FloatArray,               // 3×3, world(ENU,true-north)→device
+    val trueNorthCorrected: Boolean,             // must be true for matching
+    val timestampNanos: Long,
+)
+
+data class FrameMetadata(
+    val timestampNanos: Long,
+    val rotationDegrees: Int,                     // ImageProxy.imageInfo.rotationDegrees
+    val attitudeAgeNanos: Long,                   // frame.ts − attitude.ts (§4.3)
+    val imageToDisplay: CropScale,                // §2 Step E mapping
+)
+
+data class ImagePoint(val u: Double, val v: Double)
+```
+
+`VisibleRealStar` is reused verbatim from VF-2a
+(`raDeg, decDeg, mag, bv?, hip?, name?`) so CAM-1 consumes VF-1's output
+directly via `VisibleRealStarProvider.snapshot(...)`.
+
+### 5.2 Output model
+
+```kotlin
+sealed interface CameraMatchResult {
+
+    /** A usable calibration correction was found. */
+    data class Success(
+        // Small corrective rotation to apply after worldToDevice (§2 Step C),
+        // expressed as yaw/pitch/roll deltas in degrees (or a quaternion).
+        val correction: AttitudeCorrection,
+        val confidence: Double,                  // 0..1
+        val matches: List<StarMatch>,            // candidate ↔ detected/predicted
+        val residualRmsDeg: Double,              // angular RMS after correction
+    ) : CameraMatchResult
+
+    /** No reliable match; explains why. */
+    data class Failure(val reason: FailureReason) : CameraMatchResult
+}
+
+data class AttitudeCorrection(
+    val yawDeg: Double,
+    val pitchDeg: Double,
+    val rollDeg: Double,
+)
+
+data class StarMatch(
+    val candidateIndex: Int,                     // index into CameraMatchInput.candidates
+    val hip: Int?,                               // catalog identity when known
+    val predicted: ImagePoint,                   // where the star was expected
+    val detected: ImagePoint?,                   // matched detection, null if predict-only
+    val residualDeg: Double,
+)
+
+enum class FailureReason {
+    TOO_FEW_CANDIDATES,        // not enough visible stars in frame
+    TOO_FEW_DETECTIONS,        // detector found nothing usable
+    DEVICE_MOVING,             // attitude rate gate (§4.3)
+    STALE_ATTITUDE,            // attitudeAgeNanos over threshold
+    AMBIGUOUS,                 // multiple equally-good solutions
+    NO_CONVERGENCE,            // solver did not converge
+    LOW_ALTITUDE,             // frame below horizon / no sky
+}
+```
+
+**Notes:**
+
+- If `detectedPoints` is empty, CAM-1 runs in **predict-only** mode: it returns
+  the projected positions of the candidates (no correction), which is enough to
+  build/verify the pipeline before any computer vision exists.
+- The correction is intentionally a small rotation, not full intrinsics
+  re-estimation — it absorbs residual IMU/declination/extrinsic bias.
+
+---
+
+## 6. Test strategy
+
+All of the following can be pure JVM unit tests (no device), consistent with
+the existing `mobile/.../ar/*Test.kt` and `core/astro*/.../*Test.kt` suites.
+
+1. **RA/Dec → Alt/Az sanity** — extend
+   `EquatorialHorizontalTransformTest`: add a round-trip
+   (`altAzToRaDec∘raDecToAltAz ≈ id`, refraction off) and 2–3 absolute goldens
+   (named star Alt/Az at a fixed UTC + site, tolerance ~0.05°). Pin the
+   refraction convention with an explicit on/off case.
+2. **Projection centre** — a star exactly on the optical axis (device `−Z`)
+   projects to the principal point `(cx, cy)`; a star at `+half-HFOV` lands on
+   the horizontal frame edge. Assert on `projectDeviceVector` with real
+   intrinsics.
+3. **Display rotation cases** — reuse/extend `ProjectionOrientationTest`
+   ("polyline shape stable across rotations") and `DeviceRollDegreesTest`
+   (upright→0°, +90° CW→−90°, +90° CCW→+90°, near-zenith→fallback) for all four
+   `Surface.ROTATION_*` values, including image `rotationDegrees` interplay.
+4. **Mirrored / handedness mistakes** — a star to the observer's physical left
+   must project to the correct screen side for the **back** camera; assert the
+   sign of the ENU→device→NDC chain (a deliberate "flip X" mutation must fail
+   the test). Include a magnetic-vs-true-north offset case that fails if
+   `correctedForTrueNorth` is skipped.
+5. **FOV scaling** — with a fixed device vector, doubling FOV halves the pixel
+   offset from centre; a wrong-FOV constant is caught as a pure scale error.
+   Add an image-aspect ≠ viewport-aspect case that fails without the crop/scale
+   mapping.
+6. **No-match / failure cases** — each `FailureReason` has a test:
+   empty candidates → `TOO_FEW_CANDIDATES`; empty detections in match mode →
+   `TOO_FEW_DETECTIONS`; high attitude rate → `DEVICE_MOVING`; stale attitude
+   age → `STALE_ATTITUDE`; all candidates below horizon → `LOW_ALTITUDE`.
+7. **Golden matching scenario (integration)** — synthesize a frame from a known
+   attitude + intrinsics + a handful of catalog stars, generate "detections" by
+   projecting them (optionally with a small injected attitude error), and assert
+   CAM-1 recovers the injected `AttitudeCorrection` within tolerance and returns
+   the correct `StarMatch` HIP ids. Mirror the style of
+   `core/astro/.../integration/AimPipelineScenarioTest.kt`.
+
+---
+
+## 7. Non-goals (explicitly excluded from CAM-1)
+
+- **Full computer-vision star detection** — CAM-1 must run predict-only and,
+  at most, consume simple externally-supplied bright points. No blob detector,
+  no ML, unless a later slice needs it.
+- **Renderer switch** — keep the existing Compose `Canvas` overlay
+  (`ArScreen`); do not move to OpenGL/`GLSurfaceView`/ARCore rendering.
+- **Live camera-matching UI** — no new user-facing calibration screen is
+  required for the core slice; matching can be exercised from tests/debug first.
+- **Moon / twilight modeling for matching** — the physically-driven
+  `limitingMagnitudeAt` already exists for visibility; CAM-1 does not add sky
+  brightness or twilight models beyond consuming VF-1's visible set.
+- **Proper-motion correction** — PTSKCAT0 is J2000 with no PM; CAM-1 uses
+  catalog RA/Dec as-is. (Naked-eye stars move ≪ the matching tolerance over the
+  relevant epoch span, so this is safe.)
+- **Camera-to-IMU extrinsic calibration** — assume identity; the small
+  `AttitudeCorrection` output absorbs residual bias.
+
+---
+
+## 8. Recommended CAM-1 implementation slice
+
+A thin, testable vertical slice that de-risks the hard parts (intrinsics +
+frame alignment) without committing to computer vision:
+
+1. **Extract the projection math into `:core:astro-core` (or a new
+   `:core:camera-match`).** Promote `horizontalToVector`, `vectorToHorizontal`,
+   and `projectDeviceVector` out of `:mobile` `private` scope into shared,
+   fully-tested pure functions. No behavior change; unblocks tests §6.2–6.5.
+2. **Real intrinsics.** Add a `CameraIntrinsics` provider that reads Camera2
+   `CameraCharacteristics` (focal length + physical sensor size → FOV) for the
+   bound CameraX camera, replacing `VERTICAL_FOV_DEG = 56.0`. Fall back to 56°
+   when characteristics are absent. (§3.3 required set only.)
+3. **Frame pipeline + crop/scale.** Add an `ImageAnalysis` use case to obtain
+   frame resolution, `rotationDegrees`, and `imageInfo.timestamp`. Implement the
+   pure image↔display `CropScale` mapping for `FILL_CENTER` (§2 Step E) with
+   unit tests §6.5.
+4. **Predict-only matcher.** Implement `CameraMatchInput → CameraMatchResult`
+   (§5) in predict-only mode: consume VF-2a `VisibleRealStar` candidates, apply
+   Steps A–E with real intrinsics, and emit predicted `StarMatch` positions plus
+   the failure reasons. Use the §4.3 "device near-still, latest attitude"
+   fallback. No detector yet.
+5. **Golden scenario test.** Add the §6.7 integration test that injects a known
+   attitude error and asserts recovery once the (still-stubbed) correction
+   solver is enabled — initially asserting predict-only positions, then wired to
+   a minimal least-squares correction when detections are supplied.
+
+This slice delivers per-device-correct projection, a real frame/intrinsics
+pipeline, and the CAM-1 data contract, while leaving detection, extrinsics,
+distortion, and any UI for later slices.
+
+---
+
+## Appendix A — sign/handedness risk register (quick reference)
+
+| # | Risk | Where | Guard |
+|---|---|---|---|
+| R1 | Azimuth clockwise-from-North vs math CCW | Steps A/B | cardinal-table test (§6.4) |
+| R2 | Refraction on in one direction, off in the other | `raDecToAltAz` vs `altAzToRaDec` | fix one convention (§2 Step A) |
+| R3 | Magnetic vs true North | `correctedForTrueNorth` | declination-offset test (§6.4) |
+| R4 | Camera axis is device `−Z` | `forwardWorld` negation | reticle round-trip test (§2 Step C) |
+| R5 | Display remap vs image `rotationDegrees` double-count | `remapForDisplay` + analyzer | per-rotation test (§6.3) |
+| R6 | Screen/image Y flip (`1 − ndcY`) | `projectDeviceVector` | centre + edge test (§6.2) |
+| R7 | Wrong/hardcoded FOV → scale error | `projectionParams` | FOV-scaling test (§6.5) |
+| R8 | `FILL_CENTER` crop ignored (image ≠ viewport aspect) | `CameraPreview` + Step E | crop/scale test (§6.5) |
+| R9 | Front-camera mirroring | (back camera only today) | flip guard if front added |
+| R10 | Sensor/camera clock base mismatch | §4 sync | age gate + near-still fallback (§4.3) |
