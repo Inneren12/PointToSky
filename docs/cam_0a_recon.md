@@ -351,7 +351,7 @@ clean; `gradle.properties`/`local.properties` changes were not committed).
   `MODULES.md`, `FILE_OVERVIEW.md`, `stage.md`
 - Packer (asset generation context): `tools/catalog-packer/src/main/.../*.kt` (file listing only)
 
-## Proposed next slice (CAM-0b)
+## Proposed next implementation-prep slice
 
 A small, additive slice that retires two "missing but easy" items while
 generating real data for the riskiest open question (timestamp sync),
@@ -421,5 +421,5 @@ close before or alongside the first camera-matching slice, not after:
 2. Replace the hardcoded FOV constant with real camera intrinsics before any
    pixel-accurate matching depends on today's fixed-56°-vertical projection.
 3. Instrument and measure frame/sensor timestamp skew (via the proposed
-   CAM-0b slice) before matching logic assumes frame and pose are
-   synchronized.
+   implementation-prep slice above) before matching logic assumes frame and
+   pose are synchronized.
