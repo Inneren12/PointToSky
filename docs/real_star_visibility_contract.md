@@ -140,15 +140,40 @@ data class RealStarVisibilityResult(
     (`:mobile`) drives `applySnapshot` directly (no `Context`/asset needed)
     to cover Success, Failure, and unexpected-exception state publishing.
 
-## 5. Future integration notes
+## 5. Renderer adapter boundary (VF-2a)
+
+`dev.pointtosky.core.catalog.visibility.render` (`:core:catalog`) provides the
+adapter boundary a future renderer/AR integration should consume, rather than
+depending on `PtskCat0Catalog`/`VisibleStarSelection` directly: a consumer
+builds a `VisibleRealStarSnapshot` from a `RealStarVisibilityResult` and only
+ever sees plain projected fields.
+
+- **`VisibleRealStar`** — one visible star's read-only projected data:
+  `raDeg`, `decDeg`, `mag` (all `Double`), plus optional `bv: Double?`,
+  `hip: Int?` (`null` when the catalog has no Hipparcos number, i.e.
+  `hipAt(index) == 0`), and `name: String?`.
+- **`VisibleRealStarSnapshot`** — wraps an already-computed
+  `RealStarVisibilityResult`; exposes `limitingMagnitude`, `count`,
+  `starAt(index)`, and a lazy, non-copying `stars: List<VisibleRealStar>` view
+  over it. Each `VisibleRealStar` is built on access directly from the
+  catalog's primitive accessors — nothing is materialized upfront, matching
+  §3's "no star data copy" contract. `VisibleRealStarSnapshot.from(result)`
+  performs no I/O; it adapts a result computed elsewhere.
+- **`VisibleRealStarProvider`** — a thin, stateless facade:
+  `snapshot(service, input)` composes `RealStarVisibilityService.select` with
+  `VisibleRealStarSnapshot.from` in one call. It introduces no caching or I/O
+  beyond `select` itself.
+
+As of this writing, nothing in `:mobile`/`:wear` references this package —
+it exists so a future renderer/AR integration can consume VF-1's output
+without depending on PTSKCAT0 binary internals. Renderer/UI wiring itself
+remains out of scope; see [Safety boundaries](#4-safety-boundaries).
+
+## 6. Future integration notes
 
 These are non-binding notes for the next PRs, not commitments made by this
 contract:
 
-- A future renderer integration should consume `RealStarVisibilityService`'s
-  result through an adapter boundary, rather than the renderer depending on
-  `PtskCat0Catalog`/`VisibleStarSelection` directly — keeps the render layer
-  decoupled from the catalog's binary representation.
 - Camera star-pattern matching (CAM-1..4) may later reuse the same
   visibility-limited prefix (`selection.indices` over `catalog`) as its
   candidate set, rather than re-deriving one.
