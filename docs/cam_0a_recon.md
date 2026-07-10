@@ -54,11 +54,19 @@ CAT-1 (PTSKCAT0 real-star catalog + generated assets) and VF-1/VF-2a
 - **Display rotation.** `DisplayRemap.kt::remapForDisplay` wraps
   `SensorManager.remapCoordinateSystem` using `context.display.rotation`
   (API 30+) / deprecated `windowManager.defaultDisplay.rotation` fallback,
-  called on every sensor event so rotation changes are picked up live. In
-  practice this is presently inert in production: `MainActivity`/the AR
-  route is locked to `android:screenOrientation="portrait"` in the manifest,
-  so `displayRotation` is always `ROTATION_0` at runtime; the remap path is
-  exercised only by the (currently broken — see §3) unit test.
+  called on every sensor event so rotation changes are picked up live.
+  `MainActivity`/the AR route is locked to `android:screenOrientation="portrait"`
+  in the manifest, so on typical portrait-native phones this will usually
+  observe `ROTATION_0` at runtime. **This is not a contract across all
+  Android form factors, though:** `Display.rotation` is measured relative to
+  the device's *natural* orientation, not its current visual orientation, so
+  natural-landscape devices — tablets, Chromebooks, and foldables among them
+  — can still report `ROTATION_90`/`ROTATION_270` for the same
+  portrait-locked Activity. `remapForDisplay` therefore remains
+  production-relevant on those form factors and must be tested before CAM
+  work builds on it — not dismissed as a portrait-only code path. The
+  currently-broken unit test (see §3) is a gap in that coverage, not
+  evidence that the path itself is unused.
 - **Device attitude model.** `rotationMatrix` is Android's device→world
   matrix (E/N/Up world frame); `forwardWorld` is the negated 3rd column
   (the direction the phone's back/camera points, in world coordinates).
@@ -268,7 +276,7 @@ projection math should live, since today's projector is private to
 | Risk | Assessment |
 | --- | --- |
 | **Coordinate handedness** | Internally consistent today (`transpose(rotationMatrix)` as world→device; `az = atan2(x,y)`), but only manually verified ("confirm on-device regardless" per code comment), not asserted end-to-end by a working automated test. A second projection surface (raw camera-frame pixels, which may have a different origin/rotation than `PreviewView`'s surface) must not silently diverge from this convention. |
-| **Display rotation** | Handled for the preview, but effectively dead code in production (activity locked to portrait) and unverified by a working test (see §3). `ImageAnalysis` reports its own `imageInfo.rotationDegrees`, distinct from display rotation — new logic, not yet written. |
+| **Display rotation** | Handled for the preview via `remapForDisplay`, and — despite the Activity being portrait-locked — this remains production-relevant: `Display.rotation` is relative to the device's natural orientation, so natural-landscape form factors (tablets, Chromebooks, foldables) can report non-zero rotation for the same portrait-locked Activity. The path is currently unverified by a working automated test (see §3), which is the actual gap — not that the path is unused. `ImageAnalysis` reports its own `imageInfo.rotationDegrees`, distinct from display rotation — new logic, not yet written. |
 | **Camera intrinsics/FOV** | Hardcoded 56° constant — a real blocker for pixel-accurate matching (§6). |
 | **Lens distortion** | Unaddressed; likely tolerable for coarse first-pass matching but should be a written, explicit assumption rather than a silent gap. |
 | **Frame/sensor timestamp sync** | No reconciliation logic exists (§6) — required before trusting "this pose ↔ this frame." |
