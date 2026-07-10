@@ -3,6 +3,7 @@ package dev.pointtosky.core.catalog.binary
 import dev.pointtosky.core.catalog.io.AssetProvider
 import java.io.FileNotFoundException
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 
 /**
  * Loads the PTSKCAT0 real-star catalog (HYG-derived; see
@@ -41,6 +42,10 @@ class AssetRealStarCatalogProvider(
                     "Check app/module asset packaging.",
                 e,
             )
+        } catch (e: CancellationException) {
+            // load() runs on Dispatchers.IO inside RealStarVisibilityDebugProvider's coroutine;
+            // never fold cancellation into a load failure.
+            throw e
         } catch (e: Exception) {
             throw RealStarCatalogLoadException(
                 "Unexpected error opening/reading PTSKCAT0 real-star catalog asset '$path': " +
