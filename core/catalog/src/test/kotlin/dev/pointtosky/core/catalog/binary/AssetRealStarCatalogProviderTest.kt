@@ -2,6 +2,7 @@ package dev.pointtosky.core.catalog.binary
 
 import dev.pointtosky.core.catalog.ByteArrayAssetProvider
 import dev.pointtosky.core.catalog.io.AssetProvider
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -124,5 +125,20 @@ class AssetRealStarCatalogProviderTest {
         assertTrue(error.message.orEmpty().contains("catalog/stars_real.bin"))
         assertTrue(error.message.orEmpty().contains("PTSKCAT0"))
         assertTrue(error.message.orEmpty().contains("asset packaging"))
+    }
+
+    @Test
+    fun `CancellationException from asset provider propagates, not wrapped as a load failure`() {
+        // load() runs on Dispatchers.IO inside RealStarVisibilityDebugProvider's coroutine;
+        // its broad `catch (e: Exception)` must not fold cancellation into a load failure.
+        val provider = AssetRealStarCatalogProvider(
+            object : AssetProvider {
+                override fun open(path: String): InputStream = throw CancellationException("cancelled")
+                override fun exists(path: String): Boolean = true
+                override fun list(path: String): List<String> = emptyList()
+            },
+        )
+
+        assertThrows(CancellationException::class.java) { provider.load() }
     }
 }

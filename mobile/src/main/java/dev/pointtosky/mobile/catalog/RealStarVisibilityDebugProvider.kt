@@ -10,6 +10,7 @@ import dev.pointtosky.core.catalog.visibility.debug.RealStarVisibilityDebugInfo
 import dev.pointtosky.core.catalog.visibility.debug.RealStarVisibilityDebugProbe
 import dev.pointtosky.core.catalog.visibility.debug.RealStarVisibilityDebugSnapshot
 import dev.pointtosky.mobile.logging.MobileLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -77,7 +78,10 @@ object RealStarVisibilityDebugProvider {
      * published before [MobileLog] is called, so the debug UI still sees the
      * Success/Failure snapshot even if logging then fails. `Throwable` is
      * intentionally not caught — only recoverable [Exception]s are treated
-     * as a debug-probe failure.
+     * as a debug-probe failure. [CancellationException] is rethrown rather
+     * than folded into a Failure state: this runs inside [scope]'s coroutine,
+     * and swallowing cancellation here would break structured concurrency
+     * (e.g. a caller cancelling [scope] should not observe a "failed" probe).
      */
     @VisibleForTesting
     internal fun applySnapshot(compute: () -> RealStarVisibilityDebugSnapshot) {
@@ -92,6 +96,8 @@ object RealStarVisibilityDebugProvider {
                     MobileLog.realStarVisibilityDebugFailed(snapshot.message)
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Startup probe must never crash the app; RealStarCatalogLoadException is
             // already handled as a Failure snapshot by the probe itself, this guards

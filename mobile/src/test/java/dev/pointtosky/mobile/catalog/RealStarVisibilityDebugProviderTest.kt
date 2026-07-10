@@ -2,7 +2,9 @@ package dev.pointtosky.mobile.catalog
 
 import dev.pointtosky.core.catalog.visibility.debug.RealStarVisibilityDebugInfo
 import dev.pointtosky.core.catalog.visibility.debug.RealStarVisibilityDebugSnapshot
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -54,6 +56,21 @@ class RealStarVisibilityDebugProviderTest {
         val message = (state as RealStarVisibilityDebugUiState.Failure).message
         assertTrue(message.contains("kaboom"))
         assertTrue(message.contains("IllegalStateException"))
+    }
+
+    @Test
+    fun `CancellationException from compute propagates instead of publishing Failure state`() {
+        // applySnapshot runs inside scope's coroutine; folding cancellation into a
+        // Failure state would break structured concurrency for whoever cancelled it.
+        RealStarVisibilityDebugProvider.applySnapshot { RealStarVisibilityDebugSnapshot.Success(sampleInfo) }
+
+        assertThrows(CancellationException::class.java) {
+            RealStarVisibilityDebugProvider.applySnapshot { throw CancellationException("cancelled") }
+        }
+
+        val state = RealStarVisibilityDebugProvider.state.value
+        assertTrue(state is RealStarVisibilityDebugUiState.Success)
+        assertEquals(sampleInfo, (state as RealStarVisibilityDebugUiState.Success).info)
     }
 
     // Not directly unit-testable: applySnapshot() wraps compute(), the _state
