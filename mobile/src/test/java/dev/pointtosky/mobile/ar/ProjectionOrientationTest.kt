@@ -48,9 +48,11 @@ class ProjectionOrientationTest {
         val expected =
             mapOf(
                 Surface.ROTATION_0 to floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f),
-                Surface.ROTATION_90 to floatArrayOf(0f, -1f, 0f, 1f, 0f, 0f, 0f, 0f, 1f),
+                // AXIS_Y, AXIS_MINUS_X
+                Surface.ROTATION_90 to floatArrayOf(0f, 1f, 0f, -1f, 0f, 0f, 0f, 0f, 1f),
                 Surface.ROTATION_180 to floatArrayOf(-1f, 0f, 0f, 0f, -1f, 0f, 0f, 0f, 1f),
-                Surface.ROTATION_270 to floatArrayOf(0f, 1f, 0f, -1f, 0f, 0f, 0f, 0f, 1f),
+                // AXIS_MINUS_Y, AXIS_X
+                Surface.ROTATION_270 to floatArrayOf(0f, -1f, 0f, 1f, 0f, 0f, 0f, 0f, 1f),
             )
 
         expected.forEach { (displayRotation, expectedMatrix) ->
@@ -61,6 +63,29 @@ class ProjectionOrientationTest {
             // of rotating them.
             assertTrue(abs(determinant(actual) - 1f) < 1e-5f, "displayRotation=$displayRotation: not a proper rotation (mirrored)")
         }
+    }
+
+    @Test
+    fun `remapRotationMatrixForDisplay mirrors the exact AXIS_ mapping remapForDisplay requests from SensorManager`() {
+        // Regression for a prior sign-inversion bug in this helper: it must reproduce production's
+        // remapCoordinateSystem(inR, AXIS_Y, AXIS_MINUS_X, outR) for ROTATION_90 and
+        // remapCoordinateSystem(inR, AXIS_MINUS_Y, AXIS_X, outR) for ROTATION_270 (see
+        // remapForDisplay), not the inverse pairing a naive "new axis expressed in old axes"
+        // reading would produce.
+        val inR =
+            floatArrayOf(
+                1f, 2f, 3f,
+                4f, 5f, 6f,
+                7f, 8f, 9f,
+            )
+
+        val rotation90 = remapRotationMatrixForDisplay(inR, Surface.ROTATION_90)
+        // AXIS_Y, AXIS_MINUS_X: old column 1 (negated) -> new column 0; old column 0 -> new column 1.
+        assertMatrixEquals(floatArrayOf(-2f, 1f, 3f, -5f, 4f, 6f, -8f, 7f, 9f), rotation90, "ROTATION_90 vs AXIS_Y/AXIS_MINUS_X")
+
+        val rotation270 = remapRotationMatrixForDisplay(inR, Surface.ROTATION_270)
+        // AXIS_MINUS_Y, AXIS_X: old column 1 -> new column 0; old column 0 (negated) -> new column 1.
+        assertMatrixEquals(floatArrayOf(2f, -1f, 3f, 5f, -4f, 6f, 8f, -7f, 9f), rotation270, "ROTATION_270 vs AXIS_MINUS_Y/AXIS_X")
     }
 
     @Test
