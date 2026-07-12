@@ -330,6 +330,109 @@ Read Camera2 `CameraCharacteristics` for the bound CameraX camera (via
 - Per-frame autofocus focal-length changes (main cameras vary little; sample
   focal length once per session unless it reports otherwise).
 
+### 3.4 CAM-1b implementation status (this PR)
+
+CAM-1b implements the §3.2 intrinsics contract as real, tested code but does **not** wire it into
+rendering. `ArScreen.calculateOverlay()` / `projectionParams(viewport)` still call the legacy
+fixed-FOV path (`VERTICAL_FOV_DEG = 56.0`, `core/astro-core/.../projection/Projection.kt`)
+unchanged. The code below has **zero production call sites** as of this PR — this is intentional
+(§8 note below).
+
+**Pure model** — package `dev.pointtosky.core.astro.projection.camera` in `:core:astro-core`:
+
+- `CameraIntrinsics` (`CameraIntrinsics.kt`): `horizontalFovDeg`, `verticalFovDeg`,
+  `focalLengthMm?`, `sensorWidthMm?`, `sensorHeightMm?`, `principalPointXPx?`,
+  `principalPointYPx?`, `source: CameraIntrinsicsSource`. Validates eagerly in `init {}`: both
+  FOVs must be finite and satisfy `0 < fov < 180`. The optional physical metadata —
+  `focalLengthMm`, `sensorWidthMm`, `sensorHeightMm` — must be finite and **strictly positive**
+  when present (a physical dimension can never be zero). The optional principal-point image
+  coordinates — `principalPointXPx`, `principalPointYPx` — are not physical dimensions; they must
+  be finite and **non-negative** when present, since an image-coordinate axis legitimately starts
+  at pixel `0`. Invalid values throw `IllegalArgumentException` — never silently clamped, per the
+  CAM-1b contract.
+- `CameraIntrinsicsSource`: `CAMERA_CHARACTERISTICS`, `CAMERA_INTRINSIC_CALIBRATION` (reserved,
+  unused as of CAM-1b — see principal point below), `LEGACY_FALLBACK`.
+- `fovDegFromFocalLength(sensorDimensionMm, focalLengthMm)` (`CameraFov.kt`), plus
+  `horizontalFovDeg(...)`/`verticalFovDeg(...)` wrappers: pure `fov = 2 * atan(sensorDimensionMm /
+  (2 * focalLengthMm))` in degrees. Rejects non-finite/non-positive inputs; for any valid input the
+  result is always strictly within `0 < fov < 180` (`atan` is bounded within `(-π/2, π/2)`).
+- `legacyFallbackCameraIntrinsics(imageWidthPx?, imageHeightPx?)`
+  (`LegacyFallbackCameraIntrinsics.kt`): builds the explicit fallback value. Vertical FOV reuses the
+  *same* `VERTICAL_FOV_DEG` constant `projectionParams` uses (both are `internal` in
+  `:core:astro-core`, so this is a single source of truth, not a re-guessed literal). Horizontal FOV
+  mirrors `projectionParams`'s own aspect-derived formula (`tanHFov = tanVFov * aspect`) when the
+  analyzed image size is known, else defaults to the vertical FOV — an explicit, documented
+  square-aspect policy, not a guess about physical lens geometry.
+
+**Android provider** — package `dev.pointtosky.mobile.ar.camera` in `:mobile`:
+
+- `CameraIntrinsicsProvider.resolve(cameraInfo, imageWidthPx, imageHeightPx):
+  CameraIntrinsicsResolution` (`CameraIntrinsicsProvider.kt`) is the production entry point;
+  `Camera2CameraIntrinsicsProvider` is the CameraX/Camera2-backed implementation.
+- `CameraIntrinsicsResolution(intrinsics, fallbackReason: String?)` wraps the result — this
+  intentionally deviates from returning a bare `CameraIntrinsics` so the fallback diagnostic
+  reason survives to the caller (see fallback semantics below).
+- Metadata is read via `Camera2CameraInfo.from(cameraInfo)` (`Camera2CharacteristicsSource.kt`),
+  using exactly:
+  - `CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS` (`FloatArray`, millimetres).
+  - `CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE` (`SizeF`, millimetres) → width/height.
+  - `LENS_INTRINSIC_CALIBRATION`, `SENSOR_INFO_ACTIVE_ARRAY_SIZE`, `SENSOR_INFO_PIXEL_ARRAY_SIZE`,
+    and `LENS_DISTORTION` are **not read** in CAM-1b — see principal point below.
+  (`Camera2CameraInfo.getCameraCharacteristic()` is gated by `ExperimentalCamera2Interop`, an
+  AndroidX legacy Java-based `@RequiresOptIn`-style marker (`androidx.annotation.RequiresOptIn`),
+  not Kotlin's native opt-in mechanism. It must be suppressed with `androidx.annotation.OptIn`, not
+  `kotlin.OptIn` — the two annotations share identical call syntax
+  (`@OptIn(ExperimentalCamera2Interop::class)`), so importing the wrong one is an easy, silent
+  mistake: `kotlin.OptIn` compiles cleanly and even passes plain JVM unit tests, but Android Lint's
+  `UnsafeOptInUsageError` check — which enforces this marker, not the Kotlin compiler — only
+  recognizes `androidx.annotation.OptIn` and fails `:mobile:lintInternalDebug` without it.)
+- No CameraX dependency bump was needed: `androidx.camera:camera-camera2:1.3.4` (already a
+  `:mobile` dependency) provides `Camera2CameraInfo`/`ExperimentalCamera2Interop`; CAM-1b adds no
+  new CameraX artifacts.
+- Resolution logic (`resolveCameraIntrinsics`, `CameraIntrinsicsResolver.kt`) is isolated behind the
+  `CameraCharacteristicsSource` adapter — a `CameraCharacteristicsSnapshot` plain data holder,
+  decoupled from `CameraCharacteristics.Key` mechanics — so it is unit-tested with fake metadata:
+  no real camera, no Robolectric.
+- **Focal-length selection rule**: `selectFocalLengthMm` returns a `FocalLengthSelection`
+  (`Resolved(focalLengthMm)` / `NoneValid` / `Ambiguous`) after filtering
+  `LENS_INFO_AVAILABLE_FOCAL_LENGTHS` down to finite, positive candidates. Only the **exactly one
+  valid candidate** case resolves — `resolveCameraIntrinsics` then labels the result
+  `CAMERA_CHARACTERISTICS`. Zero valid candidates is `NoneValid`. **Two or more** valid candidates
+  is `Ambiguous` and also falls back: static `CameraCharacteristics` has no field saying which of
+  several reported focal lengths the currently bound capture stream is actually using (that needs a
+  live `CaptureResult`, out of CAM-1b's scope — no capture pipeline exists yet), so picking one
+  value out of several — even a deterministic pick like the minimum — would risk mislabeling a
+  guess as calibrated metadata. (Most phone main cameras report exactly one focal length; multiple
+  values only occur on variable-optical-zoom lenses.)
+- **Fallback semantics**: each of the following returns
+  `CameraIntrinsicsResolution(legacyFallbackCameraIntrinsics(imageWidthPx, imageHeightPx),
+  fallbackReason)`, i.e. `intrinsics.source == LEGACY_FALLBACK` plus a short, non-device-specific
+  diagnostic string (no raw exception message or stack trace is logged or stored):
+  - `CameraCharacteristicsSource.snapshot()` throws → `"camera_characteristics_unavailable"`.
+  - no valid (finite, positive) focal length in the array — missing array, empty array, or all
+    entries invalid → `"no_valid_focal_length"`.
+  - more than one valid focal length in the array (ambiguous — see selection rule above) →
+    `"ambiguous_focal_length"`.
+  - sensor width/height missing, non-finite, or `<= 0` → `"missing_or_invalid_sensor_size"`.
+  - the computed `CameraIntrinsics` itself fails validation (defensive; not expected given the
+    upstream guards) → `"computed_intrinsics_invalid"`.
+
+  A successful resolution has `fallbackReason == null` and
+  `intrinsics.source == CAMERA_CHARACTERISTICS`.
+- **Principal point**: always `null` in CAM-1b. `LENS_INTRINSIC_CALIBRATION` is deliberately not
+  parsed — its coordinate mapping (which array indices, which reference frame, interaction with the
+  active-array crop) is not yet confirmed against a real `ImageAnalysis` pipeline, and CAM-1b adds
+  no such pipeline (see §7 non-goals, unchanged). CAM-1c/1d will initially use the analyzed image
+  centre and revisit `LENS_INTRINSIC_CALIBRATION` once that image↔intrinsics mapping exists and can
+  be tested.
+
+**Renderer status (unchanged by this PR):** `ArScreen.calculateOverlay()` and
+`projectionParams(viewport)` still call the legacy fixed `VERTICAL_FOV_DEG = 56.0` /
+aspect-derived-horizontal-FOV path exclusively. `CameraIntrinsicsProvider` has zero production call
+sites — no `ArViewModel`/`ArScreen`/`CameraPreview` code constructs or reads a
+`Camera2CameraIntrinsicsProvider` yet. No `ImageAnalysis` use case, frame pipeline, timestamp
+pairing, crop/scale mapping, star matcher, or `VisibleRealStarProvider` wiring was added.
+
 ---
 
 ## 4. Timestamp & synchronization
@@ -562,6 +665,14 @@ frame alignment) without committing to computer vision:
    `CameraCharacteristics` (focal length + physical sensor size → FOV) for the
    bound CameraX camera, replacing `VERTICAL_FOV_DEG = 56.0`. Fall back to 56°
    when characteristics are absent. (§3.3 required set only.)
+
+   **CAM-1b status:** the provider, resolution logic, and fallback described
+   above are implemented and tested (§3.4), but the "replacing
+   `VERTICAL_FOV_DEG = 56.0`" wiring into `ArScreen`/`projectionParams` is
+   deliberately **not** done in CAM-1b — the renderer still calls the legacy
+   path unchanged. That wiring is left for a later CAM slice once the intrinsics
+   contract has had a chance to be reviewed independently of any rendering
+   change.
 3. **Frame pipeline + crop/scale.** Add an `ImageAnalysis` use case to obtain
    frame resolution, `rotationDegrees`, and `imageInfo.timestamp`. Implement the
    pure image↔display `CropScale` mapping for `FILL_CENTER` (§2 Step E) with
