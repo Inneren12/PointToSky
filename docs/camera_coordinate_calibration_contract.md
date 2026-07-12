@@ -588,29 +588,47 @@ call the *next* time `CameraPreview` enters composition) to release the camera w
 session's use cases bound, its executor already shut down out from under them, and any late analyzer
 task submission rejected. `CameraPreview` therefore performs its own explicit teardown on disposal,
 coordinated by `dev.pointtosky.mobile.ar.camera.CameraSessionLifecycle` — a small, CameraX-free state
-machine (`disposed` + `cleanedUp` `AtomicBoolean`s wrapping plain closures) kept in a package
-alongside the other camera helpers precisely so it is JVM-testable
-(`CameraSessionLifecycleTest.kt`) without a real camera, `ImageAnalysis`, or
-`ProcessCameraProvider`. Ownership of the actual `ProcessCameraProvider`/`Preview`/`ImageAnalysis`
-instances stays local to one `DisposableEffect` invocation, captured by closure rather than stored in
-a separate holder type.
+machine kept in a package alongside the other camera helpers precisely so it is JVM-testable
+(`CameraSessionLifecycleTest.kt`) without a real camera, `ImageAnalysis`, or `ProcessCameraProvider`.
+Ownership of the actual `ProcessCameraProvider`/`Preview`/`ImageAnalysis` instances stays local to
+one `DisposableEffect` invocation, captured by closure rather than stored in a separate holder type.
+
+**The bind/dispose race is closed by one lock-serialized state machine, not by independently-atomic
+fields.** An earlier revision guarded `disposed` with an `AtomicBoolean` and the registered cleanup
+closure with `@Volatile` separately. That left a check-then-act gap in `confirmBound`: `onDispose`
+could complete `markDisposed()` *and* `cleanupAndShutdown()` — including shutting down the executor —
+in the window between `confirmBound` reading `disposed` and assigning `cleanupUseCases = cleanup`.
+That interleaving left a newly bound CameraX use case registered for a cleanup that would now never
+run, with the executor already gone. Making `disposed` and the cleanup closure independently atomic
+cannot close this gap — only serializing the *transition* (decide disposed-or-not, decide who owns
+cleanup, decide cleaned-up-or-not) through a single lock can. `CameraSessionLifecycle` holds
+`disposed: Boolean`, `cleanedUp: Boolean`, and `cleanupUseCases: (() -> Unit)?` as one state machine
+guarded by one `private val lock = Any()`; every public method acquires `lock` only for its
+bookkeeping decision and releases it *before* invoking any caller-supplied closure, so a slow
+`unbind()`/`shutdownNow()` call never blocks the other side's state transition and CameraX calls
+never run while `lock` is held.
 
 **Disposal order**, run from `onDispose`:
 
-1. `session.markDisposed()` — marks the session disposed so an in-flight bind coroutine cannot
-   complete a *lasting* bind (see the race below).
+1. `session.markDisposed()` — synchronized transition marking the session disposed, so an in-flight
+   bind coroutine cannot complete a *lasting* bind (see the race below).
 2. `job.cancel()` — cancels the binding coroutine's `Job`. This is best-effort, not the actual
    guard: coroutine cancellation only takes effect at a suspension point, and nothing between
    `getCameraProvider()` resolving and `bindToLifecycle()` returning suspends, so a cancelled job
    alone cannot stop an already-in-flight bind. Step 1's explicit flag is what actually prevents it.
-3. `session.cleanupAndShutdown { analysisExecutor.shutdownNow() }` — runs the cleanup registered by
-   a successful bind (`imageAnalysis.clearAnalyzer()` then `cameraProvider.unbind(preview,
-   imageAnalysis)` — the two use cases this composable owns, **never** `unbindAll()`, so a sibling
-   camera owner elsewhere in the app would not be affected), then shuts the executor down.
-   `cleanupAndShutdown` is idempotent (guarded by its own `AtomicBoolean`), so calling it more than
-   once — or calling it when no bind ever completed — never double-unbinds or double-shuts-down.
+3. `session.cleanupAndShutdown { analysisExecutor.shutdownNow() }` — under `lock`, claims whatever
+   cleanup a successful bind registered (setting `cleanedUp = true` and reading+clearing
+   `cleanupUseCases` in the same synchronized block as the idempotency check) and releases the lock;
+   only then, outside the lock, does it invoke that cleanup
+   (`imageAnalysis.clearAnalyzer()` then `cameraProvider.unbind(preview, imageAnalysis)` — the two
+   use cases this composable owns, **never** `unbindAll()`, so a sibling camera owner elsewhere in
+   the app would not be affected) and, in a `finally` block, shut the executor down. Because
+   `cleanedUp` is committed to `true` inside the lock *before* the cleanup closure runs, calling
+   `cleanupAndShutdown` more than once — or when no bind ever completed — never double-unbinds or
+   double-shuts-down, and that holds even if the cleanup closure itself throws (see "Cleanup
+   exception semantics" below).
 
-**The bind/dispose race** has two windows, both closed:
+**The bind/dispose race** has two windows, both closed by the same lock:
 
 - *Early*: disposal happens while `getCameraProvider()` is still suspended, or in the gap right
   after it resolves but before `bindToLifecycle()` is called. The coroutine checks
@@ -619,12 +637,31 @@ a separate holder type.
 - *Late*: disposal happens *during* the synchronous `bindToLifecycle()` call itself — i.e. the bind
   completes successfully but only after `onDispose` has already run. Immediately after a successful
   bind, the coroutine calls `session.confirmBound { imageAnalysis.clearAnalyzer();
-  cameraProvider.unbind(preview, imageAnalysis) }`. If disposal happened in this window,
-  `confirmBound` detects `isDisposed` and runs that cleanup closure immediately — clearing the
-  analyzer and unbinding the just-bound use cases right there — and returns `false`, so the
-  `MobileLog.cameraAnalysisBound()` success event is **not** logged for a session that never actually
-  stayed alive. If disposal has not happened, `confirmBound` instead registers the closure for
-  `onDispose`'s later `cleanupAndShutdown` call and returns `true`.
+  cameraProvider.unbind(preview, imageAnalysis) }`. Under `lock`, `confirmBound` checks
+  `disposed || cleanedUp`: if either is already true — disposal has claimed cleanup, or has already
+  finished it — it releases the lock and runs the passed cleanup closure itself, immediately,
+  clearing the analyzer and unbinding the just-bound use cases right there, and returns `false`, so
+  the `MobileLog.cameraAnalysisBound()` success event is **not** logged for a session that never
+  actually stayed alive. If neither is true, it registers `cleanupUseCases = cleanup` inside the
+  same synchronized block (so `onDispose`'s later `cleanupAndShutdown` is guaranteed to see it) and
+  returns `true`. Because both `confirmBound` and `cleanupAndShutdown` make their decision inside
+  the same lock, exactly one side ever invokes a given cleanup closure for every possible thread
+  interleaving — verified directly by a two-thread, barrier-coordinated, 2000-iteration race test in
+  `CameraSessionLifecycleTest` that asserts the cleanup and shutdown callbacks each fire exactly
+  once regardless of which side wins.
+- *Duplicate registration*: a second `confirmBound` call on a still-live session (before disposal)
+  throws `IllegalStateException` rather than silently overwriting the first registered cleanup —
+  `confirmBound`'s `check(cleanupUseCases == null)` runs inside the same synchronized block as the
+  registration itself, so this too is race-free. `CameraPreview` never calls `confirmBound` more
+  than once per bind coroutine, so this is a defensive contract violation guard, not a path
+  exercised in normal operation.
+
+**Cleanup exception semantics**: if the cleanup closure `cleanupAndShutdown` invokes (or the one
+`confirmBound` invokes immediately on the late-dispose path) throws, that exception propagates to
+the caller — it is not swallowed. `cleanupAndShutdown` still guarantees `shutdownExecutor()` runs,
+via a `finally` block around the cleanup invocation, and because `cleanedUp` was already committed
+to `true` inside the lock *before* the cleanup ran, a subsequent `cleanupAndShutdown` call is still a
+no-op even after the first one threw — the executor is never shut down twice.
 
 **Failed binds**: if `bindToLifecycle` throws, `session.confirmBound` is never called at all — no
 cleanup is registered, so there is no stale session reference for a later `onDispose` to act on.

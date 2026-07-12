@@ -1,14 +1,21 @@
 package dev.pointtosky.mobile.ar.camera
 
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * Pure JVM tests for [CameraSessionLifecycle] (CAM-1c bind/dispose-race fix). No CameraX type
- * appears anywhere in this suite - only recording fake callbacks - so these exercise the ordering
- * and idempotency guarantees without a real camera, `ImageAnalysis`, or `ProcessCameraProvider`.
+ * appears anywhere in this suite - only recording fake callbacks - so these exercise the ordering,
+ * idempotency, and race-safety guarantees without a real camera, `ImageAnalysis`, or
+ * `ProcessCameraProvider`.
  */
 class CameraSessionLifecycleTest {
     @Test
@@ -131,5 +138,84 @@ class CameraSessionLifecycleTest {
         session.markDisposed()
 
         assertTrue(session.isDisposed)
+    }
+
+    @Test
+    fun `cleanup exception still shuts down exactly once via finally`() {
+        val session = CameraSessionLifecycle()
+        var shutdownCalls = 0
+
+        session.confirmBound { throw IllegalStateException("boom") }
+
+        assertFailsWith<IllegalStateException> {
+            session.cleanupAndShutdown { shutdownCalls++ }
+        }
+        assertEquals(1, shutdownCalls)
+
+        // The cleanedUp transition was already committed before the throwing cleanup ran, so a
+        // second call - despite the first one throwing - must not run shutdown again.
+        session.cleanupAndShutdown { shutdownCalls++ }
+        assertEquals(1, shutdownCalls)
+    }
+
+    @Test
+    fun `a second successful confirmBound fails fast instead of silently replacing the first cleanup`() {
+        val session = CameraSessionLifecycle()
+        var firstCleanupCalls = 0
+
+        val first = session.confirmBound { firstCleanupCalls++ }
+        assertTrue(first)
+
+        assertFailsWith<IllegalStateException> {
+            session.confirmBound { fail("second cleanup closure must never be registered or invoked") }
+        }
+
+        // The first registered cleanup - not a silently-overwritten second one - is still what
+        // runs on dispose.
+        session.cleanupAndShutdown {}
+        assertEquals(1, firstCleanupCalls)
+    }
+
+    @Test
+    fun `deterministic bind vs dispose race never leaves an active session uncleaned or double-cleaned`() {
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            repeat(RACE_ITERATIONS) { iteration ->
+                val session = CameraSessionLifecycle()
+                val barrier = CyclicBarrier(2)
+                val cleanupCount = AtomicInteger(0)
+                val shutdownCount = AtomicInteger(0)
+                var confirmResult = false
+
+                val bindFuture =
+                    executor.submit {
+                        barrier.await()
+                        confirmResult = session.confirmBound { cleanupCount.incrementAndGet() }
+                    }
+                val disposeFuture =
+                    executor.submit {
+                        barrier.await()
+                        session.markDisposed()
+                        session.cleanupAndShutdown { shutdownCount.incrementAndGet() }
+                    }
+
+                bindFuture.get(5, TimeUnit.SECONDS)
+                disposeFuture.get(5, TimeUnit.SECONDS)
+
+                // Whichever side wins the race - bind registration (confirmResult == true, cleanup
+                // runs later via disposal) or disposal (confirmResult == false, confirmBound runs
+                // the cleanup itself immediately) - cleanup and shutdown each run exactly once.
+                // This is the invariant the fix restores: the forbidden outcome (confirmResult ==
+                // true, shutdown completed, but cleanup never ran) cannot occur if both hold.
+                assertEquals(1, cleanupCount.get(), "iteration $iteration: confirmResult=$confirmResult")
+                assertEquals(1, shutdownCount.get(), "iteration $iteration: confirmResult=$confirmResult")
+            }
+        } finally {
+            executor.shutdown()
+        }
+    }
+
+    private companion object {
+        const val RACE_ITERATIONS = 2000
     }
 }
