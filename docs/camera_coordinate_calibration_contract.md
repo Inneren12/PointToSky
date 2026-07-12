@@ -567,18 +567,86 @@ field stores the `ImageProxy`/source beyond the try block.
   `height` CameraX actually delivers (§5 "Resolution policy": do not hardcode a target resolution
   unless binding requires it, which it did not here).
 - The analyzer runs on a dedicated `Executors.newSingleThreadExecutor()` — never the main thread —
-  created inside the `DisposableEffect` that owns the camera binding, and `shutdown()` in `onDispose`
-  alongside the existing `job.cancel()`, so it cannot leak across recomposition/navigation.
+  created inside the `DisposableEffect` that owns the camera binding.
 - `Preview` and `ImageAnalysis` are bound in one call:
   `cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview,
-  imageAnalysis)`. `cameraProvider.unbindAll()` immediately before is the same single-owner call that
-  existed pre-CAM-1c; no other code path calls `unbindAll()`, so there are no competing owners.
+  imageAnalysis)`. No `unbindAll()` is called before binding (a prior revision did; that call was
+  removed together with the disposal fix below — see "Lifecycle ownership and the bind/dispose race").
 - The existing `catch (_: IllegalStateException)` (lifecycle stopped before binding) is preserved
-  unchanged, and CAM-1c adds `catch (_: IllegalArgumentException)` for the case CameraX rejects the
-  `Preview` + `ImageAnalysis` combination (e.g. a camera-less device/emulator with no back camera) —
-  both log a bind-failure category via `MobileLog` and leave no stale resources: binding either fully
-  succeeds or the executor is still cleaned up on dispose either way.
+  unchanged, and `catch (_: IllegalArgumentException)` handles the case CameraX rejects the
+  `Preview` + `ImageAnalysis` combination (e.g. a camera-less device/emulator with no back camera).
+  Both clear the just-created `ImageAnalysis`'s analyzer (nothing was bound, so there is nothing to
+  unbind) and log a bind-failure category via `MobileLog`.
 - `PreviewView.ScaleType.FILL_CENTER` and all existing `Preview` lifecycle behavior are unchanged.
+
+### Lifecycle ownership and the bind/dispose race
+
+**This composable, not the bound `Activity` lifecycle, owns the `Preview`/`ImageAnalysis` use cases
+and the analysis executor.** Navigating away from the AR screen does not necessarily stop the
+`Activity` lifecycle CameraX is bound to, so relying on that lifecycle (or on a future `unbindAll()`
+call the *next* time `CameraPreview` enters composition) to release the camera would leave the old
+session's use cases bound, its executor already shut down out from under them, and any late analyzer
+task submission rejected. `CameraPreview` therefore performs its own explicit teardown on disposal,
+coordinated by `dev.pointtosky.mobile.ar.camera.CameraSessionLifecycle` — a small, CameraX-free state
+machine (`disposed` + `cleanedUp` `AtomicBoolean`s wrapping plain closures) kept in a package
+alongside the other camera helpers precisely so it is JVM-testable
+(`CameraSessionLifecycleTest.kt`) without a real camera, `ImageAnalysis`, or
+`ProcessCameraProvider`. Ownership of the actual `ProcessCameraProvider`/`Preview`/`ImageAnalysis`
+instances stays local to one `DisposableEffect` invocation, captured by closure rather than stored in
+a separate holder type.
+
+**Disposal order**, run from `onDispose`:
+
+1. `session.markDisposed()` — marks the session disposed so an in-flight bind coroutine cannot
+   complete a *lasting* bind (see the race below).
+2. `job.cancel()` — cancels the binding coroutine's `Job`. This is best-effort, not the actual
+   guard: coroutine cancellation only takes effect at a suspension point, and nothing between
+   `getCameraProvider()` resolving and `bindToLifecycle()` returning suspends, so a cancelled job
+   alone cannot stop an already-in-flight bind. Step 1's explicit flag is what actually prevents it.
+3. `session.cleanupAndShutdown { analysisExecutor.shutdownNow() }` — runs the cleanup registered by
+   a successful bind (`imageAnalysis.clearAnalyzer()` then `cameraProvider.unbind(preview,
+   imageAnalysis)` — the two use cases this composable owns, **never** `unbindAll()`, so a sibling
+   camera owner elsewhere in the app would not be affected), then shuts the executor down.
+   `cleanupAndShutdown` is idempotent (guarded by its own `AtomicBoolean`), so calling it more than
+   once — or calling it when no bind ever completed — never double-unbinds or double-shuts-down.
+
+**The bind/dispose race** has two windows, both closed:
+
+- *Early*: disposal happens while `getCameraProvider()` is still suspended, or in the gap right
+  after it resolves but before `bindToLifecycle()` is called. The coroutine checks
+  `session.isDisposed` immediately after the provider resolves and returns without creating or
+  binding any use case if disposal already happened.
+- *Late*: disposal happens *during* the synchronous `bindToLifecycle()` call itself — i.e. the bind
+  completes successfully but only after `onDispose` has already run. Immediately after a successful
+  bind, the coroutine calls `session.confirmBound { imageAnalysis.clearAnalyzer();
+  cameraProvider.unbind(preview, imageAnalysis) }`. If disposal happened in this window,
+  `confirmBound` detects `isDisposed` and runs that cleanup closure immediately — clearing the
+  analyzer and unbinding the just-bound use cases right there — and returns `false`, so the
+  `MobileLog.cameraAnalysisBound()` success event is **not** logged for a session that never actually
+  stayed alive. If disposal has not happened, `confirmBound` instead registers the closure for
+  `onDispose`'s later `cleanupAndShutdown` call and returns `true`.
+
+**Failed binds**: if `bindToLifecycle` throws, `session.confirmBound` is never called at all — no
+cleanup is registered, so there is no stale session reference for a later `onDispose` to act on.
+`onDispose`'s `cleanupAndShutdown` still runs (there is simply nothing registered to unbind) and
+still shuts the executor down.
+
+**Executor shutdown uses `shutdownNow()`, not `shutdown()`**, for prompt teardown on navigation away.
+By the time it runs, the analyzer has already been cleared and the use cases already unbound, so
+CameraX will not submit further analyzer tasks. `shutdownNow()` discards at most one already-queued
+(not yet started) metadata-extraction task rather than running it — `ImageAnalysis` with
+`STRATEGY_KEEP_ONLY_LATEST` on a single-thread executor never has more than one task in flight or
+queued at a time. That discarded task only ever reads timestamp/size/rotation and closes the frame —
+never pixel data — so discarding it is safe; CameraX's own use-case teardown (triggered by the
+`unbind` call in the previous step) releases the underlying buffer regardless. A task that is already
+*running* when `shutdownNow()` is called completes normally: `CameraFrameAnalyzer.analyzeSource`
+performs no blocking/interruptible operation, so the interrupt request does not truncate its
+`finally`-closed extraction.
+
+All CameraX provider bind/unbind calls (`bindToLifecycle`, `confirmBound`'s cleanup closure, and
+`onDispose`'s `cleanupAndShutdown`) run on `Dispatchers.Main` or Compose's disposal callback — i.e.
+the main thread — matching CameraX's requirement that provider bind/unbind operations stay off
+background threads.
 
 **Timestamp contract:** `CameraFrameMetadata.timestampNanos` is exactly
 `ImageProxy.imageInfo.timestamp` — camera-clock nanoseconds, **not** wall-clock time. It must never
