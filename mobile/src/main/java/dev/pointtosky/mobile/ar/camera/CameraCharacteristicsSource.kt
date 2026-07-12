@@ -2,7 +2,6 @@ package dev.pointtosky.mobile.ar.camera
 
 import android.hardware.camera2.CameraCharacteristics
 import androidx.camera.camera2.interop.Camera2CameraInfo
-import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
 
 /**
@@ -33,7 +32,6 @@ fun interface CameraCharacteristicsSource {
  * Production [CameraCharacteristicsSource] backed by CameraX's Camera2 interop
  * (`Camera2CameraInfo.from(cameraInfo)`).
  */
-@OptIn(ExperimentalCamera2Interop::class)
 internal class Camera2CharacteristicsSource(
     private val cameraInfo: CameraInfo,
 ) : CameraCharacteristicsSource {

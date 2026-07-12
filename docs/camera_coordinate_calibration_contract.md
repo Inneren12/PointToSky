@@ -368,15 +368,17 @@ unchanged. The code below has **zero production call sites** as of this PR — t
 - `CameraIntrinsicsResolution(intrinsics, fallbackReason: String?)` wraps the result — this
   intentionally deviates from returning a bare `CameraIntrinsics` so the fallback diagnostic
   reason survives to the caller (see fallback semantics below).
-- Metadata is read via `Camera2CameraInfo.from(cameraInfo)` behind
-  `@OptIn(ExperimentalCamera2Interop::class)` (`Camera2CharacteristicsSource.kt`), using exactly:
+- Metadata is read via `Camera2CameraInfo.from(cameraInfo)` (`Camera2CharacteristicsSource.kt`),
+  using exactly:
   - `CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS` (`FloatArray`, millimetres).
   - `CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE` (`SizeF`, millimetres) → width/height.
   - `LENS_INTRINSIC_CALIBRATION`, `SENSOR_INFO_ACTIVE_ARRAY_SIZE`, `SENSOR_INFO_PIXEL_ARRAY_SIZE`,
     and `LENS_DISTORTION` are **not read** in CAM-1b — see principal point below.
+  (`androidx.camera.camera2.interop.ExperimentalCamera2Interop` exists in this CameraX version but
+  is no longer annotated `@RequiresOptIn`, so `Camera2CameraInfo.getCameraCharacteristic()` needs no
+  opt-in; confirmed by a compiler warning when one was added speculatively and removed.)
 - No CameraX dependency bump was needed: `androidx.camera:camera-camera2:1.3.4` (already a
-  `:mobile` dependency) provides `Camera2CameraInfo`/`ExperimentalCamera2Interop`; CAM-1b adds no
-  new CameraX artifacts.
+  `:mobile` dependency) provides `Camera2CameraInfo`; CAM-1b adds no new CameraX artifacts.
 - Resolution logic (`resolveCameraIntrinsics`, `CameraIntrinsicsResolver.kt`) is isolated behind the
   `CameraCharacteristicsSource` adapter — a `CameraCharacteristicsSnapshot` plain data holder,
   decoupled from `CameraCharacteristics.Key` mechanics — so it is unit-tested with fake metadata:
