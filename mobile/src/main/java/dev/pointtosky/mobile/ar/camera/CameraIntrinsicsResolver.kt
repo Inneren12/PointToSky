@@ -5,6 +5,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.horizontalFovDeg
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
 import dev.pointtosky.core.astro.projection.camera.verticalFovDeg
+import kotlinx.coroutines.CancellationException
 
 /**
  * Diagnostic reasons [resolveCameraIntrinsics] falls back to
@@ -76,6 +77,8 @@ internal fun resolveCameraIntrinsics(
     val snapshot =
         try {
             source.snapshot()
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             return fallback(CameraIntrinsicsFallbackReason.CHARACTERISTICS_UNAVAILABLE)
         }

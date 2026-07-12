@@ -24,19 +24,30 @@ enum class CameraIntrinsicsSource {
  * `projectionParams(viewport)` (see [dev.pointtosky.core.astro.projection.projectionParams]).
  * Nothing here is wired into rendering yet.
  *
- * All values are validated eagerly: invalid device metadata (non-finite, non-positive, or an
- * out-of-range FOV) must be rejected here, not silently clamped. Callers that read from
- * potentially-malformed Camera2 metadata are expected to catch the resulting
- * [IllegalArgumentException] and fall back to [CameraIntrinsicsSource.LEGACY_FALLBACK] themselves.
+ * All values are validated eagerly: invalid device metadata must be rejected here, not silently
+ * clamped. Both FOVs must be finite and satisfy `0 < fov < 180`. The optional physical dimensions
+ * ([focalLengthMm], [sensorWidthMm], [sensorHeightMm]) must be finite and strictly positive when
+ * present — a physical dimension can never be zero. The optional principal-point image coordinates
+ * ([principalPointXPx], [principalPointYPx]) must be finite and non-negative when present — an
+ * image-coordinate axis legitimately starts at pixel `0`, so unlike the physical dimensions they
+ * are not required to be strictly positive. Callers that read from potentially-malformed Camera2
+ * metadata are expected to catch the resulting [IllegalArgumentException] and fall back to
+ * [CameraIntrinsicsSource.LEGACY_FALLBACK] themselves.
  *
  * @property horizontalFovDeg full horizontal field of view, degrees, `0 < fov < 180`.
  * @property verticalFovDeg full vertical field of view, degrees, `0 < fov < 180`.
- * @property focalLengthMm physical focal length in millimetres, when known.
- * @property sensorWidthMm physical sensor width in millimetres, when known.
- * @property sensorHeightMm physical sensor height in millimetres, when known.
- * @property principalPointXPx principal point X in analyzed-image pixels, when known. CAM-1b never
- *   populates this (see package docs on `LENS_INTRINSIC_CALIBRATION`); reserved for CAM-1c/1d.
- * @property principalPointYPx principal point Y in analyzed-image pixels, when known.
+ * @property focalLengthMm physical focal length in millimetres, when known. Finite and strictly
+ *   positive when present — a physical dimension can never be zero.
+ * @property sensorWidthMm physical sensor width in millimetres, when known. Finite and strictly
+ *   positive when present.
+ * @property sensorHeightMm physical sensor height in millimetres, when known. Finite and strictly
+ *   positive when present.
+ * @property principalPointXPx principal point X in analyzed-image pixels, when known. Finite and
+ *   non-negative (not strictly positive) when present — an image-coordinate axis legitimately
+ *   starts at pixel `0`, unlike the physical dimensions above. CAM-1b never populates this (see
+ *   package docs on `LENS_INTRINSIC_CALIBRATION`); reserved for CAM-1c/1d.
+ * @property principalPointYPx principal point Y in analyzed-image pixels, when known. Finite and
+ *   non-negative when present.
  * @property source where this value came from; see [CameraIntrinsicsSource].
  */
 data class CameraIntrinsics(
@@ -55,8 +66,8 @@ data class CameraIntrinsics(
         requireFiniteAndPositiveIfPresent(focalLengthMm, "focalLengthMm")
         requireFiniteAndPositiveIfPresent(sensorWidthMm, "sensorWidthMm")
         requireFiniteAndPositiveIfPresent(sensorHeightMm, "sensorHeightMm")
-        requireFiniteAndPositiveIfPresent(principalPointXPx, "principalPointXPx")
-        requireFiniteAndPositiveIfPresent(principalPointYPx, "principalPointYPx")
+        requireFiniteAndNonNegativeIfPresent(principalPointXPx, "principalPointXPx")
+        requireFiniteAndNonNegativeIfPresent(principalPointYPx, "principalPointYPx")
     }
 
     private companion object {
@@ -74,6 +85,12 @@ data class CameraIntrinsics(
             if (value == null) return
             require(value.isFinite()) { "$name must be finite when present; was $value" }
             require(value > 0.0) { "$name must be positive when present; was $value" }
+        }
+
+        fun requireFiniteAndNonNegativeIfPresent(value: Double?, name: String) {
+            if (value == null) return
+            require(value.isFinite()) { "$name must be finite when present; was $value" }
+            require(value >= 0.0) { "$name must be non-negative when present; was $value" }
         }
     }
 }

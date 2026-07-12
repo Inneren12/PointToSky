@@ -3,9 +3,11 @@ package dev.pointtosky.mobile.ar.camera
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 
 /**
  * Pure JVM tests for [resolveCameraIntrinsics] and [selectFocalLengthMm] (CAM-1b). Uses a fake
@@ -96,6 +98,15 @@ class CameraIntrinsicsResolverTest {
         val throwingSource = CameraCharacteristicsSource { throw IllegalStateException("camera service unavailable") }
         val result = resolveCameraIntrinsics(throwingSource, imageWidthPx = null, imageHeightPx = null)
         assertFallback(result, CameraIntrinsicsFallbackReason.CHARACTERISTICS_UNAVAILABLE)
+    }
+
+    @Test
+    fun `CancellationException while reading metadata propagates instead of falling back`() {
+        val source = CameraCharacteristicsSource { throw CancellationException("cancelled") }
+
+        assertFailsWith<CancellationException> {
+            resolveCameraIntrinsics(source, imageWidthPx = null, imageHeightPx = null)
+        }
     }
 
     @Test

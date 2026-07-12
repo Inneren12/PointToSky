@@ -343,9 +343,13 @@ unchanged. The code below has **zero production call sites** as of this PR — t
 - `CameraIntrinsics` (`CameraIntrinsics.kt`): `horizontalFovDeg`, `verticalFovDeg`,
   `focalLengthMm?`, `sensorWidthMm?`, `sensorHeightMm?`, `principalPointXPx?`,
   `principalPointYPx?`, `source: CameraIntrinsicsSource`. Validates eagerly in `init {}`: both
-  FOVs must be finite and satisfy `0 < fov < 180`; the four optional physical fields, when
-  present, must be finite and positive. Invalid values throw `IllegalArgumentException` —
-  never silently clamped, per the CAM-1b contract.
+  FOVs must be finite and satisfy `0 < fov < 180`. The optional physical metadata —
+  `focalLengthMm`, `sensorWidthMm`, `sensorHeightMm` — must be finite and **strictly positive**
+  when present (a physical dimension can never be zero). The optional principal-point image
+  coordinates — `principalPointXPx`, `principalPointYPx` — are not physical dimensions; they must
+  be finite and **non-negative** when present, since an image-coordinate axis legitimately starts
+  at pixel `0`. Invalid values throw `IllegalArgumentException` — never silently clamped, per the
+  CAM-1b contract.
 - `CameraIntrinsicsSource`: `CAMERA_CHARACTERISTICS`, `CAMERA_INTRINSIC_CALIBRATION` (reserved,
   unused as of CAM-1b — see principal point below), `LEGACY_FALLBACK`.
 - `fovDegFromFocalLength(sensorDimensionMm, focalLengthMm)` (`CameraFov.kt`), plus

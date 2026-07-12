@@ -6,8 +6,11 @@ import kotlin.test.assertFailsWith
 
 /**
  * Pure JVM validation tests for [CameraIntrinsics]. Locks the CAM-1b contract: FOVs must be
- * finite and strictly within `0 < fov < 180`; optional physical fields, when present, must be
- * finite and positive. Invalid values are rejected eagerly (constructor throws), never clamped.
+ * finite and strictly within `0 < fov < 180`; the optional physical dimensions (focal length,
+ * sensor width/height), when present, must be finite and *strictly positive* (a physical
+ * dimension can never be zero); the optional principal-point image coordinates, when present,
+ * must be finite and *non-negative* (an image coordinate legitimately starts at pixel `0`).
+ * Invalid values are rejected eagerly (constructor throws), never clamped.
  */
 class CameraIntrinsicsTest {
     private fun valid(
@@ -91,10 +94,30 @@ class CameraIntrinsicsTest {
     }
 
     @Test
-    fun `principal point of zero, negative, NaN, or infinite is rejected when present`() {
-        listOf(0.0, -1.0, Double.NaN, Double.POSITIVE_INFINITY).forEach { bad ->
+    fun `principal point of zero is accepted, unlike the strictly-positive physical fields`() {
+        val xAtZero = valid(principalPointXPx = 0.0)
+        assertEquals(0.0, xAtZero.principalPointXPx)
+
+        val yAtZero = valid(principalPointYPx = 0.0)
+        assertEquals(0.0, yAtZero.principalPointYPx)
+
+        val bothAtZero = valid(principalPointXPx = 0.0, principalPointYPx = 0.0)
+        assertEquals(0.0, bothAtZero.principalPointXPx)
+        assertEquals(0.0, bothAtZero.principalPointYPx)
+    }
+
+    @Test
+    fun `principal point of negative, NaN, or infinite is rejected when present`() {
+        listOf(-1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { bad ->
             assertFailsWith<IllegalArgumentException>("principalPointXPx=$bad") { valid(principalPointXPx = bad) }
             assertFailsWith<IllegalArgumentException>("principalPointYPx=$bad") { valid(principalPointYPx = bad) }
         }
+    }
+
+    @Test
+    fun `focal length and sensor dimensions continue rejecting zero unlike principal point`() {
+        assertFailsWith<IllegalArgumentException> { valid(focalLengthMm = 0.0) }
+        assertFailsWith<IllegalArgumentException> { valid(sensorWidthMm = 0.0) }
+        assertFailsWith<IllegalArgumentException> { valid(sensorHeightMm = 0.0) }
     }
 }
