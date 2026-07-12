@@ -85,6 +85,7 @@ import dev.pointtosky.core.datalayer.AimTargetKind
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
@@ -209,7 +210,16 @@ fun ArScreen(
         }
     }
 
-    val rotationFrame = rememberRotationFrame()
+    // CAM-1d: instrumentation only - pairs camera-frame and rotation-sensor timestamps and publishes
+    // a diagnostic result/debug state. Does not feed rendering or matching (see
+    // docs/camera_coordinate_calibration_contract.md §4). Reset on dispose so no stale rotation
+    // sample from a previous AR session can pair with the first camera frame of a new one.
+    val timestampSynchronizer = remember { CameraTimestampSynchronizer() }
+    DisposableEffect(Unit) {
+        onDispose { timestampSynchronizer.reset() }
+    }
+
+    val rotationFrame = rememberRotationFrame(onRotationSample = timestampSynchronizer::onRotationSample)
     var overlaySize by remember { mutableStateOf(IntSize.Zero) }
 
     Box(
@@ -220,7 +230,10 @@ fun ArScreen(
                 .onSizeChanged { overlaySize = it },
     ) {
         if (hasPermission) {
-            CameraPreview(modifier = Modifier.fillMaxSize())
+            CameraPreview(
+                modifier = Modifier.fillMaxSize(),
+                onFrameMetadata = timestampSynchronizer::onCameraFrame,
+            )
         } else {
             PermissionRequest(onRequest = { launcher.launch(permission) })
         }

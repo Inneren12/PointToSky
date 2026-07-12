@@ -781,6 +781,148 @@ change `ArScreen`/`projectionParams` rendering; implement the image↔display cr
 Step E); pair frame timestamps with `RotationFrame` (§4.2); add a detector, matcher, or any CV
 library; read `imageProxy.planes`/`image`; or add user-facing capture controls.
 
+### 4.5 CAM-1d implementation status (this PR)
+
+CAM-1d measures whether the two clocks from §4.1 appear comparable and implements a bounded
+nearest-sample pairing seam. It does **not** assume the two clocks share a base going in — pairing
+results, not an assumption, are what feed the diagnostic compatibility status below — and it does
+**not** wire the resulting pairs into rendering or matching.
+
+**Timestamp sources (unchanged from CAM-1c/existing rotation pipeline):**
+
+- Sensor: `RotationFrame.timestampNanos = event.timestamp` (`RotationFrame.kt`) — raw
+  `SensorEvent.timestamp`, nanoseconds, propagated with no adjustment. CAM-1d does not add a second
+  sensor stream or substitute `System.nanoTime()`: the same `event.timestamp` value used to build
+  `RotationFrame` is copied, in the same `onSensorChanged` callback, into a `TimedRotationSample`.
+- Camera: `CameraFrameMetadata.timestampNanos` — exactly `ImageProxy.imageInfo.timestamp` (CAM-1c,
+  unchanged).
+- Rotation matrix: `TimedRotationSample.rotationMatrix` is the same **display-remapped**
+  `RotationFrame.rotationMatrix` array already consumed by `calculateOverlay`/`deviceRollDegrees` —
+  not a second, raw-sensor-coordinate copy. `RotationSampleHistory` defensively copies it on
+  ingestion, so later reuse of the shared array reference at the `RotationFrame.kt` call site cannot
+  corrupt history state.
+
+**Pure models** — `:core:astro-core`, package `dev.pointtosky.core.astro.projection.camera` (no
+Android/CameraX types anywhere in this list):
+
+- `TimedRotationSample(timestampNanos, rotationMatrix)` — `timestampNanos >= 0`, `rotationMatrix`
+  exactly 9 elements, both validated eagerly (`TimedRotationSample.kt`).
+- `FrameRotationPair(frame, rotation, deltaNanos)` and the sealed `FrameRotationPairingResult`
+  (`Paired`, `NoSamples`, `OutsideTolerance`, `ClockMismatchSuspected`) (`FrameRotationPairing.kt`).
+- `pairFrameToNearestRotation(frame, samples, maxAllowedDeltaNanos, clockMismatchThresholdNanos)` —
+  pure, deterministic, retains nothing past the call. **Selection:** minimum
+  `abs(frame.timestampNanos - sample.timestampNanos)`, overflow-safe (saturating subtract/abs helpers
+  in the same file — timestamps are validated non-negative, so overflow cannot occur today, but the
+  arithmetic does not rely on that holding forever). **Tie-break:** when two samples are equidistant
+  in time from the frame, the **earlier** sample (smaller `timestampNanos`) is preferred,
+  unconditionally — no interpolation is performed either way.
+  **Classification:** `delta <= MAX_PAIR_DELTA_NANOS` → `Paired`; `delta >
+  CLOCK_MISMATCH_THRESHOLD_NANOS` → `ClockMismatchSuspected`; otherwise → `OutsideTolerance`. A frame
+  outside `MAX_PAIR_DELTA_NANOS` is never paired, regardless of which of the latter two results it
+  gets.
+- `RotationSampleHistory(capacity)` (`RotationSampleHistory.kt`) — a single-lock-guarded, timestamp-
+  sorted buffer capped at `capacity` (never an unbounded list/queue). Out-of-order `add()` calls are
+  still sorted correctly; when `capacity` is exceeded, the **smallest**-timestamp sample(s) are
+  evicted first. Duplicate timestamps are preserved (never deduplicated); an exact-timestamp
+  `nearest()` query against multiple duplicates resolves to the most-recently-`add`-ed one (delta is
+  `0` for all of them, so "earlier" does not disambiguate — arrival order does). Both `add()` and
+  `nearest()`/`snapshot()` defensively copy the `FloatArray` matrix, so neither side can corrupt the
+  other's state by mutating an array it still holds a reference to.
+- `TimestampSyncDiagnostics`/`TimestampSyncDebugState`/`TimestampCompatibility`
+  (`TimestampSyncDiagnostics.kt`) — see the compatibility-state policy below.
+
+**Thresholds** — one place, `TimestampSyncConfig` (`TimestampSyncConfig.kt`, same package):
+
+| Constant | Value | Rationale |
+|---|---|---|
+| `MAX_PAIR_DELTA_NANOS` | 50 ms | `SENSOR_DELAY_GAME` nominally delivers ~every 20 ms; 50 ms covers a couple of sensor ticks of jitter plus scheduling latency on either stream while staying well below star-field angular drift (§4.3: ~0.004°/s). |
+| `CLOCK_MISMATCH_THRESHOLD_NANOS` | 5 s | Two orders of magnitude above `MAX_PAIR_DELTA_NANOS`, so an ordinary tolerance rejection is never misclassified as a clock-base mismatch; a delta this large cannot plausibly arise from scheduling jitter between two streams sharing a real time base. |
+| `ROTATION_HISTORY_CAPACITY` | 120 | ~2 s of history at ~50 Hz nominal `SENSOR_DELAY_GAME` — comfortably wider than `MAX_PAIR_DELTA_NANOS` without growing unbounded. |
+| `MIN_OBSERVATIONS_FOR_COMPATIBLE` | 5 | Consecutive in-tolerance pairs required before claiming `COMPATIBLE_OBSERVED` — enough to rule out a one-off coincidence without over-claiming after a single lucky pair. |
+| `MIN_CONSECUTIVE_MISMATCHES_FOR_SUSPECTED` | 3 | Consecutive clock-mismatch-scale deltas required before claiming `MISMATCH_SUSPECTED` — one isolated bad sample must not flip the whole session's verdict. |
+
+These are conservative starting points chosen from first principles (sensor delivery rate, star-field
+drift rate, order-of-magnitude separation), **not** values tuned against one physical device — see
+the device-gate note below.
+
+**Compatibility-state policy** (`TimestampSyncDiagnostics`, conservative by design — this is a
+diagnostic inference, never proof):
+
+- Starts `UNKNOWN`.
+- A run of `MIN_OBSERVATIONS_FOR_COMPATIBLE` **consecutive** `Paired` results moves the state to
+  `COMPATIBLE_OBSERVED` — unless the state is already `MISMATCH_SUSPECTED`, which is treated as the
+  stronger claim and is not silently overwritten by a handful of subsequent good pairs.
+  `OutsideTolerance`/`NoSamples` are neutral: they neither extend nor reset the "consecutive
+  compatible" streak, since neither carries direct evidence about the clock base (only that a sample
+  was too far away, or that none existed yet).
+  A `ClockMismatchSuspected` result resets the "consecutive compatible" streak to zero.
+- A run of `MIN_CONSECUTIVE_MISMATCHES_FOR_SUSPECTED` **consecutive** `ClockMismatchSuspected` results
+  moves the state to `MISMATCH_SUSPECTED`. A `Paired` result resets the "consecutive mismatch" streak
+  to zero — one isolated bad sample does not flip the session's verdict.
+- Running `minAbsDeltaNanos`/`maxAbsDeltaNanos`/`meanAbsDeltaNanos` are updated from every result that
+  carries a delta (`Paired`, `OutsideTolerance`, `ClockMismatchSuspected`), not only successful pairs,
+  so they reflect the full observed delta distribution, not just the paired subset. `NoSamples`
+  carries no delta and leaves them unchanged. All statistics are running counters/min/max/sum — bounded
+  and cheap regardless of session length; no percentile/rolling-window tracking is implemented (marked
+  optional in scope, intentionally omitted for this slice).
+
+**Integration** — `dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer`
+(`CameraTimestampSynchronizer.kt`): owns one `RotationSampleHistory` and one `TimestampSyncDiagnostics`,
+publishes only the latest `FrameRotationPairingResult` via a `StateFlow` (never a queue of every
+pair). It is callback-driven and owns no coroutine/`Job` of its own — `onRotationSample`/
+`onCameraFrame` are called directly and synchronously from wherever a new sample already arrives, so
+there is no separate collector coroutine to manage or leak:
+
+- `rememberRotationFrame` (`RotationFrame.kt`) gained an optional `onRotationSample:
+  (TimedRotationSample) -> Unit = {}` parameter, invoked once per sensor sample from inside the
+  existing `onSensorChanged` callback, right after building that call's `RotationFrame` — the
+  smallest seam that copies recent production rotation frames into the history without a second
+  sensor stream. Defaults to a no-op, so no other caller of `rememberRotationFrame` is affected.
+- `CameraPreview` (`CameraPreview.kt`) gained an optional `onFrameMetadata: (CameraFrameMetadata) ->
+  Unit = {}` parameter. Internally, the `ImageAnalysis.Analyzer`'s sink now forwards each extracted
+  frame to **both** the existing, `remember`ed `CameraFrameMetadataProvider` (unchanged throttled
+  debug log) and `onFrameMetadata` — never instead of the provider. This does not broaden
+  `CameraPreview`'s ownership: its bind/dispose lifecycle, `CameraSessionLifecycle` usage, and
+  executor management are all unchanged; the only addition is one extra forward of a value it
+  already extracts. `CancellationException` propagation is inherited unchanged from
+  `CameraFrameAnalyzer.analyzeSource` (CAM-1c, already tested in `CameraFrameAnalyzerTest`): if the
+  sink — including this forward — throws `CancellationException`, `analyzeSource` rethrows it rather
+  than swallowing it; any other exception is caught, logged via `cameraFrameAnalysisFailed`, and does
+  not crash the analyzer thread.
+- `ArScreen` owns one `CameraTimestampSynchronizer` (`remember`ed), passes
+  `timestampSynchronizer::onRotationSample` to `rememberRotationFrame` and
+  `timestampSynchronizer::onCameraFrame` to `CameraPreview`'s `onFrameMetadata`, and calls
+  `timestampSynchronizer.reset()` from its own top-level `DisposableEffect(Unit)`'s `onDispose` — this
+  clears the bounded history, the diagnostics accumulator, and the published result, so no stale
+  rotation sample from a previous AR session can pair with the first camera frame of a new one
+  (§8 "leave/re-enter AR"). `debugState()`/`latestResult` are exposed for future diagnostics UI but
+  are not consumed by rendering or matching in this PR.
+
+**Logging** (`MobileLog`, throttled/categorical, never per-frame): `timestampSyncSessionStarted()`
+(once, on the first camera frame observed), `timestampSyncFirstPair(deltaMillis)` (once, on the first
+successful pair), `timestampSyncSummary(deltaMillis, pairedCount, rejectedCount, compatibility)`
+(every 30th processed camera frame), `timestampSyncClockMismatchSuspected(deltaMillis)` (once, on the
+transition into `MISMATCH_SUSPECTED`), `timestampSyncUnavailableNoSamples()` (once, on the first frame
+with no rotation samples to pair against). None of these log a matrix, a raw device identifier, an
+exception message, or a full timestamp stream — only millisecond-rounded deltas and bounded counters/
+categories.
+
+**Physical-device gate:** device measurement (camera buffer dimensions, frame/sensor timestamp
+progression, first 20–50 nearest deltas, min/mean/max absolute delta, paired-vs-rejected counts, and
+resulting compatibility status, across stationary/slow-pan/fast-pan/leave-re-enter/orientation
+scenarios) was **not** performed as part of this PR. Whether camera and rotation-sensor timestamps
+are actually comparable on any given device — and whether `MAX_PAIR_DELTA_NANOS`/
+`CLOCK_MISMATCH_THRESHOLD_NANOS` above are well-calibrated for it — remains an open device gate; the
+thresholds in this PR are conservative first-principles defaults, not device-validated values, and
+must not be read as "confirmed compatible on Android" from this PR alone.
+
+**What CAM-1d explicitly does not do:** interpolate or SLERP rotation matrices; implement the
+image↔display `CropScale` mapping (§2 Step E, still open); wire `CameraIntrinsicsProvider` into
+rendering (`ArScreen`/`projectionParams` still use the legacy fixed `VERTICAL_FOV_DEG = 56.0`
+exclusively, unchanged); feed `FrameRotationPairingResult`/`FrameRotationPair` into rendering, the
+overlay, or any matcher; add a detector or CV library; add persistent timestamp storage; or compare
+either timestamp to `System.currentTimeMillis()`.
+
 ---
 
 ## 5. Matching inputs / outputs (CAM-1 data model)
@@ -1020,4 +1162,4 @@ distortion, and any UI for later slices.
 | R7 | Wrong/hardcoded FOV → scale error | `projectionParams` | FOV-scaling test (§6.5) |
 | R8 | `FILL_CENTER` crop ignored (image ≠ viewport aspect) | `CameraPreview` + Step E | crop/scale test (§6.5) |
 | R9 | Front-camera mirroring | (back camera only today) | flip guard if front added |
-| R10 | Sensor/camera clock base mismatch | §4 sync | age gate + near-still fallback (§4.3) |
+| R10 | Sensor/camera clock base mismatch | §4 sync | age gate + near-still fallback (§4.3); measured nearest-sample pairing + tolerance/mismatch thresholds + diagnostic compatibility status, not yet device-validated (§4.5) |

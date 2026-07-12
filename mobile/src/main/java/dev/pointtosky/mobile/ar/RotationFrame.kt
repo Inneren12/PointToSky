@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.getSystemService
+import dev.pointtosky.core.astro.projection.camera.TimedRotationSample
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -29,8 +30,15 @@ data class RotationFrame(
     val timestampNanos: Long,
 )
 
+/**
+ * [onRotationSample] is called with a [TimedRotationSample] built from the same `event.timestamp`
+ * and display-remapped rotation matrix as the [RotationFrame] produced by this call, immediately
+ * after each new sensor sample (CAM-1d) — a seam for feeding recent production rotation samples into
+ * `RotationSampleHistory` without duplicating the sensor pipeline. Defaults to a no-op so existing
+ * callers are unaffected.
+ */
 @Composable
-fun rememberRotationFrame(): RotationFrame? {
+fun rememberRotationFrame(onRotationSample: (TimedRotationSample) -> Unit = {}): RotationFrame? {
     val context = LocalContext.current
     val sensorManager = remember { context.getSystemService<SensorManager>() }
     var frame by remember { mutableStateOf<RotationFrame?>(null) }
@@ -66,12 +74,19 @@ fun rememberRotationFrame(): RotationFrame? {
                             -remapped[8],
                         )
                     val normalizedForward = normalizeVector(worldForward)
-                    frame =
+                    val newFrame =
                         RotationFrame(
                             rotationMatrix = remapped.copyOf(),
                             forwardWorld = normalizedForward,
                             timestampNanos = event.timestamp,
                         )
+                    frame = newFrame
+                    onRotationSample(
+                        TimedRotationSample(
+                            timestampNanos = newFrame.timestampNanos,
+                            rotationMatrix = newFrame.rotationMatrix,
+                        ),
+                    )
                 }
 
                 override fun onAccuracyChanged(

@@ -101,6 +101,51 @@ object MobileLog {
         )
     }
 
+    /** CAM-1d: one event when a timestamp-pairing session starts observing camera frames. */
+    fun timestampSyncSessionStarted() {
+        LogBus.event("timestamp_sync_session_started")
+    }
+
+    /** CAM-1d: one event for the first successful camera/rotation pairing in a session. */
+    fun timestampSyncFirstPair(deltaMillis: Long) {
+        LogBus.event(
+            name = "timestamp_sync_first_pair",
+            payload = mapOf("deltaMillis" to deltaMillis),
+        )
+    }
+
+    /** CAM-1d: throttled per-session pairing summary — never called once per frame. */
+    fun timestampSyncSummary(
+        deltaMillis: Long?,
+        pairedCount: Long,
+        rejectedCount: Long,
+        compatibility: String,
+    ) {
+        LogBus.event(
+            name = "timestamp_sync_summary",
+            payload =
+                mapOf(
+                    "deltaMillis" to deltaMillis,
+                    "pairedCount" to pairedCount,
+                    "rejectedCount" to rejectedCount,
+                    "compatibility" to compatibility,
+                ).filterValuesNotNull(),
+        )
+    }
+
+    /** CAM-1d: logged once when the session's compatibility status transitions to MISMATCH_SUSPECTED. */
+    fun timestampSyncClockMismatchSuspected(deltaMillis: Long) {
+        LogBus.event(
+            name = "timestamp_sync_clock_mismatch_suspected",
+            payload = mapOf("deltaMillis" to deltaMillis),
+        )
+    }
+
+    /** CAM-1d: logged once per session on the first frame with no rotation samples available to pair against. */
+    fun timestampSyncUnavailableNoSamples() {
+        LogBus.event("timestamp_sync_unavailable_no_samples")
+    }
+
     fun searchQuery(
         query: String,
         results: Int,
