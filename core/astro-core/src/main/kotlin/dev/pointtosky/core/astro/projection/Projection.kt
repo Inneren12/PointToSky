@@ -16,21 +16,31 @@ import kotlin.math.tan
  *
  * Conventions:
  *  - World frame is ENU-like: `x → East`, `y → North`, `z → up` (see [horizontalToVector]).
- *  - Device frame is display-aligned: `x → right`, `y → up`, `z → forward` with negative `z` in
- *    front of the camera (see [projectDeviceVector]).
+ *  - Device frame is display-aligned: `x → right`, `y → up`. `+Z points out of the display toward
+ *    the user; the back camera looks along -Z, so negative Z is in front of the camera` (see
+ *    [projectDeviceVector]).
  *  - 3x3 matrices are row-major `FloatArray(9)`; vectors are `FloatArray(3)`. These plain arrays
  *    match the Android `SensorManager` rotation-matrix layout used at the mobile boundary, so no
  *    conversion is needed there.
  *
  * Android/Compose types (`Offset`, `IntSize`) are intentionally kept out of this module; the mobile
  * layer converts [ViewportSize]/[ProjectedPoint] to/from Compose types at its boundary.
+ *
+ * NOTE ON CALIBRATION: [VERTICAL_FOV_DEG] is the AR overlay's legacy, hardcoded 56° default — it is
+ * NOT a calibrated camera intrinsic. Future CAM (camera-matching) work must introduce an explicit
+ * intrinsics-based projection API (real focal length / principal point / distortion) rather than
+ * treating this default as if it described the physical camera. This module deliberately does not
+ * add real intrinsics.
  */
 
-/** Base vertical field of view in degrees; horizontal FOV is derived from the viewport aspect. */
-const val VERTICAL_FOV_DEG: Double = 56.0
+/**
+ * Legacy vertical field of view in degrees for the AR overlay. Horizontal FOV is derived from the
+ * viewport aspect. This is a fixed UI default, not a calibrated camera intrinsic.
+ */
+internal const val VERTICAL_FOV_DEG: Double = 56.0
 
 /** Maximum normalized radial screen distance beyond which a point is rejected as off-frame. */
-const val MAX_SCREEN_DISTANCE: Double = 1.2
+internal const val MAX_SCREEN_DISTANCE: Double = 1.2
 
 /** Plain viewport size in pixels; the mobile boundary maps `IntSize` onto this. */
 data class ViewportSize(
@@ -108,9 +118,14 @@ fun multiply(
 }
 
 /**
- * Derives [ProjectionParams] from a viewport using the fixed [VERTICAL_FOV_DEG] and an
- * aspect-derived horizontal FOV (`tanHFov = tanVFov * width/height`). Portrait and landscape
- * viewports therefore produce different horizontal FOVs — this matches existing AR behavior.
+ * Derives [ProjectionParams] from a viewport, preserving the existing AR overlay's legacy behavior:
+ * a fixed [VERTICAL_FOV_DEG] (56°) with an aspect-derived horizontal FOV
+ * (`tanHFov = tanVFov * width/height`). Portrait and landscape viewports therefore produce different
+ * horizontal FOVs — this is the current, unchanged AR behavior.
+ *
+ * This is intentionally the legacy fixed-FOV model, NOT a calibrated camera projection. Future CAM
+ * camera matching must call an explicit-intrinsics projection API instead of reusing this default as
+ * if it were the physical camera's intrinsics.
  */
 fun projectionParams(viewport: ViewportSize): ProjectionParams {
     val width = viewport.width.toFloat()
@@ -125,8 +140,9 @@ fun projectionParams(viewport: ViewportSize): ProjectionParams {
  * Projects a display-aligned device vector to screen pixels, or returns `null` when the point is
  * behind the camera (`z >= -0.01f`) or falls beyond [MAX_SCREEN_DISTANCE].
  *
- * deviceVec is expressed in display-aligned device coordinates:
- * x → right, y → up, z → forward (negative means in front of the camera).
+ * deviceVec is expressed in display-aligned device coordinates: x → right, y → up. +Z points out of
+ * the display toward the user; the back camera looks along -Z, so negative Z is in front of the
+ * camera.
  */
 fun projectDeviceVector(
     deviceVec: FloatArray,

@@ -69,7 +69,6 @@ import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
-import dev.pointtosky.core.astro.projection.ProjectionParams
 import dev.pointtosky.core.astro.projection.ViewportSize
 import dev.pointtosky.core.astro.projection.horizontalToVector
 import dev.pointtosky.core.astro.projection.multiply
