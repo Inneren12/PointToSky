@@ -99,29 +99,44 @@ class CameraIntrinsicsResolverTest {
     }
 
     @Test
-    fun `focal length selection is deterministic regardless of array order`() {
+    fun `multiple valid focal lengths are ambiguous regardless of array order`() {
+        // Camera2 makes no guarantee about LENS_INFO_AVAILABLE_FOCAL_LENGTHS order, and static
+        // CameraCharacteristics cannot say which value the bound capture stream is actually using
+        // (that needs a live CaptureResult, out of CAM-1b's scope) - so any array with more than
+        // one valid entry must fall back rather than silently guessing one, deterministically
+        // regardless of order.
         val ascending = sourceOf(focalLengthsMm = floatArrayOf(2.0f, 4.25f, 6.0f))
         val descending = sourceOf(focalLengthsMm = floatArrayOf(6.0f, 4.25f, 2.0f))
         val shuffled = sourceOf(focalLengthsMm = floatArrayOf(4.25f, 6.0f, 2.0f))
 
         val results = listOf(ascending, descending, shuffled).map { resolveCameraIntrinsics(it, null, null) }
-        results.forEach { result ->
-            assertNull(result.fallbackReason)
-            assertEquals(2.0, result.intrinsics.focalLengthMm)
-        }
+        results.forEach { result -> assertFallback(result, CameraIntrinsicsFallbackReason.AMBIGUOUS_FOCAL_LENGTH) }
     }
 
     @Test
-    fun `focal length selection ignores invalid candidates mixed with valid ones`() {
+    fun `a single valid focal length mixed with invalid candidates still resolves`() {
+        val mixed = floatArrayOf(Float.NaN, -5f, 0f, 3.5f)
+        assertEquals(FocalLengthSelection.Resolved(3.5), selectFocalLengthMm(mixed))
+    }
+
+    @Test
+    fun `multiple valid focal lengths mixed with invalid candidates are still ambiguous`() {
         val mixed = floatArrayOf(Float.NaN, -5f, 0f, 3.5f, 8f)
-        assertEquals(3.5, selectFocalLengthMm(mixed))
+        assertEquals(FocalLengthSelection.Ambiguous, selectFocalLengthMm(mixed))
     }
 
     @Test
-    fun `selectFocalLengthMm returns null for null, empty, or all-invalid candidates`() {
-        assertNull(selectFocalLengthMm(null))
-        assertNull(selectFocalLengthMm(floatArrayOf()))
-        assertNull(selectFocalLengthMm(floatArrayOf(0f, -1f, Float.NaN)))
+    fun `selectFocalLengthMm reports NoneValid for null, empty, or all-invalid candidates`() {
+        assertEquals(FocalLengthSelection.NoneValid, selectFocalLengthMm(null))
+        assertEquals(FocalLengthSelection.NoneValid, selectFocalLengthMm(floatArrayOf()))
+        assertEquals(FocalLengthSelection.NoneValid, selectFocalLengthMm(floatArrayOf(0f, -1f, Float.NaN)))
+    }
+
+    @Test
+    fun `two available focal lengths fall back to legacy intrinsics as ambiguous`() {
+        val result =
+            resolveCameraIntrinsics(sourceOf(focalLengthsMm = floatArrayOf(2.0f, 6.0f)), imageWidthPx = null, imageHeightPx = null)
+        assertFallback(result, CameraIntrinsicsFallbackReason.AMBIGUOUS_FOCAL_LENGTH)
     }
 
     @Test
@@ -129,6 +144,7 @@ class CameraIntrinsicsResolverTest {
         val fallbacks =
             listOf(
                 resolveCameraIntrinsics(sourceOf(focalLengthsMm = null), null, null),
+                resolveCameraIntrinsics(sourceOf(focalLengthsMm = floatArrayOf(2.0f, 6.0f)), null, null),
                 resolveCameraIntrinsics(sourceOf(sensorWidthMm = null), null, null),
                 resolveCameraIntrinsics(CameraCharacteristicsSource { error("boom") }, null, null),
             )

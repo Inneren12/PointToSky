@@ -374,19 +374,32 @@ unchanged. The code below has **zero production call sites** as of this PR — t
   - `CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE` (`SizeF`, millimetres) → width/height.
   - `LENS_INTRINSIC_CALIBRATION`, `SENSOR_INFO_ACTIVE_ARRAY_SIZE`, `SENSOR_INFO_PIXEL_ARRAY_SIZE`,
     and `LENS_DISTORTION` are **not read** in CAM-1b — see principal point below.
-  (`androidx.camera.camera2.interop.ExperimentalCamera2Interop` exists in this CameraX version but
-  is no longer annotated `@RequiresOptIn`, so `Camera2CameraInfo.getCameraCharacteristic()` needs no
-  opt-in; confirmed by a compiler warning when one was added speculatively and removed.)
+  (`Camera2CameraInfo.getCameraCharacteristic()` is gated by `ExperimentalCamera2Interop`, an
+  AndroidX legacy Java-based `@RequiresOptIn`-style marker (`androidx.annotation.RequiresOptIn`),
+  not Kotlin's native opt-in mechanism. It must be suppressed with `androidx.annotation.OptIn`, not
+  `kotlin.OptIn` — the two annotations share identical call syntax
+  (`@OptIn(ExperimentalCamera2Interop::class)`), so importing the wrong one is an easy, silent
+  mistake: `kotlin.OptIn` compiles cleanly and even passes plain JVM unit tests, but Android Lint's
+  `UnsafeOptInUsageError` check — which enforces this marker, not the Kotlin compiler — only
+  recognizes `androidx.annotation.OptIn` and fails `:mobile:lintInternalDebug` without it.)
 - No CameraX dependency bump was needed: `androidx.camera:camera-camera2:1.3.4` (already a
-  `:mobile` dependency) provides `Camera2CameraInfo`; CAM-1b adds no new CameraX artifacts.
+  `:mobile` dependency) provides `Camera2CameraInfo`/`ExperimentalCamera2Interop`; CAM-1b adds no
+  new CameraX artifacts.
 - Resolution logic (`resolveCameraIntrinsics`, `CameraIntrinsicsResolver.kt`) is isolated behind the
   `CameraCharacteristicsSource` adapter — a `CameraCharacteristicsSnapshot` plain data holder,
   decoupled from `CameraCharacteristics.Key` mechanics — so it is unit-tested with fake metadata:
   no real camera, no Robolectric.
-- **Focal-length selection rule**: `selectFocalLengthMm` picks the **smallest finite, positive**
-  value out of `LENS_INFO_AVAILABLE_FOCAL_LENGTHS`. Camera2 does not guarantee array order, so a
-  fixed index would not be deterministic across devices; the minimum is deterministic regardless of
-  reported order and corresponds to the widest (most inclusive) angle of view for that lens.
+- **Focal-length selection rule**: `selectFocalLengthMm` returns a `FocalLengthSelection`
+  (`Resolved(focalLengthMm)` / `NoneValid` / `Ambiguous`) after filtering
+  `LENS_INFO_AVAILABLE_FOCAL_LENGTHS` down to finite, positive candidates. Only the **exactly one
+  valid candidate** case resolves — `resolveCameraIntrinsics` then labels the result
+  `CAMERA_CHARACTERISTICS`. Zero valid candidates is `NoneValid`. **Two or more** valid candidates
+  is `Ambiguous` and also falls back: static `CameraCharacteristics` has no field saying which of
+  several reported focal lengths the currently bound capture stream is actually using (that needs a
+  live `CaptureResult`, out of CAM-1b's scope — no capture pipeline exists yet), so picking one
+  value out of several — even a deterministic pick like the minimum — would risk mislabeling a
+  guess as calibrated metadata. (Most phone main cameras report exactly one focal length; multiple
+  values only occur on variable-optical-zoom lenses.)
 - **Fallback semantics**: each of the following returns
   `CameraIntrinsicsResolution(legacyFallbackCameraIntrinsics(imageWidthPx, imageHeightPx),
   fallbackReason)`, i.e. `intrinsics.source == LEGACY_FALLBACK` plus a short, non-device-specific
@@ -394,6 +407,8 @@ unchanged. The code below has **zero production call sites** as of this PR — t
   - `CameraCharacteristicsSource.snapshot()` throws → `"camera_characteristics_unavailable"`.
   - no valid (finite, positive) focal length in the array — missing array, empty array, or all
     entries invalid → `"no_valid_focal_length"`.
+  - more than one valid focal length in the array (ambiguous — see selection rule above) →
+    `"ambiguous_focal_length"`.
   - sensor width/height missing, non-finite, or `<= 0` → `"missing_or_invalid_sensor_size"`.
   - the computed `CameraIntrinsics` itself fails validation (defensive; not expected given the
     upstream guards) → `"computed_intrinsics_invalid"`.

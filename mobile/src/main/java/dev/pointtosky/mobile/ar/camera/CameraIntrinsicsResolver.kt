@@ -15,25 +15,41 @@ import dev.pointtosky.core.astro.projection.camera.verticalFovDeg
 internal object CameraIntrinsicsFallbackReason {
     const val CHARACTERISTICS_UNAVAILABLE = "camera_characteristics_unavailable"
     const val NO_VALID_FOCAL_LENGTH = "no_valid_focal_length"
+    const val AMBIGUOUS_FOCAL_LENGTH = "ambiguous_focal_length"
     const val MISSING_OR_INVALID_SENSOR_SIZE = "missing_or_invalid_sensor_size"
     const val COMPUTED_INTRINSICS_INVALID = "computed_intrinsics_invalid"
 }
 
+/** Outcome of [selectFocalLengthMm]: exactly one usable candidate, none, or more than one. */
+internal sealed interface FocalLengthSelection {
+    data class Resolved(val focalLengthMm: Double) : FocalLengthSelection
+
+    data object NoneValid : FocalLengthSelection
+
+    data object Ambiguous : FocalLengthSelection
+}
+
 /**
  * Selects one focal length (millimetres) from a Camera2 `LENS_INFO_AVAILABLE_FOCAL_LENGTHS`
- * candidate array, or `null` if none is usable.
+ * candidate array.
  *
- * Selection rule: the smallest finite, positive value. Most phone main cameras report a single
- * fixed focal length; when several are present (variable-aperture/zoom lenses), Camera2 makes no
- * guarantee about array order, so picking a fixed array index would not be deterministic across
- * devices. The minimum is deterministic regardless of reported order and corresponds to the widest
- * (safest, most inclusive) angle of view for that lens.
+ * Most phone main cameras report a single fixed focal length, which is the only case
+ * [resolveCameraIntrinsics] can safely label [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS]:
+ * static `CameraCharacteristics` has no field describing which of several reported focal lengths
+ * the currently bound capture stream is actually using (that requires a live `CaptureResult`,
+ * which is out of scope for CAM-1b — no capture pipeline exists yet). Picking a value out of
+ * several candidates — even deterministically, e.g. the minimum — would risk mislabeling a guess
+ * as calibrated metadata, so any array with more than one valid entry is reported as
+ * [FocalLengthSelection.Ambiguous] and [resolveCameraIntrinsics] falls back instead of guessing.
  */
-internal fun selectFocalLengthMm(candidates: FloatArray?): Double? {
-    if (candidates == null) return null
+internal fun selectFocalLengthMm(candidates: FloatArray?): FocalLengthSelection {
+    if (candidates == null) return FocalLengthSelection.NoneValid
     val valid = candidates.filter { it.isFinite() && it > 0f }
-    if (valid.isEmpty()) return null
-    return valid.min().toDouble()
+    return when (valid.size) {
+        0 -> FocalLengthSelection.NoneValid
+        1 -> FocalLengthSelection.Resolved(valid.single().toDouble())
+        else -> FocalLengthSelection.Ambiguous
+    }
 }
 
 /**
@@ -65,8 +81,11 @@ internal fun resolveCameraIntrinsics(
         }
 
     val focalLengthMm =
-        selectFocalLengthMm(snapshot.availableFocalLengthsMm)
-            ?: return fallback(CameraIntrinsicsFallbackReason.NO_VALID_FOCAL_LENGTH)
+        when (val selection = selectFocalLengthMm(snapshot.availableFocalLengthsMm)) {
+            is FocalLengthSelection.Resolved -> selection.focalLengthMm
+            FocalLengthSelection.NoneValid -> return fallback(CameraIntrinsicsFallbackReason.NO_VALID_FOCAL_LENGTH)
+            FocalLengthSelection.Ambiguous -> return fallback(CameraIntrinsicsFallbackReason.AMBIGUOUS_FOCAL_LENGTH)
+        }
 
     val sensorWidthMm = snapshot.sensorPhysicalWidthMm
     val sensorHeightMm = snapshot.sensorPhysicalHeightMm
