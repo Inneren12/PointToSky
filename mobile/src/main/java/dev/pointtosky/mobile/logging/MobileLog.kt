@@ -51,6 +51,56 @@ object MobileLog {
         LogBus.event("ar_open")
     }
 
+    /** CAM-1c: one event per successful `Preview` + `ImageAnalysis` bind. */
+    fun cameraAnalysisBound() {
+        LogBus.event("camera_analysis_bound")
+    }
+
+    /**
+     * CAM-1c: one event per successful Preview-*only* bind, reached after the combined `Preview` +
+     * `ImageAnalysis` bind was rejected. Distinct from [cameraAnalysisBound] so the two are never
+     * conflated: this event means the AR preview is visible but no frame metadata is being
+     * produced.
+     */
+    fun cameraPreviewBoundWithoutAnalysis() {
+        LogBus.event("camera_preview_bound_without_analysis")
+    }
+
+    /** CAM-1c: bind failure, [reasonCategory] is a short non-device-specific category, never a raw message. */
+    fun cameraAnalysisBindFailed(reasonCategory: String) {
+        LogBus.event(
+            name = "camera_analysis_bind_failed",
+            payload = mapOf("reason" to reasonCategory),
+        )
+    }
+
+    /** CAM-1c: throttled per-session summary — never called once per frame. */
+    fun cameraFrameMetadata(
+        widthPx: Int,
+        heightPx: Int,
+        rotationDegrees: Int,
+        frameCount: Long,
+    ) {
+        LogBus.event(
+            name = "camera_frame_metadata",
+            payload =
+                mapOf(
+                    "widthPx" to widthPx,
+                    "heightPx" to heightPx,
+                    "rotationDegrees" to rotationDegrees,
+                    "frameCount" to frameCount,
+                ),
+        )
+    }
+
+    /** CAM-1c: analyzer failure, [reasonCategory] is the thrown exception's simple class name only. */
+    fun cameraFrameAnalysisFailed(reasonCategory: String) {
+        LogBus.event(
+            name = "camera_frame_analysis_failed",
+            payload = mapOf("reason" to reasonCategory),
+        )
+    }
+
     fun searchQuery(
         query: String,
         results: Int,
