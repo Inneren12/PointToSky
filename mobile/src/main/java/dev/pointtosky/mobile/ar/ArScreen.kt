@@ -69,6 +69,13 @@ import dev.pointtosky.core.astro.coord.Equatorial
 import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
+import dev.pointtosky.core.astro.projection.ViewportSize
+import dev.pointtosky.core.astro.projection.horizontalToVector
+import dev.pointtosky.core.astro.projection.multiply
+import dev.pointtosky.core.astro.projection.projectDeviceVector
+import dev.pointtosky.core.astro.projection.projectionParams
+import dev.pointtosky.core.astro.projection.transpose
+import dev.pointtosky.core.astro.projection.vectorToHorizontal
 import dev.pointtosky.core.astro.transform.altAzToRaDec
 import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.visibility.Bortle
@@ -83,15 +90,10 @@ import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
 import dev.pointtosky.mobile.visibility.BortleSource
 import java.util.Locale
-import kotlin.math.asin
-import kotlin.math.atan2
-import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.tan
 
 @Composable
 fun ArRoute(
@@ -950,7 +952,7 @@ internal fun calculateOverlay(
         )
     // rotationMatrix is already remapped to the current display rotation.
     val worldToDevice = transpose(trueNorthFrame.rotationMatrix)
-    val projectionParams = projectionParams(viewport)
+    val projectionParams = projectionParams(viewport.toViewportSize())
 
     data class ProjectionResult(
         val position: Offset,
@@ -971,7 +973,7 @@ internal fun calculateOverlay(
         val deviceVec = multiply(worldToDevice, worldVec)
         val projection = projectDeviceVector(deviceVec, projectionParams) ?: return null
         val separation = angularSeparationDeg(reticleEquatorial, eq)
-        return ProjectionResult(projection.position, projection.distance, separation)
+        return ProjectionResult(Offset(projection.x, projection.y), projection.distance, separation)
     }
 
     fun projectStarRecord(record: StarRecord): Offset? =
@@ -1177,104 +1179,22 @@ internal fun projectHorizontalsToScreen(
 
     val trueNorthFrame = frame.correctedForTrueNorth(declinationDeg)
     val worldToDevice = transpose(trueNorthFrame.rotationMatrix)
-    val params = projectionParams(viewport)
+    val params = projectionParams(viewport.toViewportSize())
 
     return horizontals.mapNotNull { horizontal ->
         val worldVec = horizontalToVector(horizontal)
         val deviceVec = multiply(worldToDevice, worldVec)
-        projectDeviceVector(deviceVec, params)?.position
+        projectDeviceVector(deviceVec, params)?.let { Offset(it.x, it.y) }
     }
 }
 
-private data class Projection(
-    val position: Offset,
-    val distance: Double,
-)
-
-private data class ProjectionParams(
-    val tanHFov: Double,
-    val tanVFov: Double,
-    val halfWidth: Float,
-    val halfHeight: Float,
-)
-
-private fun projectionParams(viewport: IntSize): ProjectionParams {
-    val width = viewport.width.toFloat()
-    val height = viewport.height.toFloat()
-    val aspect = viewport.width.toDouble() / viewport.height.toDouble()
-    val tanVFov = tan(Math.toRadians(VERTICAL_FOV_DEG / 2.0))
-    val tanHFov = tanVFov * aspect
-    return ProjectionParams(tanHFov, tanVFov, width / 2f, height / 2f)
-}
-
-private fun projectDeviceVector(
-    deviceVec: FloatArray,
-    params: ProjectionParams,
-): Projection? {
-    // deviceVec is expressed in display-aligned device coordinates:
-    // x → right, y → up, z → forward (negative means in front of the camera).
-    val z = deviceVec[2]
-    if (z >= -0.01f) return null
-
-    val ndcX = (deviceVec[0].toDouble() / -z.toDouble()) / params.tanHFov
-    val ndcY = (deviceVec[1].toDouble() / -z.toDouble()) / params.tanVFov
-    val distance = sqrt(ndcX * ndcX + ndcY * ndcY)
-    if (distance > MAX_SCREEN_DISTANCE) return null
-
-    val screenX = params.halfWidth * (1f + ndcX.toFloat())
-    val screenY = params.halfHeight * (1f - ndcY.toFloat())
-    return Projection(position = Offset(screenX, screenY), distance = distance)
-}
-
-private fun transpose(matrix: FloatArray): FloatArray {
-    val result = FloatArray(9)
-    for (i in 0 until 3) {
-        for (j in 0 until 3) {
-            result[i * 3 + j] = matrix[j * 3 + i]
-        }
-    }
-    return result
-}
-
-private fun multiply(
-    matrix: FloatArray,
-    vector: FloatArray,
-): FloatArray {
-    val x = matrix[0] * vector[0] + matrix[1] * vector[1] + matrix[2] * vector[2]
-    val y = matrix[3] * vector[0] + matrix[4] * vector[1] + matrix[5] * vector[2]
-    val z = matrix[6] * vector[0] + matrix[7] * vector[1] + matrix[8] * vector[2]
-    return floatArrayOf(x, y, z)
-}
-
-private fun horizontalToVector(horizontal: Horizontal): FloatArray {
-    val altRad = Math.toRadians(horizontal.altDeg)
-    val azRad = Math.toRadians(horizontal.azDeg)
-    val cosAlt = cos(altRad)
-    return floatArrayOf(
-        (cosAlt * sin(azRad)).toFloat(),
-        (cosAlt * cos(azRad)).toFloat(),
-        sin(altRad).toFloat(),
-    )
-}
-
-private fun vectorToHorizontal(vector: FloatArray): Horizontal {
-    val z = vector[2].toDouble().coerceIn(-1.0, 1.0)
-    val altDeg = Math.toDegrees(asin(z))
-    var azDeg = Math.toDegrees(atan2(vector[0].toDouble(), vector[1].toDouble()))
-    if (azDeg < 0) {
-        azDeg += 360.0
-    }
-    return Horizontal(azDeg = azDeg, altDeg = altDeg)
-}
+// Mobile boundary: convert the Compose IntSize viewport into the Android-independent core type.
+private fun IntSize.toViewportSize(): ViewportSize = ViewportSize(width = width, height = height)
 
 private fun formatAngle(
     locale: Locale,
     value: Double,
 ): String = String.format(locale, "%.1f", value)
-
-// Base vertical FOV; horizontal FOV is derived from the current aspect ratio.
-private const val VERTICAL_FOV_DEG = 56.0
-private const val MAX_SCREEN_DISTANCE = 1.2
 
 // Label declutter: max labels on screen; minimum screen-distance between any two label anchors.
 private const val MAX_LABELS = 9
