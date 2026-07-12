@@ -34,12 +34,15 @@ class CameraIntrinsicsResolverTest {
 
         assertNull(result.fallbackReason)
         assertEquals(CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, result.intrinsics.source)
-        assertEquals(4.25, result.intrinsics.focalLengthMm)
-        assertEquals(5.76, result.intrinsics.sensorWidthMm)
-        assertEquals(4.29, result.intrinsics.sensorHeightMm)
+        // Compare against the float->double widening of the original Float inputs, not the Double
+        // decimal literal: 5.76f/4.29f are not exactly representable in float32, so widening them
+        // to Double does not yield the same bits as parsing "5.76"/"4.29" as a Double literal.
+        assertEquals(4.25f.toDouble(), result.intrinsics.focalLengthMm)
+        assertEquals(5.76f.toDouble(), result.intrinsics.sensorWidthMm)
+        assertEquals(4.29f.toDouble(), result.intrinsics.sensorHeightMm)
 
-        val expectedHorizontal = Math.toDegrees(2.0 * kotlin.math.atan(5.76 / (2.0 * 4.25)))
-        val expectedVertical = Math.toDegrees(2.0 * kotlin.math.atan(4.29 / (2.0 * 4.25)))
+        val expectedHorizontal = Math.toDegrees(2.0 * kotlin.math.atan(5.76f.toDouble() / (2.0 * 4.25f.toDouble())))
+        val expectedVertical = Math.toDegrees(2.0 * kotlin.math.atan(4.29f.toDouble() / (2.0 * 4.25f.toDouble())))
         assertEquals(expectedHorizontal, result.intrinsics.horizontalFovDeg, eps)
         assertEquals(expectedVertical, result.intrinsics.verticalFovDeg, eps)
     }
