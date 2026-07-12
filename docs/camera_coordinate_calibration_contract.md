@@ -51,6 +51,11 @@ is the ground truth for the rest of this document.
    pixel buffer, and no frame timestamp reaching Kotlin. A grep for
    `CameraCharacteristics`, `ImageAnalysis`, `LENS_INFO`, `SENSOR_INFO`, and
    `imageInfo` across the whole tree returns nothing.
+   **Updated by CAM-1c:** `CameraPreview` now also binds an `ImageAnalysis`
+   use case and a frame-metadata-only pipeline exists — see §4.4. Pixel
+   buffers are still never read anywhere in the tree; only metadata
+   (`imageInfo.timestamp`, `width`/`height`, `imageInfo.rotationDegrees`,
+   `cropRect`) reaches Kotlin.
 2. **The projection uses a hardcoded FOV**, not the real lens:
    `VERTICAL_FOV_DEG = 56.0` (`ArScreen.kt:1276`), with horizontal FOV derived
    from the *viewport* aspect ratio (`projectionParams`, `ArScreen.kt:1201`).
@@ -474,6 +479,126 @@ sync entirely:
 - This trades a small, bounded pointing error for zero clock-alignment work and
   is sufficient to validate matching before investing in true sync.
 
+### 4.4 CAM-1c implementation status (this PR)
+
+CAM-1c adds the first real frame pipeline: an `ImageAnalysis` use case bound alongside `Preview`,
+and a metadata-only extraction path. It does **not** implement §4.2's timestamp pairing, §4.3's
+near-still matching gate, image↔display crop/scale mapping, or any matcher — those remain for
+CAM-1d and later. The renderer (`ArScreen.calculateOverlay()` / `projectionParams(viewport)`)
+still calls the legacy fixed `VERTICAL_FOV_DEG = 56.0` path exclusively, unchanged by this PR, and
+`CameraIntrinsicsProvider`/`Camera2CameraIntrinsicsProvider` (CAM-1b) still has zero production call
+sites — CAM-1c does not wire them together. That combination is left for CAM-1d.
+
+**Pure model** — `CameraFrameMetadata` (`core/astro-core/.../projection/camera/CameraFrameMetadata.kt`),
+package `dev.pointtosky.core.astro.projection.camera` in `:core:astro-core`, alongside CAM-1b's
+`CameraIntrinsics`:
+
+- Fields: `timestampNanos: Long`, `bufferWidthPx: Int`, `bufferHeightPx: Int`, `rotationDegrees:
+  Int`, plus optional `cropRectLeftPx/TopPx/RightPx/BottomPx: Int?` — plain integers, never an
+  Android `Rect`.
+- Validated eagerly in `init {}`: `timestampNanos >= 0`; `bufferWidthPx > 0` and `bufferHeightPx >
+  0`; `rotationDegrees` in `{0, 90, 180, 270}`; the four crop-rect fields are either all present or
+  all absent, and when present must satisfy `left >= 0`, `top >= 0`, `left < right`, `top < bottom`,
+  `right <= bufferWidthPx`, `bottom <= bufferHeightPx`. Invalid values throw
+  `IllegalArgumentException`, never silently clamped — same convention as `CameraIntrinsics`.
+- `bufferWidthPx`/`bufferHeightPx` are recorded exactly as `ImageProxy` reports them: **not** swapped
+  based on `rotationDegrees`, and **not** assumed to equal any `PreviewView`/viewport size (§1.5/§3.3
+  still list the image↔display crop/scale mapping as not implemented).
+
+**Extraction seam** — package `dev.pointtosky.mobile.ar.camera` in `:mobile`
+(`CameraFrameMetadataSource.kt`):
+
+- `CloseableFrameMetadataSource` is a thin interface exposing exactly `timestampNanos`, `widthPx`,
+  `heightPx`, `rotationDegrees`, the four optional crop fields, and `close()` — decoupled from
+  `ImageProxy` mechanics so extraction logic is unit-tested with a plain fake
+  (`FakeFrameMetadataSource` in tests), no real camera, no `ImageProxy` mock.
+- `toCameraFrameMetadata()` is the pure mapping from those raw fields to a validated
+  `CameraFrameMetadata`.
+- `ImageProxyFrameMetadataSource` is the production adapter wrapping a real `ImageProxy`. It reads
+  **exactly**: `imageProxy.imageInfo.timestamp`, `imageProxy.width`, `imageProxy.height`,
+  `imageProxy.imageInfo.rotationDegrees`, and `imageProxy.cropRect.{left,top,right,bottom}`. It never
+  reads `imageProxy.planes`, `imageProxy.image`, or any pixel row/stride — those APIs are not called
+  anywhere in this slice's production or test code. `close()` delegates to `ImageProxy.close()`.
+
+**Sink/publisher contract** — `CameraFrameMetadataSink.kt`, same package:
+
+- `CameraFrameMetadataSink` is a one-method interface (`fun onFrame(metadata: CameraFrameMetadata)`).
+- `CameraFrameMetadataProvider` is the production implementation: a `StateFlow<CameraFrameMetadata?>`
+  (`latest`) updated by simple assignment (`_latest.value = metadata`) on every `onFrame` call. This
+  gives latest-value-only semantics with no queue — the previous frame is discarded, never
+  accumulated — and thread-safe publication for free (`StateFlow.value` assignment is atomic).
+  `frameCount`/`failedFrameCount` are `AtomicLong` counters exposed via `debugState()` for the
+  minimal debug readout (latest metadata + counts).
+- `CameraPreview` owns one `CameraFrameMetadataProvider` per composition (`remember { ... }`), used
+  today only for the throttled debug log (below). It has no other consumer yet; CAM-1d will decide
+  how to expose it (e.g. through a small camera-session state) without this PR needing to guess at
+  that shape.
+
+**Analyzer** — `CameraFrameAnalyzer.kt`, same package: a CameraX `ImageAnalysis.Analyzer`. Its
+`analyze(ImageProxy)` wraps the `ImageProxy` in `ImageProxyFrameMetadataSource` and delegates to the
+internal, independently testable `analyzeSource(CloseableFrameMetadataSource)`:
+
+```kotlin
+internal fun analyzeSource(source: CloseableFrameMetadataSource) {
+    try {
+        metadataSink.onFrame(source.toCameraFrameMetadata())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        MobileLog.cameraFrameAnalysisFailed(e.javaClass.simpleName)
+        onFrameFailure()
+    } finally {
+        source.close()
+    }
+}
+```
+
+`source.close()` runs in `finally`, so it executes exactly once per call regardless of outcome:
+extraction success, extraction failure (invalid metadata throws `IllegalArgumentException`), or the
+sink itself throwing. `CancellationException` is rethrown rather than swallowed (matching the CAM-1b
+convention in `resolveCameraIntrinsics`); every other exception is caught so one bad frame cannot
+crash the analyzer thread or the camera pipeline. The frame is never retained past this call — no
+field stores the `ImageProxy`/source beyond the try block.
+
+**Binding** — `mobile/src/main/java/dev/pointtosky/mobile/ar/CameraPreview.kt`:
+
+- `ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()` —
+  no target-resolution selector is configured; the analyzer observes whatever `ImageProxy.width` /
+  `height` CameraX actually delivers (§5 "Resolution policy": do not hardcode a target resolution
+  unless binding requires it, which it did not here).
+- The analyzer runs on a dedicated `Executors.newSingleThreadExecutor()` — never the main thread —
+  created inside the `DisposableEffect` that owns the camera binding, and `shutdown()` in `onDispose`
+  alongside the existing `job.cancel()`, so it cannot leak across recomposition/navigation.
+- `Preview` and `ImageAnalysis` are bound in one call:
+  `cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview,
+  imageAnalysis)`. `cameraProvider.unbindAll()` immediately before is the same single-owner call that
+  existed pre-CAM-1c; no other code path calls `unbindAll()`, so there are no competing owners.
+- The existing `catch (_: IllegalStateException)` (lifecycle stopped before binding) is preserved
+  unchanged, and CAM-1c adds `catch (_: IllegalArgumentException)` for the case CameraX rejects the
+  `Preview` + `ImageAnalysis` combination (e.g. a camera-less device/emulator with no back camera) —
+  both log a bind-failure category via `MobileLog` and leave no stale resources: binding either fully
+  succeeds or the executor is still cleaned up on dispose either way.
+- `PreviewView.ScaleType.FILL_CENTER` and all existing `Preview` lifecycle behavior are unchanged.
+
+**Timestamp contract:** `CameraFrameMetadata.timestampNanos` is exactly
+`ImageProxy.imageInfo.timestamp` — camera-clock nanoseconds, **not** wall-clock time. It must never
+be compared to `System.currentTimeMillis()`. This slice makes **no claim** that it shares a clock
+base with `SensorEvent.timestamp` (§4.1); measuring and pairing the two, per §4.2, is CAM-1d's job.
+No interpolation or sensor matching is implemented here.
+
+**Logging** (`MobileLog`, `dev.pointtosky.mobile.logging`): `cameraAnalysisBound()` (one event per
+successful bind), `cameraAnalysisBindFailed(reasonCategory)` (bind failure category —
+`"illegal_state"` / `"illegal_argument"`), `cameraFrameMetadata(widthPx, heightPx, rotationDegrees,
+frameCount)` (throttled — logged on frame 1 and every 30th frame after, via
+`CameraFrameMetadataProvider`, never once per frame), and `cameraFrameAnalysisFailed(reasonCategory)`
+(analyzer failure category — the thrown exception's simple class name only, never a message or stack
+trace, never device-specific detail).
+
+**What CAM-1c explicitly does not do:** wire `CameraIntrinsicsProvider` to a bound `CameraInfo`;
+change `ArScreen`/`projectionParams` rendering; implement the image↔display crop/scale mapping (§2
+Step E); pair frame timestamps with `RotationFrame` (§4.2); add a detector, matcher, or any CV
+library; read `imageProxy.planes`/`image`; or add user-facing capture controls.
+
 ---
 
 ## 5. Matching inputs / outputs (CAM-1 data model)
@@ -677,6 +802,13 @@ frame alignment) without committing to computer vision:
    frame resolution, `rotationDegrees`, and `imageInfo.timestamp`. Implement the
    pure image↔display `CropScale` mapping for `FILL_CENTER` (§2 Step E) with
    unit tests §6.5.
+
+   **CAM-1c status:** the `ImageAnalysis` use case, `CameraFrameMetadata` model, extraction seam,
+   and latest-value sink described above (§4.4) are implemented and tested — frame resolution,
+   `rotationDegrees`, and `imageInfo.timestamp` all reach Kotlin now. The image↔display `CropScale`
+   mapping is **not** implemented in CAM-1c; `ImageProxy.cropRect` is captured as plain integers on
+   `CameraFrameMetadata` but nothing maps it to display pixels yet. That mapping, plus timestamp
+   pairing with `RotationFrame` (§4.2), is left for CAM-1d.
 4. **Predict-only matcher.** Implement `CameraMatchInput → CameraMatchResult`
    (§5) in predict-only mode: consume VF-2a `VisibleRealStar` candidates, apply
    Steps A–E with real intrinsics, and emit predicted `StarMatch` positions plus
