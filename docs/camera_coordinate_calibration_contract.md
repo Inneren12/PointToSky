@@ -153,7 +153,9 @@ handedness, and where it lives in code today.
   practice (roll handling assumes display `ROTATION_0`; see
   `deviceRollDegrees` docstring, `RotationFrame.kt:127`).
 - **Not the same as the image pixel frame** (§1.5) because of `FILL_CENTER`
-  crop/scale. Reconciling them is a CAM-1 deliverable (§3).
+  crop/scale. Reconciling them is a CAM-1 deliverable (§3). CAM-1e adds the pure
+  `FILL_CENTER` image↔display mapping that performs this reconciliation
+  (`CropScaleTransform`, §9) — geometry only, not yet wired into this frame.
 
 ---
 
@@ -258,10 +260,12 @@ Per step: existing code · missing code · sign/handedness risks · tests needed
 
 - **Existing:** linear map to Compose pixels over `overlaySize`
   (`ArScreen.kt:1224`).
-- **Missing:** the **image↔display mapping**. `PreviewView.FILL_CENTER`
-  center-crops the camera frame to fill the view; matching against detected
-  points must run in the *image* frame (§1.5) and then map into the display
-  frame (or vice-versa) using the crop/scale. This mapping does not exist yet.
+- **Existing (CAM-1e, pure only):** the **image↔display mapping**.
+  `PreviewView.FILL_CENTER` center-crops the camera frame to fill the view;
+  matching against detected points must run in the *image* frame (§1.5) and then
+  map into the display frame (or vice-versa) using the crop/scale. CAM-1e adds
+  the pure `CropScaleTransform` for exactly this (§9), tested for both
+  directions — but it is **not wired** into this projection path or any renderer.
 - **Sign/handedness risks:**
   - Crop direction: FILL_CENTER can crop either width or height depending on
     aspect; picking the wrong axis shifts everything.
@@ -1144,8 +1148,9 @@ frame alignment) without committing to computer vision:
    and latest-value sink described above (§4.4) are implemented and tested — frame resolution,
    `rotationDegrees`, and `imageInfo.timestamp` all reach Kotlin now. The image↔display `CropScale`
    mapping is **not** implemented in CAM-1c; `ImageProxy.cropRect` is captured as plain integers on
-   `CameraFrameMetadata` but nothing maps it to display pixels yet. That mapping, plus timestamp
-   pairing with `RotationFrame` (§4.2), is left for CAM-1d.
+   `CameraFrameMetadata` but nothing maps it to display pixels yet. Timestamp pairing with
+   `RotationFrame` (§4.2) is CAM-1d; the pure `FILL_CENTER` image↔display `CropScale` mapping itself
+   is **CAM-1e** (§9) — geometry only, still not wired into rendering.
 4. **Predict-only matcher.** Implement `CameraMatchInput → CameraMatchResult`
    (§5) in predict-only mode: consume VF-2a `VisibleRealStar` candidates, apply
    Steps A–E with real intrinsics, and emit predicted `StarMatch` positions plus
@@ -1162,6 +1167,257 @@ distortion, and any UI for later slices.
 
 ---
 
+## 9. CAM-1e image↔display `FILL_CENTER` CropScale mapping (this PR)
+
+CAM-1e defines and tests **geometry only**: a pure, Android-independent mapping
+that describes how a camera image / crop rectangle is rotated, uniformly scaled,
+center-cropped, and positioned inside the displayed viewport under
+`PreviewView.ScaleType.FILL_CENTER`, in **both directions**. It reads no pixels,
+does no interpolation, consumes no timestamp pairs (§4) or intrinsics (§3), adds
+no detector/matcher, and is **not** wired into the renderer — the AR overlay
+still uses the legacy fixed 56° projection (§Step E, `projectionParams`)
+unchanged.
+
+**Pure models** — `:core:astro-core`, package
+`dev.pointtosky.core.astro.projection.camera` (no Android `PointF`/`Rect`/
+`RectF`/`Size`/`Matrix`, no Compose type):
+
+- `PixelPoint(x, y)`, `PixelSize(width, height)`, `PixelRect(left, top, right,
+  bottom)` (`PixelGeometry.kt`) — all values validated eagerly: finite, sizes
+  strictly positive, rectangles strictly ordered (`left < right`, `top <
+  bottom`). No silent clamping.
+- `CropScaleTransform(...)` with `imageToDisplay`, `displayToImage`,
+  `imageRectToDisplay`, `isImagePointVisible`, `isDisplayPointInsideVisibleImage`,
+  `visibleImageRect`, `visibleDisplayRect` (`CropScaleTransform.kt`).
+- Factories: `CropScaleTransform.fillCenter(sourceCrop, sourceBufferSize,
+  rotationDegrees, viewportSize)` (pure sizes/rects) and
+  `createFillCenterCropScaleTransform(frame: CameraFrameMetadata,
+  viewportWidthPx, viewportHeightPx)` (from CAM-1c metadata).
+
+### 9.1 Coordinate spaces
+
+All spaces share the same pixel convention: **origin top-left, `+x` right, `+y`
+down**, unit = pixels. The mapping never introduces a Y-flip (unlike §Step E's
+NDC→screen `1 − ndcY`, which is a separate concern in the legacy projector).
+
+1. **Buffer space** — raw `ImageProxy.width × ImageProxy.height`
+   (`CameraFrameMetadata.bufferWidthPx/bufferHeightPx`). The **public image side
+   of the API is buffer-relative**: `imageToDisplay(p)` takes a buffer-space
+   point and `displayToImage(q)` returns one.
+2. **Crop space (crop-local)** — the active `ImageProxy.cropRect`
+   (`CameraFrameMetadata.cropRect*`), translated so the crop's top-left is the
+   origin: `cropLocal = (bufferX − left, bufferY − top)`, ranging
+   `[0, cropWidth] × [0, cropHeight]`. **Convention chosen: crop-local,
+   internal.** Callers always pass/receive buffer-relative points; the transform
+   converts to crop-local internally and back.
+3. **Rotated image space** — crop-local coordinates after the clockwise
+   `rotationDegrees` rotation; dimensions swap for 90°/270°
+   (`rotatedSourceSize`).
+4. **Display / viewport space** — `PreviewView`/Compose overlay pixels over
+   `viewportSize`. This is the same frame as §1.6, but note CAM-1e maps into
+   raw viewport pixels and does **not** reconcile against the legacy projector's
+   `overlaySize` usage — that reconciliation is a later slice.
+
+### 9.2 Continuous edge-coordinate convention
+
+Coordinates are **continuous image-edge coordinates** in `[0, W] × [0, H]`, not
+pixel-center indices in `[0, W−1] × [0, H−1]`. The top-left buffer corner is
+`(0, 0)` and the bottom-right corner is `(bufferWidth, bufferHeight)`. This is
+chosen deliberately: the inverse transform and viewport scaling stay free of the
+`−1` magic constants that pixel-center coordinates would force in. The two
+conventions are never mixed.
+
+### 9.3 Clockwise rotation formulas
+
+`rotationDegrees` is interpreted as `ImageProxy.imageInfo.rotationDegrees`: the
+**clockwise** rotation required to bring the buffer into display/target
+orientation. Rotation is applied in **crop-local** space (after the buffer→crop
+translation), around the crop-local origin. For crop-local `(x, y)` with
+unrotated crop size `W × H`:
+
+```text
+  0°: x' = x           y' = y            rotated size = W × H
+ 90°: x' = H − y       y' = x            rotated size = H × W
+180°: x' = W − x       y' = H − y        rotated size = W × H
+270°: x' = y           y' = W − x        rotated size = H × W
+```
+
+Inverse (rotated `(x', y')` → crop-local `(x, y)`):
+
+```text
+  0°: x = x'           y = y'
+ 90°: x = y'           y = H − x'
+180°: x = W − x'       y = H − y'
+270°: x = W − y'       y = x'
+```
+
+These are exact inverses and compose correctly (90°∘90° = 180°, 90°×4 =
+identity).
+
+### 9.4 `FILL_CENTER` scale and offsets
+
+For rotated source `rotatedW × rotatedH` and viewport `viewportW × viewportH`:
+
+```text
+scale   = max(viewportW / rotatedW, viewportH / rotatedH)
+scaledW = rotatedW · scale
+scaledH = rotatedH · scale
+offsetX = (viewportW − scaledW) / 2
+offsetY = (viewportH − scaledH) / 2
+```
+
+`max` guarantees the scaled source always fully **covers** the viewport (that is
+what `FILL_CENTER` means). Exactly one of `offsetX`/`offsetY` is negative (the
+center-cropped axis) unless the aspect ratios match, in which case both are `0`.
+**Negative offsets are never clamped** — clamping would break both the center
+crop and reversibility. `FIT_CENTER`/`FILL_START`/`FILL_END`/arbitrary
+`ScaleType` are out of scope.
+
+### 9.5 Forward and inverse mapping order
+
+Forward `imageToDisplay` (buffer → display):
+
+1. translate buffer → crop-local: `(x − left, y − top)`;
+2. rotate crop-local clockwise by `rotationDegrees` (§9.3);
+3. multiply by `scale`;
+4. add `(offsetX, offsetY)`.
+
+Inverse `displayToImage` (display → buffer) undoes the above in reverse:
+
+1. subtract `(offsetX, offsetY)`;
+2. divide by `scale`;
+3. un-rotate (inverse of §9.3);
+4. translate crop-local → buffer: `(x + left, y + top)`.
+
+Invariant, tested over corners/edge-midpoints/center/interior points for all
+four rotations and several aspect ratios (tolerance `1e-6`):
+
+```text
+displayToImage(imageToDisplay(p)) ≈ p
+imageToDisplay(displayToImage(q)) ≈ q
+```
+
+Outputs are **never rounded to integers**.
+
+### 9.6 Crop-rect behavior and non-zero crop origin
+
+- When `CameraFrameMetadata` carries a crop rect, **only that crop** is the
+  source region; when absent, the full buffer `(0, 0, bufferW, bufferH)` is used.
+- A crop rect equal to the full buffer is **honoured, not ignored** (it still
+  defines the source region, and future non-identity crops flow through the same
+  path).
+- The crop origin is **not** assumed to be `(0, 0)`. A buffer point maps through
+  the crop-local translation above; the inverse restores exact **buffer-relative**
+  coordinates. Example (tested): buffer `2000×1500`, crop `left=100, top=200,
+  right=1900, bottom=1400` → the crop origin `(100, 200)` maps to display
+  `(0, 0)` and back.
+
+### 9.7 Visibility and center-crop semantics
+
+- The viewport is **always fully covered** by the scaled source, so
+  `visibleDisplayRect` is always the full `(0, 0, viewportW, viewportH)`.
+- `visibleImageRect` is the buffer-space sub-rectangle of the crop **actually
+  shown** — the inverse image of the viewport (computed from the four viewport
+  corners, exact for 90°-multiple rotations). It is narrower/shorter than the
+  crop on the center-cropped axis, and equals the crop only when aspects match.
+- `isImagePointVisible(bufferPoint)` is true only if the point lies inside the
+  crop **and** its display mapping falls inside the viewport — a point inside the
+  crop but removed by the center crop is **not** visible.
+- A viewport corner may inverse-map to a **non-edge** source point when aspect
+  ratios differ; source points may map **outside** the viewport.
+- Inverse results are **never clamped** to the crop or viewport. Clamping would
+  hide geometry errors and break reversibility, so an out-of-viewport display
+  point legitimately yields an out-of-crop buffer point.
+
+### 9.8 Production integration (this PR)
+
+**None.** CAM-1e is **pure-only**. No production code constructs, publishes, or
+consumes a `CropScaleTransform` in this PR; the renderer, the PTSKCAT0/PTSKCAT4
+star overlay, and the legacy 56° projection are untouched. Wiring the transform
+into debug/session state was deliberately deferred rather than added, because a
+correct call site needs the **Compose overlay viewport size** (the AR `Box`
+extent), which lives in `ArScreen`, not in `CameraPreview` (which owns only the
+`PreviewView`). Introducing that plumbing would add lifecycle surface for no
+behavioral gain in a geometry-only slice.
+
+**Intended call site for the next slice:** the first slice that consumes image
+coordinates (a predict-only matcher, §8 step 4) should build the transform from
+the latest `CameraFrameMetadata` (already published latest-value-only by
+`CameraFrameMetadataProvider`, CAM-1c) plus the measured overlay viewport size,
+publish it latest-value-only alongside the existing debug state, reset it on
+camera-session disposal (reuse the CAM-1c/1d lifecycle, do not create a second
+session owner), and never republish after disposal.
+
+### 9.9 CameraX `Preview`/`ImageAnalysis` equivalence caveat
+
+This is the intended **pure** `FILL_CENTER` contract using the metadata
+currently available (`CameraFrameMetadata`). It is **not** claimed that
+`ImageAnalysis` buffer geometry is automatically identical to `PreviewView`'s
+internal `Preview` transformation on every device:
+
+- The mapping is valid **only if** the analyzed crop/rotation geometry
+  represents the same camera-stream framing that `Preview` renders.
+- CameraX may apply **additional** transformation metadata depending on
+  implementation/version/device (e.g. `PreviewView`/`TransformationInfo`
+  transforms) that this pure model does not yet consume.
+- Future integration of CameraX `TransformationInfo`/`PreviewView` transform
+  data may **refine or replace** these assumptions.
+- This mapping is **not** labeled ground truth. **Physical-device overlay
+  validation remains required.**
+
+### 9.10 Device validation status
+
+**Deferred.** Because CAM-1e adds **no production wiring** (§9.8), there is
+nothing on-device to validate yet. Device validation — comparing preview vs
+overlay viewport dimensions; recording source crop/rotation/scale/offsets;
+rotating portrait↔landscape; confirming the viewport center maps to the expected
+image center and the edge-crop direction; leaving/re-entering AR to confirm no
+stale transform survives session disposal — is deferred to the first slice that
+consumes image coordinates on-device. Pixel-perfect `PreviewView` alignment must
+not be claimed without a visible marker/grid or a future detector.
+
+### 9.11 Worked numerical example
+
+Source `1920×1080`, viewport `1080×1080`, `rotationDegrees = 0`, no crop
+(full-buffer source):
+
+```text
+rotatedSize = 1920 × 1080
+scale       = max(1080/1920, 1080/1080) = max(0.5625, 1.0) = 1.0
+scaledW×H   = 1920 × 1080
+offsetX     = (1080 − 1920) / 2 = −420      # negative: horizontal center crop
+offsetY     = (1080 − 1080) / 2 = 0
+
+imageToDisplay(960, 540)  = (960·1 − 420, 540·1 + 0) = (540, 540)   # viewport center
+displayToImage(0, 0)      = (0 + 420, 0)             = (420, 0)     # non-edge source point
+visibleImageRect          = (420, 0, 1500, 1080)                    # central 1080-wide band shown
+```
+
+A rotated example — source `4000×3000`, viewport `1080×1920`,
+`rotationDegrees = 90`, no crop:
+
+```text
+rotatedSize = 3000 × 4000                              # 90° swaps W/H
+scale       = max(1080/3000, 1920/4000) = max(0.36, 0.48) = 0.48
+offsetX     = (1080 − 1440) / 2 = −180
+offsetY     = (1920 − 1920) / 2 = 0
+
+imageToDisplay(2000, 1500):
+  crop-local (2000, 1500) → rotate 90° → (3000−1500, 2000) = (1500, 2000)
+  → (1500·0.48 − 180, 2000·0.48 + 0) = (540, 960)                  # viewport center
+```
+
+### 9.12 Confirmation (scope boundaries)
+
+CAM-1e wires **no** pixels read, **no** YUV/RGB/interpolation, **no**
+timestamp-pair (§4) consumption, **no** matcher/detector, **no** renderer
+changes, **no** real-intrinsics rendering (§3), **no** PTSKCAT0/PTSKCAT4 catalog
+or overlay changes, **no** lens distortion, **no** additional `ScaleType`
+support, and **no** front-camera mirroring. Mapped coordinates are neither
+clamped nor rounded.
+
+---
+
 ## Appendix A — sign/handedness risk register (quick reference)
 
 | # | Risk | Where | Guard |
@@ -1173,6 +1429,6 @@ distortion, and any UI for later slices.
 | R5 | Display remap vs image `rotationDegrees` double-count | `remapForDisplay` + analyzer | per-rotation test (§6.3) |
 | R6 | Screen/image Y flip (`1 − ndcY`) | `projectDeviceVector` | centre + edge test (§6.2) |
 | R7 | Wrong/hardcoded FOV → scale error | `projectionParams` | FOV-scaling test (§6.5) |
-| R8 | `FILL_CENTER` crop ignored (image ≠ viewport aspect) | `CameraPreview` + Step E | crop/scale test (§6.5) |
+| R8 | `FILL_CENTER` crop ignored (image ≠ viewport aspect) | `CameraPreview` + Step E | crop/scale test (§6.5); pure `CropScaleTransform` forward/inverse + visibility tests (§9, CAM-1e) — not yet wired/device-validated |
 | R9 | Front-camera mirroring | (back camera only today) | flip guard if front added |
 | R10 | Sensor/camera clock base mismatch | §4 sync | age gate + near-still fallback (§4.3); measured nearest-sample pairing + tolerance/mismatch thresholds + diagnostic compatibility status, not yet device-validated (§4.5) |
