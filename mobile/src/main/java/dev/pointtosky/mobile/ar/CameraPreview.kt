@@ -13,8 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
 import dev.pointtosky.mobile.ar.camera.CameraFrameAnalyzer
 import dev.pointtosky.mobile.ar.camera.CameraFrameMetadataProvider
+import dev.pointtosky.mobile.ar.camera.CameraFrameMetadataSink
 import dev.pointtosky.mobile.ar.camera.CameraSessionLifecycle
 import dev.pointtosky.mobile.logging.MobileLog
 import java.util.concurrent.Executors
@@ -36,9 +38,7 @@ private object CameraBindFailureReason {
 /**
  * CAM-1c: binds CameraX `Preview` and `ImageAnalysis` together in one [ProcessCameraProvider.bindToLifecycle]
  * call. `ImageAnalysis` extracts frame metadata only (timestamp, buffer size, rotation, crop rect) -
- * it never reads pixel planes - via [CameraFrameAnalyzer]. The metadata provider is `remember`ed
- * for this composition (throttled debug logging only); no production call site reads it yet, and
- * the AR renderer is unchanged.
+ * it never reads pixel planes - via [CameraFrameAnalyzer]. The AR renderer is unchanged.
  *
  * If the device rejects the combined `Preview` + `ImageAnalysis` bind (`IllegalArgumentException`),
  * `ImageAnalysis` is abandoned and a Preview-*only* bind is retried, so a device that supports
@@ -51,9 +51,18 @@ private object CameraBindFailureReason {
  * (if it was ever attached) and unbinds exactly the use case(s) this composition bound - never a
  * blanket `unbindAll()` - before the executor is shut down, even if disposal races with an
  * in-flight bind. See `docs/camera_coordinate_calibration_contract.md`.
+ *
+ * [onFrameMetadata] is called with every extracted [CameraFrameMetadata], alongside (never instead
+ * of) the existing `remember`ed [CameraFrameMetadataProvider] (CAM-1d) - a minimal seam for a caller
+ * to observe camera frames (e.g. to pair them with rotation samples) without this composable taking
+ * on any new ownership. Defaults to a no-op, so existing callers are unaffected; the provider's own
+ * lifecycle, bind/dispose handling, and throttled debug logging are unchanged.
  */
 @Composable
-fun CameraPreview(modifier: Modifier = Modifier) {
+fun CameraPreview(
+    modifier: Modifier = Modifier,
+    onFrameMetadata: (CameraFrameMetadata) -> Unit = {},
+) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val previewView =
@@ -85,6 +94,16 @@ fun CameraPreview(modifier: Modifier = Modifier) {
                 Preview.Builder().build().also { builder ->
                     builder.setSurfaceProvider(previewView.surfaceProvider)
                 }
+            // Forwards every extracted frame to both the CAM-1c provider (unchanged throttled debug
+            // log) and CAM-1d's onFrameMetadata callback - never instead of the provider, and never
+            // broadening what this composable itself owns beyond that one extra forward.
+            val metadataSink =
+                object : CameraFrameMetadataSink {
+                    override fun onFrame(metadata: CameraFrameMetadata) {
+                        metadataProvider.onFrame(metadata)
+                        onFrameMetadata(metadata)
+                    }
+                }
             val imageAnalysis =
                 ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -93,7 +112,7 @@ fun CameraPreview(modifier: Modifier = Modifier) {
                         analysis.setAnalyzer(
                             analysisExecutor,
                             CameraFrameAnalyzer(
-                                metadataSink = metadataProvider,
+                                metadataSink = metadataSink,
                                 onFrameFailure = metadataProvider::recordFailedFrame,
                             ),
                         )
