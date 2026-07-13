@@ -212,11 +212,12 @@ fun ArScreen(
 
     // CAM-1d: instrumentation only - pairs camera-frame and rotation-sensor timestamps and publishes
     // a diagnostic result/debug state. Does not feed rendering or matching (see
-    // docs/camera_coordinate_calibration_contract.md §4). Reset on dispose so no stale rotation
-    // sample from a previous AR session can pair with the first camera frame of a new one.
+    // docs/camera_coordinate_calibration_contract.md §4). This instance is owned by this one
+    // composition - dispose() is terminal, not reusable, so a new ArScreen composition gets a new
+    // remember{}ed synchronizer rather than calling dispose() and continuing to use this one.
     val timestampSynchronizer = remember { CameraTimestampSynchronizer() }
     DisposableEffect(Unit) {
-        onDispose { timestampSynchronizer.reset() }
+        onDispose { timestampSynchronizer.dispose() }
     }
 
     val rotationFrame = rememberRotationFrame(onRotationSample = timestampSynchronizer::onRotationSample)

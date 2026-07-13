@@ -80,13 +80,16 @@ fun rememberRotationFrame(onRotationSample: (TimedRotationSample) -> Unit = {}):
                             forwardWorld = normalizedForward,
                             timestampNanos = event.timestamp,
                         )
-                    frame = newFrame
+                    // Feed the timestamp history before publishing the Compose state, so a recomposition
+                    // triggered by `frame = newFrame` can never observe a camera-frame pairing seam that
+                    // is missing the rotation sample for this very RotationFrame.
                     onRotationSample(
                         TimedRotationSample(
                             timestampNanos = newFrame.timestampNanos,
                             rotationMatrix = newFrame.rotationMatrix,
                         ),
                     )
+                    frame = newFrame
                 }
 
                 override fun onAccuracyChanged(

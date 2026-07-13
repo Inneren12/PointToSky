@@ -892,11 +892,24 @@ there is no separate collector coroutine to manage or leak:
 - `ArScreen` owns one `CameraTimestampSynchronizer` (`remember`ed), passes
   `timestampSynchronizer::onRotationSample` to `rememberRotationFrame` and
   `timestampSynchronizer::onCameraFrame` to `CameraPreview`'s `onFrameMetadata`, and calls
-  `timestampSynchronizer.reset()` from its own top-level `DisposableEffect(Unit)`'s `onDispose` — this
-  clears the bounded history, the diagnostics accumulator, and the published result, so no stale
-  rotation sample from a previous AR session can pair with the first camera frame of a new one
-  (§8 "leave/re-enter AR"). `debugState()`/`latestResult` are exposed for future diagnostics UI but
-  are not consumed by rendering or matching in this PR.
+  `timestampSynchronizer.dispose()` from its own top-level `DisposableEffect(Unit)`'s `onDispose`.
+  **Ownership is terminal, not reusable:** `dispose()` is a one-way transition — after it,
+  `onRotationSample`/`onCameraFrame` are permanently no-ops (not even a `NoSamples` result is
+  published) — because a new `ArScreen` composition receives a brand-new `remember`ed
+  `CameraTimestampSynchronizer` instance, so no session ever needs to "clear and keep going" on the
+  same instance. This is what actually prevents a stale rotation sample from a previous AR session
+  pairing with the first camera frame of a new one (§8 "leave/re-enter AR") — not a same-instance
+  reset.
+  **Disposal is serialized with session activity through one internal lock**, not independent
+  atomics: `onRotationSample`, `onCameraFrame`, and `dispose` each hold that lock for their entire
+  check-disposed → read/mutate-state transition, so a callback already in flight on another thread
+  when `dispose()` runs either completes and publishes before `dispose()` acquires the lock (and
+  `dispose()` then clears its effect), or observes `disposed == true` once it acquires the lock after
+  `dispose()` (and does nothing) — there is no interleaving where a late callback publishes a result
+  or updates diagnostics after disposal has completed. `MobileLog` calls are made only after the lock
+  is released, from an immutable snapshot decided while holding it, so logging never happens while
+  the lock is held. `debugState()`/`latestResult` are exposed for future diagnostics UI but are not
+  consumed by rendering or matching in this PR.
 
 **Logging** (`MobileLog`, throttled/categorical, never per-frame): `timestampSyncSessionStarted()`
 (once, on the first camera frame observed), `timestampSyncFirstPair(deltaMillis)` (once, on the first

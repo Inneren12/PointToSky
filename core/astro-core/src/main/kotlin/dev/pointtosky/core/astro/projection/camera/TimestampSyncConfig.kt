@@ -21,11 +21,12 @@ object TimestampSyncConfig {
     const val MAX_PAIR_DELTA_NANOS = 50_000_000L // 50 ms
 
     /**
-     * Deltas at or beyond this size cannot plausibly arise from scheduling jitter between two streams
-     * that share a real time base — they are evidence the camera and sensor clocks do not share a
-     * usable base at all, not merely that samples are temporarily sparse. Two orders of magnitude
-     * above [MAX_PAIR_DELTA_NANOS] so ordinary tolerance rejections are never misclassified as a
-     * clock-base mismatch.
+     * Deltas strictly greater than this size cannot plausibly arise from scheduling jitter between
+     * two streams that share a real time base — they are evidence the camera and sensor clocks do
+     * not share a usable base at all, not merely that samples are temporarily sparse. A delta exactly
+     * equal to this threshold is classified as `OutsideTolerance`, not `ClockMismatchSuspected` (see
+     * [pairFrameToNearestRotation]). Two orders of magnitude above [MAX_PAIR_DELTA_NANOS] so ordinary
+     * tolerance rejections are never misclassified as a clock-base mismatch.
      */
     const val CLOCK_MISMATCH_THRESHOLD_NANOS = 5_000_000_000L // 5 s
 
