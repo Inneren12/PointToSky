@@ -1,7 +1,10 @@
 package dev.pointtosky.mobile.ar.camera.prediction
 
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
+import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult
+import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
 import dev.pointtosky.core.astro.projection.camera.prediction.EquatorialStarDirection
 import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarClassification
 import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProjection
@@ -13,9 +16,10 @@ import dev.pointtosky.mobile.ar.camera.toDiagnosticCategory
 
 /**
  * CAM-2b pure reducer (task §5/§6): builds one [PredictedStarOverlayState] from the current
- * camera-geometry observation, observer inputs, and bounded star subset. Called from Compose
- * memoization (never from an uncontrolled drawing-loop call, never from a permanently launched
- * coroutine) — see `ArScreen.kt`'s call site for the `remember` keys.
+ * camera-geometry observation, observer inputs, bounded star subset, and selected
+ * [PredictedStarOverlayIntrinsicsMode]. Called from Compose memoization (never from an uncontrolled
+ * drawing-loop call, never from a permanently launched coroutine) — see `ArScreen.kt`'s call site for
+ * the `remember` keys.
  *
  * ## Ownership of true-north correction (task §4)
  * [geometryResult] must always carry the **raw**, magnetic-north-referenced paired rotation exactly as
@@ -25,7 +29,25 @@ import dev.pointtosky.mobile.ar.camera.toDiagnosticCategory
  * `projectStars` performs the one true-north correction (`trueEnuToMagneticEnu`) internally, using
  * exactly that context value against exactly that raw matrix. Applying `correctedForTrueNorth` to the
  * geometry's rotation matrix *and* passing a non-zero declination here would double-correct true north
- * — callers must never do both. See `docs/camera_star_prediction_contract.md` §4.6.
+ * — callers must never do both. See `docs/camera_star_prediction_contract.md` §4.6. [intrinsicsMode]
+ * (below) never touches the rotation matrix — it only ever substitutes [CameraSessionGeometry.intrinsics].
+ *
+ * ## Intrinsics mode (follow-up task §2)
+ * [intrinsicsMode] controls which intrinsics `projectStars` actually projects with:
+ *  - [PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS] (the default) uses [geometryResult]'s own
+ *    geometry unmodified — a `PhysicalSensor`-referenced session intrinsics still reports
+ *    `Unavailable(PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED)`, exactly as CAM-2a's own contract
+ *    requires; this mode never weakens that gate.
+ *  - [PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK] builds a *derived*
+ *    geometry ([rebuildGeometryWithIntrinsics]) whose intrinsics are a legacy fixed-FOV,
+ *    analysis-buffer-referenced substitute sized to the session's own current frame dimensions, and
+ *    projects with that instead — [geometryResult]/[CameraSessionGeometry] itself is never mutated,
+ *    only read. If the derived geometry cannot be built as `Ready` (practically unreachable — see
+ *    [rebuildGeometryWithIntrinsics]'s KDoc), this reports
+ *    [PredictedStarOverlayWaitingReason.DiagnosticFallbackGeometryUnavailable] rather than throwing.
+ *
+ * The mode is never switched automatically inside this function — whichever [intrinsicsMode] the caller
+ * supplies is exactly what runs, every time.
  *
  * ## Prerequisites (task §6)
  * Projection only runs once every one of the following is coherent, in this order:
@@ -48,6 +70,7 @@ fun reducePredictedStarOverlayState(
     utcEpochMillis: Long?,
     magneticDeclinationDeg: Double?,
     stars: List<EquatorialStarDirection>,
+    intrinsicsMode: PredictedStarOverlayIntrinsicsMode = PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS,
 ): PredictedStarOverlayState {
     if (!gateEnabled) return PredictedStarOverlayState.Disabled
 
@@ -56,6 +79,7 @@ fun reducePredictedStarOverlayState(
             PredictedStarOverlayWaitingReason.GeometryNotReady(geometryResult.toDiagnosticCategory()),
         )
     }
+    val sessionGeometry = geometryResult.geometry
 
     if (observerLatitudeDeg == null || observerLongitudeDeg == null ||
         !observerLatitudeDeg.isFinite() || !observerLongitudeDeg.isFinite()
@@ -75,6 +99,25 @@ fun reducePredictedStarOverlayState(
         return PredictedStarOverlayState.Waiting(PredictedStarOverlayWaitingReason.NoStarsSelected)
     }
 
+    val projectionGeometry: CameraSessionGeometry =
+        when (intrinsicsMode) {
+            PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS -> sessionGeometry
+
+            PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK -> {
+                val fallbackIntrinsics =
+                    CameraIntrinsicsResolution.LegacyFallback(
+                        legacyFallbackCameraIntrinsics(
+                            imageWidthPx = sessionGeometry.frame.bufferWidthPx,
+                            imageHeightPx = sessionGeometry.frame.bufferHeightPx,
+                        ),
+                        reason = "CAM-2b diagnostic analysis-buffer fallback",
+                    )
+                val rebuilt = rebuildGeometryWithIntrinsics(sessionGeometry, fallbackIntrinsics)
+                (rebuilt as? CameraSessionGeometryResult.Ready)?.geometry
+                    ?: return PredictedStarOverlayState.Waiting(PredictedStarOverlayWaitingReason.DiagnosticFallbackGeometryUnavailable)
+            }
+        }
+
     val context =
         StarProjectionContext.of(
             latitudeRad = Math.toRadians(observerLatitudeDeg),
@@ -83,26 +126,28 @@ fun reducePredictedStarOverlayState(
             magneticDeclinationRad = Math.toRadians(magneticDeclinationDeg),
         )
 
-    return when (val batch = projectStars(stars = stars, context = context, geometry = geometryResult.geometry)) {
+    return when (val batch = projectStars(stars = stars, context = context, geometry = projectionGeometry)) {
         is StarPredictionBatchResult.IntrinsicsMappingUnavailable -> PredictedStarOverlayState.Unavailable(batch.reason)
 
         is StarPredictionBatchResult.Ready -> {
             val summary = summarizeStarPredictions(batch.projections)
             val points = toOverlayPoints(batch.projections)
-            val geometry = geometryResult.geometry
             val metadata =
                 PredictedStarOverlayMetadata(
                     inputCount = summary.inputCount,
                     visibleCount = summary.visibleInViewportCount,
-                    frameTimestampNanos = geometry.frame.timestampNanos,
-                    rotationTimestampNanos = geometry.pairedRotation.timestampNanos,
-                    pairDeltaNanos = geometry.frameRotationDeltaNanos,
-                    frameRotationDegrees = geometry.frame.rotationDegrees,
-                    intrinsicsSource = geometry.intrinsics.intrinsics.source.name,
-                    intrinsicsReference = describeIntrinsicsReference(geometry.intrinsics.intrinsics.reference),
+                    frameTimestampNanos = sessionGeometry.frame.timestampNanos,
+                    rotationTimestampNanos = sessionGeometry.pairedRotation.timestampNanos,
+                    pairDeltaNanos = sessionGeometry.frameRotationDeltaNanos,
+                    frameRotationDegrees = sessionGeometry.frame.rotationDegrees,
+                    intrinsicsMode = intrinsicsMode,
+                    sessionIntrinsicsSource = sessionGeometry.intrinsics.intrinsics.source.name,
+                    sessionIntrinsicsReference = describeIntrinsicsReference(sessionGeometry.intrinsics.intrinsics.reference),
+                    projectionIntrinsicsSource = projectionGeometry.intrinsics.intrinsics.source.name,
+                    projectionIntrinsicsReference = describeIntrinsicsReference(projectionGeometry.intrinsics.intrinsics.reference),
                     magneticDeclinationDeg = magneticDeclinationDeg,
                 )
-            PredictedStarOverlayState.Ready(points = points, summary = summary, metadata = metadata)
+            PredictedStarOverlayState.Ready.of(points = points, summary = summary, metadata = metadata)
         }
     }
 }

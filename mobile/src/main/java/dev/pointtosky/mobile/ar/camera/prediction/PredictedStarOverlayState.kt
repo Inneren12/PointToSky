@@ -4,6 +4,9 @@ import dev.pointtosky.core.astro.projection.camera.prediction.IntrinsicsMappingU
 import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionSummary
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticCategory
 
+/** [dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata.rotationDegrees]'s own valid set. */
+private val VALID_ROTATIONS_DEG = setOf(0, 90, 180, 270)
+
 /**
  * CAM-2b: why [PredictedStarOverlayState.Waiting] was reported instead of [PredictedStarOverlayState.Ready].
  * Never derived from a `toString()` — one value per distinct reason the CAM-2b integration can be
@@ -33,6 +36,16 @@ sealed interface PredictedStarOverlayWaitingReason {
 
     /** The bounded diagnostic catalog subset ([selectPredictedStarDirections]) is empty. */
     data object NoStarsSelected : PredictedStarOverlayWaitingReason
+
+    /**
+     * [PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK] was selected, but
+     * [rebuildGeometryWithIntrinsics] did not return a
+     * [dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult.Ready] bundle — e.g. the
+     * derived crop/scale transform construction failed. Practically unreachable (the derived geometry
+     * reuses the exact frame/viewport an already-`Ready` session geometry already validated), but
+     * reported explicitly rather than throwing, matching this codebase's categorized-result convention.
+     */
+    data object DiagnosticFallbackGeometryUnavailable : PredictedStarOverlayWaitingReason
 }
 
 /**
@@ -47,17 +60,29 @@ data class PredictedStarOverlayPoint(
     val magnitude: Double?,
     val displayX: Double,
     val displayY: Double,
-)
+) {
+    init {
+        require(catalogIndex >= 0) { "catalogIndex must be non-negative; was $catalogIndex" }
+        require(magnitude == null || magnitude.isFinite()) { "magnitude must be finite when present; was $magnitude" }
+        require(displayX.isFinite()) { "displayX must be finite; was $displayX" }
+        require(displayY.isFinite()) { "displayY must be finite; was $displayY" }
+    }
+}
 
 /**
  * CAM-2b: bounded, immutable diagnostic metadata for the compact status panel (§9 of the task). Never
  * retains a rotation matrix, a catalog object, image pixels, an exception stack, a historical frame, or
  * a device identifier — only the plain scalars/strings a debug panel needs to render one line each.
  *
- * @property intrinsicsSource [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource.name]
- *   of the geometry bundle's resolved intrinsics.
- * @property intrinsicsReference a short, human-readable description of
- *   [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference] — e.g. `"AnalysisBuffer(1920x1080)"`.
+ * [sessionIntrinsicsSource]/[sessionIntrinsicsReference] always describe the camera session's own
+ * resolved-or-fallback intrinsics ([dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry.intrinsics]),
+ * regardless of [intrinsicsMode]. [projectionIntrinsicsSource]/[projectionIntrinsicsReference] describe
+ * whichever intrinsics were *actually used* to call `projectStars` — identical to the session ones for
+ * [PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS], but the substituted diagnostic fallback for
+ * [PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK]. Keeping both pairs distinct
+ * means the panel can never describe a diagnostic fallback substitution as if it were the real,
+ * calibrated session intrinsics.
+ *
  * @property magneticDeclinationDeg the declination actually fed into [dev.pointtosky.core.astro.projection.camera.prediction.StarProjectionContext],
  *   in degrees. Never `null` for a [PredictedStarOverlayState.Ready] result — a `null`/non-finite
  *   declination is a [PredictedStarOverlayWaitingReason.MagneticDeclinationUnavailable] `Waiting` state,
@@ -70,10 +95,24 @@ data class PredictedStarOverlayMetadata(
     val rotationTimestampNanos: Long,
     val pairDeltaNanos: Long,
     val frameRotationDegrees: Int,
-    val intrinsicsSource: String,
-    val intrinsicsReference: String,
+    val intrinsicsMode: PredictedStarOverlayIntrinsicsMode,
+    val sessionIntrinsicsSource: String,
+    val sessionIntrinsicsReference: String,
+    val projectionIntrinsicsSource: String,
+    val projectionIntrinsicsReference: String,
     val magneticDeclinationDeg: Double,
-)
+) {
+    init {
+        require(inputCount >= 0) { "inputCount must be non-negative; was $inputCount" }
+        require(visibleCount >= 0) { "visibleCount must be non-negative; was $visibleCount" }
+        require(frameRotationDegrees in VALID_ROTATIONS_DEG) {
+            "frameRotationDegrees must be one of $VALID_ROTATIONS_DEG; was $frameRotationDegrees"
+        }
+        require(magneticDeclinationDeg.isFinite()) {
+            "magneticDeclinationDeg must be finite; was $magneticDeclinationDeg"
+        }
+    }
+}
 
 /**
  * CAM-2b: the small, immutable, UI-facing diagnostic state for the predicted-star overlay (task §5).
@@ -93,12 +132,42 @@ sealed interface PredictedStarOverlayState {
      * [dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarClassification.VISIBLE_IN_VIEWPORT]
      * predictions, in CAM-2a's own input/result order; [summary] is the full-batch counters (including
      * non-visible classifications), never filtered.
+     *
+     * The primary constructor is `private` (`@ConsistentCopyVisibility`, matching this codebase's
+     * `StarPredictionBatchResult.Ready`/`EquatorialStarDirection` convention): the sole public
+     * construction path is [of], which stores a **defensive copy** ([List.toList]) of [points] — this
+     * is a diagnostic snapshot and must never be externally mutable, either by a caller holding the
+     * original (possibly mutable) list, or via a reference to an already-published [Ready]'s own
+     * [points]. `init` also re-checks the cross-field invariants [of] establishes, as defense in depth.
      */
-    data class Ready(
+    @ConsistentCopyVisibility
+    data class Ready private constructor(
         val points: List<PredictedStarOverlayPoint>,
         val summary: StarPredictionSummary,
         val metadata: PredictedStarOverlayMetadata,
-    ) : PredictedStarOverlayState
+    ) : PredictedStarOverlayState {
+        init {
+            require(points.size == metadata.visibleCount) {
+                "points.size (${points.size}) must equal metadata.visibleCount (${metadata.visibleCount})"
+            }
+            require(summary.inputCount == metadata.inputCount) {
+                "summary.inputCount (${summary.inputCount}) must equal metadata.inputCount (${metadata.inputCount})"
+            }
+            require(summary.visibleInViewportCount == metadata.visibleCount) {
+                "summary.visibleInViewportCount (${summary.visibleInViewportCount}) must equal " +
+                    "metadata.visibleCount (${metadata.visibleCount})"
+            }
+        }
+
+        companion object {
+            /** The only public way to build a [Ready]; see the class KDoc for why. */
+            fun of(
+                points: List<PredictedStarOverlayPoint>,
+                summary: StarPredictionSummary,
+                metadata: PredictedStarOverlayMetadata,
+            ): Ready = Ready(points.toList(), summary, metadata)
+        }
+    }
 
     /** `projectStars(...)` returned `IntrinsicsMappingUnavailable`; see [reason]. */
     data class Unavailable(val reason: IntrinsicsMappingUnavailableReason) : PredictedStarOverlayState

@@ -60,17 +60,20 @@ fun projectStars(
     }
 
     val pinhole = PinholeProjectionModel.forGeometry(geometry)
-    return StarPredictionBatchResult.Ready.of(stars.map { star -> projectOneStar(star, context, geometry, pinhole) })
+    // Computed once per batch, not once per star - lstDeg depends only on the observer/time in
+    // [context], identical for every star in [stars]. See PreparedStarProjectionContext's KDoc.
+    val prepared = prepareStarProjectionContext(context)
+    return StarPredictionBatchResult.Ready.of(stars.map { star -> projectOneStar(star, prepared, geometry, pinhole) })
 }
 
 private fun projectOneStar(
     star: EquatorialStarDirection,
-    context: StarProjectionContext,
+    prepared: PreparedStarProjectionContext,
     geometry: CameraSessionGeometry,
     pinhole: PinholeProjectionModel,
 ): PredictedStarProjection {
-    val trueEnuSky = equatorialToLocalSky(star, context)
-    val magneticEnuSky = trueEnuToMagneticEnu(direction = trueEnuSky, magneticDeclinationRad = context.magneticDeclinationRad)
+    val trueEnuSky = equatorialToLocalSky(star, latitudeRad = prepared.latitudeRad, lstDeg = prepared.lstDeg)
+    val magneticEnuSky = trueEnuToMagneticEnu(direction = trueEnuSky, magneticDeclinationRad = prepared.magneticDeclinationRad)
 
     val displayDevice = worldToDeviceVector(rotationMatrix = geometry.pairedRotation.rotationMatrix, world = magneticEnuSky)
     val displayOptical = DeviceToOpticalCameraTransform.apply(displayDevice)

@@ -2,16 +2,25 @@
 
 **Status: `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`**
 
-This PR was authored and tested by a coding agent with no physical Android device, no camera hardware,
-and no rotation sensor available. Only JVM unit tests and static review were performed — Gradle itself
-could not run any `:mobile` task in the authoring sandbox (no Android SDK installed, no network path to
-provision one); see `docs/camera_star_prediction_contract.md` §14.10 for the exact disclosed limitation.
-**Every checklist item below is transcribed from the CAM-2b task description, unexecuted.** None of the
-results in this file are fabricated or guessed — the fields are left blank intentionally, and must stay
-blank until someone actually runs the checklist on a physical device.
+This PR was authored by a coding agent with no physical Android device, no camera hardware, and no
+rotation sensor available. **Tests authored: Yes. Tests executed: Partially. Build verified: Partially
+(via a compiler workaround, not real Gradle).** Real Gradle could not run at all in the authoring
+sandbox: no Android SDK is installed, and even the pure-JVM `:core:astro-core` module could not compile
+through Gradle because its pinned JDK-17 toolchain could not be downloaded (egress-blocked). A `kotlinc`/
+JUnit-console workaround (matching CAM-2a's own documented precedent) did, however, actually compile and
+run `:core:astro-core`'s full test suite (391/391 passing) and `:mobile`'s Android-free CAM-2b
+prediction-package tests (45/45 passing) — real, executed results, not fabricated. `:mobile`'s
+Compose/`ArScreen.kt` compilation, `androidTest` compilation, lint, assemble, and connected
+instrumentation tests remain genuinely unexecuted — assembling `android.jar`, the Compose compiler
+plugin, and AndroidX/CameraX AARs is not replicable by a bare compiler invocation. See
+`docs/camera_star_prediction_contract.md` §14.10 for the itemized, per-gate disclosure. **Every
+checklist item below is transcribed from the CAM-2b task description, unexecuted.** None of the results
+in this file are fabricated or guessed — the fields are left blank intentionally, and must stay blank
+until someone actually runs the checklist on a physical device.
 
-Do not treat this file as a completed report. Do not mark the CAM-2b gate as passed based on JVM tests
-or static review alone. This checklist assumes CAM-1g's own device gate
+Do not treat this file as a completed report. Do not mark the CAM-2b gate as passed based on the JVM
+test results above, however real, or on static review alone — none of that is a substitute for the
+physical-device checklist below. This checklist assumes CAM-1g's own device gate
 (`docs/validation/cam_1g_device_validation.md`) is exercised first or alongside — CAM-2b's predicted
 overlay is only as trustworthy as the CAM-1c–1g geometry pipeline feeding it.
 
@@ -109,9 +118,18 @@ Not claimed: absolute astronomical calibration from one visual check (per task i
 
 **`CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`**
 
-The bounded catalog adapter, pure reducer, diagnostic state, and Compose overlay/panel/controls are
-implemented and covered by JVM unit tests (see the PR description for exact commands — none of which
-could actually be executed in the authoring sandbox; see `docs/camera_star_prediction_contract.md`
-§14.10). The physical-device checklist above, plus CAM-1g's own checklist
-(`docs/validation/cam_1g_device_validation.md`), must be executed and both files updated with real,
-non-fabricated results — and reviewed — before this gate can close.
+The bounded catalog adapter, pure reducer, explicit intrinsics-mode fallback, diagnostic state, and
+Compose overlay/panel/controls are implemented, and JVM/Compose-UI tests have been **authored** for all
+of them (see the PR description for exact file names and commands). Of those, the Android-free subset —
+`:core:astro-core`'s full suite and `:mobile`'s `PredictedStarCatalogAdapterTest`/
+`PredictedStarOverlayReducerTest`/`PredictedStarOverlayFormatTest` — has actually been **compiled and
+run** via a `kotlinc`/JUnit-console workaround (391/391 and 45/45 passing respectively; real results, not
+fabricated). **`:mobile`'s Compose/`ArScreen.kt` compilation, its Compose UI test
+(`PredictedStarOverlayUiTest`), `androidTest` compilation, lint, assemble, and connected instrumentation
+tests have not actually been executed** in the authoring sandbox — see
+`docs/camera_star_prediction_contract.md` §14.10 for the itemized, per-gate disclosure (main compilation,
+JVM unit tests, `androidTest` compilation, and connected instrumentation tests are each assessed
+individually, not collapsed into one claim). The physical-device checklist above, plus CAM-1g's own
+checklist (`docs/validation/cam_1g_device_validation.md`), and the remaining unexecuted gates in
+`docs/camera_star_prediction_contract.md` §14.10, must all be executed through real Gradle and this file
+(and that section) updated with real, non-fabricated results — and reviewed — before this gate can close.

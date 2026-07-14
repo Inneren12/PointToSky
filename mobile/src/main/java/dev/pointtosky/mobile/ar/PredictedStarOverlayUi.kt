@@ -8,7 +8,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,6 +23,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayPoint
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.buildPredictedStarOverlayDiagnosticText
@@ -117,16 +122,22 @@ fun PredictedStarOverlayPanel(
 }
 
 /**
- * CAM-2b (task §11): a minimal, `internalDebug`-only, session-local pair of toggles — "Show predicted
- * stars" and "Show diagnostic panel". State is owned by the caller (`ArScreen`, via `remember`), never
- * persisted, never a full settings screen.
+ * CAM-2b (task §11, extended by the follow-up task §2): a minimal, `internalDebug`-only, session-local
+ * set of controls — "Show predicted stars", "Show diagnostic panel", and an explicit two-way selector
+ * between [PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS] ("Session intrinsics") and
+ * [PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK] ("Diagnostic fallback"). All
+ * state is owned by the caller (`ArScreen`, via `remember`), never persisted, never a full settings
+ * screen.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PredictedStarOverlayControls(
     showMarkers: Boolean,
     onShowMarkersChange: (Boolean) -> Unit,
     showPanel: Boolean,
     onShowPanelChange: (Boolean) -> Unit,
+    intrinsicsMode: PredictedStarOverlayIntrinsicsMode,
+    onIntrinsicsModeChange: (PredictedStarOverlayIntrinsicsMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -134,7 +145,7 @@ fun PredictedStarOverlayControls(
             modifier
                 .background(color = Color(0xAA003340), shape = RoundedCornerShape(8.dp))
                 .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         PredictedStarOverlayToggleRow(
             title = "Show predicted stars",
@@ -146,6 +157,25 @@ fun PredictedStarOverlayControls(
             checked = showPanel,
             onCheckedChange = onShowPanelChange,
         )
+        Text(
+            text = "Intrinsics",
+            color = Color.White,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        val modes = PredictedStarOverlayIntrinsicsMode.entries
+        val modeLabels = listOf("Session intrinsics", "Diagnostic fallback")
+        SingleChoiceSegmentedButtonRow {
+            modes.forEachIndexed { index, mode ->
+                SegmentedButton(
+                    selected = intrinsicsMode == mode,
+                    onClick = { onIntrinsicsModeChange(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                    label = {
+                        Text(text = modeLabels[index], style = MaterialTheme.typography.labelSmall)
+                    },
+                )
+            }
+        }
     }
 }
 

@@ -86,6 +86,21 @@ class PredictedStarOverlayReducerTest {
     ): CameraIntrinsicsResolution.LegacyFallback =
         CameraIntrinsicsResolution.LegacyFallback(legacyFallbackCameraIntrinsics(widthPx, heightPx), reason = "test")
 
+    private fun physicalSensorIntrinsics(): CameraIntrinsicsResolution.Resolved =
+        CameraIntrinsicsResolution.Resolved(
+            CameraIntrinsics(
+                horizontalFovDeg = 60.0,
+                verticalFovDeg = 45.0,
+                focalLengthMm = 4.25,
+                sensorWidthMm = 5.76,
+                sensorHeightMm = 4.29,
+                principalPointXPx = null,
+                principalPointYPx = null,
+                source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                reference = CameraIntrinsicsReference.PhysicalSensor,
+            ),
+        )
+
     private fun reduce(
         gateEnabled: Boolean = true,
         geometryResult: CameraSessionGeometryResult = CameraSessionGeometryResult.MissingFrame(null),
@@ -94,6 +109,7 @@ class PredictedStarOverlayReducerTest {
         utcEpochMillis: Long? = 0L,
         magneticDeclinationDeg: Double? = 5.0,
         stars: List<EquatorialStarDirection> = validStars,
+        intrinsicsMode: PredictedStarOverlayIntrinsicsMode = PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS,
     ): PredictedStarOverlayState =
         reducePredictedStarOverlayState(
             gateEnabled = gateEnabled,
@@ -103,6 +119,7 @@ class PredictedStarOverlayReducerTest {
             utcEpochMillis = utcEpochMillis,
             magneticDeclinationDeg = magneticDeclinationDeg,
             stars = stars,
+            intrinsicsMode = intrinsicsMode,
         )
 
     // --- A. Gate behavior --------------------------------------------------------------------------
@@ -452,6 +469,113 @@ class PredictedStarOverlayReducerTest {
 
         assertEquals(summarizeStarPredictions(reference.projections), reduced.summary)
         assertEquals(toOverlayPoints(reference.projections), reduced.points)
+    }
+
+    // --- Intrinsics mode (follow-up task §2/§3) --------------------------------------------------------
+
+    @Test
+    fun `session intrinsics mode with a PhysicalSensor session reference preserves PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`() {
+        val geometry = readyGeometry(physicalSensorIntrinsics())
+
+        val result = reduce(geometryResult = geometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS)
+
+        assertEquals(
+            PredictedStarOverlayState.Unavailable(IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED),
+            result,
+        )
+    }
+
+    @Test
+    fun `diagnostic fallback mode with a PhysicalSensor session reference becomes Ready with an AnalysisBuffer projection reference`() {
+        val geometry = readyGeometry(physicalSensorIntrinsics(), bufferWidthPx = 1000, bufferHeightPx = 500)
+
+        val result =
+            assertIs<PredictedStarOverlayState.Ready>(
+                reduce(geometryResult = geometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK),
+            )
+
+        assertEquals(PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK, result.metadata.intrinsicsMode)
+        assertEquals("AnalysisBuffer(1000x500)", result.metadata.projectionIntrinsicsReference)
+        assertEquals("LEGACY_FALLBACK", result.metadata.projectionIntrinsicsSource)
+        // The session-level fields still describe the real, unsubstituted session intrinsics.
+        assertEquals("PhysicalSensor", result.metadata.sessionIntrinsicsReference)
+        assertEquals("CAMERA_CHARACTERISTICS", result.metadata.sessionIntrinsicsSource)
+    }
+
+    @Test
+    fun `diagnostic fallback projection never mutates the original session geometry`() {
+        val geometry = readyGeometry(physicalSensorIntrinsics(), bufferWidthPx = 1000, bufferHeightPx = 500)
+
+        reduce(geometryResult = geometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK)
+
+        assertEquals(CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, geometry.geometry.intrinsics.intrinsics.source)
+        assertIs<CameraIntrinsicsReference.PhysicalSensor>(geometry.geometry.intrinsics.intrinsics.reference)
+    }
+
+    @Test
+    fun `diagnostic fallback reference matches the exact current frame dimensions for several sizes`() {
+        listOf(1000 to 500, 1920 to 1080, 1080 to 1920).forEach { (widthPx, heightPx) ->
+            val geometry =
+                readyGeometry(
+                    physicalSensorIntrinsics(),
+                    bufferWidthPx = widthPx,
+                    bufferHeightPx = heightPx,
+                    viewportWidthPx = widthPx,
+                    viewportHeightPx = heightPx,
+                )
+
+            val result =
+                assertIs<PredictedStarOverlayState.Ready>(
+                    reduce(geometryResult = geometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK),
+                )
+
+            assertEquals("AnalysisBuffer(${widthPx}x$heightPx)", result.metadata.projectionIntrinsicsReference, "for ${widthPx}x$heightPx")
+        }
+    }
+
+    @Test
+    fun `the default intrinsics mode is SESSION_INTRINSICS`() {
+        val geometry = readyGeometry(physicalSensorIntrinsics())
+
+        // intrinsicsMode is deliberately omitted here, relying on reducePredictedStarOverlayState's
+        // own default parameter value rather than this test file's reduce() helper default.
+        val result =
+            reducePredictedStarOverlayState(
+                gateEnabled = true,
+                geometryResult = geometry,
+                observerLatitudeDeg = 45.0,
+                observerLongitudeDeg = 10.0,
+                utcEpochMillis = 0L,
+                magneticDeclinationDeg = 5.0,
+                stars = validStars,
+            )
+
+        assertEquals(
+            PredictedStarOverlayState.Unavailable(IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED),
+            result,
+        )
+    }
+
+    @Test
+    fun `panel text distinguishes session and diagnostic-fallback intrinsics modes and never calls the fallback calibrated`() {
+        val sessionReady =
+            assertIs<PredictedStarOverlayState.Ready>(
+                reduce(geometryResult = readyGeometry(exactMatchIntrinsics()), intrinsicsMode = PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS),
+            )
+        val sessionText = buildPredictedStarOverlayDiagnosticText(sessionReady)
+        assertTrue(sessionText.contains("intrinsics mode: session"))
+
+        val fallbackGeometry = readyGeometry(physicalSensorIntrinsics(), bufferWidthPx = 1000, bufferHeightPx = 500)
+        val fallbackReady =
+            assertIs<PredictedStarOverlayState.Ready>(
+                reduce(geometryResult = fallbackGeometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK),
+            )
+        val fallbackText = buildPredictedStarOverlayDiagnosticText(fallbackReady)
+        assertTrue(fallbackText.contains("intrinsics mode: diagnostic fallback"))
+        assertTrue(fallbackText.contains("session intrinsics: CAMERA_CHARACTERISTICS / PhysicalSensor"))
+        assertTrue(fallbackText.contains("projection intrinsics: LEGACY_FALLBACK / AnalysisBuffer(1000x500)"))
+        assertFalse(fallbackText.contains("calibrated", ignoreCase = true))
+        assertFalse(fallbackText.contains("resolved physical", ignoreCase = true))
     }
 
     // --- I. Disposal / session reset -----------------------------------------------------------------

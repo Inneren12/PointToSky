@@ -99,6 +99,7 @@ import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
 import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
 import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
 import dev.pointtosky.mobile.ar.camera.nextDebugSessionId
+import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.reducePredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.selectPredictedStarDirections
@@ -430,6 +431,10 @@ fun ArScreen(
                 if (CameraGeometryDiagnosticsGate.isEnabled) {
                     var showPredictedStarMarkers by remember { mutableStateOf(true) }
                     var showPredictedStarPanel by remember { mutableStateOf(true) }
+                    // Follow-up task §2: SESSION_INTRINSICS is the safest, most explicit default -
+                    // never silently substitutes a diagnostic fallback FOV for the real session
+                    // intrinsics unless the tester explicitly opts in via PredictedStarOverlayControls.
+                    var predictedStarIntrinsicsMode by remember { mutableStateOf(PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS) }
                     val predictedStars =
                         remember(state.catalog, state.effectiveMagLimit) {
                             selectPredictedStarDirections(visibilitySelectedStars(state))
@@ -442,6 +447,7 @@ fun ArScreen(
                             state.instant,
                             declinationDeg,
                             predictedStars,
+                            predictedStarIntrinsicsMode,
                         ) {
                             reducePredictedStarOverlayState(
                                 gateEnabled = true,
@@ -453,6 +459,7 @@ fun ArScreen(
                                 utcEpochMillis = state.instant.toEpochMilli(),
                                 magneticDeclinationDeg = declinationDeg,
                                 stars = predictedStars,
+                                intrinsicsMode = predictedStarIntrinsicsMode,
                             )
                         }
 
@@ -479,6 +486,8 @@ fun ArScreen(
                         onShowMarkersChange = { showPredictedStarMarkers = it },
                         showPanel = showPredictedStarPanel,
                         onShowPanelChange = { showPredictedStarPanel = it },
+                        intrinsicsMode = predictedStarIntrinsicsMode,
+                        onIntrinsicsModeChange = { predictedStarIntrinsicsMode = it },
                         modifier =
                             Modifier
                                 .align(Alignment.CenterEnd)
