@@ -99,4 +99,27 @@ class PixelGeometryTest {
         assertFalse(r.contains(PixelPoint(100.4, 25.0)))
         assertTrue(r.contains(PixelPoint(100.4, 25.0), tolerancePx = 0.5))
     }
+
+    @Test
+    fun `PixelRect contains accepts zero and positive finite tolerance`() {
+        val r = PixelRect(0.0, 0.0, 100.0, 50.0)
+        assertTrue(r.contains(PixelPoint(50.0, 25.0), tolerancePx = 0.0))
+        assertTrue(r.contains(PixelPoint(50.0, 25.0), tolerancePx = 5.0))
+    }
+
+    @Test
+    fun `PixelRect contains rejects negative tolerance`() {
+        val r = PixelRect(0.0, 0.0, 100.0, 50.0)
+        assertFailsWith<IllegalArgumentException> { r.contains(PixelPoint(50.0, 25.0), tolerancePx = -1.0) }
+    }
+
+    @Test
+    fun `PixelRect contains rejects non-finite tolerance`() {
+        val r = PixelRect(0.0, 0.0, 100.0, 50.0)
+        listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { bad ->
+            assertFailsWith<IllegalArgumentException>("tolerancePx=$bad") {
+                r.contains(PixelPoint(50.0, 25.0), tolerancePx = bad)
+            }
+        }
+    }
 }

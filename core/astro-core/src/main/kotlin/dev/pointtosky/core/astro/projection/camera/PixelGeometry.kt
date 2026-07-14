@@ -78,14 +78,27 @@ data class PixelRect(
     /**
      * True if [point] lies within this rectangle with edges inclusive. [tolerancePx] widens the
      * bounds symmetrically to absorb sub-pixel floating-point noise from an inverse mapping; it is
-     * never used to clamp a result, only to classify one.
+     * never used to clamp a result, only to classify one. [tolerancePx] must be finite and
+     * non-negative — an invalid tolerance is rejected, never silently treated as "no match".
      */
     fun contains(
         point: PixelPoint,
         tolerancePx: Double = 0.0,
-    ): Boolean =
-        point.x >= left - tolerancePx &&
+    ): Boolean {
+        requireValidTolerancePx(tolerancePx)
+        return point.x >= left - tolerancePx &&
             point.x <= right + tolerancePx &&
             point.y >= top - tolerancePx &&
             point.y <= bottom + tolerancePx
+    }
+}
+
+/**
+ * Validates a pixel tolerance shared by [PixelRect.contains] and the [CropScaleTransform] visibility
+ * helpers: it must be finite and non-negative. Rejecting `NaN`/±∞/negative here means a bad tolerance
+ * surfaces as an [IllegalArgumentException] rather than a silently-wrong `false`.
+ */
+internal fun requireValidTolerancePx(tolerancePx: Double) {
+    require(tolerancePx.isFinite()) { "tolerancePx must be finite; was $tolerancePx" }
+    require(tolerancePx >= 0.0) { "tolerancePx must be non-negative; was $tolerancePx" }
 }

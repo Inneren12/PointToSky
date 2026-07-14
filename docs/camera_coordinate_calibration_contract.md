@@ -153,9 +153,10 @@ handedness, and where it lives in code today.
   practice (roll handling assumes display `ROTATION_0`; see
   `deviceRollDegrees` docstring, `RotationFrame.kt:127`).
 - **Not the same as the image pixel frame** (§1.5) because of `FILL_CENTER`
-  crop/scale. Reconciling them is a CAM-1 deliverable (§3). CAM-1e adds the pure
-  `FILL_CENTER` image↔display mapping that performs this reconciliation
-  (`CropScaleTransform`, §9) — geometry only, not yet wired into this frame.
+  crop/scale. Reconciling them is a CAM-1 deliverable (§3). CAM-1e **defines the
+  pure geometry required** for this image↔display reconciliation
+  (`CropScaleTransform`, §9). It is **not wired into the production projection or
+  renderer** — this frame is unchanged until a later slice consumes it.
 
 ---
 
@@ -1186,13 +1187,36 @@ unchanged.
   bottom)` (`PixelGeometry.kt`) — all values validated eagerly: finite, sizes
   strictly positive, rectangles strictly ordered (`left < right`, `top <
   bottom`). No silent clamping.
-- `CropScaleTransform(...)` with `imageToDisplay`, `displayToImage`,
+- `CropScaleTransform` with `imageToDisplay`, `displayToImage`,
   `imageRectToDisplay`, `isImagePointVisible`, `isDisplayPointInsideVisibleImage`,
   `visibleImageRect`, `visibleDisplayRect` (`CropScaleTransform.kt`).
 - Factories: `CropScaleTransform.fillCenter(sourceCrop, sourceBufferSize,
   rotationDegrees, viewportSize)` (pure sizes/rects) and
   `createFillCenterCropScaleTransform(frame: CameraFrameMetadata,
   viewportWidthPx, viewportHeightPx)` (from CAM-1c metadata).
+
+### 9.0 Construction contract (invalid states unrepresentable)
+
+`CropScaleTransform`'s primary constructor is **private** and the class is
+annotated `@ConsistentCopyVisibility` (so the generated `copy()` is private too).
+The **only** way to obtain an instance is `CropScaleTransform.fillCenter(...)`
+(or `createFillCenterCropScaleTransform(...)`, which delegates to it):
+
+- Callers supply **only source geometry, rotation, and viewport geometry**. There
+  is no parameter through which a caller can pass `uniformScale`,
+  `rotatedSourceSize`, or the display offsets.
+- The factory **derives** `rotatedSourceSize`, `uniformScale`, `displayOffsetX`,
+  and `displayOffsetY` internally, from a single private helper
+  (`deriveFillCenter`) that is the one place the scale/offset formulas live.
+- `init` re-derives those four values from the source/rotation/viewport and
+  `require`s the stored values match (within a small epsilon for the derived
+  floating-point comparison). Together with the private constructor/`copy()`,
+  this makes an instance that is internally finite but does **not** represent
+  `PreviewView.ScaleType.FILL_CENTER` **not representable** by any path.
+- `init` also enforces **strict** source-crop domain bounds (`left ≥ 0`,
+  `top ≥ 0`, `right ≤ bufferWidth`, `bottom ≤ bufferHeight`) with **no epsilon
+  slack on these caller inputs** — a crop even slightly outside the buffer is
+  rejected, never clamped. Epsilon is used only for the derived-value comparison.
 
 ### 9.1 Coordinate spaces
 

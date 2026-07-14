@@ -375,21 +375,131 @@ class CropScaleTransformTest {
         }
     }
 
+    // The public creation API takes only source geometry, rotation, and viewport geometry — there is
+    // no parameter through which a caller can supply uniformScale, rotatedSourceSize, or the offsets;
+    // the factory derives them. (The private constructor makes any other instantiation a compile
+    // error, so this is proven by the source API, not a runtime test.) The tests below prove the
+    // derivation is correct.
+
     @Test
-    fun `transform rejects a rotatedSourceSize inconsistent with the crop`() {
+    fun `fillCenter derives the rotated source size`() {
+        // 0 and 180 keep the crop's own dimensions; 90 and 270 swap them.
+        val crop = PixelRect(0.0, 0.0, 4000.0, 3000.0)
+        val buffer = PixelSize(4000.0, 3000.0)
+        val viewport = PixelSize(1080.0, 1080.0)
+        mapOf(
+            0 to PixelSize(4000.0, 3000.0),
+            90 to PixelSize(3000.0, 4000.0),
+            180 to PixelSize(4000.0, 3000.0),
+            270 to PixelSize(3000.0, 4000.0),
+        ).forEach { (rotation, expected) ->
+            val t = CropScaleTransform.fillCenter(crop, buffer, rotation, viewport)
+            assertEquals(expected, t.rotatedSourceSize, "rotation=$rotation")
+        }
+    }
+
+    @Test
+    fun `fillCenter derives the uniform scale as the max of the per-axis ratios`() {
+        // 1920x1080 into 1080x1080: max(1080/1920, 1080/1080) = 1.0
+        val wider = CropScaleTransform.fillCenter(
+            PixelRect(0.0, 0.0, 1920.0, 1080.0),
+            PixelSize(1920.0, 1080.0),
+            0,
+            PixelSize(1080.0, 1080.0),
+        )
+        assertEquals(1.0, wider.uniformScale, tol)
+        // 1000x1000 into 500x500: max(0.5, 0.5) = 0.5
+        val square = CropScaleTransform.fillCenter(
+            PixelRect(0.0, 0.0, 1000.0, 1000.0),
+            PixelSize(1000.0, 1000.0),
+            0,
+            PixelSize(500.0, 500.0),
+        )
+        assertEquals(0.5, square.uniformScale, tol)
+    }
+
+    @Test
+    fun `fillCenter derives centered offsets, one negative under center crop`() {
+        val t = CropScaleTransform.fillCenter(
+            PixelRect(0.0, 0.0, 1920.0, 1080.0),
+            PixelSize(1920.0, 1080.0),
+            0,
+            PixelSize(1080.0, 1080.0),
+        )
+        // scaledW = 1920, scaledH = 1080 -> offsetX = (1080-1920)/2 = -420, offsetY = 0
+        assertEquals(-420.0, t.displayOffsetX, tol)
+        assertEquals(0.0, t.displayOffsetY, tol)
+    }
+
+    @Test
+    fun `fillCenter rejects a crop with a slightly negative origin`() {
         assertFailsWith<IllegalArgumentException> {
-            CropScaleTransform(
-                sourceCrop = PixelRect(0.0, 0.0, 40.0, 30.0),
-                sourceBufferSize = PixelSize(40.0, 30.0),
-                rotationDegrees = 90,
-                // 90 degrees should swap to 30x40; deliberately wrong.
-                rotatedSourceSize = PixelSize(40.0, 30.0),
-                viewportSize = PixelSize(30.0, 40.0),
-                uniformScale = 1.0,
-                displayOffsetX = 0.0,
-                displayOffsetY = 0.0,
+            CropScaleTransform.fillCenter(
+                sourceCrop = PixelRect(-0.5, 0.0, 100.0, 100.0),
+                sourceBufferSize = PixelSize(100.0, 100.0),
+                rotationDegrees = 0,
+                viewportSize = PixelSize(50.0, 50.0),
             )
         }
+    }
+
+    @Test
+    fun `fillCenter rejects a crop right slightly beyond the buffer width`() {
+        assertFailsWith<IllegalArgumentException> {
+            CropScaleTransform.fillCenter(
+                sourceCrop = PixelRect(0.0, 0.0, 100.5, 100.0),
+                sourceBufferSize = PixelSize(100.0, 100.0),
+                rotationDegrees = 0,
+                viewportSize = PixelSize(50.0, 50.0),
+            )
+        }
+    }
+
+    @Test
+    fun `fillCenter rejects a crop bottom slightly beyond the buffer height`() {
+        assertFailsWith<IllegalArgumentException> {
+            CropScaleTransform.fillCenter(
+                sourceCrop = PixelRect(0.0, 0.0, 100.0, 100.5),
+                sourceBufferSize = PixelSize(100.0, 100.0),
+                rotationDegrees = 0,
+                viewportSize = PixelSize(50.0, 50.0),
+            )
+        }
+    }
+
+    @Test
+    fun `fillCenter accepts a crop exactly on the buffer bounds`() {
+        // Strict bounds are inclusive of the exact edge; full-buffer crop must be accepted.
+        val t = CropScaleTransform.fillCenter(
+            sourceCrop = PixelRect(0.0, 0.0, 100.0, 100.0),
+            sourceBufferSize = PixelSize(100.0, 100.0),
+            rotationDegrees = 0,
+            viewportSize = PixelSize(50.0, 50.0),
+        )
+        assertEquals(PixelRect(0.0, 0.0, 100.0, 100.0), t.sourceCrop)
+    }
+
+    @Test
+    fun `visibility helpers reject an invalid tolerance instead of returning false`() {
+        val t = createFillCenterCropScaleTransform(frame(1920, 1080), viewportWidthPx = 1080, viewportHeightPx = 1080)
+        val badTolerances = listOf(-1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)
+        badTolerances.forEach { bad ->
+            assertFailsWith<IllegalArgumentException>("isImagePointVisible tol=$bad") {
+                t.isImagePointVisible(PixelPoint(960.0, 540.0), tolerancePx = bad)
+            }
+            assertFailsWith<IllegalArgumentException>("isDisplayPointInsideVisibleImage tol=$bad") {
+                t.isDisplayPointInsideVisibleImage(PixelPoint(540.0, 540.0), tolerancePx = bad)
+            }
+        }
+    }
+
+    @Test
+    fun `visibility helpers accept zero and positive finite tolerance`() {
+        val t = createFillCenterCropScaleTransform(frame(1920, 1080), viewportWidthPx = 1080, viewportHeightPx = 1080)
+        assertTrue(t.isImagePointVisible(PixelPoint(960.0, 540.0), tolerancePx = 0.0))
+        assertTrue(t.isImagePointVisible(PixelPoint(960.0, 540.0), tolerancePx = 2.5))
+        assertTrue(t.isDisplayPointInsideVisibleImage(PixelPoint(540.0, 540.0), tolerancePx = 0.0))
+        assertTrue(t.isDisplayPointInsideVisibleImage(PixelPoint(540.0, 540.0), tolerancePx = 2.5))
     }
 
     @Test

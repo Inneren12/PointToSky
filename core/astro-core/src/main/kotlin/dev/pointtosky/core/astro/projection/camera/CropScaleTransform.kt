@@ -43,6 +43,15 @@ import kotlin.math.max
  * viewport — clamping would hide geometry errors and break reversibility. Visibility is reported
  * separately (see [isImagePointVisible], [isDisplayPointInsideVisibleImage], [visibleImageRect]).
  *
+ * ## Construction
+ * The primary constructor is **private**, so an instance can only be produced through the canonical
+ * factory [CropScaleTransform.fillCenter] (or [createFillCenterCropScaleTransform] for a
+ * [CameraFrameMetadata]). Callers supply only *source geometry, rotation, and viewport geometry* —
+ * never [uniformScale], [rotatedSourceSize], or the display offsets, which the factory derives.
+ * `@ConsistentCopyVisibility` makes the generated `copy()` private too, and `init` re-derives and
+ * checks the four values against the FILL_CENTER formulas, so an instance that does not represent
+ * `FILL_CENTER` is not representable — via the constructor, `copy()`, or any other path.
+ *
  * ## Caveat (CAM-1e §7)
  * This is the intended *pure* FILL_CENTER contract using the metadata currently available. It is
  * valid only if the analyzed crop/rotation geometry represents the same camera-stream framing the
@@ -65,7 +74,8 @@ import kotlin.math.max
  * @property displayOffsetY centered vertical offset; may be negative when the source is cropped
  *   vertically (never clamped).
  */
-data class CropScaleTransform(
+@ConsistentCopyVisibility
+data class CropScaleTransform private constructor(
     val sourceCrop: PixelRect,
     val sourceBufferSize: PixelSize,
     val rotationDegrees: Int,
@@ -84,23 +94,41 @@ data class CropScaleTransform(
         }
         require(displayOffsetX.isFinite()) { "displayOffsetX must be finite; was $displayOffsetX" }
         require(displayOffsetY.isFinite()) { "displayOffsetY must be finite; was $displayOffsetY" }
+        // Strict domain bounds: the crop must lie within the buffer exactly, with no epsilon slack on
+        // these caller-supplied inputs. A crop even slightly outside the buffer is rejected, never
+        // clamped. (Epsilon is used only for the derived-value comparisons below.)
         require(
-            sourceCrop.left >= -EDGE_EPS &&
-                sourceCrop.top >= -EDGE_EPS &&
-                sourceCrop.right <= sourceBufferSize.width + EDGE_EPS &&
-                sourceCrop.bottom <= sourceBufferSize.height + EDGE_EPS,
+            sourceCrop.left >= 0.0 &&
+                sourceCrop.top >= 0.0 &&
+                sourceCrop.right <= sourceBufferSize.width &&
+                sourceCrop.bottom <= sourceBufferSize.height,
         ) {
             "sourceCrop $sourceCrop must lie within the buffer " +
                 "(${sourceBufferSize.width}x${sourceBufferSize.height})"
         }
-        val expected = rotatedCropSize(sourceCrop, rotationDegrees)
+        // Defense in depth: the four derived fields must equal the FILL_CENTER values implied by the
+        // source geometry, rotation, and viewport. Because the only construction path (fillCenter)
+        // derives them from the same helper, this always holds there; the check exists so that no
+        // instance obtained by any other means can hold values that are finite yet do not represent
+        // FILL_CENTER.
+        val derived = deriveFillCenter(sourceCrop, rotationDegrees, viewportSize)
         require(
-            approxEquals(rotatedSourceSize.width, expected.width) &&
-                approxEquals(rotatedSourceSize.height, expected.height),
+            approxEquals(rotatedSourceSize.width, derived.rotatedSourceSize.width) &&
+                approxEquals(rotatedSourceSize.height, derived.rotatedSourceSize.height),
         ) {
             "rotatedSourceSize $rotatedSourceSize is inconsistent with sourceCrop " +
                 "${sourceCrop.width}x${sourceCrop.height} rotated by $rotationDegrees " +
-                "(expected ${expected.width}x${expected.height})"
+                "(expected ${derived.rotatedSourceSize})"
+        }
+        require(approxEquals(uniformScale, derived.uniformScale)) {
+            "uniformScale $uniformScale does not match the FILL_CENTER value ${derived.uniformScale}"
+        }
+        require(
+            approxEquals(displayOffsetX, derived.displayOffsetX) &&
+                approxEquals(displayOffsetY, derived.displayOffsetY),
+        ) {
+            "display offsets ($displayOffsetX, $displayOffsetY) do not match the FILL_CENTER values " +
+                "(${derived.displayOffsetX}, ${derived.displayOffsetY})"
         }
     }
 
@@ -190,12 +218,14 @@ data class CropScaleTransform(
     /**
      * True if a **buffer-space** image [point] is actually visible: it must lie inside [sourceCrop]
      * *and* its display mapping must fall inside the viewport (a point inside the crop but removed
-     * by the center crop is not visible). [tolerancePx] absorbs sub-pixel float noise only.
+     * by the center crop is not visible). [tolerancePx] absorbs sub-pixel float noise only and must
+     * be finite and non-negative — an invalid tolerance is rejected, not treated as "not visible".
      */
     fun isImagePointVisible(
         point: PixelPoint,
         tolerancePx: Double = DEFAULT_VISIBILITY_TOLERANCE_PX,
     ): Boolean {
+        requireValidTolerancePx(tolerancePx)
         if (!sourceCrop.contains(point, tolerancePx)) return false
         return isDisplayInsideViewport(imageToDisplay(point), tolerancePx)
     }
@@ -204,12 +234,14 @@ data class CropScaleTransform(
      * True if a **display-space** [point] is inside the viewport *and* inverse-maps into
      * [sourceCrop]. Under FILL_CENTER the scaled source always covers the viewport, so in practice
      * this reduces to "inside the viewport"; the crop check is kept for robustness and symmetry
-     * with [isImagePointVisible].
+     * with [isImagePointVisible]. [tolerancePx] must be finite and non-negative — an invalid
+     * tolerance is rejected, not treated as "not visible".
      */
     fun isDisplayPointInsideVisibleImage(
         point: PixelPoint,
         tolerancePx: Double = DEFAULT_VISIBILITY_TOLERANCE_PX,
     ): Boolean {
+        requireValidTolerancePx(tolerancePx)
         if (!isDisplayInsideViewport(point, tolerancePx)) return false
         return sourceCrop.contains(displayToImage(point), tolerancePx)
     }
@@ -259,23 +291,54 @@ data class CropScaleTransform(
             require(rotationDegrees in VALID_ROTATIONS_DEG) {
                 "rotationDegrees must be one of $VALID_ROTATIONS_DEG; was $rotationDegrees"
             }
+            val derived = deriveFillCenter(sourceCrop, rotationDegrees, viewportSize)
+            return CropScaleTransform(
+                sourceCrop = sourceCrop,
+                sourceBufferSize = sourceBufferSize,
+                rotationDegrees = rotationDegrees,
+                rotatedSourceSize = derived.rotatedSourceSize,
+                viewportSize = viewportSize,
+                uniformScale = derived.uniformScale,
+                displayOffsetX = derived.displayOffsetX,
+                displayOffsetY = derived.displayOffsetY,
+            )
+        }
+
+        /** The four FILL_CENTER-derived values; the single source of truth for scale/offset math. */
+        private data class DerivedFillCenter(
+            val rotatedSourceSize: PixelSize,
+            val uniformScale: Double,
+            val displayOffsetX: Double,
+            val displayOffsetY: Double,
+        )
+
+        /**
+         * Derives the FILL_CENTER geometry from source crop, rotation, and viewport — used both by
+         * [fillCenter] (to build) and by `init` (to verify), so the scale/offset formulas live in
+         * exactly one place. [rotationDegrees] must already be validated.
+         *
+         * ```text
+         * scale   = max(viewportW / rotatedW, viewportH / rotatedH)
+         * offsetX = (viewportW − rotatedW · scale) / 2      // may be negative (center crop)
+         * offsetY = (viewportH − rotatedH · scale) / 2      // may be negative (center crop)
+         * ```
+         */
+        private fun deriveFillCenter(
+            sourceCrop: PixelRect,
+            rotationDegrees: Int,
+            viewportSize: PixelSize,
+        ): DerivedFillCenter {
             val rotated = rotatedCropSize(sourceCrop, rotationDegrees)
             val scale =
                 max(
                     viewportSize.width / rotated.width,
                     viewportSize.height / rotated.height,
                 )
-            val scaledWidth = rotated.width * scale
-            val scaledHeight = rotated.height * scale
-            return CropScaleTransform(
-                sourceCrop = sourceCrop,
-                sourceBufferSize = sourceBufferSize,
-                rotationDegrees = rotationDegrees,
+            return DerivedFillCenter(
                 rotatedSourceSize = rotated,
-                viewportSize = viewportSize,
                 uniformScale = scale,
-                displayOffsetX = (viewportSize.width - scaledWidth) / 2.0,
-                displayOffsetY = (viewportSize.height - scaledHeight) / 2.0,
+                displayOffsetX = (viewportSize.width - rotated.width * scale) / 2.0,
+                displayOffsetY = (viewportSize.height - rotated.height * scale) / 2.0,
             )
         }
 
