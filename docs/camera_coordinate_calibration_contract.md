@@ -1364,13 +1364,13 @@ extent), which lives in `ArScreen`, not in `CameraPreview` (which owns only the
 `PreviewView`). Introducing that plumbing would add lifecycle surface for no
 behavioral gain in a geometry-only slice.
 
-**Intended call site for the next slice:** the first slice that consumes image
-coordinates (a predict-only matcher, §8 step 4) should build the transform from
-the latest `CameraFrameMetadata` (already published latest-value-only by
-`CameraFrameMetadataProvider`, CAM-1c) plus the measured overlay viewport size,
-publish it latest-value-only alongside the existing debug state, reset it on
-camera-session disposal (reuse the CAM-1c/1d lifecycle, do not create a second
-session owner), and never republish after disposal.
+**Intended call site for the next slice:** CAM-1e itself does not build this transform in
+production. **CAM-1f** (§10) is that next slice: it builds `CropScaleTransform` from the latest
+`CameraFrameMetadata` plus the measured overlay viewport size, bundles it with the paired rotation
+sample and resolved-or-fallback intrinsics into one immutable `CameraSessionGeometry`, publishes it
+latest-value-only, and resets it on camera-session disposal — reusing the CAM-1c/1d lifecycle
+rather than creating a second session owner. A future predict-only matcher (§8 step 4) is the
+*next* intended call site after CAM-1f, not CAM-1e directly.
 
 ### 9.9 CameraX `Preview`/`ImageAnalysis` equivalence caveat
 
@@ -1439,6 +1439,416 @@ changes, **no** real-intrinsics rendering (§3), **no** PTSKCAT0/PTSKCAT4 catalo
 or overlay changes, **no** lens distortion, **no** additional `ScaleType`
 support, and **no** front-camera mirroring. Mapped coordinates are neither
 clamped nor rounded.
+
+---
+
+## 10. CAM-1f camera-session geometry bundle (this PR)
+
+CAM-1f combines CAM-1c frame metadata, the CAM-1d rotation sample paired to that *exact* frame
+timestamp, the CAM-1e `CropScaleTransform` built from that same frame and the AR overlay viewport,
+and CAM-1b intrinsics (resolved or explicit fallback) into one immutable, Android-independent
+`CameraSessionGeometry`. It is the input shape a future predict-only matcher (§8 step 4) is
+expected to consume; this PR adds no star matching, no detection, no interpolation, and no
+renderer change — nothing yet reads the bundle it publishes.
+
+### 10.1 Pure models — `:core:astro-core`, package `dev.pointtosky.core.astro.projection.camera`
+
+- **`CameraSessionGeometry`** (`CameraSessionGeometry.kt`):
+
+  ```kotlin
+  class CameraSessionGeometry private constructor(
+      val frame: CameraFrameMetadata,
+      private val pairedRotationSnapshot: TimedRotationSample,
+      val frameRotationDeltaNanos: Long,
+      val cropScaleTransform: CropScaleTransform,
+      val intrinsics: CameraIntrinsicsResolution,
+      val viewportSize: PixelSize,
+  ) {
+      val pairedRotation: TimedRotationSample
+          get() = pairedRotationSnapshot.copy(rotationMatrix = pairedRotationSnapshot.rotationMatrix.copyOf())
+  }
+  ```
+
+  A **regular class, not a `data class`** — an earlier revision exposed `pairedRotation` as a plain
+  constructor property, which copied the array once on ingestion but still let a caller corrupt the
+  bundle by mutating the array read back out of a `pairedRotation` access. `pairedRotation` is now a
+  computed property backed by a `private` snapshot, and **every read returns a fresh defensive
+  copy** — true immutability, not merely "copied once on the way in": neither the array a caller
+  originally handed off, nor an array read back out of any previous `pairedRotation` access, can
+  ever affect the bundle or a later read. The primary constructor is still `private`, so the only
+  construction path is the pure factory `createCameraSessionGeometry` (§10.4); `init` re-derives and
+  `require`s the cross-field invariants anyway, so no other path can produce an inconsistent
+  instance:
+  - `cropScaleTransform.sourceBufferSize` equals `frame`'s buffer dimensions;
+  - `cropScaleTransform.sourceCrop` equals the frame-derived crop (`sourceCropFromFrame(frame)` —
+    the frame's crop rect when present, else the full buffer; the same helper
+    `createFillCenterCropScaleTransform` itself uses, so this mapping lives in exactly one place);
+  - `cropScaleTransform.rotationDegrees` equals `frame.rotationDegrees`;
+  - `cropScaleTransform.viewportSize` equals `viewportSize`;
+  - `frameRotationDeltaNanos` equals `frame.timestampNanos - pairedRotation.timestampNanos`,
+    computed with the same overflow-safe helper `FrameRotationPairingResult` uses.
+
+  Pairing-tolerance conformance is **not** one of `init`'s invariants: `FrameRotationPairingResult.Paired`
+  and `FrameRotationPair` are both public data classes any caller can construct directly, not only
+  `pairFrameToNearestRotation` — an earlier revision's claim that "the factory accepts only `Paired`,
+  therefore the delta must already be within tolerance" assumed a `Paired` value could only
+  originate from `pairFrameToNearestRotation`, which is false for a publicly constructible type.
+  `createCameraSessionGeometry` (§10.4) validates the configured tolerance explicitly, against a
+  caller-supplied threshold, before ever calling the canonical factory — see §10.2.
+
+- **`CameraIntrinsicsResolution`** (`CameraIntrinsicsResolution.kt`) — the CAM-1f intrinsics
+  policy, chosen from the two options CAM-1f's own task description offered:
+
+  ```kotlin
+  sealed interface CameraIntrinsicsResolution {
+      val intrinsics: CameraIntrinsics
+      data class Resolved(override val intrinsics: CameraIntrinsics) : CameraIntrinsicsResolution
+      data class LegacyFallback(
+          override val intrinsics: CameraIntrinsics,
+          val reason: String,
+      ) : CameraIntrinsicsResolution
+  }
+  ```
+
+  **Policy: both resolved and fallback intrinsics may produce a `Ready` bundle** (the "Preferred"
+  option) — a fallback bundle is diagnostically usable (every geometric field is still valid) but
+  is never described as fully calibrated: `Resolved.intrinsics.source` can never be
+  `LEGACY_FALLBACK` and `LegacyFallback.intrinsics.source` can never be anything else (`init`
+  enforces both directions), and every `Ready` result carries an explicit `CameraGeometryQuality`
+  (§10.5) derived from this type, never guessed. This mirrors CAM-1b's own
+  `dev.pointtosky.mobile.ar.camera.CameraIntrinsicsResolution(intrinsics, fallbackReason: String?)`
+  contract (§3.4) — CAM-1f's sealed hierarchy makes the same distinction impossible to forget, since
+  there is no nullable field to skip checking. `:mobile`'s
+  `SessionScopedCameraIntrinsicsResolver` (§10.7) maps the CAM-1b shape into this one exactly once
+  per bound camera session.
+
+- **`CameraSessionGeometryResult`** (`CameraSessionGeometryResult.kt`) — never a nullable
+  geometry:
+
+  ```kotlin
+  sealed interface CameraSessionGeometryResult {
+      data class Ready(val geometry: CameraSessionGeometry, val quality: CameraGeometryQuality) : ...
+      data class MissingFrame(val viewportSize: PixelSize?) : ...
+      data class InvalidViewport(val widthPx: Int, val heightPx: Int) : ...
+      data class RotationUnavailable(val reason: RotationUnavailableReason, val pairingResult: FrameRotationPairingResult) : ...
+      data class IntrinsicsUnavailable(val reason: IntrinsicsUnavailableReason) : ...
+      data class GeometryRejected(val reason: GeometryRejectionReason) : ...
+      data object Disposed : ...
+  }
+  ```
+
+  `RotationUnavailable` carries `NO_SAMPLES` / `OUTSIDE_TOLERANCE` / `CLOCK_MISMATCH_SUSPECTED`.
+  `GeometryRejected` carries `PAIRING_FRAME_MISMATCH` / `PAIRING_DELTA_MISMATCH` /
+  `PAIRING_OUTSIDE_CONFIGURED_TOLERANCE` / `CROP_SCALE_CONSTRUCTION_FAILED` — the first three exist
+  specifically because a `FrameRotationPairingResult.Paired` is publicly constructible and cannot be
+  trusted as proof of anything about how it was produced; see §10.2. No reason carries raw exception
+  text. `IntrinsicsUnavailable`/`MissingFrame`/`Disposed` are never returned by the pure factory
+  itself (it always requires an already-resolved frame/intrinsics as input); they exist for the
+  production session owner (§10.6), which publishes them while a bound session has not yet produced
+  those inputs. A cheap `CameraSessionGeometryStatus` enum (`status` extension property) classifies
+  any result without exposing reason detail, for logging/debug-state comparisons.
+
+### 10.2 Frame/pairing coherence rule
+
+A published bundle must use **one exact** `CameraFrameMetadata`, the pairing result computed for
+*that same frame*, the current viewport, and the current session's intrinsics — never a frame
+combined with an independently-"latest" pairing result that happened to be computed for a
+different frame. **`FrameRotationPairingResult.Paired` and `FrameRotationPair` are both public data
+classes** — any caller can construct one directly, not only `pairFrameToNearestRotation` — so a
+`Paired` value is never trusted as self-proving anything. Coherence is enforced two ways:
+
+1. **At the callback boundary** (Option A from CAM-1f's task description):
+   `CameraTimestampSynchronizer.onCameraFrame(frame)` (CAM-1d) now *returns* the
+   `FrameRotationPairingResult` it just computed and published for that exact `frame` (`null` only
+   if the synchronizer is already disposed), instead of `Unit`. `ArScreen` hands the `(frame,
+   pairingResult)` pair to `CameraSessionGeometryProvider.onPairedFrame` together, in one call —
+   it never separately reads `CameraFrameMetadataProvider.latest` and
+   `CameraTimestampSynchronizer.latestResult` and assumes they describe the same frame.
+2. **At the pure factory** (not merely defense in depth — the only real gate, since the pairing
+   result reaching this function did not necessarily come through step 1): `createCameraSessionGeometry`
+   validates, in order:
+   - **exact frame equality** — `paired.pair.frame != frame` (full `CameraFrameMetadata` structural
+     equality, not just `timestampNanos`) is rejected as `GeometryRejected(PAIRING_FRAME_MISMATCH)`.
+     Timestamp equality alone is **not** sufficient proof of coherence: two frames can share a
+     timestamp while differing in buffer dimensions, crop rect, or rotation, and only full metadata
+     equality catches that;
+   - **delta arithmetic** — `paired.pair.deltaNanos` must equal the overflow-safe delta actually
+     implied by `frame.timestampNanos` and `paired.pair.rotation.timestampNanos`; a mismatch is
+     `GeometryRejected(PAIRING_DELTA_MISMATCH)`;
+   - **configured tolerance** — the (now verified-correct) delta's absolute value must not exceed
+     `maxAllowedPairDeltaNanos` (§10.4); exceeding it is
+     `GeometryRejected(PAIRING_OUTSIDE_CONFIGURED_TOLERANCE)`, regardless of the `Paired` subtype
+     having been used. Using the `Paired` subtype alone as tolerance proof was the exact gap this
+     validation closes — a forged or mis-tagged `Paired` value cannot bypass it.
+
+   Any caller bug at the production seam — or a forged pairing result reaching the factory by any
+   other path — is caught here, categorically, never silently wrapped into a bundle.
+
+### 10.3 Viewport authority
+
+The AR overlay viewport (`overlaySize: IntSize`, the Compose `Box` extent in `ArScreen`) is
+**authoritative** for `CropScaleTransform`'s viewport, not `PreviewView`'s own size: this is the
+coordinate space a future matcher's predictions will actually be displayed in (CAM-1e §9.8 already
+flagged this as the correct choice). `ArScreen` converts `overlaySize` to plain `Int` width/height
+at the Compose boundary — `CameraSessionGeometryProvider.onViewportChanged(widthPx: Int, heightPx:
+Int)` never sees a Compose `IntSize`. A zero-sized viewport is reported as `InvalidViewport`, never
+silently mapped to a fake `1x1` transform — `PixelSize` cannot represent a non-positive size at
+all, so the pure factory checks width/height *before* constructing one. `PreviewView`'s own
+measured size is not read or compared against `overlaySize` in this PR; if the two ever need to be
+reconciled, that is future work, not assumed equal here.
+
+### 10.4 Pure bundle factory
+
+```kotlin
+fun createCameraSessionGeometry(
+    frame: CameraFrameMetadata,
+    pairingResult: FrameRotationPairingResult,
+    intrinsicsResolution: CameraIntrinsicsResolution,
+    viewportWidthPx: Int,
+    viewportHeightPx: Int,
+    maxAllowedPairDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
+): CameraSessionGeometryResult
+```
+
+Deviates from the task description's illustrative `viewportSize: PixelSize` parameter deliberately:
+`PixelSize` cannot represent a zero/negative size, so the *invalid* case must be checked before any
+`PixelSize` is constructed — plain, possibly-invalid `Int`s let that happen. Accepts only
+`FrameRotationPairingResult.Paired`; every other pairing outcome becomes a categorized
+`RotationUnavailable`. `maxAllowedPairDeltaNanos` is validated explicitly (§10.2) rather than
+inferred from the `Paired` subtype — it `require`s non-negative (a programmer-contract violation at
+the call site throws, since that is not an expected runtime outcome) and defaults to
+`TimestampSyncConfig.MAX_PAIR_DELTA_NANOS`, but a caller whose pairing result was produced with a
+non-default tolerance (e.g. a `CameraTimestampSynchronizer` constructed with a custom
+`maxAllowedDeltaNanos`) must pass that same value here — see §10.6 for how the production owner
+shares it. Builds the `CropScaleTransform` via the existing CAM-1e
+`createFillCenterCropScaleTransform(frame, viewportWidthPx, viewportHeightPx)` — never a second,
+independent CropScale construction path — catching only its `IllegalArgumentException` as
+`GeometryRejected(CROP_SCALE_CONSTRUCTION_FAILED)`. Every expected-runtime rejection is a returned,
+categorized result, never a thrown exception; no result carries raw exception text. Pure, no
+Android dependency, no side effects, retains nothing past the call.
+
+### 10.5 Geometry quality classification
+
+```kotlin
+enum class CameraGeometryQuality { CALIBRATED, LEGACY_INTRINSICS_FALLBACK }
+```
+
+Derived from `CameraIntrinsicsResolution` (`val CameraIntrinsicsResolution.quality`), never
+guessed, and carried on every `Ready` result (`Ready.quality`) so a fallback bundle can never be
+read as fully calibrated. `CameraSessionGeometryProvider`'s debug state (§10.6) preserves the same
+distinction (`latestQuality: CameraGeometryQuality?`), and the throttled `MobileLog` summary logs
+it as a plain string — the fallback-vs-calibrated distinction survives into logging/debug state
+exactly as CAM-1f's task description required.
+
+### 10.6 Production session owner — `:mobile`, package `dev.pointtosky.mobile.ar.camera`
+
+**`CameraSessionGeometryProvider`** (`CameraSessionGeometryProvider.kt`) is the one session-scoped
+owner. It receives:
+
+- `onPairedFrame(frame, pairingResult)` — from `ArScreen`'s `CameraPreview.onFrameMetadata`
+  callback, which calls `timestampSynchronizer.onCameraFrame(frame)` and forwards the frame
+  together with its non-null return value (§10.2);
+- `onViewportChanged(widthPx, heightPx)` — from a `LaunchedEffect(overlaySize)` in `ArScreen`
+  (§10.3); a no-op when the value is unchanged, so recomposition noise does not force a rebuild;
+- `onIntrinsicsResolved(resolution)` — from `CameraSessionIntrinsicsCoordinator` (§10.7), not
+  directly from `CameraPreview.onCameraInfo`; only the *first* call per provider instance has any
+  effect — intrinsics resolve at most once per bound camera session, then are reused for every
+  subsequent frame.
+
+`CameraSessionGeometryProvider`'s constructor takes `maxAllowedPairDeltaNanos: Long =
+TimestampSyncConfig.MAX_PAIR_DELTA_NANOS`, threaded straight into every `createCameraSessionGeometry`
+call (§10.4). This must agree with whatever tolerance the session's `CameraTimestampSynchronizer`
+actually pairs against — `CameraTimestampSynchronizer.maxAllowedDeltaNanos` is a public, immutable
+`val` (CAM-1f addition) for exactly this reason, and `ArScreen` reads it directly when constructing
+the provider (`CameraSessionGeometryProvider(maxAllowedPairDeltaNanos =
+timestampSynchronizer.maxAllowedDeltaNanos)`) rather than letting both default independently. If a
+future change constructs either with a non-default tolerance, this wiring keeps them in sync
+without needing to remember to update both call sites.
+
+It publishes `state: StateFlow<CameraSessionGeometryResult>`, latest-value-only — never a queue —
+plus a bounded `debugState(): CameraSessionGeometryDebugState` (observed/ready/rejected counts,
+latest status/quality/pair-delta; no historical list). A published bundle always combines the
+frame/pairing pair from the most recent `onPairedFrame` call with whatever viewport and intrinsics
+are current at rebuild time (§10.2) — `onViewportChanged`/`onIntrinsicsResolved` each trigger a
+rebuild against the still-latest frame/pairing pair, so a viewport rotation or the intrinsics
+callback arriving after the first frame both produce a fresh bundle without waiting for the next
+camera frame.
+
+**Thread safety and disposal** follow the CAM-1d `CameraTimestampSynchronizer` convention exactly:
+one internal lock serializes every update method with `dispose()` — a single state-machine
+transition, not independent atomics — so a callback already in flight when `dispose()` runs either
+publishes before disposal clears it, or observes `disposed == true` and no-ops; there is no
+interleaving that republishes after disposal completes (verified by the same
+barrier-coordinated race-test pattern CAM-1d uses, `CameraSessionGeometryProviderTest`).
+`dispose()` is terminal and idempotent: every update method becomes a permanent no-op afterward,
+`state` becomes `CameraSessionGeometryResult.Disposed`, and all cached inputs/counters are cleared
+— so no stale previous-session bundle can survive into a new one. `MobileLog` calls are always
+issued from an immutable snapshot decided while holding the lock, never while holding it. One
+provider instance belongs to one AR camera session (`remember`ed in `ArScreen`, disposed from the
+same top-level `DisposableEffect` that disposes `timestampSynchronizer`); a new session gets a new
+instance rather than reusing a disposed one.
+
+### 10.7 Intrinsics resolution — `:mobile`, package `dev.pointtosky.mobile.ar.camera`
+
+**`SessionScopedCameraIntrinsicsResolver`** (`SessionScopedCameraIntrinsicsResolver.kt`) wraps
+CAM-1b's `CameraIntrinsicsProvider`/`Camera2CameraIntrinsicsProvider` — reused verbatim, no second
+resolver or Camera2 seam — with once-per-instance caching: the first `resolveOnce(cameraInfo,
+imageWidthPx, imageHeightPx)` call performs the real Camera2 `CameraCharacteristics` lookup and
+maps CAM-1b's `CameraIntrinsicsResolution(intrinsics, fallbackReason: String?)` into CAM-1f's
+sealed `CameraIntrinsicsResolution` (§10.1); every later call on the same instance returns the
+cached value without repeating the lookup. One instance belongs to one bound camera session
+(`remember`ed alongside `CameraSessionGeometryProvider`); re-entering AR creates a new instance, so
+a fresh resolution is always attempted — nothing is cached across sessions.
+
+**`resolveOnce`'s dimensions are `Int`, not `Int?`, and `require`d strictly positive** — an earlier
+revision accepted nullable, defaulted-to-`null` dimensions and dismissed calling it with `null` as
+"a minor nicety, not a correctness requirement." That was wrong: the real per-device
+`CAMERA_CHARACTERISTICS` path genuinely does not depend on the analyzed image's dimensions (focal
+length and physical sensor size are static device properties), but the **legacy fallback path does**
+— `legacyFallbackCameraIntrinsics` derives its horizontal FOV from the analyzed image's aspect
+ratio (§3.4), defaulting to a square 1:1 assumption when the dimensions are unknown. Because
+resolution only ever happens once per session and is cached for its entire lifetime, resolving with
+`null` at the moment `CameraInfo` becomes available — which is usually *before* the first
+`ImageAnalysis` frame has arrived — would permanently publish a wrong fallback horizontal FOV for
+every device that ever takes the fallback path with a non-square analyzed buffer (16:9, 4:3, or any
+other real aspect ratio). `CameraSessionGeometry.intrinsics` is part of the published bundle, so
+this is a correctness bug in what CAM-1f actually reports, not a cosmetic detail.
+
+**`CameraSessionIntrinsicsCoordinator`** (`CameraSessionIntrinsicsCoordinator.kt`, CAM-1f addition)
+is what guarantees `resolveOnce` is only ever called once both real inputs are known:
+
+```kotlin
+class CameraSessionIntrinsicsCoordinator(
+    private val resolver: SessionScopedCameraIntrinsicsResolver,
+    private val onResolved: (CameraIntrinsicsResolution) -> Unit,
+) {
+    fun onCameraInfo(cameraInfo: CameraInfo)
+    fun onFrameMetadata(frame: CameraFrameMetadata)
+    fun dispose()
+}
+```
+
+- **Order-independent**: `onCameraInfo`/`onFrameMetadata` may arrive in either order — CameraX gives
+  no guarantee which fires first — and either ordering resolves correctly, exactly once, using the
+  *first* accepted `CameraInfo` and the *first* accepted frame's real `bufferWidthPx`/`bufferHeightPx`.
+  A repeated call to either method, once its own input has already been accepted, is a no-op; later
+  `CameraInfo`/frame values never override the first.
+- **Preview-only fallback**: if the combined `Preview` + `ImageAnalysis` bind is rejected and
+  `CameraPreview` falls back to Preview-only (§4.4), `onCameraInfo` may still fire, but no
+  `ImageAnalysis` frame is ever produced, so `onFrameMetadata` never fires. Resolution therefore
+  never happens in that case — by construction, not a special case — and CAM-1f geometry correctly
+  stays unavailable (no frame means no pairing means no bundle either; §10.6's `MissingFrame`/
+  `IntrinsicsUnavailable` states cover this). No `PreviewView` dimension is ever substituted for the
+  missing analyzed-frame dimensions, and Preview-only camera display itself is unaffected.
+- **Thread safety**: one internal lock guards the atomic "both inputs present, not yet claimed"
+  transition. `resolveOnce` (real Camera2 work) runs *outside* that lock — it must never block a
+  concurrent `onCameraInfo`/`onFrameMetadata`/`dispose` caller. The final `onResolved` publish,
+  however, is a deliberate, reviewed exception: it runs **while holding the lock**, serialized with
+  `dispose()` (see below). This is safe only because the production callback
+  (`geometryProvider::onIntrinsicsResolved`) takes its own separate lock and never calls back into
+  the coordinator — no lock cycle, no reverse acquisition.
+- **Disposal — exact linearization rule**: terminal and idempotent, same convention as every other
+  CAM-1f/CAM-1d session owner, with one precise guarantee about the boundary between it and
+  publication:
+  ```text
+  Final onResolved publication and dispose() are serialized on the same lock.
+  A publication already holding the lock (already invoking onResolved) finishes
+  before a concurrent dispose() can acquire the lock and return.
+  No onResolved call can begin after dispose() has returned.
+  ```
+  An earlier revision instead re-checked `disposed` *before* calling `onResolved`, releasing the
+  lock in between the check and the call — a check-then-act window in which `dispose()` could
+  complete and then a late `onResolved` call could still begin. That is now impossible: `dispose()`
+  and the disposed-check-and-publish step share the same lock for the whole step, so there is no
+  window between "check" and "call" for `dispose()` to run in. A resolution already inside
+  `resolveOnce` when `dispose()` runs is not cancelled (it completes the Camera2 read, outside the
+  lock), but if it finishes after `dispose()` has already run, its result is discarded rather than
+  published. Proven by two tests in `CameraSessionIntrinsicsCoordinatorTest`: one blocks
+  `resolveOnce` itself and disposes before it returns (publication never begins); the other blocks
+  `onResolved` itself and disposes while it is in progress (`dispose()` provably does not return
+  until `onResolved` finishes — verified via a `Future.get` with a short timeout that must throw
+  `TimeoutException` while blocked, then complete promptly once released).
+
+`ArScreen` wires `CameraPreview`'s `onCameraInfo` directly to `intrinsicsCoordinator::onCameraInfo`,
+and calls `intrinsicsCoordinator.onFrameMetadata(frame)` at the top of the `onFrameMetadata`
+callback — before the existing `timestampSynchronizer.onCameraFrame(frame)` call — so exact
+frame/pairing coherence (§10.2) is unaffected: the coordinator only reads `frame.bufferWidthPx`/
+`bufferHeightPx`, never the frame object itself, and never influences pairing. Disposal order in the
+session's `DisposableEffect.onDispose` is: `timestampSynchronizer.dispose()`, then
+`intrinsicsCoordinator.dispose()`, then `geometryProvider.dispose()`. The guarantee this order gives
+is **not** "the geometry provider is never briefly live after an upstream session ends" — each
+component's own disposal is what actually enforces its part of the contract, not the ordering
+between them. The guarantees are, per component: the timestamp synchronizer accepts no new frame
+pairing once *its* `dispose()` returns; the intrinsics coordinator cannot *begin* a publish once
+*its* `dispose()` returns (the linearization rule above); and the geometry provider, disposed last,
+is then terminally disposed itself and clears all of its own state. Disposing the two upstream
+inputs before the provider simply means that by the time the provider is disposed, neither upstream
+source can still be mid-callback trying to feed it — a sequencing convenience, not what makes any
+individual component's contract hold.
+
+**No recalculation is ever triggered within a session**: sensor physical size and the bound
+`CameraInfo` do not change while a session is bound, and the first analyzed frame's buffer
+dimensions do not change either (`ImageAnalysis` is bound once, with no target-resolution change
+mid-session), so there is no scenario in this PR that needs one.
+
+### 10.8 Logging and debug state
+
+`CameraSessionGeometryDebugState` (`CameraSessionGeometryProvider.kt`, alongside the provider,
+mirroring where CAM-1c's `CameraFrameDebugState` lives) is bounded — running counts plus the
+single latest status/quality/pair-delta, no historical list. `latestStatus` always reflects the
+*current* published result. `latestQuality`/`latestPairDeltaNanos` are populated only while the
+current result is `Ready`, and are explicitly cleared to `null` on every transition away from
+`Ready` — to `MissingFrame`, `InvalidViewport`, `RotationUnavailable`, `IntrinsicsUnavailable`,
+`GeometryRejected`, or `Disposed` — so a caller reading debug state never sees a stale quality/delta
+left over from a previous `Ready` bundle after the provider has actually stopped being ready. A
+later `Ready` recompute (while the provider remains active) repopulates both fields from that new
+bundle. `MobileLog` gained `cameraGeometry*`
+events (`MobileLog.kt`): `cameraGeometrySessionStarted()` (once, first update),
+`cameraGeometryFirstReady(quality)` (once, first `Ready`), `cameraGeometryStatusChanged(status)`
+(logged only on an actual status transition), `cameraGeometryFallbackIntrinsicsInUse()` (once, on
+the first fallback-quality `Ready`), `cameraGeometrySummary(...)` (throttled — every 30th `Ready`
+recompute, never once per frame — carrying `status`, `quality`, `bufferWidthPx`/`bufferHeightPx`,
+`viewportWidthPx`/`viewportHeightPx`, `rotationDegrees`, `pairDeltaMillis`, `intrinsicsSource`),
+and `cameraGeometryDisposed()` (once). None of these log a rotation matrix, a raw timestamp
+stream, a full `CameraIntrinsics` object, a raw exception message, a device identifier, or a pixel
+buffer — matching the CAM-1c/1d logging conventions.
+
+### 10.9 Current production wiring (this PR)
+
+`ArScreen` owns one `CameraSessionGeometryProvider`, one `SessionScopedCameraIntrinsicsResolver`,
+and one `CameraSessionIntrinsicsCoordinator` (all `remember`ed), disposes them from the same
+`DisposableEffect(Unit)` that disposes `timestampSynchronizer` — in the order
+`timestampSynchronizer` → `intrinsicsCoordinator` → `geometryProvider` (§10.7) — feeds
+`onViewportChanged` from a `LaunchedEffect(overlaySize)`, and wires `CameraPreview`'s
+`onCameraInfo` directly to `intrinsicsCoordinator::onCameraInfo` and `onFrameMetadata` to both
+`intrinsicsCoordinator.onFrameMetadata` and (via `timestampSynchronizer`) `onPairedFrame`, as
+described in §10.6–§10.7. **Nothing reads `CameraSessionGeometryProvider.state`** in this PR —
+it is fed but not consumed. The AR renderer (`ArScreen.calculateOverlay()` / `projectionParams`)
+still calls the legacy fixed `VERTICAL_FOV_DEG = 56.0` path exclusively, unchanged; no real
+intrinsics, crop/scale mapping, or paired rotation reaches rendering. No star matching, detection,
+interpolation, or SLERP is added.
+
+### 10.10 Device validation status
+
+**Deferred.** CAM-1f adds a production owner that is fed real camera/rotation/viewport/intrinsics
+data but consumed by nothing — there is no visible behavior change to validate on-device yet. The
+manual gate for the *next* slice (whichever one first reads `CameraSessionGeometryProvider.state`)
+should verify: a `Ready` bundle appears after opening AR; rotating portrait↔landscape rebuilds the
+viewport and transform; panning slowly/quickly does not desync frame/pairing coherence; leaving and
+re-entering AR repeatedly never surfaces a stale previous-session bundle; the Camera2 intrinsics
+lookup happens exactly once per session (not once per frame); and no renderer or overlay behavior
+changes throughout. As with CAM-1e (§9.10), pixel-perfect `PreviewView`/image alignment must not be
+claimed from bundle readiness alone — that still requires a visible marker/grid or a future
+detector.
+
+### 10.11 Confirmation (scope boundaries)
+
+CAM-1f reads **no** pixels, performs **no** interpolation or SLERP, adds **no** matcher or
+detector, makes **no** renderer change, wires **no** real intrinsics into rendering (§3), and
+changes **no** PTSKCAT0/PTSKCAT4 catalog or overlay behavior. It adds exactly one new production
+session owner (`CameraSessionGeometryProvider`) and one intrinsics-resolution seam
+(`SessionScopedCameraIntrinsicsResolver`) — no second camera or sensor session, no persistent
+bundle history (latest-value-only throughout), no lens distortion, and no front-camera support.
 
 ---
 

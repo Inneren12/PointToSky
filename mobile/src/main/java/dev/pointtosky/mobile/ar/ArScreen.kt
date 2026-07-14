@@ -85,7 +85,10 @@ import dev.pointtosky.core.datalayer.AimTargetKind
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider
+import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsCoordinator
 import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
+import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
@@ -216,12 +219,47 @@ fun ArScreen(
     // composition - dispose() is terminal, not reusable, so a new ArScreen composition gets a new
     // remember{}ed synchronizer rather than calling dispose() and continuing to use this one.
     val timestampSynchronizer = remember { CameraTimestampSynchronizer() }
+    // CAM-1f: session-scoped geometry bundle owner and once-per-session intrinsics resolver. Fed
+    // below, but not consumed by rendering or any matcher yet (see
+    // docs/camera_coordinate_calibration_contract.md §11). Same one-composition ownership and
+    // terminal-dispose convention as timestampSynchronizer above. The provider's pairing tolerance
+    // is read from timestampSynchronizer itself, never a separately-assumed default, so the two
+    // never disagree about what "within tolerance" means for this session.
+    val geometryProvider =
+        remember {
+            CameraSessionGeometryProvider(maxAllowedPairDeltaNanos = timestampSynchronizer.maxAllowedDeltaNanos)
+        }
+    val intrinsicsResolver = remember { SessionScopedCameraIntrinsicsResolver() }
+    // CAM-1f: resolves intrinsics only once BOTH the bound CameraInfo and the first analyzed
+    // frame's real buffer dimensions are known - resolving from CameraInfo alone would cache a
+    // wrong (default-aspect) legacy-fallback horizontal FOV, since the fallback path derives it
+    // from the analyzed image's aspect ratio and resolution only ever happens once per session.
+    // See docs/camera_coordinate_calibration_contract.md §10.7.
+    val intrinsicsCoordinator =
+        remember {
+            CameraSessionIntrinsicsCoordinator(
+                resolver = intrinsicsResolver,
+                onResolved = geometryProvider::onIntrinsicsResolved,
+            )
+        }
     DisposableEffect(Unit) {
-        onDispose { timestampSynchronizer.dispose() }
+        onDispose {
+            // Order: stop pairing first, then stop resolving intrinsics, then dispose the bundle
+            // owner that consumes both - so neither upstream input can race a still-live provider
+            // into publishing from a session that is already ending.
+            timestampSynchronizer.dispose()
+            intrinsicsCoordinator.dispose()
+            geometryProvider.dispose()
+        }
     }
 
     val rotationFrame = rememberRotationFrame(onRotationSample = timestampSynchronizer::onRotationSample)
     var overlaySize by remember { mutableStateOf(IntSize.Zero) }
+    // CAM-1f: overlaySize is the authoritative viewport for CropScaleTransform - it is where the
+    // future matcher's predictions will be displayed, not PreviewView's own (unmeasured) size.
+    LaunchedEffect(overlaySize) {
+        geometryProvider.onViewportChanged(overlaySize.width, overlaySize.height)
+    }
 
     Box(
         modifier =
@@ -233,7 +271,14 @@ fun ArScreen(
         if (hasPermission) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
-                onFrameMetadata = timestampSynchronizer::onCameraFrame,
+                onFrameMetadata = { frame ->
+                    intrinsicsCoordinator.onFrameMetadata(frame)
+
+                    timestampSynchronizer.onCameraFrame(frame)?.let { pairingResult ->
+                        geometryProvider.onPairedFrame(frame, pairingResult)
+                    }
+                },
+                onCameraInfo = intrinsicsCoordinator::onCameraInfo,
             )
         } else {
             PermissionRequest(onRequest = { launcher.launch(permission) })

@@ -49,7 +49,12 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class CameraTimestampSynchronizer(
     historyCapacity: Int = TimestampSyncConfig.ROTATION_HISTORY_CAPACITY,
-    private val maxAllowedDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
+    /**
+     * Publicly readable (CAM-1f) so `CameraSessionGeometryProvider` can be configured with the
+     * exact same tolerance this synchronizer actually pairs against, instead of silently assuming
+     * the default — see `createCameraSessionGeometry`'s `maxAllowedPairDeltaNanos` parameter.
+     */
+    val maxAllowedDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
     private val clockMismatchThresholdNanos: Long = TimestampSyncConfig.CLOCK_MISMATCH_THRESHOLD_NANOS,
 ) {
     init {
@@ -86,13 +91,20 @@ class CameraTimestampSynchronizer(
     }
 
     /**
-     * Feeds one camera-frame metadata sample: pairs it, updates diagnostics, and publishes the
-     * latest result. No-op after [dispose] — does not even publish a `NoSamples` result.
+     * Feeds one camera-frame metadata sample: pairs it, updates diagnostics, publishes the latest
+     * result, and returns that same result — CAM-1f's
+     * `dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider` uses the return value to hand
+     * a frame and *the pairing computed for that exact frame* to `onPairedFrame` atomically,
+     * instead of separately reading two independently-"latest" sources that could belong to
+     * different frames. No-op after [dispose] — does not even publish or return a `NoSamples`
+     * result.
+     *
+     * @return the pairing result for [frame], or `null` if this synchronizer is already disposed.
      */
-    fun onCameraFrame(frame: CameraFrameMetadata) {
-        val logPlan =
+    fun onCameraFrame(frame: CameraFrameMetadata): FrameRotationPairingResult? {
+        val (result, logPlan) =
             synchronized(lock) {
-                if (disposed) return
+                if (disposed) return null
                 val result =
                     pairFrameToNearestRotation(
                         frame = frame,
@@ -102,9 +114,10 @@ class CameraTimestampSynchronizer(
                     )
                 val state = diagnostics.record(result)
                 _latestResult.value = result
-                planLog(result, state)
+                result to planLog(result, state)
             }
         runLog(logPlan)
+        return result
     }
 
     /** Debug snapshot for a minimal readout — no pixels, only counters/deltas/compatibility. */

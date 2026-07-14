@@ -1,6 +1,8 @@
 package dev.pointtosky.mobile.ar
 
 import android.content.Context
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -57,11 +59,20 @@ private object CameraBindFailureReason {
  * to observe camera frames (e.g. to pair them with rotation samples) without this composable taking
  * on any new ownership. Defaults to a no-op, so existing callers are unaffected; the provider's own
  * lifecycle, bind/dispose handling, and throttled debug logging are unchanged.
+ *
+ * [onCameraInfo] (CAM-1f) is called exactly once per successful bind - combined `Preview` +
+ * `ImageAnalysis`, or the Preview-only fallback - with the real, bound [CameraInfo], and only if
+ * that bind is still the live session by the time [CameraSessionLifecycle.confirmBound] confirms
+ * it (never for a bind that lost the late-dispose race). It is the seam CAM-1f's
+ * `dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver` uses to resolve real
+ * per-device intrinsics without this composable owning a second camera/sensor session. Defaults to
+ * a no-op.
  */
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
     onFrameMetadata: (CameraFrameMetadata) -> Unit = {},
+    onCameraInfo: (CameraInfo) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -118,14 +129,16 @@ fun CameraPreview(
                         )
                     }
 
+            var boundCamera: Camera? = null
             val combinedBindFailure: RuntimeException? =
                 try {
-                    cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview,
-                        imageAnalysis,
-                    )
+                    boundCamera =
+                        cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            preview,
+                            imageAnalysis,
+                        )
                     null
                 } catch (e: IllegalStateException) {
                     e
@@ -145,6 +158,10 @@ fun CameraPreview(
                     }
                 if (boundSessionIsActive) {
                     MobileLog.cameraAnalysisBound()
+                    // CAM-1f: only for the confirmed-live session, never for a bind that lost the
+                    // late-dispose race (confirmBound already ran its cleanup and returned false above).
+                    checkNotNull(boundCamera) { "boundCamera must be set once the combined bind succeeded" }
+                        .let { onCameraInfo(it.cameraInfo) }
                 }
                 return@launch
             }
@@ -174,19 +191,20 @@ fun CameraPreview(
             // same explicit guard as the initial isDisposed check.
             if (session.isDisposed) return@launch
 
-            try {
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
-                )
-            } catch (_: IllegalStateException) {
-                MobileLog.cameraAnalysisBindFailed(CameraBindFailureReason.ILLEGAL_STATE_FALLBACK_FAILED)
-                return@launch
-            } catch (_: IllegalArgumentException) {
-                MobileLog.cameraAnalysisBindFailed(CameraBindFailureReason.ILLEGAL_ARGUMENT_FALLBACK_FAILED)
-                return@launch
-            }
+            val previewCamera: Camera =
+                try {
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                    )
+                } catch (_: IllegalStateException) {
+                    MobileLog.cameraAnalysisBindFailed(CameraBindFailureReason.ILLEGAL_STATE_FALLBACK_FAILED)
+                    return@launch
+                } catch (_: IllegalArgumentException) {
+                    MobileLog.cameraAnalysisBindFailed(CameraBindFailureReason.ILLEGAL_ARGUMENT_FALLBACK_FAILED)
+                    return@launch
+                }
 
             // Preview-only fallback succeeded. Register its cleanup - unbind Preview alone; never
             // reference or unbind ImageAnalysis again, it was never bound in this path - with the
@@ -197,6 +215,7 @@ fun CameraPreview(
                 }
             if (previewSessionIsActive) {
                 MobileLog.cameraPreviewBoundWithoutAnalysis()
+                onCameraInfo(previewCamera.cameraInfo)
             }
         }
 
