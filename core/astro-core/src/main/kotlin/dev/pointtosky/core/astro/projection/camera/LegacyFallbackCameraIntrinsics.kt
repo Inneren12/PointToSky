@@ -18,6 +18,14 @@ import kotlin.math.tan
  * they are not known yet, horizontal FOV falls back to the vertical FOV (an explicit square-aspect
  * policy, documented here — never a guess about physical lens geometry).
  *
+ * [CameraIntrinsics.reference] mirrors that same known/unknown split (CAM-2a intrinsics-provenance
+ * hardening): [imageWidthPx]/[imageHeightPx] valid and positive → [CameraIntrinsicsReference.AnalysisBuffer]
+ * carrying those *exact* dimensions, so a later consumer can check them against whatever buffer it is
+ * actually projecting into rather than trusting a bare "analysis-buffer-referenced" label — matching
+ * dimensions can never be assumed just because this factory was used. Otherwise →
+ * [CameraIntrinsicsReference.Unspecified]: this factory's own square-aspect default must never be
+ * mistaken for a real analysis-buffer measurement.
+ *
  * @param imageWidthPx analyzed-image width in pixels, if known.
  * @param imageHeightPx analyzed-image height in pixels, if known.
  */
@@ -26,13 +34,20 @@ fun legacyFallbackCameraIntrinsics(
     imageHeightPx: Int? = null,
 ): CameraIntrinsics {
     val verticalFov = VERTICAL_FOV_DEG
+    val hasValidDimensions = imageWidthPx != null && imageHeightPx != null && imageWidthPx > 0 && imageHeightPx > 0
     val horizontalFov =
-        if (imageWidthPx != null && imageHeightPx != null && imageWidthPx > 0 && imageHeightPx > 0) {
-            val aspect = imageWidthPx.toDouble() / imageHeightPx.toDouble()
+        if (hasValidDimensions) {
+            val aspect = imageWidthPx!!.toDouble() / imageHeightPx!!.toDouble()
             val tanVFov = tan(Math.toRadians(verticalFov / 2.0))
             Math.toDegrees(2.0 * atan(tanVFov * aspect))
         } else {
             verticalFov
+        }
+    val reference =
+        if (hasValidDimensions) {
+            CameraIntrinsicsReference.AnalysisBuffer(widthPx = imageWidthPx!!, heightPx = imageHeightPx!!)
+        } else {
+            CameraIntrinsicsReference.Unspecified
         }
 
     return CameraIntrinsics(
@@ -44,5 +59,6 @@ fun legacyFallbackCameraIntrinsics(
         principalPointXPx = null,
         principalPointYPx = null,
         source = CameraIntrinsicsSource.LEGACY_FALLBACK,
+        reference = reference,
     )
 }

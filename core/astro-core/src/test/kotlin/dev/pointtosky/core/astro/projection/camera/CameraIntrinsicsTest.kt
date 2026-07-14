@@ -13,6 +13,14 @@ import kotlin.test.assertFailsWith
  * Invalid values are rejected eagerly (constructor throws), never clamped.
  */
 class CameraIntrinsicsTest {
+    /** The only [CameraIntrinsicsReference] each [CameraIntrinsicsSource] is allowed to carry (mirrors `CameraIntrinsics.init`). */
+    private fun defaultReferenceFor(source: CameraIntrinsicsSource): CameraIntrinsicsReference =
+        when (source) {
+            CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION ->
+                CameraIntrinsicsReference.PhysicalSensor
+            CameraIntrinsicsSource.LEGACY_FALLBACK -> CameraIntrinsicsReference.AnalysisBuffer(1920, 1080)
+        }
+
     private fun valid(
         horizontalFovDeg: Double = 60.0,
         verticalFovDeg: Double = 45.0,
@@ -22,6 +30,7 @@ class CameraIntrinsicsTest {
         principalPointXPx: Double? = 960.0,
         principalPointYPx: Double? = 540.0,
         source: CameraIntrinsicsSource = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+        reference: CameraIntrinsicsReference = defaultReferenceFor(source),
     ) = CameraIntrinsics(
         horizontalFovDeg = horizontalFovDeg,
         verticalFovDeg = verticalFovDeg,
@@ -31,6 +40,7 @@ class CameraIntrinsicsTest {
         principalPointXPx = principalPointXPx,
         principalPointYPx = principalPointYPx,
         source = source,
+        reference = reference,
     )
 
     @Test
@@ -119,5 +129,60 @@ class CameraIntrinsicsTest {
         assertFailsWith<IllegalArgumentException> { valid(focalLengthMm = 0.0) }
         assertFailsWith<IllegalArgumentException> { valid(sensorWidthMm = 0.0) }
         assertFailsWith<IllegalArgumentException> { valid(sensorHeightMm = 0.0) }
+    }
+
+    // --- reference: source/reference cross-field consistency (CAM-2a intrinsics-provenance hardening) ---
+
+    @Test
+    fun `CAMERA_CHARACTERISTICS with PhysicalSensor reference is accepted`() {
+        val intrinsics = valid(source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, reference = CameraIntrinsicsReference.PhysicalSensor)
+        assertEquals(CameraIntrinsicsReference.PhysicalSensor, intrinsics.reference)
+    }
+
+    @Test
+    fun `CAMERA_CHARACTERISTICS with an AnalysisBuffer reference is rejected`() {
+        assertFailsWith<IllegalArgumentException> {
+            valid(source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, reference = CameraIntrinsicsReference.AnalysisBuffer(1920, 1080))
+        }
+    }
+
+    @Test
+    fun `CAMERA_INTRINSIC_CALIBRATION with an AnalysisBuffer reference is rejected`() {
+        assertFailsWith<IllegalArgumentException> {
+            valid(source = CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION, reference = CameraIntrinsicsReference.AnalysisBuffer(1920, 1080))
+        }
+    }
+
+    @Test
+    fun `LEGACY_FALLBACK with an AnalysisBuffer reference is accepted`() {
+        val intrinsics =
+            valid(source = CameraIntrinsicsSource.LEGACY_FALLBACK, reference = CameraIntrinsicsReference.AnalysisBuffer(1000, 500))
+        assertEquals(CameraIntrinsicsReference.AnalysisBuffer(1000, 500), intrinsics.reference)
+    }
+
+    @Test
+    fun `LEGACY_FALLBACK with an Unspecified reference is accepted`() {
+        val intrinsics = valid(source = CameraIntrinsicsSource.LEGACY_FALLBACK, reference = CameraIntrinsicsReference.Unspecified)
+        assertEquals(CameraIntrinsicsReference.Unspecified, intrinsics.reference)
+    }
+
+    @Test
+    fun `LEGACY_FALLBACK with a PhysicalSensor reference is rejected`() {
+        assertFailsWith<IllegalArgumentException> {
+            valid(source = CameraIntrinsicsSource.LEGACY_FALLBACK, reference = CameraIntrinsicsReference.PhysicalSensor)
+        }
+    }
+
+    @Test
+    fun `AnalysisBuffer rejects zero or negative widthPx or heightPx`() {
+        assertFailsWith<IllegalArgumentException> { CameraIntrinsicsReference.AnalysisBuffer(0, 500) }
+        assertFailsWith<IllegalArgumentException> { CameraIntrinsicsReference.AnalysisBuffer(1000, 0) }
+        assertFailsWith<IllegalArgumentException> { CameraIntrinsicsReference.AnalysisBuffer(-1, 500) }
+        assertFailsWith<IllegalArgumentException> { CameraIntrinsicsReference.AnalysisBuffer(1000, -1) }
+    }
+
+    @Test
+    fun `AnalysisBuffer with equal widthPx and heightPx values are structurally equal`() {
+        assertEquals(CameraIntrinsicsReference.AnalysisBuffer(1000, 500), CameraIntrinsicsReference.AnalysisBuffer(1000, 500))
     }
 }

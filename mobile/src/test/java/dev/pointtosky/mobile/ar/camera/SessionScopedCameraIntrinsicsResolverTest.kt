@@ -2,6 +2,7 @@ package dev.pointtosky.mobile.ar.camera
 
 import androidx.camera.core.CameraInfo
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
@@ -37,6 +38,7 @@ class SessionScopedCameraIntrinsicsResolverTest {
             principalPointXPx = null,
             principalPointYPx = null,
             source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+            reference = CameraIntrinsicsReference.PhysicalSensor,
         )
 
     private class CountingFakeProvider(

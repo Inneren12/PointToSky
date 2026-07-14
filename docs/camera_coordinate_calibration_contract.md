@@ -2110,8 +2110,165 @@ from the task description is transcribed, unexecuted, into
 `docs/validation/cam_1g_device_validation.md` for whoever next has a physical device available. Per
 §10.10/§9.10, readiness alone (even if it could be observed) would not itself prove
 Preview/ImageAnalysis pixel alignment — that still requires a visible marker/grid or a future
-detector, out of scope here. **CAM-2a (predict-only projection) must not begin until this device gate
-has actually been run and reviewed**, not merely implemented.
+detector, out of scope here. This section originally read "CAM-2a (predict-only projection) must not
+begin until this device gate has actually been run and reviewed." **Update (CAM-2a):** the task
+authorizing CAM-2a explicitly permits it to be implemented as a pure, isolated math slice
+notwithstanding this outstanding gate, on the condition that it is not wired into production
+rendering and not represented as device-validated — see §12 below. This status line
+(`CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`) is otherwise **unchanged**: no physical-device pass
+has been run for CAM-1g or CAM-2a.
+
+---
+
+## 12. CAM-2a predict-only star projection pipeline (this PR)
+
+CAM-2a adds a pure, isolated math slice — package `dev.pointtosky.core.astro.projection.camera.prediction`
+in `:core:astro-core` — that computes deterministic predicted star positions in camera-normalized,
+analyzed-image, and display coordinates from a catalog star's RA/Dec, an observer location/time, and
+an existing `CameraSessionGeometry` bundle (CAM-1f), plus a bounded visibility classification. **Full
+derivation, conventions, and worked examples live in the focused companion doc,
+[`docs/camera_star_prediction_contract.md`](camera_star_prediction_contract.md)** — this section is
+a short pointer plus the essential facts needed to keep this file's own inventory/risk-register
+accurate.
+
+**Status:** pure math, unit-tested (388 JVM tests), **not** wired into any renderer or `:mobile` code
+path, **not** device-validated. §11.9 above records CAM-1g's own device-gate status as unchanged; the
+task authorizing this PR explicitly permits CAM-2a to proceed as an isolated math slice despite that
+outstanding gate, provided it stays unwired and unclaimed as device-validated — both of which hold
+here.
+
+**What it adds** (all new files, package `.../camera/prediction`):
+
+- `EquatorialStarDirection` / `StarProjectionContext` — pure input types (RA/Dec radians, east-positive
+  longitude, absolute UTC instant). Storage is canonical-only: the primary constructor is `private`
+  (`@ConsistentCopyVisibility`), so the generated `copy()` cannot bypass normalization either, and the
+  sole public entry point is the `of(...)` factory, which wraps RA into `[0, 2π)` and longitude into
+  `[-π, π)` before the (also re-validated) `init` block runs.
+- `LocalSkyDirection` / `equatorialToLocalSky` — reuses the existing ENU basis
+  (`horizontalToVector`'s convention, §1.3 above) and reuses `lstAt`/`raDecToAltAz` verbatim
+  (refraction off, per §2 Step A's own recommendation); only the small ENU-embedding arithmetic is
+  freshly written, in `Double` for precision.
+- `worldToDeviceVector` — applies `pairedRotation`'s **transpose** to a world vector. This traces
+  and reconfirms §1.3/§2 Step C's existing "`rotationMatrix` is device→world; `transpose` is
+  world→device" fact against the production `RotationFrame`/`ArScreen` code, rather than assuming it.
+- `DeviceToOpticalCameraTransform` — the one fixed device→optical sign flip (`+y`/`+z` negated),
+  derived from and consistent with the existing (legacy) `projectDeviceVector`'s own sign behavior.
+  Its output (`OpticalCameraVector`) is still expressed in the **display-aligned** basis inherited from
+  `pairedRotation` (post `remapForDisplay`) — see the next bullet for why that is *not* yet safe to feed
+  into the buffer-space pinhole model.
+- `DisplayAlignedOpticalToBufferOpticalTransform` — closes a correctness gap found in review of the
+  first CAM-2a draft: `pairedRotation` is display-aligned (`+x`/`+y` = display-right/display-up for
+  whatever the display's current rotation happens to be), but the pinhole model projects into the
+  **native, unrotated analysis buffer**, and `CropScaleTransform.imageToDisplay` then applies its own
+  forward rotation by `frame.rotationDegrees`. Feeding a display-aligned ray straight into the pinhole
+  model — the first draft's bug — silently double-applies rotation for `rotationDegrees ∈ {90, 270}`
+  (once implicitly via the attitude, once explicitly via `CropScaleTransform`). This transform is the
+  **one** explicit, pure correction for that mismatch — a 2D change of basis around the optical Z axis
+  only, derived as the exact inverse of `CropScaleTransform`'s own private `rotateClockwise` Jacobian
+  (not guessed) — producing a distinct `BufferOpticalCameraVector` type so the two bases can never be
+  silently mixed again. Depth (`z`) is untouched. See
+  `docs/camera_star_prediction_contract.md` §4.5 for the full derivation, mapping table, and coupled
+  attitude/frame-rotation test design.
+- `CameraDirectionProjection` / `PinholeProjectionModel` — pinhole projection using **real**
+  intrinsics-derived focal length (`fx = width / (2·tan(hFov/2))`, likewise `fy`) into the **unrotated
+  full analyzed-buffer** coordinate space, with `CropScaleTransform.imageToDisplay` (already existing,
+  CAM-1e) doing the one-and-only rotation. `forGeometry` now requires the resolved intrinsics'
+  `reference` to be a `CameraIntrinsicsReference.AnalysisBuffer` (see the next bullet) whose
+  `widthPx`/`heightPx` **exactly** equal `geometry.frame`'s buffer dimensions, and throws otherwise —
+  it is no longer possible for a physical-sensor-referenced calibrated FOV, a dimensionless fallback,
+  or an analysis-buffer-referenced value resolved for a *different* buffer/session to be silently
+  applied as if it matched this one.
+- `CameraIntrinsicsReference` (`AnalysisBuffer(widthPx, heightPx)` / `PhysicalSensor` / `Unspecified`)
+  — a second correctness gap, hardened twice: `CameraIntrinsics` (CAM-1b) derives FOV from
+  `SENSOR_INFO_PHYSICAL_SIZE` + focal length with no active-array/crop-region reasoning at all
+  (confirmed by inspecting `CameraIntrinsicsResolver.kt`), so a `CAMERA_CHARACTERISTICS`-sourced
+  (calibrated) intrinsics value describes the **physical sensor**, not necessarily the `ImageAnalysis`
+  buffer CameraX may have cropped/scaled it into — a mapping this codebase captures no metadata for.
+  The first fix derived an `ANALYSIS_BUFFER`/`PHYSICAL_SENSOR` label purely from `source`
+  (`LEGACY_FALLBACK` → always "safe"), which review found insufficient: `legacyFallbackCameraIntrinsics`
+  can be constructed with no dimensions, with dimensions from a different buffer/session, or with a
+  different aspect ratio, then reused against an arbitrary `CameraSessionGeometry` — deriving "safe"
+  from `source` alone cannot detect any of that, recreating the exact dimensionless/stale-aspect
+  fallback bug CAM-1f's own coordinator prevents, just one layer higher. `CameraIntrinsicsReference` is
+  now **caller-supplied data**, not derived from `source`: `AnalysisBuffer` carries its own
+  `widthPx`/`heightPx` so a consumer can check them against the real buffer, `PhysicalSensor` means no
+  analysis-buffer mapping is known at all, and `Unspecified` means no reference dimensions were ever
+  available (e.g. a fallback resolved before the first analyzed frame). `CameraIntrinsics.init` still
+  enforces the one cross-field rule production must uphold (`CAMERA_CHARACTERISTICS`/
+  `CAMERA_INTRINSIC_CALIBRATION` ⇒ `PhysicalSensor`; `LEGACY_FALLBACK` ⇒ `AnalysisBuffer` or
+  `Unspecified`) as defense in depth, without pretending `AnalysisBuffer`'s actual dimensions are
+  implied by `source`. `projectStars` checks `reference` **before** ever constructing a
+  `PinholeProjectionModel` and returns a categorized
+  `StarPredictionBatchResult.IntrinsicsMappingUnavailable(reason)` — `PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`,
+  `ANALYSIS_BUFFER_REFERENCE_MISSING`, or `ANALYSIS_BUFFER_DIMENSIONS_MISMATCH` — instead of fabricating
+  a buffer-space FOV or silently reusing a mismatched one.
+- `StarPredictionBatchResult` — sealed result (`Ready(projections)` /
+  `IntrinsicsMappingUnavailable(reason)`) so "the calibrated intrinsics can't be mapped to this buffer"
+  is a distinct, explicit, typed outcome rather than an exception or a silently-degraded projection.
+  `Ready`'s primary constructor is `private`; the sole public path, `Ready.of(...)`, stores a defensive
+  copy of its input list, so a caller cannot mutate an already-returned `Ready` result through a
+  reference to the (possibly mutable) list it originally passed in.
+- `PredictedStarProjection` / `PredictedStarClassification` — a bounded result distinguishing
+  behind-camera, outside-crop, inside-crop-but-outside-viewport, and visible, carrying no rotation
+  matrix, catalog object, or Android type. `init` enforces there is no public "impossible" state:
+  `cameraDirection`/`imagePoint`/`displayPoint` are all `null` for `BEHIND_CAMERA` and all non-null for
+  every other classification — enforced, not just documented, so no construction or `copy()` path can
+  produce a mismatched combination. `CameraDirectionSnapshot`'s five scalars are each validated finite.
+- `StarPredictionSummary` — every count is validated non-negative, and the four classification counts'
+  sum (computed in `Long`, so four `Int`-range counts near `Int.MAX_VALUE` cannot wrap around into a
+  value that coincidentally matches `inputCount`) must equal it exactly.
+- `StarProjectionContext.magneticDeclinationRad` / `trueEnuToMagneticEnu` — a third correctness fix,
+  independent of the two above: `equatorialToLocalSky` produces a **true**-north ENU vector (pure
+  astronomy), but `geometry.pairedRotation.rotationMatrix` is the *raw* device→world matrix from
+  `SensorManager.getRotationMatrixFromVector` — **magnetic**-north-referenced (§1.3's own "North
+  caveat"; R3 below) — captured *before* the legacy renderer's separate, later
+  `RotationFrame.correctedForTrueNorth(declinationDeg)` call, which only ever corrects the matrix used
+  to build its own `trueNorthFrame` for pixel math, never the matrix fed into CAM-1d's rotation-sample
+  history. Feeding a true-north sky vector straight into that raw matrix silently rotated every
+  predicted star's azimuth by the local magnetic declination (which can exceed 10°) — this is R3,
+  previously tracked only for the legacy renderer, recreated in CAM-2a's own pipeline.
+  `magneticDeclinationRad` (east-positive, exactly `android.hardware.GeomagneticField.getDeclination()`'s
+  and `correctedForTrueNorth`'s own sign convention) is now an explicit pure input on
+  `StarProjectionContext`, defaulting to `0.0` — an explicit "treat magnetic north as true north" mode,
+  never a claim that the real declination is zero — and `trueEnuToMagneticEnu` is the one explicit
+  correction, applied once, immediately before `worldToDeviceVector`, derived as the exact algebraic
+  inverse of `correctedForTrueNorth`'s own matrix math (see
+  `docs/camera_star_prediction_contract.md` §4.6 for the full derivation and equivalence proof, the
+  latter checked against both a ported reimplementation of that algebra (`:core:astro-core`, which
+  cannot depend on `:mobile` to call the real function) and the actual production function itself
+  (`:mobile`'s `RotationFrameTrueNorthEquivalenceTest`). CAM-2a still cannot compute a real
+  declination itself (no `GeomagneticField` call, no Android dependency) — that remains a future
+  mobile-integration responsibility, unimplemented here.
+- `projectStars(stars, context, geometry)` — the pure, stateless, order-preserving batch API; plus
+  `summarizeStarPredictions` for a bounded count-only summary.
+
+**What it explicitly does not add:** pixel reads, a detector/matcher, pose correction, rotation
+interpolation/SLERP, any renderer change, or any new `CameraSessionGeometryProvider` producer/consumer
+in `:mobile`. `ArScreen.calculateOverlay()`/`projectionParams(viewport)`/`VERTICAL_FOV_DEG = 56.0` are
+byte-for-byte unchanged. `projectStars` is still not called from `ArScreen` or anywhere in `:mobile`
+production code, and `:core:astro-core` still takes no Android/hardware dependency (no
+`GeomagneticField` call, no sensor ownership) — the caller must always supply
+`magneticDeclinationRad` itself.
+
+**Risk register additions** — see `docs/camera_star_prediction_contract.md` §11 for detail: the
+pinhole model's unrotated-buffer coordinate space and the IMU-derived device frame are not verified
+co-registered on a real device (same unresolved class of risk as R8 below); camera-to-IMU extrinsic
+offset and lens distortion remain unmodeled, matching CAM-1's own deferred scope (§3.3). The
+display-aligned/buffer-optical basis mismatch (R12) and the physical-sensor/analysis-buffer intrinsics
+mismatch (R13) are both now closed **at the pure-math level** by the transform and the
+`CameraIntrinsicsReference` exact-dimension check above — see R12/R13 in Appendix A — but neither of
+those fixes is itself device-validated; they are internally-consistent-by-construction, not confirmed
+against real hardware. R12's own tests are explicitly **self-consistent basis-composition tests**, not
+a model of CameraX's real sensor-orientation/rotation-reporting behavior (see
+`docs/camera_star_prediction_contract.md` §11's first bullet) — they do not model
+`CameraCharacteristics.SENSOR_ORIENTATION` or how CameraX derives `ImageProxy.imageInfo.rotationDegrees`
+from it, so they cannot and do not claim to reproduce "the real production relationship." R3
+("Magnetic vs true North") is likewise now closed for CAM-2a's own pipeline at the pure-math level by
+`trueEnuToMagneticEnu` — this does not verify a *given* caller-supplied `magneticDeclinationRad` is the
+actual correct value for a real place/time (CAM-2a has no way to check that; see
+`docs/camera_star_prediction_contract.md` §11's dedicated bullet), only that CAM-2a's own algebra,
+given a declination, treats it exactly as the legacy renderer's already-accepted `correctedForTrueNorth`
+does.
 
 ---
 
@@ -2121,7 +2278,7 @@ has actually been run and reviewed**, not merely implemented.
 |---|---|---|---|
 | R1 | Azimuth clockwise-from-North vs math CCW | Steps A/B | cardinal-table test (§6.4) |
 | R2 | Refraction on in one direction, off in the other | `raDecToAltAz` vs `altAzToRaDec` | fix one convention (§2 Step A) |
-| R3 | Magnetic vs true North | `correctedForTrueNorth` | declination-offset test (§6.4) |
+| R3 | Magnetic vs true North | `correctedForTrueNorth` | declination-offset test (§6.4); CAM-2a's own pipeline closes this at the pure-math level via `StarProjectionContext.magneticDeclinationRad` / `trueEnuToMagneticEnu`, proven algebraically equivalent to `correctedForTrueNorth` (`docs/camera_star_prediction_contract.md` §4.6) — not a claim that a caller-supplied declination is itself correct, and not device-validated |
 | R4 | Camera axis is device `−Z` | `forwardWorld` negation | reticle round-trip test (§2 Step C) |
 | R5 | Display remap vs image `rotationDegrees` double-count | `remapForDisplay` + analyzer | per-rotation test (§6.3) |
 | R6 | Screen/image Y flip (`1 − ndcY`) | `projectDeviceVector` | centre + edge test (§6.2) |
@@ -2129,3 +2286,6 @@ has actually been run and reviewed**, not merely implemented.
 | R8 | `FILL_CENTER` crop ignored (image ≠ viewport aspect) | `CameraPreview` + Step E | crop/scale test (§6.5); pure `CropScaleTransform` forward/inverse + visibility tests (§9, CAM-1e) — not yet wired/device-validated |
 | R9 | Front-camera mirroring | (back camera only today) | flip guard if front added |
 | R10 | Sensor/camera clock base mismatch | §4 sync | age gate + near-still fallback (§4.3); measured nearest-sample pairing + tolerance/mismatch thresholds + diagnostic compatibility status, not yet device-validated (§4.5) |
+| R11 | `pairedRotation`'s device frame vs. the pinhole model's unrotated-buffer pixel grid may not be co-registered on a real device | CAM-2a `PinholeProjectionModel`/`worldToDeviceVector` | traced (not guessed) transpose direction + literal-matrix tests (§12, `docs/camera_star_prediction_contract.md` §4/§11) — pure math only, not yet device-validated |
+| R12 | Display-aligned optical ray fed directly into the buffer-space pinhole model double-applies rotation for `rotationDegrees ∈ {90, 270}` | CAM-2a `DisplayAlignedOpticalToBufferOpticalTransform` | one explicit inverse-basis transform, derived from `CropScaleTransform.rotateClockwise`'s own Jacobian; coupled attitude/`frame.rotationDegrees` tests for all four rotations (`docs/camera_star_prediction_contract.md` §4.5) — closed at the pure-math/internal-consistency level, not device-validated |
+| R13 | A physical-sensor-referenced calibrated FOV (`CameraIntrinsics`) silently assumed to describe the `ImageAnalysis` buffer, when CameraX may have cropped/scaled the sensor into that buffer; and (hardened further) an analysis-buffer-referenced FOV resolved for one buffer/session silently reused against a different, dimensionless, or differently-sized buffer | CAM-2a `PinholeProjectionModel.forGeometry` / `CameraIntrinsicsReference` | `CameraIntrinsicsReference.AnalysisBuffer` carries its own `widthPx`/`heightPx` as data, not merely a source-derived label; `forGeometry` requires an exact width/height match against `geometry.frame`'s buffer (aspect-ratio match alone is not accepted) and throws otherwise; `projectStars` checks this first and returns a categorized `StarPredictionBatchResult.IntrinsicsMappingUnavailable` (`PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED` / `ANALYSIS_BUFFER_REFERENCE_MISSING` / `ANALYSIS_BUFFER_DIMENSIONS_MISMATCH`) instead of fabricating, silently downgrading, or reusing a stale/mismatched reference (`docs/camera_star_prediction_contract.md` §6.2) |

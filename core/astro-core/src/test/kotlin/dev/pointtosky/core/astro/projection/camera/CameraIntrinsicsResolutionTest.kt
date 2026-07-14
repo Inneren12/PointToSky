@@ -19,6 +19,7 @@ class CameraIntrinsicsResolutionTest {
             principalPointXPx = null,
             principalPointYPx = null,
             source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+            reference = CameraIntrinsicsReference.PhysicalSensor,
         )
 
     private val fallback = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = 1080)
