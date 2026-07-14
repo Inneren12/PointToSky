@@ -15,8 +15,10 @@ import java.lang.reflect.Proxy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -364,6 +366,55 @@ class CameraSessionIntrinsicsCoordinatorTest {
             frameFuture.get(5, TimeUnit.SECONDS)
 
             assertNull(published, "a resolution that completes after disposal must never publish")
+        } finally {
+            executor.shutdown()
+        }
+    }
+
+    @Test
+    fun `dispose blocks until an in-progress onResolved publication finishes, and never begins one afterward`() {
+        // Targets the window the barrier-based test above cannot: resolveOnce has already
+        // returned and publication is in progress (holding the coordinator lock) when dispose()
+        // is called concurrently. The only legal outcomes are "publication finishes, then
+        // dispose() returns" (proven here) or "dispose() returns and publication never begins"
+        // (proven by the preceding test) - never "dispose() returns, then publication begins".
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+
+        val onResolvedEntered = CountDownLatch(1)
+        val releaseOnResolved = CountDownLatch(1)
+        val onResolvedCompleted = CountDownLatch(1)
+        val coordinator =
+            CameraSessionIntrinsicsCoordinator(resolver) {
+                onResolvedEntered.countDown()
+                releaseOnResolved.await(5, TimeUnit.SECONDS)
+                onResolvedCompleted.countDown()
+            }
+
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            coordinator.onCameraInfo(fakeCameraInfo())
+            val frameFuture = executor.submit { coordinator.onFrameMetadata(frame(1920, 1080)) }
+
+            assertTrue(onResolvedEntered.await(5, TimeUnit.SECONDS), "onResolved was not entered in time")
+
+            // onResolved is now blocked while holding the coordinator lock. dispose() must not be
+            // able to acquire that lock - and therefore must not return - until onResolved finishes.
+            val disposeFuture = executor.submit { coordinator.dispose() }
+            assertFailsWith<TimeoutException>("dispose() must not return while onResolved is still in progress") {
+                disposeFuture.get(200, TimeUnit.MILLISECONDS)
+            }
+
+            releaseOnResolved.countDown()
+
+            assertTrue(onResolvedCompleted.await(5, TimeUnit.SECONDS), "onResolved never completed")
+            disposeFuture.get(5, TimeUnit.SECONDS) // now unblocked, must complete promptly
+            frameFuture.get(5, TimeUnit.SECONDS)
+
+            // Once dispose() has returned, no callback may begin a new publication.
+            coordinator.onCameraInfo(fakeCameraInfo())
+            coordinator.onFrameMetadata(frame(1280, 720))
+            assertEquals(1, provider.callCount)
         } finally {
             executor.shutdown()
         }

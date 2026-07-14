@@ -1741,14 +1741,33 @@ class CameraSessionIntrinsicsCoordinator(
   `IntrinsicsUnavailable` states cover this). No `PreviewView` dimension is ever substituted for the
   missing analyzed-frame dimensions, and Preview-only camera display itself is unaffected.
 - **Thread safety**: one internal lock guards the atomic "both inputs present, not yet claimed"
-  transition. The actual `resolveOnce` call (real Camera2 work) and the `onResolved` publish both run
-  *outside* that lock, so Camera2/`MobileLog`/`CameraSessionGeometryProvider` work never happens
-  while it is held.
-- **Disposal**: terminal and idempotent, same convention as every other CAM-1f/CAM-1d session owner.
-  A resolution already in flight when `dispose()` runs is not cancelled, but disposal is re-checked
-  immediately before publishing, so a resolution that completes *after* disposal can never publish —
-  proven by a deterministic (not merely probabilistic) race test using a blocking fake provider and
-  `CountDownLatch`s to force that exact interleaving (`CameraSessionIntrinsicsCoordinatorTest`).
+  transition. `resolveOnce` (real Camera2 work) runs *outside* that lock — it must never block a
+  concurrent `onCameraInfo`/`onFrameMetadata`/`dispose` caller. The final `onResolved` publish,
+  however, is a deliberate, reviewed exception: it runs **while holding the lock**, serialized with
+  `dispose()` (see below). This is safe only because the production callback
+  (`geometryProvider::onIntrinsicsResolved`) takes its own separate lock and never calls back into
+  the coordinator — no lock cycle, no reverse acquisition.
+- **Disposal — exact linearization rule**: terminal and idempotent, same convention as every other
+  CAM-1f/CAM-1d session owner, with one precise guarantee about the boundary between it and
+  publication:
+  ```text
+  Final onResolved publication and dispose() are serialized on the same lock.
+  A publication already holding the lock (already invoking onResolved) finishes
+  before a concurrent dispose() can acquire the lock and return.
+  No onResolved call can begin after dispose() has returned.
+  ```
+  An earlier revision instead re-checked `disposed` *before* calling `onResolved`, releasing the
+  lock in between the check and the call — a check-then-act window in which `dispose()` could
+  complete and then a late `onResolved` call could still begin. That is now impossible: `dispose()`
+  and the disposed-check-and-publish step share the same lock for the whole step, so there is no
+  window between "check" and "call" for `dispose()` to run in. A resolution already inside
+  `resolveOnce` when `dispose()` runs is not cancelled (it completes the Camera2 read, outside the
+  lock), but if it finishes after `dispose()` has already run, its result is discarded rather than
+  published. Proven by two tests in `CameraSessionIntrinsicsCoordinatorTest`: one blocks
+  `resolveOnce` itself and disposes before it returns (publication never begins); the other blocks
+  `onResolved` itself and disposes while it is in progress (`dispose()` provably does not return
+  until `onResolved` finishes — verified via a `Future.get` with a short timeout that must throw
+  `TimeoutException` while blocked, then complete promptly once released).
 
 `ArScreen` wires `CameraPreview`'s `onCameraInfo` directly to `intrinsicsCoordinator::onCameraInfo`,
 and calls `intrinsicsCoordinator.onFrameMetadata(frame)` at the top of the `onFrameMetadata`
@@ -1756,9 +1775,16 @@ callback — before the existing `timestampSynchronizer.onCameraFrame(frame)` ca
 frame/pairing coherence (§10.2) is unaffected: the coordinator only reads `frame.bufferWidthPx`/
 `bufferHeightPx`, never the frame object itself, and never influences pairing. Disposal order in the
 session's `DisposableEffect.onDispose` is: `timestampSynchronizer.dispose()`, then
-`intrinsicsCoordinator.dispose()`, then `geometryProvider.dispose()` — pairing stops first, then
-intrinsics resolution stops, then the bundle owner that consumes both is disposed last, so neither
-upstream input can race a still-live `geometryProvider` into publishing from an ending session.
+`intrinsicsCoordinator.dispose()`, then `geometryProvider.dispose()`. The guarantee this order gives
+is **not** "the geometry provider is never briefly live after an upstream session ends" — each
+component's own disposal is what actually enforces its part of the contract, not the ordering
+between them. The guarantees are, per component: the timestamp synchronizer accepts no new frame
+pairing once *its* `dispose()` returns; the intrinsics coordinator cannot *begin* a publish once
+*its* `dispose()` returns (the linearization rule above); and the geometry provider, disposed last,
+is then terminally disposed itself and clears all of its own state. Disposing the two upstream
+inputs before the provider simply means that by the time the provider is disposed, neither upstream
+source can still be mid-callback trying to feed it — a sequencing convenience, not what makes any
+individual component's contract hold.
 
 **No recalculation is ever triggered within a session**: sensor physical size and the bound
 `CameraInfo` do not change while a session is bound, and the first analyzed frame's buffer
