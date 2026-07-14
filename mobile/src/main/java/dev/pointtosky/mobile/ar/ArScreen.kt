@@ -40,6 +40,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -285,12 +286,12 @@ fun ArScreen(
         val geometryResult by geometryProvider.state.collectAsStateWithLifecycle()
         val sessionId = remember { nextDebugSessionId() }
         val snapshot = remember(geometryResult) { geometryResult.toDiagnosticSnapshot() }
-        val transitionCount = remember { mutableStateOf(0) }
+        val transitionCount = remember { mutableIntStateOf(0) }
         val lastCategory = remember { mutableStateOf<CameraGeometryDiagnosticCategory?>(null) }
         SideEffect {
             val previous = lastCategory.value
             if (previous != null && previous != snapshot.category) {
-                transitionCount.value++
+                transitionCount.intValue++
             }
             lastCategory.value = snapshot.category
         }
@@ -298,7 +299,7 @@ fun ArScreen(
 
         cameraGeometryDiagnosticSnapshot = snapshot
         cameraGeometryDiagnosticSessionId = sessionId
-        cameraGeometryStatusTransitionCount = transitionCount.value
+        cameraGeometryStatusTransitionCount = transitionCount.intValue
         cameraGeometryObservedFrameCount = debugState.observedFrameCount
         cameraGeometryReadyBundleCount = debugState.readyBundleCount
     } else {
