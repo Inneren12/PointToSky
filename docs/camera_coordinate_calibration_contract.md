@@ -1667,7 +1667,11 @@ without needing to remember to update both call sites.
 
 It publishes `state: StateFlow<CameraSessionGeometryResult>`, latest-value-only — never a queue —
 plus a bounded `debugState(): CameraSessionGeometryDebugState` (observed/ready/rejected counts,
-latest status/quality/pair-delta; no historical list). A published bundle always combines the
+latest status/quality/pair-delta; no historical list). (CAM-1g later adds a third, combined
+`observation: StateFlow<CameraSessionGeometryObservation>` publishing `state` and `debugState()`
+together from the same locked recompute, specifically so a live UI observes counter changes even when
+`state` alone would not re-emit a structurally-equal result — see §11.3.) A published bundle always
+combines the
 frame/pairing pair from the most recent `onPairedFrame` call with whatever viewport and intrinsics
 are current at rebuild time (§10.2) — `onViewportChanged`/`onIntrinsicsResolved` each trigger a
 rebuild against the still-latest frame/pairing pair, so a viewport rotation or the intrinsics
@@ -1849,6 +1853,265 @@ changes **no** PTSKCAT0/PTSKCAT4 catalog or overlay behavior. It adds exactly on
 session owner (`CameraSessionGeometryProvider`) and one intrinsics-resolution seam
 (`SessionScopedCameraIntrinsicsResolver`) — no second camera or sensor session, no persistent
 bundle history (latest-value-only throughout), no lens distortion, and no front-camera support.
+
+---
+
+## 11. CAM-1g debug-only diagnostic consumer and device-validation gate (this PR)
+
+CAM-1f wired a full producer (frame → pairing → crop/scale → intrinsics → `CameraSessionGeometry`)
+that nothing consumed (§10.9, §10.10: "Nothing reads `CameraSessionGeometryProvider.state` in this
+PR"). CAM-1g adds the **first** consumer — a debug-only diagnostic overlay inside `ArScreen` — so the
+CAM-1c–1f pipeline can finally be observed on a physical device. This slice is a **validation gate**:
+it adds no matching, no detection, no projection correction, and no renderer handoff. It is also the
+first slice for which a physical-device report is required, not optional.
+
+### 11.1 Pure diagnostic model — `:mobile`, package `dev.pointtosky.mobile.ar.camera`
+
+Deliberately **not** placed in `:core:astro-core` even though it touches only pure core types
+(`CameraSessionGeometryResult`, `CropScaleTransform`, `PixelPoint`) — it exists to answer a `:mobile`
+UI/validation question ("is this build's overlay showing a plausible bundle"), and its JVM tests are
+exercised via `:mobile:testInternalDebugUnitTest`, not `:core:astro-core:test`.
+
+- **`CameraGeometryDiagnosticCategory`** (`CameraGeometryDiagnostics.kt`) — a flat, stable, 13-value
+  enum covering every distinct reason the pipeline can report:
+
+  ```text
+  MISSING_FRAME · INVALID_VIEWPORT · INTRINSICS_PENDING ·
+  ROTATION_NO_SAMPLES · ROTATION_OUTSIDE_TOLERANCE · ROTATION_CLOCK_MISMATCH ·
+  PAIRING_FRAME_MISMATCH · PAIRING_DELTA_MISMATCH · PAIRING_OUTSIDE_CONFIGURED_TOLERANCE ·
+  CROP_SCALE_CONSTRUCTION_FAILED ·
+  READY_CALIBRATED · READY_LEGACY_FALLBACK ·
+  DISPOSED
+  ```
+
+  `CameraSessionGeometryResult.toDiagnosticCategory()` maps every sealed subtype/reason to exactly
+  one of these — `Ready` splits on `CameraGeometryQuality` into the two `READY_*` values, so a
+  fallback bundle is never displayed as indistinguishable from a calibrated one. Never derived from
+  the sealed result's own `toString()`.
+
+- **`CameraGeometryDiagnosticSnapshot`** (same file) — the bounded, immutable display model:
+
+  ```kotlin
+  data class CameraGeometryDiagnosticSnapshot(
+      val category: CameraGeometryDiagnosticCategory,
+      val quality: CameraGeometryQuality?,
+      val frameTimestampNanos: Long?,
+      val bufferWidthPx: Int?, val bufferHeightPx: Int?,
+      val cropLeftPx: Int?, val cropTopPx: Int?, val cropRightPx: Int?, val cropBottomPx: Int?,
+      val rotationDegrees: Int?,
+      val viewportWidthPx: Int?, val viewportHeightPx: Int?,
+      val pairDeltaNanos: Long?,
+      val intrinsicsSource: CameraIntrinsicsSource?,
+      val horizontalFovDeg: Double?, val verticalFovDeg: Double?,
+      val uniformScale: Double?, val displayOffsetX: Double?, val displayOffsetY: Double?,
+      val centerProbe: CameraGeometryCenterProbeSnapshot?,
+  )
+  ```
+
+  `CameraSessionGeometryResult.toDiagnosticSnapshot()` is a **pure mapper** — no Android dependency,
+  no additional state read, no pixels, no rotation matrix (`CameraSessionGeometry.pairedRotation` is
+  never called from diagnostics code, since it is the one property that would otherwise force a
+  defensive-copy of matrix data this slice must never expose). Geometry/FOV/scale/offset/center-probe
+  fields are populated **only** for `Ready`, the only variant that actually carries a
+  `CameraSessionGeometry`. Two variants are exceptions because they carry viewport data directly even
+  though they are not `Ready`: `MissingFrame.viewportSize` (the last known *valid* viewport) and
+  `InvalidViewport`'s raw width/height. Every other non-`Ready` variant — `RotationUnavailable`,
+  `IntrinsicsUnavailable`, `GeometryRejected`, `Disposed` — reports only its `category`; the sealed
+  result does not carry frame/buffer data for those variants (`FrameRotationPairingResult`'s
+  non-`Paired` cases carry only bare timestamps, never a `CameraFrameMetadata`), so the snapshot
+  reports "unavailable" there rather than reconstructing a value from a different source and implying
+  it was captured atomically with the reported status.
+
+- **`computeCameraGeometryCenterProbe(transform: CropScaleTransform)`** (§11.4 below) and
+  **`nextDebugSessionId()`** (§11.6 below) live in the same file.
+
+### 11.2 Debug-only visibility gate
+
+**`CameraGeometryDiagnosticsGate`** (`CameraGeometryDiagnosticsGate.kt`) gates the overlay on the
+project's actual build-variant matrix (`mobile/build.gradle.kts`: `flavorDimensions += "distribution"`
+with `internal`/`public` flavors, plus AGP's implicit `debug`/`release` build types) rather than on a
+new flag invented for this PR:
+
+```kotlin
+internal fun isDiagnosticsEnabled(debug: Boolean, flavor: String): Boolean =
+    debug && flavor == "internal"
+
+object CameraGeometryDiagnosticsGate {
+    val isEnabled: Boolean = isDiagnosticsEnabled(debug = BuildConfig.DEBUG, flavor = BuildConfig.FLAVOR)
+}
+```
+
+`isDiagnosticsEnabled` is a plain pure function of `(debug, flavor)` — `CameraGeometryDiagnosticsGateTest`
+exercises all four `(debug, flavor)` combinations against it directly, plus one assertion that the gate
+*object* (`CameraGeometryDiagnosticsGate.isEnabled`) agrees with `isDiagnosticsEnabled(BuildConfig.DEBUG,
+BuildConfig.FLAVOR)` for whichever variant is currently running.
+
+**Flavor-aware, not `internalDebug`-only.** `CameraGeometryDiagnosticsGateTest` lives in the shared
+`src/test` source set, so it is compiled and run once per test variant —
+`testInternalDebugUnitTest` *and* `testPublicDebugUnitTest` both execute the same class, and
+`BuildConfig.FLAVOR` differs between the two (`"internal"` vs `"public"`). An earlier revision of this
+test hardcoded `assertTrue(CameraGeometryDiagnosticsGate.isEnabled)`, which only holds for
+`internalDebug` and fails outright under `testPublicDebugUnitTest` (`BuildConfig.FLAVOR == "public"` ⇒
+the correct, expected gate value is `false`). The fix computes the *expected* value from the same
+`BuildConfig` fields the gate itself reads, then asserts the gate agrees — so the same assertion is
+correct under both variants without weakening what the gate itself does: the overlay is still compiled
+into every variant but only *shown* in `internalDebug` — it never appears in `internalRelease`,
+`publicDebug`, or `publicRelease`. No new user-facing setting, developer-options screen, or persistent
+preference was added; no existing debug-overlay toggle mechanism exists elsewhere in `:mobile` to reuse
+(checked — no `BuildConfig.DEBUG`-gated UI or developer-options screen predates this PR).
+
+### 11.3 Collection — one observable `CameraSessionGeometryObservation`, lifecycle-aware and composition-scoped
+
+**Why not `state` + `debugState()`.** The first revision of this section had `ArScreen` separately
+collect `geometryProvider.state` (a `StateFlow<CameraSessionGeometryResult>`) and sample
+`geometryProvider.debugState()` (a plain synchronized getter, not a `Flow`) once per recomposition.
+That under-notifies a live UI: `StateFlow` never re-emits a *structurally-equal* value, so two
+consecutive frames that both produce `IntrinsicsUnavailable(PENDING)` — or two consecutive
+`RotationUnavailable` results with the same reason — publish only one `state` emission between them,
+even though `observedFrameCount` advanced on the second frame. Compose never recomposes for that
+second frame (nothing it collects changed), so the diagnostic overlay's frame/ready counters could sit
+stale for the entire time a session stayed in one non-ready category — exactly the situation the
+physical-device checklist's stationary/slow-pan/fast-pan tests need live counters for.
+
+**Fix: `CameraSessionGeometryProvider.observation`.** `CameraSessionGeometryProvider.kt` adds:
+
+```kotlin
+data class CameraSessionGeometryObservation(
+    val result: CameraSessionGeometryResult,
+    val debugState: CameraSessionGeometryDebugState,
+)
+
+val observation: StateFlow<CameraSessionGeometryObservation>
+```
+
+`recomputeLocked()` (the one place that ever changes `result`/counters/latest-status) publishes both
+`_state.value` and `_observation.value` from the *same* just-computed `result` and the *same*
+post-update counters, in the same locked section, via a shared `debugStateLocked()` helper (also used
+by the still-available `debugState()` getter, so the field list is never duplicated). Because
+`CameraSessionGeometryObservation` bundles the counters into the value being compared for
+`StateFlow`'s equality-based no-op-on-equal-emit behavior, **a counter-only change (same `result`,
+advanced `debugState`) still produces a new, distinct `CameraSessionGeometryObservation` and therefore
+still emits** — this is what closes the staleness gap above. `dispose()` publishes
+`CameraSessionGeometryObservation(result = Disposed, debugState = debugStateLocked())` after counters
+are already cleared, under the same lock. `observation` remains bounded, immutable, latest-value-only
+— no queue, no history — exactly like `state`/`debugState()` before it. The pre-existing `state`
+`StateFlow` is unchanged and still available for any simpler consumer that only needs the result.
+
+**Collection in `ArScreen`.** `ArScreen` collects `geometryProvider.observation` (not `state`, and not
+a direct `debugState()` sample) with `collectAsStateWithLifecycle()` — the same pattern `ArRoute`
+already uses for `viewModel.state` (`ArScreen.kt`, both call sites). The collection lives entirely
+inside `if (CameraGeometryDiagnosticsGate.isEnabled) { ... }` inside the `ArScreen` composable body:
+conditional composable calls are fully supported by Compose (unlike hook-order rules in other UI
+frameworks), and because the gate's value is fixed for the process lifetime, the branch taken never
+changes across recompositions of a given build. No manually launched permanent coroutine, no timer, no
+polling loop is used — the underlying collection is scoped to the composition via
+`collectAsStateWithLifecycle`'s own `LaunchedEffect`, so it is cancelled the moment `ArScreen` leaves
+composition, matching §12's lifecycle requirements. The diagnostic snapshot is built from
+`geometryObservation.result.toDiagnosticSnapshot()`; the displayed frame/ready counters are read
+directly from `geometryObservation.debugState` — `ArScreen` no longer calls
+`geometryProvider.debugState()` for live display. A local `SideEffect` compares the snapshot's
+`category` (not the raw observation) across recompositions to maintain a bounded
+`statusTransitionCount`: a counter-only observation emission (same category, advanced counters) does
+not bump it, since the comparison is on `category`, not on emission identity or count. `ArScreen`
+starts no new camera, sensor, resolver, or provider — this is one lifecycle-aware collection of one
+existing provider's `observation`, nothing more.
+
+### 11.4 Center-probe (§7)
+
+```kotlin
+fun computeCameraGeometryCenterProbe(transform: CropScaleTransform): CameraGeometryCenterProbeSnapshot {
+    val viewportCenter = PixelPoint(transform.viewportSize.width / 2.0, transform.viewportSize.height / 2.0)
+    val imagePoint = transform.displayToImage(viewportCenter)
+    val displayRoundTrip = transform.imageToDisplay(imagePoint)
+    val roundTripErrorPx = hypot(displayRoundTrip.x - viewportCenter.x, displayRoundTrip.y - viewportCenter.y)
+    ...
+}
+```
+
+Computed once per `Ready` snapshot (`toDiagnosticSnapshot()` calls it directly on
+`geometry.cropScaleTransform`), never per-frame-logged (§10 of the task description; the overlay
+*displays* it every recomposition, but nothing logs it). Values are never clamped, and the error is
+computed at full `Double` precision before any display rounding — only `buildCameraGeometryDiagnosticText`
+rounds, for display, to 1 decimal (image point) / 3 decimals (round-trip error).
+`CameraGeometryDiagnosticCenterProbeTest` covers: unrotated, 90°/180°/270° rotation, non-zero crop
+origin, and both horizontal- and vertical-center-crop aspect regimes — every case round-trips to
+within `1e-6` px. This checks only that the *published* transform is internally self-consistent; per
+§9.10/§10.10, it is **not** proof of Preview/ImageAnalysis pixel alignment.
+
+### 11.5 Status/reason mapping and formatting
+
+`CameraGeometryDiagnosticFormat.kt` formats every snapshot field deterministically, always with
+`Locale.ROOT` (never the device locale, so a comma-decimal locale cannot change the displayed digits):
+pair delta as signed milliseconds with 1 decimal (`"+6.4 ms"` / `"-6.4 ms"`), FOV with 1 decimal per
+axis, scale with 3 decimals, offsets with 2 decimals per axis, pixel sizes as `"W×H"`, rotation as
+`"D°"`, crop as `"[left,top — right,bottom]"`, and a fixed `"unavailable"` placeholder for every
+missing field — never an empty string, never `"null"`, never the sealed result's own `toString()`,
+never a rotation matrix or any other pixel-plane value.
+`buildCameraGeometryDiagnosticText(snapshot, sessionId, statusTransitionCount, observedFrameCount,
+readyBundleCount)` assembles the full multi-line overlay text from these; `CameraGeometryDiagnosticFormatTest`
+covers signed/zero/missing pair delta, FOV/scale/offset/pixel-size/rotation/crop formatting and their
+missing-field placeholders, the no-scientific-notation guarantee for both ordinary and very large
+values, and that the assembled text never contains `"CameraSessionGeometryResult"`,
+`"CameraSessionGeometry("`, `"rotationMatrix"`, or `"FloatArray"`.
+
+### 11.6 Overlay UI and session identity
+
+A single non-interactive `Text` composable (`CameraGeometryDiagnosticOverlay`, private, in
+`ArScreen.kt`) renders the built text — translucent background, monospace, width-bounded
+(`widthIn(max = 280.dp)`), placed at `Alignment.TopStart` with enough top padding to clear the
+existing back button. It carries no `clickable`/`pointerInput` modifier, so it never intercepts AR
+gestures or camera interaction, and it is rendered as the last element in the top-level `Box` — purely
+an overlay layer, never replacing or resizing any existing element. It is shown for every `ArUiState`
+(`Loading` and `Ready` alike), since the camera-geometry pipeline itself runs independently of AR
+catalog/location loading.
+
+`nextDebugSessionId()` is a private, in-process `AtomicLong` counter (`CameraGeometryDiagnostics.kt`)
+incremented via `remember { nextDebugSessionId() }` in `ArScreen` — a fresh value every time a new
+`ArScreen` composition is created (i.e. every time AR is re-entered), never persisted, never a device
+identifier, never uploaded. Displaying `"session: N"` alongside a bounded `"transitions: N"` counter is
+sufficient to prove, from the overlay alone, that leaving and re-entering AR produced a new owner
+rather than reusing a disposed one (§12, Test G).
+
+### 11.7 Lifecycle
+
+The diagnostic consumer adds no new lifecycle surface of its own: it reads
+`geometryProvider.observation`, owned and disposed exactly as CAM-1f already specifies for `state`
+(§10.6) — `dispose()` publishes both from the same locked transition. Because
+`collectAsStateWithLifecycle`'s collection is scoped to the `ArScreen` composition (§11.3), it stops
+the moment `ArScreen` leaves composition — before, not after, `geometryProvider.dispose()` runs in the
+same `DisposableEffect.onDispose` — so no diagnostic recomposition can read from a disposed provider
+except to display the terminal `Disposed`/`DISPOSED` category itself (with its counters already
+cleared), which is expected and transient. A freshly entered `ArScreen` composition gets a fresh
+`remember`ed `geometryProvider` (§10.6, unchanged by this PR) and a fresh `nextDebugSessionId()` value,
+so no prior session's frame timestamp, counters, or `Ready` bundle can leak into a new session's first
+recomposition.
+
+### 11.8 Confirmation (scope boundaries)
+
+CAM-1g reads **no** pixels, adds **no** YUV/RGB conversion, implements **no** star detection, **no**
+matching, **no** pose correction, **no** rotation interpolation, **no** SLERP, and moves **no**
+existing star-overlay point. `ArScreen.calculateOverlay()` and `projectionParams(viewport)` are
+byte-for-byte unchanged by this PR — the renderer still uses exclusively the legacy fixed
+`VERTICAL_FOV_DEG = 56.0` projection (§3, §10.9). `CameraSessionGeometry.intrinsics`,
+`CameraSessionGeometry.pairedRotation`, `CropScaleTransform`, and the center-probe output are read
+**only** for display in the diagnostic overlay — none of them feeds `calculateOverlay`,
+`projectionParams`, catalog selection (PTSKCAT0/PTSKCAT4 unchanged), or any orientation state. No
+`CameraX TransformationInfo` was added. The overlay adds no persistent analytics history and logs no
+matrix or raw timestamp stream; it is diagnostic-only and, per §11.2, debug-build-only.
+
+### 11.9 Physical-device validation status
+
+**`CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`** — this PR was authored and tested by a coding agent
+with no access to a physical Android device, camera hardware, or rotation sensor; only JVM unit tests
+and static review were performed (see the exact command/result log in this PR's description and
+`docs/validation/cam_1g_device_validation.md`). The diagnostic overlay, pure mapper, formatting, and
+center-probe are implemented and unit-tested exactly as specified, and the full Test A–I checklist
+from the task description is transcribed, unexecuted, into
+`docs/validation/cam_1g_device_validation.md` for whoever next has a physical device available. Per
+§10.10/§9.10, readiness alone (even if it could be observed) would not itself prove
+Preview/ImageAnalysis pixel alignment — that still requires a visible marker/grid or a future
+detector, out of scope here. **CAM-2a (predict-only projection) must not begin until this device gate
+has actually been run and reviewed**, not merely implemented.
 
 ---
 

@@ -13,12 +13,15 @@ import dev.pointtosky.core.astro.projection.camera.TimedRotationSample
 import dev.pointtosky.core.astro.projection.camera.TimestampSyncConfig
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
 import dev.pointtosky.core.astro.projection.camera.pairFrameToNearestRotation
+import dev.pointtosky.core.astro.projection.camera.status
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * JVM tests for [CameraSessionGeometryProvider] (CAM-1f): frame/pairing coherence, rebuild
@@ -447,6 +450,136 @@ class CameraSessionGeometryProviderTest {
             executor.shutdown()
         }
     }
+
+    // --- Observation: equal-result recomputes still surface updated counters (CAM-1g) -----------
+
+    @Test
+    fun `observation emits updated counters even though the result stays IntrinsicsUnavailable PENDING`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        val frameA = frame(1_000L)
+
+        provider.onPairedFrame(frameA, pairing(frameA, 1_000L))
+        val first = provider.observation.value
+        assertIs<CameraSessionGeometryResult.IntrinsicsUnavailable>(first.result)
+        assertEquals(1L, first.debugState.observedFrameCount)
+
+        val frameB = frame(2_000L)
+        provider.onPairedFrame(frameB, pairing(frameB, 2_000L))
+        val second = provider.observation.value
+
+        assertIs<CameraSessionGeometryResult.IntrinsicsUnavailable>(second.result)
+        assertEquals(2L, second.debugState.observedFrameCount)
+        assertNotEquals(first, second)
+    }
+
+    @Test
+    fun `observation emits updated counters even though the result stays RotationUnavailable`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+
+        val frameA = frame(1_000L)
+        provider.onPairedFrame(frameA, noSamplesPairing(frameA))
+        val first = provider.observation.value
+        assertIs<CameraSessionGeometryResult.RotationUnavailable>(first.result)
+
+        val frameB = frame(2_000L)
+        provider.onPairedFrame(frameB, noSamplesPairing(frameB))
+        val second = provider.observation.value
+
+        assertIs<CameraSessionGeometryResult.RotationUnavailable>(second.result)
+        assertEquals(first.result.status, second.result.status)
+        assertTrue(second.debugState.observedFrameCount > first.debugState.observedFrameCount)
+        assertNotEquals(first, second)
+        // Not exercised by calling debugState() directly - the updated counter must already be
+        // visible on the observation value itself.
+        assertEquals(second.debugState, provider.debugState())
+    }
+
+    @Test
+    fun `repeated Ready bundles update observation counts, retaining only the latest bundle`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+
+        repeat(5) { i ->
+            val f = frame(1_000L + i)
+            provider.onPairedFrame(f, pairing(f, 1_000L + i))
+        }
+
+        val observation = provider.observation.value
+        val ready = assertIs<CameraSessionGeometryResult.Ready>(observation.result)
+        assertEquals(1_004L, ready.geometry.frame.timestampNanos)
+        assertEquals(5L, observation.debugState.observedFrameCount)
+        assertEquals(5L, observation.debugState.readyBundleCount)
+    }
+
+    @Test
+    fun `disposal publishes a Disposed observation with cleared counters, is idempotent, and ignores post-disposal callbacks`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+        val f = frame(1_000L)
+        provider.onPairedFrame(f, pairing(f, 1_000L))
+        assertIs<CameraSessionGeometryResult.Ready>(provider.observation.value.result)
+
+        provider.dispose()
+
+        val disposedObservation = provider.observation.value
+        assertEquals(CameraSessionGeometryResult.Disposed, disposedObservation.result)
+        assertEquals(0L, disposedObservation.debugState.observedFrameCount)
+        assertEquals(0L, disposedObservation.debugState.readyBundleCount)
+        assertEquals(CameraSessionGeometryStatus.DISPOSED, disposedObservation.debugState.latestStatus)
+
+        provider.onPairedFrame(f, pairing(f, 1_000L))
+        provider.onViewportChanged(1920, 1080)
+        provider.onIntrinsicsResolved(fallback)
+        assertEquals(disposedObservation, provider.observation.value)
+
+        provider.dispose()
+        assertEquals(disposedObservation, provider.observation.value)
+    }
+
+    // --- Observation/result/debugState coherence ---------------------------------------------------
+
+    @Test
+    fun `observation coherence - non-Ready result status matches debugState, quality and delta are null`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        val f = frame(1_000L)
+        provider.onPairedFrame(f, pairing(f, 1_000L))
+
+        val observation = provider.observation.value
+
+        assertEquals(observation.result.status, observation.debugState.latestStatus)
+        assertEquals(null, observation.debugState.latestQuality)
+        assertEquals(null, observation.debugState.latestPairDeltaNanos)
+    }
+
+    @Test
+    fun `observation coherence - Ready result status, quality, and pair delta match debugState`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+        val f = frame(5_000L)
+        provider.onPairedFrame(f, pairing(f, rotationTimestampNanos = 4_970L))
+
+        val observation = provider.observation.value
+        val ready = assertIs<CameraSessionGeometryResult.Ready>(observation.result)
+
+        assertEquals(ready.status, observation.debugState.latestStatus)
+        assertEquals(ready.quality, observation.debugState.latestQuality)
+        assertEquals(ready.geometry.frameRotationDeltaNanos, observation.debugState.latestPairDeltaNanos)
+    }
+
+    private fun noSamplesPairing(frame: CameraFrameMetadata): FrameRotationPairingResult =
+        pairFrameToNearestRotation(
+            frame = frame,
+            samples = emptyList(),
+            maxAllowedDeltaNanos = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
+            clockMismatchThresholdNanos = TimestampSyncConfig.CLOCK_MISMATCH_THRESHOLD_NANOS,
+        )
 
     private companion object {
         const val RACE_ITERATIONS = 500
