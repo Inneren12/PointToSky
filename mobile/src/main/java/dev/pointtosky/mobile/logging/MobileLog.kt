@@ -146,6 +146,66 @@ object MobileLog {
         LogBus.event("timestamp_sync_unavailable_no_samples")
     }
 
+    /** CAM-1f: one event when a camera-session geometry provider starts observing updates. */
+    fun cameraGeometrySessionStarted() {
+        LogBus.event("camera_geometry_session_started")
+    }
+
+    /** CAM-1f: one event for the first Ready geometry bundle published in a session. */
+    fun cameraGeometryFirstReady(quality: String) {
+        LogBus.event(
+            name = "camera_geometry_first_ready",
+            payload = mapOf("quality" to quality),
+        )
+    }
+
+    /** CAM-1f: logged whenever the published geometry status actually changes — never once per frame. */
+    fun cameraGeometryStatusChanged(status: String) {
+        LogBus.event(
+            name = "camera_geometry_status_changed",
+            payload = mapOf("status" to status),
+        )
+    }
+
+    /** CAM-1f: logged once, the first time a Ready bundle uses legacy fallback intrinsics. */
+    fun cameraGeometryFallbackIntrinsicsInUse() {
+        LogBus.event("camera_geometry_fallback_intrinsics_in_use")
+    }
+
+    /** CAM-1f: throttled per-session geometry summary — never called once per frame. */
+    fun cameraGeometrySummary(
+        status: String,
+        quality: String,
+        bufferWidthPx: Int,
+        bufferHeightPx: Int,
+        viewportWidthPx: Int,
+        viewportHeightPx: Int,
+        rotationDegrees: Int,
+        pairDeltaMillis: Long,
+        intrinsicsSource: String,
+    ) {
+        LogBus.event(
+            name = "camera_geometry_summary",
+            payload =
+                mapOf(
+                    "status" to status,
+                    "quality" to quality,
+                    "bufferWidthPx" to bufferWidthPx,
+                    "bufferHeightPx" to bufferHeightPx,
+                    "viewportWidthPx" to viewportWidthPx,
+                    "viewportHeightPx" to viewportHeightPx,
+                    "rotationDegrees" to rotationDegrees,
+                    "pairDeltaMillis" to pairDeltaMillis,
+                    "intrinsicsSource" to intrinsicsSource,
+                ),
+        )
+    }
+
+    /** CAM-1f: one event when a camera-session geometry provider is disposed. */
+    fun cameraGeometryDisposed() {
+        LogBus.event("camera_geometry_disposed")
+    }
+
     fun searchQuery(
         query: String,
         results: Int,

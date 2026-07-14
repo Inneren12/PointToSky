@@ -77,6 +77,38 @@ class CameraTimestampSynchronizerTest {
         assertEquals(50L, synchronizer.debugState().observedFrameCount)
     }
 
+    // --- CAM-1f: onCameraFrame's return value ------------------------------------------------
+
+    @Test
+    fun `onCameraFrame returns exactly the result it publishes to latestResult`() {
+        val synchronizer = CameraTimestampSynchronizer()
+        synchronizer.onRotationSample(rotationSample(1_000L))
+
+        val returned = synchronizer.onCameraFrame(frame(1_000L))
+
+        assertEquals(synchronizer.latestResult.value, returned)
+        assertIs<FrameRotationPairingResult.Paired>(returned)
+    }
+
+    @Test
+    fun `onCameraFrame returns a NoSamples result rather than null when no rotation sample is available`() {
+        val synchronizer = CameraTimestampSynchronizer()
+
+        val returned = synchronizer.onCameraFrame(frame(1_000L))
+
+        assertIs<FrameRotationPairingResult.NoSamples>(returned)
+    }
+
+    @Test
+    fun `onCameraFrame returns null after dispose instead of a stale or NoSamples result`() {
+        val synchronizer = CameraTimestampSynchronizer()
+        synchronizer.dispose()
+
+        val returned = synchronizer.onCameraFrame(frame(1_000L))
+
+        assertNull(returned)
+    }
+
     // --- Constructor validation (eager, not deferred to the first camera frame) -------------
 
     @Test

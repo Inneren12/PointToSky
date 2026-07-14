@@ -86,13 +86,20 @@ class CameraTimestampSynchronizer(
     }
 
     /**
-     * Feeds one camera-frame metadata sample: pairs it, updates diagnostics, and publishes the
-     * latest result. No-op after [dispose] — does not even publish a `NoSamples` result.
+     * Feeds one camera-frame metadata sample: pairs it, updates diagnostics, publishes the latest
+     * result, and returns that same result — CAM-1f's
+     * `dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider` uses the return value to hand
+     * a frame and *the pairing computed for that exact frame* to `onPairedFrame` atomically,
+     * instead of separately reading two independently-"latest" sources that could belong to
+     * different frames. No-op after [dispose] — does not even publish or return a `NoSamples`
+     * result.
+     *
+     * @return the pairing result for [frame], or `null` if this synchronizer is already disposed.
      */
-    fun onCameraFrame(frame: CameraFrameMetadata) {
-        val logPlan =
+    fun onCameraFrame(frame: CameraFrameMetadata): FrameRotationPairingResult? {
+        val (result, logPlan) =
             synchronized(lock) {
-                if (disposed) return
+                if (disposed) return null
                 val result =
                     pairFrameToNearestRotation(
                         frame = frame,
@@ -102,9 +109,10 @@ class CameraTimestampSynchronizer(
                     )
                 val state = diagnostics.record(result)
                 _latestResult.value = result
-                planLog(result, state)
+                result to planLog(result, state)
             }
         runLog(logPlan)
+        return result
     }
 
     /** Debug snapshot for a minimal readout — no pixels, only counters/deltas/compatibility. */

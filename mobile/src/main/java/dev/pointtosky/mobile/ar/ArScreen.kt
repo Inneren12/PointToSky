@@ -85,7 +85,9 @@ import dev.pointtosky.core.datalayer.AimTargetKind
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider
 import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
+import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
@@ -216,12 +218,26 @@ fun ArScreen(
     // composition - dispose() is terminal, not reusable, so a new ArScreen composition gets a new
     // remember{}ed synchronizer rather than calling dispose() and continuing to use this one.
     val timestampSynchronizer = remember { CameraTimestampSynchronizer() }
+    // CAM-1f: session-scoped geometry bundle owner and once-per-session intrinsics resolver. Fed
+    // below, but not consumed by rendering or any matcher yet (see
+    // docs/camera_coordinate_calibration_contract.md §11). Same one-composition ownership and
+    // terminal-dispose convention as timestampSynchronizer above.
+    val geometryProvider = remember { CameraSessionGeometryProvider() }
+    val intrinsicsResolver = remember { SessionScopedCameraIntrinsicsResolver() }
     DisposableEffect(Unit) {
-        onDispose { timestampSynchronizer.dispose() }
+        onDispose {
+            timestampSynchronizer.dispose()
+            geometryProvider.dispose()
+        }
     }
 
     val rotationFrame = rememberRotationFrame(onRotationSample = timestampSynchronizer::onRotationSample)
     var overlaySize by remember { mutableStateOf(IntSize.Zero) }
+    // CAM-1f: overlaySize is the authoritative viewport for CropScaleTransform - it is where the
+    // future matcher's predictions will be displayed, not PreviewView's own (unmeasured) size.
+    LaunchedEffect(overlaySize) {
+        geometryProvider.onViewportChanged(overlaySize.width, overlaySize.height)
+    }
 
     Box(
         modifier =
@@ -233,7 +249,14 @@ fun ArScreen(
         if (hasPermission) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
-                onFrameMetadata = timestampSynchronizer::onCameraFrame,
+                onFrameMetadata = { frame ->
+                    timestampSynchronizer.onCameraFrame(frame)?.let { pairingResult ->
+                        geometryProvider.onPairedFrame(frame, pairingResult)
+                    }
+                },
+                onCameraInfo = { cameraInfo ->
+                    geometryProvider.onIntrinsicsResolved(intrinsicsResolver.resolveOnce(cameraInfo))
+                },
             )
         } else {
             PermissionRequest(onRequest = { launcher.launch(permission) })
