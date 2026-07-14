@@ -32,7 +32,9 @@ import dev.pointtosky.core.astro.projection.camera.CropScaleTransform
  * [PinholeProjectionModel.forGeometry] read once per call (it is the same for every star in the
  * batch — the rotation, intrinsics, and crop/display transform are all fixed for one [geometry]).
  *
- * For each star: [equatorialToLocalSky] → [worldToDeviceVector] → [DeviceToOpticalCameraTransform] →
+ * For each star: [equatorialToLocalSky] (true-north ENU) → [trueEnuToMagneticEnu] (magnetic-north
+ * ENU, matching [geometry].pairedRotation.rotationMatrix's own basis — see that function's KDoc for
+ * why this step is required) → [worldToDeviceVector] → [DeviceToOpticalCameraTransform] →
  * [DisplayAlignedOpticalToBufferOpticalTransform] → [projectBufferOpticalDirection] → (if in front)
  * [PinholeProjectionModel.project] → crop/viewport classification via `geometry.cropScaleTransform`.
  */
@@ -67,9 +69,10 @@ private fun projectOneStar(
     geometry: CameraSessionGeometry,
     pinhole: PinholeProjectionModel,
 ): PredictedStarProjection {
-    val localSky = equatorialToLocalSky(star, context)
+    val trueEnuSky = equatorialToLocalSky(star, context)
+    val magneticEnuSky = trueEnuToMagneticEnu(direction = trueEnuSky, magneticDeclinationRad = context.magneticDeclinationRad)
 
-    val displayDevice = worldToDeviceVector(rotationMatrix = geometry.pairedRotation.rotationMatrix, world = localSky)
+    val displayDevice = worldToDeviceVector(rotationMatrix = geometry.pairedRotation.rotationMatrix, world = magneticEnuSky)
     val displayOptical = DeviceToOpticalCameraTransform.apply(displayDevice)
     val bufferOptical =
         DisplayAlignedOpticalToBufferOpticalTransform.apply(

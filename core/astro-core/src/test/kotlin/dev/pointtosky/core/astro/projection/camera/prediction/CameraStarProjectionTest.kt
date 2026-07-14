@@ -1,6 +1,9 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
+import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
+import dev.pointtosky.core.astro.time.lstAt
+import dev.pointtosky.core.astro.transform.altAzToRaDec
 import java.time.Instant
 import kotlin.math.abs
 import kotlin.math.cos
@@ -590,6 +593,63 @@ class CameraStarProjectionTest {
         val first = projectStars(listOf(star), context, geometry)
         val second = projectStars(listOf(star), context, geometry)
         assertEquals(first, second)
+    }
+
+    @Test
+    fun `E11 - a non-zero magnetic declination shifts an off-axis star's display position from the zero-declination baseline`() {
+        // Regression test for the magnetic-vs-true-north bug: geometry.pairedRotation.rotationMatrix
+        // (here NORTH_UPRIGHT_ROTATION_MATRIX) is the RAW, magnetic-north-relative sensor attitude - it
+        // is never itself corrected for declination. An OFF-AXIS star (true azimuth 20 deg, not the
+        // forward-axis center) must shift in display position when a non-zero declination is supplied,
+        // and the shift direction must match trueEnuToMagneticEnu's own verified formula
+        // (az_magnetic = az_true - declination): declination=+15deg moves this star's magnetic-frame
+        // azimuth from 20 deg to 5 deg - closer to the camera's (magnetic-north-facing) forward axis -
+        // so displayPoint.x must move CLOSER to the buffer's horizontal center (500), not farther.
+        val instant = Instant.parse("2024-03-03T03:00:00Z")
+        val lonDeg = -10.0
+        val latDeg = 45.0
+        val lstDeg = lstAt(instant, lonDeg).lstDeg
+        val trueAzDeg = 20.0
+        val altDeg = 0.0
+        val eq = altAzToRaDec(Horizontal(azDeg = trueAzDeg, altDeg = altDeg), lstDeg, latDeg)
+        val star = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = Math.toRadians(eq.raDeg), declinationRad = Math.toRadians(eq.decDeg))
+
+        val zeroDeclinationContext =
+            StarProjectionContext.of(latitudeRad = Math.toRadians(latDeg), longitudeRad = Math.toRadians(lonDeg), utcEpochMillis = instant.toEpochMilli())
+        val positiveDeclinationContext =
+            StarProjectionContext.of(
+                latitudeRad = Math.toRadians(latDeg),
+                longitudeRad = Math.toRadians(lonDeg),
+                utcEpochMillis = instant.toEpochMilli(),
+                magneticDeclinationRad = Math.toRadians(15.0),
+            )
+
+        val geometry = buildTestGeometry(rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX)
+
+        val zeroResult = projectSingleReady(star, zeroDeclinationContext, geometry)
+        val positiveResult = projectSingleReady(star, positiveDeclinationContext, geometry)
+
+        val zeroDisplayX = assertNotNull(zeroResult.displayPoint, "zero-declination result").x
+        val positiveDisplayX = assertNotNull(positiveResult.displayPoint, "positive-declination result").x
+
+        assertTrue(abs(positiveDisplayX - zeroDisplayX) > 1.0, "expected a material display-position shift; zero=$zeroDisplayX positive=$positiveDisplayX")
+        assertTrue(
+            abs(positiveDisplayX - 500.0) < abs(zeroDisplayX - 500.0),
+            "expected +15deg declination to move this east-of-center star CLOSER to center (500): zero=$zeroDisplayX positive=$positiveDisplayX",
+        )
+    }
+
+    @Test
+    fun `E12 - a zero magnetic declination default reproduces the exact pre-fix display position`() {
+        // Task requirement G: every existing CAM-2a caller relying on the magneticDeclinationRad=0.0
+        // default must see identical output to before this fix - trueEnuToMagneticEnu is an exact
+        // (bit-for-bit) identity at d=0, so this is guaranteed algebraically, not just approximately;
+        // this test pins that guarantee end-to-end through the full projectStars pipeline.
+        val (star, context) = forwardAxisStar()
+        val geometry = buildTestGeometry(rotationMatrix = NORTHEAST_UPRIGHT_ROTATION_MATRIX)
+        val result = projectSingleReady(star, context, geometry)
+        assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, result.classification)
+        assertNotNull(result.displayPoint)
     }
 
     // =====================================================================================

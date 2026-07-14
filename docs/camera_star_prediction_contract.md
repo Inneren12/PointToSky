@@ -95,6 +95,42 @@ data class StarProjectionContext private constructor(
 - `utcEpochMillis` — an absolute instant (`Instant.ofEpochMilli(utcEpochMillis)`), never compared to
   wall-clock time, never adjusted by a timezone or device locale. No function in this package reads
   `System.currentTimeMillis()`, `ZoneId.systemDefault()`, or any device locale.
+- `magneticDeclinationRad` — local magnetic declination in radians, **east-positive**: the angle from
+  **true** north to **magnetic** north. See §2.3 below for the full contract; this is a correctness
+  fix, not a cosmetic addition — see §4.6.
+
+### 2.3 `magneticDeclinationRad`: an explicit, pure declination input
+
+**This closes a real CAM-2a correctness bug**, not a hardening nicety. `equatorialToLocalSky` (§3)
+produces a **true**-north ENU vector — pure astronomy, with no sensor involvement, so it cannot be
+affected by magnetic declination. `geometry.pairedRotation.rotationMatrix`, however, is the *raw*
+device→world matrix from `SensorManager.getRotationMatrixFromVector`
+(`docs/camera_coordinate_calibration_contract.md` §1.3), whose `+Y` axis points at **magnetic** north
+— the legacy renderer only ever corrects this via a *separate*, later call to
+`RotationFrame.correctedForTrueNorth(declinationDeg)`, applied to build its own `trueNorthFrame` for
+pixel math (`ArScreen.kt`'s `calculateOverlay`/`buildLabelPlacements`), never to the matrix fed into
+CAM-1d's rotation-sample history that `geometry.pairedRotation` is ultimately built from. Before this
+fix, CAM-2a fed a true-north sky vector straight into the raw, magnetic-referenced matrix — silently
+rotating every predicted star's azimuth by the local magnetic declination (which can exceed 10°). See
+§4.6 for the transform that closes this.
+
+`magneticDeclinationRad`'s sign convention is **not invented for CAM-2a** — it is exactly
+`android.hardware.GeomagneticField.getDeclination()`'s convention, which is what the legacy renderer's
+`declinationDeg` already is (`ArScreen.kt`'s `GeomagneticField(...).declination` call site) and which
+`RotationFrame.correctedForTrueNorth`/`Pointing.kt`'s `Horizontal.toTrueNorth` both already document
+and implement: positive means magnetic north lies **east** of true north, and
+`trueAzimuth = magneticAzimuth + declination`.
+
+**The default, `0.0`, is an explicit, deliberate "treat magnetic north as true north" mode — not a
+claim that the real local declination is known to be zero.** CAM-2a is a pure math slice and must not
+call `android.hardware.GeomagneticField` (an Android/hardware dependency `:core:astro-core` cannot
+take on) or otherwise compute a real declination itself — see §6 for the caller-contract this implies.
+Every existing pure test/caller that does not pass `magneticDeclinationRad` keeps its exact prior
+output: `trueEnuToMagneticEnu` at `d = 0.0` is a bit-for-bit identity (`cos(0.0) = 1.0`,
+`sin(0.0) = 0.0` exactly in IEEE 754 double), not merely an approximation.
+
+Stored canonically in `[-π, π)` via `wrapRadMinusPiToPi` — the same wraparound policy as
+`longitudeRad` — and validated finite, both in `of(...)` and (defense in depth) in `init`.
 
 ## 3. Local sky basis
 
@@ -103,11 +139,18 @@ data class StarProjectionContext private constructor(
 This is not a new convention invented for CAM-2a — it is **exactly** the basis the existing AR
 projection code already uses and tests:
 [`horizontalToVector`](../core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/projection/Projection.kt)
-documents the identical cardinal table (`north → (0,1,0)`, `east → (1,0,0)`, `zenith → (0,0,1)`),
-and `docs/camera_coordinate_calibration_contract.md` §1.3 documents the same ENU frame for the
-production sensor world frame. CAM-2a's `LocalSkyDirection` (`LocalSkyDirection.kt`) reuses this
-basis exactly rather than inventing a second one, specifically so a future caller cannot silently
-mix the two.
+documents the identical cardinal table (`north → (0,1,0)`, `east → (1,0,0)`, `zenith → (0,0,1)`).
+
+**"North" here is astronomical — i.e. TRUE north — always, with no exception.** An earlier revision of
+this document additionally claimed `docs/camera_coordinate_calibration_contract.md` §1.3 "documents the
+same ENU frame for the production sensor world frame," which was true only for the axis *convention*
+(East/North/Up, right-handed) and dangerously easy to misread as "the same frame, full stop": §1.3
+itself is explicit that the *production sensor* world frame's `+Y` points at **magnetic** north until
+`RotationFrame.correctedForTrueNorth` is applied (§1.3's own "North caveat"; also R3 in that document's
+risk register). `LocalSkyDirection` from `equatorialToLocalSky` is always true-north-referenced; the
+production `pairedRotation.rotationMatrix` is magnetic-north-referenced until explicitly converted.
+§4.6 is the one place these two get reconciled — no other code in this package should ever need its
+own declination handling.
 
 `equatorialToLocalSky(star, context)` computes this by:
 
@@ -311,6 +354,67 @@ transform and `CropScaleTransform`'s forward rotation compose correctly for a se
 that pairing; whether `pairedRotation`'s IMU-derived axes and the raw analysis buffer's pixel grid are
 actually co-registered on physical hardware remains open (§11, R12 in the calibration contract's risk
 register).
+
+### 4.6 True-north vs magnetic-north world basis: `trueEnuToMagneticEnu`
+
+**This is the fix for a third correctness bug**, distinct from and independent of §4.5's
+display/buffer basis fix: `equatorialToLocalSky` (§3) produces a true-north `LocalSkyDirection`, but
+`geometry.pairedRotation.rotationMatrix` — the matrix `worldToDeviceVector` (§4.1) transposes — is
+**magnetic**-north-referenced (§2.3, §3). Feeding one directly into the other, uncorrected, rotates
+every predicted star's azimuth by the local magnetic declination.
+
+`trueEnuToMagneticEnu(direction, magneticDeclinationRad)` (`TrueNorthToMagneticNorthTransform.kt`) is
+the one explicit correction, inserted in `CameraStarPredictor.projectOneStar` immediately after
+`equatorialToLocalSky` and before `worldToDeviceVector` — mirroring exactly where the legacy renderer's
+own `correctedForTrueNorth` sits relative to `transpose(rotationMatrix)` in `calculateOverlay`. It is a
+**rotation about the ENU `+Z` (Up) axis only** — altitude/Up is never touched — so no other function in
+this package needs its own declination handling.
+
+**Derivation (not guessed): the exact inverse of the production `correctedForTrueNorth`.**
+`RotationFrame.correctedForTrueNorth(declinationDeg)` (`mobile/.../ar/RotationFrame.kt`) left-multiplies
+the raw device→world matrix `R` by a rotation-about-`+Z` matrix `M = [[c, s, 0], [-s, c, 0], [0, 0,
+1]]` (`c = cos(d)`, `s = sin(d)`, `d` = declination in radians): `CM = M · R`, and — independently
+confirmed by that function's own doc comment ("maps magnetic azimuth m to true azimuth m +
+declinationDeg") and by `ArOverlayScenarioTest`'s
+`"correctedForTrueNorth rotates magnetic frame vector to true azimuth"` /
+`"declination correction shifts reticle from magnetic to true azimuth"` tests — `CM` is the
+device→world matrix for the **true**-north world frame: `v_true = M · v_magnetic` for any world
+vector. CAM-2a's `worldToDeviceVector` uses `Rᵀ`, so the required equivalence is
+
+```text
+Rᵀ · trueEnuToMagneticEnu(v_true, d)  ≈  CMᵀ · v_true  =  (M · R)ᵀ · v_true  =  Rᵀ · Mᵀ · v_true
+```
+
+which holds exactly when `trueEnuToMagneticEnu(v_true, d) = Mᵀ · v_true`. Since `M` is a rotation
+matrix, `Mᵀ = M⁻¹ = [[c, -s, 0], [s, c, 0], [0, 0, 1]]` — the **inverse** of the `x' = c·x + s·y, y' =
+-s·x + c·y` mapping one might guess directly from `M` (that candidate maps magnetic → true, the wrong
+direction for this function; a candidate worth naming explicitly because it is the easy mistake to
+make here). The resulting mapping (`(x, y)` = East/North components; `z` — Up — untouched):
+
+```text
+x' = cos(d)·x - sin(d)·y
+y' = sin(d)·x + cos(d)·y
+z' = z
+```
+
+**Tests:** `TrueNorthToMagneticNorthTransformTest` (`:core:astro-core`) pins: zero declination is a
+bit-for-bit identity for North/East/an arbitrary normalized vector; literal (not function-derived)
+expected vectors for `±30°` declination at North and East, chosen so a sign inversion changes the
+literal expected answer; unit-length preservation across several directions and declinations; and the
+matrix/vector equivalence above, checked against a line-for-line ported reimplementation of
+`correctedForTrueNorth`'s own algebra (documented as a port, not a re-derivation), across three
+matrices, six directions, and five declinations (`-20°, -5°, 0°, +5°, +20°`), plus an explicit
+sign-reversal regression guard. `RotationFrameTrueNorthEquivalenceTest` (`:mobile`) proves the same
+equivalence against the **actual production** `correctedForTrueNorth` function directly (not a
+reimplementation) — this is the strongest evidence for the fix, since `:core:astro-core` cannot depend
+on `:mobile`/Android to call that function itself. `CameraStarProjectionTest`'s `E11` end-to-end test
+confirms an off-axis (non-forward-axis) star's predicted display position shifts in the analytically
+correct direction when a non-zero declination is supplied, and `E12` reconfirms the zero-declination
+default reproduces the pre-fix output exactly, end-to-end through the full `projectStars` pipeline.
+
+**What this fix does not do:** it does not compute a real declination — see §6 for the caller
+contract — and it does not touch §4.5's display/buffer basis correction, `frame.rotationDegrees`
+handling, or intrinsics provenance (§6.2), all of which remain exactly as before.
 
 ## 5. Camera-ray result and forward gate
 
@@ -616,13 +720,19 @@ Confirmed by code review and the test suite below:
 - **No interpolation exists** — no SLERP, no rotation blending; `pairedRotation` is used exactly as
   supplied by `CameraSessionGeometry`.
 - **The renderer remains on the legacy 56° FOV** — `ArScreen.calculateOverlay()`,
-  `projectionParams(viewport)`, `VERTICAL_FOV_DEG = 56.0` are unchanged; nothing in `:mobile` imports
-  this package.
+  `projectionParams(viewport)`, `VERTICAL_FOV_DEG = 56.0` are unchanged; no `:mobile` **production**
+  code imports this package or calls `projectStars`. (One `:mobile` **test** file,
+  `RotationFrameTrueNorthEquivalenceTest`, does import `dev.pointtosky.core.astro.projection.camera.prediction`
+  — solely to prove §4.6's equivalence against the real `correctedForTrueNorth`; it is test-only code,
+  not a production wiring.)
 - **Catalog behavior is unchanged** — PTSKCAT0/PTSKCAT4 assets, `CatalogRepository`, and star-overlay
   selection are untouched; `EquatorialStarDirection` is a standalone input type, not a catalog
   reader.
 - **`CameraSessionGeometryProvider` is untouched** — CAM-2a only *consumes* a `CameraSessionGeometry`
   value; it adds no producer, no session ownership, no lifecycle.
+- **No Android/hardware dependency was added** — `:core:astro-core` still does not call
+  `android.hardware.GeomagneticField` or own any sensor; `magneticDeclinationRad` (§2.3) is a plain
+  `Double` the caller supplies.
 
 ## 10. CAM-1g device-gate status (unchanged by this PR)
 
@@ -671,6 +781,17 @@ claims to have solved:
 - **Lens distortion**, not modeled (pinhole only, matching CAM-1's own deferred scope).
 - **Principal point**, always defaulted to the buffer center in practice, since CAM-1b never
   populates a real one (`LENS_INTRINSIC_CALIBRATION` is deliberately unparsed).
+- **Magnetic declination is a caller-supplied number, not a caller-verified one.** §2.3/§4.6 fix the
+  *algebra* (feeding a true-north sky vector through a magnetic-referenced sensor matrix without
+  correction) — this is the same risk class as `docs/camera_coordinate_calibration_contract.md`'s R3
+  ("Magnetic vs true North"), now closed for CAM-2a's own pipeline at the pure-math level. It does
+  **not** verify that whatever `magneticDeclinationRad` a caller supplies is the *correct* real-world
+  value for that place and time — CAM-2a has no way to check that, by design (§6). A caller that
+  passes a stale, wrong, or silently-defaulted-to-zero declination in a production context gets a
+  self-consistent but *actually wrong* prediction, with no signal from this package that anything is
+  off; only a future mobile integration that supplies (or explicitly reports the absence of) a real
+  declination closes this for good, and that integration is unimplemented and physical-device-gated
+  like everything else here.
 
 None of these change while CAM-2a stays an unwired pure-math slice; they are recorded here so CAM-2b
 (or whoever runs the first physical-device pass) knows exactly what is still unverified.
@@ -684,16 +805,36 @@ purely for display, never feeding `calculateOverlay`/`projectionParams` or any p
 position. That slice would also be the first opportunity to gather a physical-device comparison
 between predicted and legacy-rendered positions — still not a matcher, just a visual cross-check.
 
+**Caller contract for `magneticDeclinationRad` (§2.3).** CAM-2a is a pure math slice and must never
+compute a real magnetic declination itself — that requires a platform magnetic model
+(`android.hardware.GeomagneticField`, driven by latitude, longitude, altitude if available, and UTC
+time), an Android/hardware dependency this module must not take on. A future mobile consumer (CAM-2b
+or later) is responsible for supplying the real value — the legacy renderer already computes exactly
+this (`ArScreen.kt`'s `GeomagneticField(state.location.latDeg, state.location.lonDeg, 0f,
+System.currentTimeMillis()).declination`) and should feed the same computation into CAM-2a's
+`StarProjectionContext.of(..., magneticDeclinationRad = ...)` rather than deriving a second,
+independent value. **Production visual alignment must not silently assume `0°` declination when the
+actual value is unknown** — that integration should either supply the real value or expose an explicit
+diagnostic/unavailable/uncorrected quality state (mirroring how `CameraIntrinsicsReference`/
+`StarPredictionBatchResult.IntrinsicsMappingUnavailable`, §6.2/§8, already refuse to silently fabricate
+an intrinsics mapping rather than guess one). Implementing that mobile-side state is out of scope for
+this fix; CAM-2a's own default (`0.0`, an explicit "treat magnetic north as true north" mode) exists
+only to keep every existing pure test/caller deterministic, never as a production correctness claim.
+Do not wire a hidden global declination source (a singleton, a `System` property, a compile-time
+constant) into any future integration — declination varies by location and time and must flow through
+`StarProjectionContext` like every other observer-dependent input.
+
 ## 13. Tests
 
 | File | Section | Covers |
 |---|---|---|
 | `AngleWrapTest` | — | `wrapRadTwoPi`/`wrapRadMinusPiToPi` wraparound at exact and near-boundary values |
 | `EquatorialStarDirectionTest` | F | invariants, canonical-storage-only construction (`of` is the sole public path), many-turn RA, equivalent-canonical equality |
-| `StarProjectionContextTest` | F | invariants, canonical-storage-only construction, many-turn longitude, equivalent-canonical equality |
+| `StarProjectionContextTest` | F | invariants, canonical-storage-only construction, many-turn longitude, equivalent-canonical equality; §2.3 `magneticDeclinationRad` default/validation/canonical-wrap and independence from the other fields |
 | `EquatorialToLocalSkyTest` | A | zenith, meridian transit, east/west hour-angle sign, longitude east-positive, RA wraparound continuity, pole-adjacent declinations, unit-length/finite sweep |
-| `CameraStarProjectionTest` | B, E, F | literal-matrix rotation anchors (identity/yaw/pitch/180°, transpose-vs-direct distinguishing); self-consistent basis-composition tests (§4.5: same-forward-is-center, device-relative right/up anchors, pre-fix double-rotation regression guard); 10 end-to-end synthetic cases (`E1`-`E10`) plus `E8b`-`E8e` covering `ANALYSIS_BUFFER_REFERENCE_MISSING`, `ANALYSIS_BUFFER_DIMENSIONS_MISMATCH`, stale-session reuse, and exact-match `Ready`; defensive invalid-input and no-NaN/Infinity sweep |
+| `CameraStarProjectionTest` | B, E, F | literal-matrix rotation anchors (identity/yaw/pitch/180°, transpose-vs-direct distinguishing); self-consistent basis-composition tests (§4.5: same-forward-is-center, device-relative right/up anchors, pre-fix double-rotation regression guard); 12 end-to-end synthetic cases (`E1`-`E12`, including `E8b`-`E8e` for the intrinsics-reference categories, `E11` for the off-axis magnetic-declination display shift, `E12` for the zero-declination unchanged-output guarantee); defensive invalid-input and no-NaN/Infinity sweep |
 | `DisplayAlignedOpticalToBufferOpticalTransformTest` | — | §4.5 literal mapping table for all four rotations, `z` invariance, 90°/270° mutual inverse, 0°/180° self-inverse, invalid-`rotationDegrees` rejection |
+| `TrueNorthToMagneticNorthTransformTest` | §4.6 | zero declination is a bit-for-bit identity (North/East/an arbitrary vector); literal `±30°` cardinal expected vectors (North, East); unit-length preservation across several directions/declinations; finite-input/output validation; the `Rᵀ·trueEnuToMagneticEnu(v,d) ≈ correctedForTrueNorth(R,d)ᵀ·v` equivalence against a line-for-line ported reimplementation of the production algebra, across 3 matrices × 6 directions × 5 declinations, plus a sign-reversal regression guard |
 | `CameraIntrinsicsTest` | — | FOV/physical-dimension/principal-point invariants; §6.2 `CameraIntrinsicsReference.AnalysisBuffer`'s own positive-dimension validation; `source`/`reference` cross-field consistency (both accepted and rejected combinations) |
 | `LegacyFallbackCameraIntrinsicsTest` | — | §6.2 FOV derivation (aspect-derived vs. square-default); the *real* `legacyFallbackCameraIntrinsics` factory's `reference` provenance — known dimensions → `AnalysisBuffer` with those exact dimensions, unknown/invalid → `Unspecified`, distinct dimensions → distinct (never-reused) references |
 | `PinholeProjectionModelTest` | C | worked-example arithmetic, edge/just-outside frustum, custom principal point, `forGeometry` exact-match analysis-buffer/legacy-fallback derivation; §6.2 `forGeometry` throws for `PhysicalSensor`, `Unspecified`, a width mismatch, a height mismatch, a same-aspect-ratio-different-size mismatch, and a different-aspect-ratio mismatch |
@@ -703,21 +844,31 @@ between predicted and legacy-rendered positions — still not a matcher, just a 
 | `StarPredictionBatchResultTest` | §8 | `Ready.of`'s defensive-copy guarantee (mutating the source list afterward, appending to it, and the returned list never being the same instance), input-order preservation, content-equality, empty-list handling |
 | `DeviceToOpticalCameraTransformTest` | — | fixed sign-flip, its own inverse |
 
+`:mobile` (not run in this sandbox — see below):
+
+| File | Covers |
+|---|---|
+| `RotationFrameTrueNorthEquivalenceTest` | §4.6's equivalence proven against the **actual production** `RotationFrame.correctedForTrueNorth`, not a reimplementation — the strongest evidence for this fix, since `:core:astro-core` cannot call `:mobile` code itself; includes the same sign-reversal regression guard and a zero-declination no-op check |
+
 Commands run (see the PR description for full output):
 
 ```bash
 ./gradlew :core:astro-core:test --tests "*EquatorialToLocalSkyTest"
 ./gradlew :core:astro-core:test --tests "*CameraStarProjectionTest"
 ./gradlew :core:astro-core:test --tests "*DisplayAlignedOpticalToBufferOpticalTransformTest"
+./gradlew :core:astro-core:test --tests "*TrueNorth*Test"
 ./gradlew :core:astro-core:test --tests "*CameraIntrinsics*Test"
 ./gradlew :core:astro-core:test --tests "*PinholeProjectionModelTest"
 ./gradlew :core:astro-core:test --tests "*PredictedStarClassificationTest"
 ./gradlew :core:astro-core:test --tests "*PredictedStarProjectionTest"
+./gradlew :core:astro-core:test --tests "*StarProjectionContextTest"
 ./gradlew :core:astro-core:test --tests "*StarPredictionSummaryTest"
 ./gradlew :core:astro-core:test --tests "*StarPredictionBatchResultTest"
 ./gradlew :core:astro-core:test --tests "*SessionScopedCameraIntrinsicsResolverTest"
 ./gradlew :core:astro-core:test
 ./gradlew :mobile:testInternalDebugUnitTest --tests "*CameraSessionIntrinsicsCoordinatorTest"
+./gradlew :mobile:testInternalDebugUnitTest --tests "*RotationFrame*Test"
+./gradlew :mobile:testInternalDebugUnitTest --tests "*TrueNorth*Test"
 ./gradlew :mobile:testInternalDebugUnitTest
 ./gradlew :mobile:testPublicDebugUnitTest
 ./gradlew :mobile:lintInternalDebug
@@ -726,19 +877,22 @@ Commands run (see the PR description for full output):
 
 **Gradle itself could not run in the authoring sandbox** — no JDK 17 is installed, and both the
 Gradle-wrapper distribution download and a foojay-resolver JDK 17 auto-provision attempt were
-blocked by the sandbox's egress policy (GitHub release-asset downloads return `403`). All 367 tests
+blocked by the sandbox's egress policy (GitHub release-asset downloads return `403`). All 388 tests
 above were verified instead with the Kotlin compiler (`kotlin-compiler-embeddable:2.0.20`, matching
 the project's pinned Kotlin version) invoked directly against JDK 21 with `-jvm-target 17`, and run
 with the JUnit Platform Console Launcher (`junit-platform-console-standalone:1.10.2`,
 `junit-jupiter:5.10.2`, matching the project's pinned JUnit version) — the same compiler, target
 bytecode version, and test versions Gradle itself would use, just invoked without Gradle's build
 graph. This covers `:core:astro-core:test` only — the `:mobile` Gradle tasks (`testInternalDebugUnitTest`
-— which is also where `SessionScopedCameraIntrinsicsResolverTest`/`CameraSessionIntrinsicsCoordinatorTest`
-actually live, both under `:mobile`, not `:core:astro-core` — `testPublicDebugUnitTest`,
-`lintInternalDebug`, `assembleInternalDebug`) require the Android Gradle Plugin/SDK and were **not**
-run or approximated in this sandbox (no `android.jar`/CameraX AAR classpath was assembled either).
-This PR's `:mobile` changes are five mechanical `reference = CameraIntrinsicsReference.PhysicalSensor`/
-import additions (reviewed by hand, no logic change), but that is not a substitute for actually
-running those gates. This is disclosed, not hidden: whoever next has a working
-Gradle/JDK-17/Android-SDK environment should still run the exact commands above before treating this
-gate as closed.
+— which is also where `SessionScopedCameraIntrinsicsResolverTest`/`CameraSessionIntrinsicsCoordinatorTest`/
+`RotationFrameTrueNorthEquivalenceTest` actually live, all under `:mobile`, not `:core:astro-core` —
+`testPublicDebugUnitTest`, `lintInternalDebug`, `assembleInternalDebug`) require the Android Gradle
+Plugin/SDK and were **not** run or approximated in this sandbox (no `android.jar`/CameraX AAR classpath
+was assembled either). This PR's other `:mobile` changes are unmodified from before this fix (no
+`:mobile` source was touched by the magnetic-declination fix itself, beyond the new
+`RotationFrameTrueNorthEquivalenceTest.kt` file) — that new file was reviewed carefully by hand
+(package/visibility/API-shape checked against the real `RotationFrame`/`correctedForTrueNorth`
+declarations it calls) but its actual compilation is **not** verified, since assembling an
+Android SDK/CameraX classpath for a standalone `kotlinc` run was not attempted. This is disclosed, not
+hidden: whoever next has a working Gradle/JDK-17/Android-SDK environment should still run the exact
+commands above before treating this gate as closed.

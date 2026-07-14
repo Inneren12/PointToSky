@@ -111,4 +111,74 @@ class StarProjectionContextTest {
         val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.5, utcEpochMillis = 0L)
         assertTrue(abs(context.longitudeRad - 0.5) < eps)
     }
+
+    // --- magneticDeclinationRad: defaults, validation, and canonical wrap -----------------------------
+
+    @Test
+    fun `magneticDeclinationRad defaults to 0,0 - the explicit uncorrected mode`() {
+        val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = 0L)
+        assertEquals(0.0, context.magneticDeclinationRad)
+    }
+
+    @Test
+    fun `non-finite magneticDeclinationRad is rejected`() {
+        assertFailsWith<IllegalArgumentException> {
+            StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = 0L, magneticDeclinationRad = Double.NaN)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            StarProjectionContext.of(
+                latitudeRad = 0.0,
+                longitudeRad = 0.0,
+                utcEpochMillis = 0L,
+                magneticDeclinationRad = Double.POSITIVE_INFINITY,
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            StarProjectionContext.of(
+                latitudeRad = 0.0,
+                longitudeRad = 0.0,
+                utcEpochMillis = 0L,
+                magneticDeclinationRad = Double.NEGATIVE_INFINITY,
+            )
+        }
+    }
+
+    @Test
+    fun `an already-canonical magneticDeclinationRad is preserved`() {
+        val declination = Math.toRadians(13.0)
+        val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = 0L, magneticDeclinationRad = declination)
+        assertTrue(abs(context.magneticDeclinationRad - declination) < eps)
+    }
+
+    @Test
+    fun `a negative magneticDeclinationRad is preserved`() {
+        val declination = Math.toRadians(-13.0)
+        val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = 0L, magneticDeclinationRad = declination)
+        assertTrue(abs(context.magneticDeclinationRad - declination) < eps)
+    }
+
+    @Test
+    fun `of wraps a magneticDeclinationRad slightly beyond π back near minus π`() {
+        val context =
+            StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = 0L, magneticDeclinationRad = PI + 0.3)
+        assertTrue(abs(context.magneticDeclinationRad - (-PI + 0.3)) < eps)
+    }
+
+    @Test
+    fun `of handles many-turn magneticDeclinationRad values without precision loss beyond floating tolerance`() {
+        val manyTurns = 500.0 * 2.0 * PI + 0.2
+        val context =
+            StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = 0L, magneticDeclinationRad = manyTurns)
+        assertTrue(abs(context.magneticDeclinationRad - 0.2) < 1e-6)
+    }
+
+    @Test
+    fun `magneticDeclinationRad does not affect latitude, longitude, or utcEpochMillis`() {
+        val withoutDeclination = StarProjectionContext.of(latitudeRad = 0.3, longitudeRad = 0.4, utcEpochMillis = 555L)
+        val withDeclination =
+            StarProjectionContext.of(latitudeRad = 0.3, longitudeRad = 0.4, utcEpochMillis = 555L, magneticDeclinationRad = Math.toRadians(10.0))
+        assertEquals(withoutDeclination.latitudeRad, withDeclination.latitudeRad)
+        assertEquals(withoutDeclination.longitudeRad, withDeclination.longitudeRad)
+        assertEquals(withoutDeclination.utcEpochMillis, withDeclination.utcEpochMillis)
+    }
 }

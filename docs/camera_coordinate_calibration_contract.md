@@ -2131,7 +2131,7 @@ derivation, conventions, and worked examples live in the focused companion doc,
 a short pointer plus the essential facts needed to keep this file's own inventory/risk-register
 accurate.
 
-**Status:** pure math, unit-tested (367 JVM tests), **not** wired into any renderer or `:mobile` code
+**Status:** pure math, unit-tested (388 JVM tests), **not** wired into any renderer or `:mobile` code
 path, **not** device-validated. §11.9 above records CAM-1g's own device-gate status as unchanged; the
 task authorizing this PR explicitly permits CAM-2a to proceed as an isolated math slice despite that
 outstanding gate, provided it stays unwired and unclaimed as device-validated — both of which hold
@@ -2217,13 +2217,38 @@ here.
 - `StarPredictionSummary` — every count is validated non-negative, and the four classification counts'
   sum (computed in `Long`, so four `Int`-range counts near `Int.MAX_VALUE` cannot wrap around into a
   value that coincidentally matches `inputCount`) must equal it exactly.
+- `StarProjectionContext.magneticDeclinationRad` / `trueEnuToMagneticEnu` — a third correctness fix,
+  independent of the two above: `equatorialToLocalSky` produces a **true**-north ENU vector (pure
+  astronomy), but `geometry.pairedRotation.rotationMatrix` is the *raw* device→world matrix from
+  `SensorManager.getRotationMatrixFromVector` — **magnetic**-north-referenced (§1.3's own "North
+  caveat"; R3 below) — captured *before* the legacy renderer's separate, later
+  `RotationFrame.correctedForTrueNorth(declinationDeg)` call, which only ever corrects the matrix used
+  to build its own `trueNorthFrame` for pixel math, never the matrix fed into CAM-1d's rotation-sample
+  history. Feeding a true-north sky vector straight into that raw matrix silently rotated every
+  predicted star's azimuth by the local magnetic declination (which can exceed 10°) — this is R3,
+  previously tracked only for the legacy renderer, recreated in CAM-2a's own pipeline.
+  `magneticDeclinationRad` (east-positive, exactly `android.hardware.GeomagneticField.getDeclination()`'s
+  and `correctedForTrueNorth`'s own sign convention) is now an explicit pure input on
+  `StarProjectionContext`, defaulting to `0.0` — an explicit "treat magnetic north as true north" mode,
+  never a claim that the real declination is zero — and `trueEnuToMagneticEnu` is the one explicit
+  correction, applied once, immediately before `worldToDeviceVector`, derived as the exact algebraic
+  inverse of `correctedForTrueNorth`'s own matrix math (see
+  `docs/camera_star_prediction_contract.md` §4.6 for the full derivation and equivalence proof, the
+  latter checked against both a ported reimplementation of that algebra (`:core:astro-core`, which
+  cannot depend on `:mobile` to call the real function) and the actual production function itself
+  (`:mobile`'s `RotationFrameTrueNorthEquivalenceTest`). CAM-2a still cannot compute a real
+  declination itself (no `GeomagneticField` call, no Android dependency) — that remains a future
+  mobile-integration responsibility, unimplemented here.
 - `projectStars(stars, context, geometry)` — the pure, stateless, order-preserving batch API; plus
   `summarizeStarPredictions` for a bounded count-only summary.
 
 **What it explicitly does not add:** pixel reads, a detector/matcher, pose correction, rotation
 interpolation/SLERP, any renderer change, or any new `CameraSessionGeometryProvider` producer/consumer
 in `:mobile`. `ArScreen.calculateOverlay()`/`projectionParams(viewport)`/`VERTICAL_FOV_DEG = 56.0` are
-byte-for-byte unchanged.
+byte-for-byte unchanged. `projectStars` is still not called from `ArScreen` or anywhere in `:mobile`
+production code, and `:core:astro-core` still takes no Android/hardware dependency (no
+`GeomagneticField` call, no sensor ownership) — the caller must always supply
+`magneticDeclinationRad` itself.
 
 **Risk register additions** — see `docs/camera_star_prediction_contract.md` §11 for detail: the
 pinhole model's unrotated-buffer coordinate space and the IMU-derived device frame are not verified
@@ -2237,7 +2262,13 @@ against real hardware. R12's own tests are explicitly **self-consistent basis-co
 a model of CameraX's real sensor-orientation/rotation-reporting behavior (see
 `docs/camera_star_prediction_contract.md` §11's first bullet) — they do not model
 `CameraCharacteristics.SENSOR_ORIENTATION` or how CameraX derives `ImageProxy.imageInfo.rotationDegrees`
-from it, so they cannot and do not claim to reproduce "the real production relationship."
+from it, so they cannot and do not claim to reproduce "the real production relationship." R3
+("Magnetic vs true North") is likewise now closed for CAM-2a's own pipeline at the pure-math level by
+`trueEnuToMagneticEnu` — this does not verify a *given* caller-supplied `magneticDeclinationRad` is the
+actual correct value for a real place/time (CAM-2a has no way to check that; see
+`docs/camera_star_prediction_contract.md` §11's dedicated bullet), only that CAM-2a's own algebra,
+given a declination, treats it exactly as the legacy renderer's already-accepted `correctedForTrueNorth`
+does.
 
 ---
 
@@ -2247,7 +2278,7 @@ from it, so they cannot and do not claim to reproduce "the real production relat
 |---|---|---|---|
 | R1 | Azimuth clockwise-from-North vs math CCW | Steps A/B | cardinal-table test (§6.4) |
 | R2 | Refraction on in one direction, off in the other | `raDecToAltAz` vs `altAzToRaDec` | fix one convention (§2 Step A) |
-| R3 | Magnetic vs true North | `correctedForTrueNorth` | declination-offset test (§6.4) |
+| R3 | Magnetic vs true North | `correctedForTrueNorth` | declination-offset test (§6.4); CAM-2a's own pipeline closes this at the pure-math level via `StarProjectionContext.magneticDeclinationRad` / `trueEnuToMagneticEnu`, proven algebraically equivalent to `correctedForTrueNorth` (`docs/camera_star_prediction_contract.md` §4.6) — not a claim that a caller-supplied declination is itself correct, and not device-validated |
 | R4 | Camera axis is device `−Z` | `forwardWorld` negation | reticle round-trip test (§2 Step C) |
 | R5 | Display remap vs image `rotationDegrees` double-count | `remapForDisplay` + analyzer | per-rotation test (§6.3) |
 | R6 | Screen/image Y flip (`1 − ndcY`) | `projectDeviceVector` | centre + edge test (§6.2) |
