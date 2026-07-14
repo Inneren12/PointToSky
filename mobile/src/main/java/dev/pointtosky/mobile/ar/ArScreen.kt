@@ -86,6 +86,7 @@ import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
 import dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider
+import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsCoordinator
 import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
 import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
 import dev.pointtosky.mobile.datalayer.AimTargetOption
@@ -229,9 +230,25 @@ fun ArScreen(
             CameraSessionGeometryProvider(maxAllowedPairDeltaNanos = timestampSynchronizer.maxAllowedDeltaNanos)
         }
     val intrinsicsResolver = remember { SessionScopedCameraIntrinsicsResolver() }
+    // CAM-1f: resolves intrinsics only once BOTH the bound CameraInfo and the first analyzed
+    // frame's real buffer dimensions are known - resolving from CameraInfo alone would cache a
+    // wrong (default-aspect) legacy-fallback horizontal FOV, since the fallback path derives it
+    // from the analyzed image's aspect ratio and resolution only ever happens once per session.
+    // See docs/camera_coordinate_calibration_contract.md §10.7.
+    val intrinsicsCoordinator =
+        remember {
+            CameraSessionIntrinsicsCoordinator(
+                resolver = intrinsicsResolver,
+                onResolved = geometryProvider::onIntrinsicsResolved,
+            )
+        }
     DisposableEffect(Unit) {
         onDispose {
+            // Order: stop pairing first, then stop resolving intrinsics, then dispose the bundle
+            // owner that consumes both - so neither upstream input can race a still-live provider
+            // into publishing from a session that is already ending.
             timestampSynchronizer.dispose()
+            intrinsicsCoordinator.dispose()
             geometryProvider.dispose()
         }
     }
@@ -255,13 +272,13 @@ fun ArScreen(
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 onFrameMetadata = { frame ->
+                    intrinsicsCoordinator.onFrameMetadata(frame)
+
                     timestampSynchronizer.onCameraFrame(frame)?.let { pairingResult ->
                         geometryProvider.onPairedFrame(frame, pairingResult)
                     }
                 },
-                onCameraInfo = { cameraInfo ->
-                    geometryProvider.onIntrinsicsResolved(intrinsicsResolver.resolveOnce(cameraInfo))
-                },
+                onCameraInfo = intrinsicsCoordinator::onCameraInfo,
             )
         } else {
             PermissionRequest(onRequest = { launcher.launch(permission) })

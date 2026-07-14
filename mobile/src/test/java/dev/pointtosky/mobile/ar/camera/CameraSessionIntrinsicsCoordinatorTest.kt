@@ -1,0 +1,371 @@
+package dev.pointtosky.mobile.ar.camera
+
+import androidx.camera.core.CameraInfo
+import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
+import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult
+import dev.pointtosky.core.astro.projection.camera.FrameRotationPairingResult
+import dev.pointtosky.core.astro.projection.camera.TimedRotationSample
+import dev.pointtosky.core.astro.projection.camera.TimestampSyncConfig
+import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.pairFrameToNearestRotation
+import java.lang.reflect.Proxy
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/**
+ * JVM tests for [CameraSessionIntrinsicsCoordinator] (CAM-1f): order-independent
+ * CameraInfo/first-frame coordination, once-per-session resolution, fallback aspect-ratio
+ * correctness, and disposal races. Uses a real [SessionScopedCameraIntrinsicsResolver] backed by a
+ * fake [CameraIntrinsicsProvider], and a `java.lang.reflect.Proxy`-backed [CameraInfo] whose
+ * methods are never actually invoked — no CameraX mocking framework, no real camera.
+ */
+class CameraSessionIntrinsicsCoordinatorTest {
+    private fun fakeCameraInfo(): CameraInfo =
+        Proxy.newProxyInstance(
+            CameraInfo::class.java.classLoader,
+            arrayOf(CameraInfo::class.java),
+        ) { _, _, _ ->
+            error("CameraInfo methods must never be invoked by a fake CameraIntrinsicsProvider")
+        } as CameraInfo
+
+    private fun frame(
+        widthPx: Int,
+        heightPx: Int,
+        timestampNanos: Long = 1_000L,
+    ) = CameraFrameMetadata(
+        timestampNanos = timestampNanos,
+        bufferWidthPx = widthPx,
+        bufferHeightPx = heightPx,
+        rotationDegrees = 0,
+    )
+
+    private val calibrated =
+        CameraIntrinsics(
+            horizontalFovDeg = 60.0,
+            verticalFovDeg = 45.0,
+            focalLengthMm = 4.25,
+            sensorWidthMm = 5.76,
+            sensorHeightMm = 4.29,
+            principalPointXPx = null,
+            principalPointYPx = null,
+            source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+        )
+
+    private class CountingFakeProvider(
+        private val result: () -> CameraIntrinsicsResolution,
+    ) : CameraIntrinsicsProvider {
+        var callCount: Int = 0
+            private set
+        var lastImageWidthPx: Int? = null
+            private set
+        var lastImageHeightPx: Int? = null
+            private set
+
+        override fun resolve(
+            cameraInfo: CameraInfo,
+            imageWidthPx: Int?,
+            imageHeightPx: Int?,
+        ): CameraIntrinsicsResolution {
+            callCount++
+            lastImageWidthPx = imageWidthPx
+            lastImageHeightPx = imageHeightPx
+            return result()
+        }
+    }
+
+    private val fallbackProvider =
+        object : CameraIntrinsicsProvider {
+            override fun resolve(
+                cameraInfo: CameraInfo,
+                imageWidthPx: Int?,
+                imageHeightPx: Int?,
+            ): CameraIntrinsicsResolution =
+                CameraIntrinsicsResolution(
+                    legacyFallbackCameraIntrinsics(imageWidthPx = imageWidthPx, imageHeightPx = imageHeightPx),
+                    fallbackReason = "no_valid_focal_length",
+                )
+        }
+
+    // --- Callback ordering ------------------------------------------------------------------
+
+    @Test
+    fun `CameraInfo first, then frame - no resolution after CameraInfo alone, one resolution with the frame's dimensions`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        assertEquals(0, provider.callCount)
+        assertNull(published)
+
+        coordinator.onFrameMetadata(frame(1920, 1080))
+
+        assertEquals(1, provider.callCount)
+        assertEquals(1920, provider.lastImageWidthPx)
+        assertEquals(1080, provider.lastImageHeightPx)
+        assertIs<CoreCameraIntrinsicsResolution.Resolved>(published)
+    }
+
+    @Test
+    fun `frame first, then CameraInfo - no resolution after the frame alone, one resolution with that frame's dimensions`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.onFrameMetadata(frame(1280, 720))
+        assertEquals(0, provider.callCount)
+        assertNull(published)
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+
+        assertEquals(1, provider.callCount)
+        assertEquals(1280, provider.lastImageWidthPx)
+        assertEquals(720, provider.lastImageHeightPx)
+        assertIs<CoreCameraIntrinsicsResolution.Resolved>(published)
+    }
+
+    @Test
+    fun `repeated frames before CameraInfo - provider invoked once, using the first accepted frame's dimensions`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        coordinator.onFrameMetadata(frame(1920, 1080))
+        coordinator.onFrameMetadata(frame(1280, 720)) // must not override the first
+        coordinator.onFrameMetadata(frame(640, 480))
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(100, 100)) // after resolution already claimed - must not re-trigger
+
+        assertEquals(1, provider.callCount)
+        assertEquals(1920, provider.lastImageWidthPx)
+        assertEquals(1080, provider.lastImageHeightPx)
+    }
+
+    @Test
+    fun `repeated CameraInfo callbacks - provider invoked once only`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080))
+        coordinator.onCameraInfo(fakeCameraInfo()) // after resolution already claimed
+
+        assertEquals(1, provider.callCount)
+    }
+
+    // --- Preview-only semantics --------------------------------------------------------------
+
+    @Test
+    fun `CameraInfo without any frame metadata never triggers resolution`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onCameraInfo(fakeCameraInfo())
+
+        assertEquals(0, provider.callCount)
+        assertNull(published)
+    }
+
+    // --- Resolved characteristics path -------------------------------------------------------
+
+    @Test
+    fun `a resolved CAMERA_CHARACTERISTICS result is unaffected by which frame dimensions triggered it`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(640, 480))
+
+        assertEquals(1, provider.callCount)
+        val resolved = assertIs<CoreCameraIntrinsicsResolution.Resolved>(published)
+        assertEquals(calibrated, resolved.intrinsics)
+    }
+
+    // --- Fallback aspect correctness ---------------------------------------------------------
+
+    @Test
+    fun `fallback intrinsics reflect the real analyzed frame's 16x9 aspect ratio, not a square default`() {
+        val resolver = SessionScopedCameraIntrinsicsResolver(fallbackProvider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080))
+
+        val fallback = assertIs<CoreCameraIntrinsicsResolution.LegacyFallback>(published)
+        val expected16x9 = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = 1080)
+        val squareDefault = legacyFallbackCameraIntrinsics(imageWidthPx = null, imageHeightPx = null)
+
+        assertEquals(expected16x9.horizontalFovDeg, fallback.intrinsics.horizontalFovDeg, 1e-9)
+        assertTrue(
+            kotlin.math.abs(fallback.intrinsics.horizontalFovDeg - squareDefault.horizontalFovDeg) > 1e-6,
+            "16:9-derived horizontal FOV must differ from the square/default fallback",
+        )
+    }
+
+    @Test
+    fun `the fallback resolution published to CameraSessionGeometryProvider reflects the real frame dimensions`() {
+        val resolver = SessionScopedCameraIntrinsicsResolver(fallbackProvider)
+        val geometryProvider = CameraSessionGeometryProvider()
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver, geometryProvider::onIntrinsicsResolved)
+        val f = frame(1920, 1080)
+
+        geometryProvider.onViewportChanged(1080, 1920)
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(f)
+
+        val sample = TimedRotationSample(timestampNanos = f.timestampNanos, rotationMatrix = FloatArray(9))
+        val pairing =
+            assertIs<FrameRotationPairingResult.Paired>(
+                pairFrameToNearestRotation(
+                    frame = f,
+                    samples = listOf(sample),
+                    maxAllowedDeltaNanos = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
+                    clockMismatchThresholdNanos = TimestampSyncConfig.CLOCK_MISMATCH_THRESHOLD_NANOS,
+                ),
+            )
+        geometryProvider.onPairedFrame(f, pairing)
+
+        val ready = assertIs<CameraSessionGeometryResult.Ready>(geometryProvider.state.value)
+        val expected16x9 = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = 1080)
+        assertEquals(expected16x9.horizontalFovDeg, ready.geometry.intrinsics.intrinsics.horizontalFovDeg, 1e-9)
+    }
+
+    // --- Disposal / races ----------------------------------------------------------------------
+
+    @Test
+    fun `dispose before either input - callbacks are no-ops`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.dispose()
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080))
+
+        assertEquals(0, provider.callCount)
+        assertNull(published)
+    }
+
+    @Test
+    fun `dispose after CameraInfo but before the frame - the later frame callback is a no-op`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.dispose()
+        coordinator.onFrameMetadata(frame(1920, 1080))
+
+        assertEquals(0, provider.callCount)
+        assertNull(published)
+    }
+
+    @Test
+    fun `dispose after the frame but before CameraInfo - the later CameraInfo callback is a no-op`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.onFrameMetadata(frame(1920, 1080))
+        coordinator.dispose()
+        coordinator.onCameraInfo(fakeCameraInfo())
+
+        assertEquals(0, provider.callCount)
+        assertNull(published)
+    }
+
+    @Test
+    fun `callbacks after a full resolution and disposal remain no-ops`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080))
+        assertEquals(1, provider.callCount)
+
+        coordinator.dispose()
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(640, 480))
+
+        assertEquals(1, provider.callCount) // unchanged
+    }
+
+    @Test
+    fun `dispose is idempotent`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        coordinator.dispose()
+        coordinator.dispose()
+        coordinator.dispose()
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080))
+        assertEquals(0, provider.callCount)
+    }
+
+    @Test
+    fun `resolution racing disposal cannot publish intrinsics after disposal completes`() {
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val resolveEntered = CountDownLatch(1)
+            val allowResolveToFinish = CountDownLatch(1)
+            val provider =
+                object : CameraIntrinsicsProvider {
+                    override fun resolve(
+                        cameraInfo: CameraInfo,
+                        imageWidthPx: Int?,
+                        imageHeightPx: Int?,
+                    ): CameraIntrinsicsResolution {
+                        resolveEntered.countDown()
+                        allowResolveToFinish.await(5, TimeUnit.SECONDS)
+                        return CameraIntrinsicsResolution(calibrated)
+                    }
+                }
+            val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+            var published: CoreCameraIntrinsicsResolution? = null
+            val coordinator = CameraSessionIntrinsicsCoordinator(resolver) { published = it }
+
+            coordinator.onCameraInfo(fakeCameraInfo())
+            val frameFuture = executor.submit { coordinator.onFrameMetadata(frame(1920, 1080)) }
+
+            // Resolution is now blocked inside provider.resolve(). Dispose completes fully before
+            // resolution is allowed to finish and attempt to publish.
+            assertTrue(resolveEntered.await(5, TimeUnit.SECONDS), "resolution did not start in time")
+            coordinator.dispose()
+            allowResolveToFinish.countDown()
+
+            frameFuture.get(5, TimeUnit.SECONDS)
+
+            assertNull(published, "a resolution that completes after disposal must never publish")
+        } finally {
+            executor.shutdown()
+        }
+    }
+}

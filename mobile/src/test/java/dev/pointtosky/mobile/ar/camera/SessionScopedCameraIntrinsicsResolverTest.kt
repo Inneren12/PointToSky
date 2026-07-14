@@ -14,9 +14,9 @@ import kotlinx.coroutines.CancellationException
 
 /**
  * JVM tests for [SessionScopedCameraIntrinsicsResolver] (CAM-1f): once-per-session resolution,
- * fallback-reason retention, and `CancellationException` propagation. Uses a fake
- * [CameraIntrinsicsProvider] and a `java.lang.reflect.Proxy`-backed [CameraInfo] whose methods are
- * never actually invoked, so this needs no CameraX mocking framework and no real camera.
+ * fallback-reason retention, dimension validation, and `CancellationException` propagation. Uses a
+ * fake [CameraIntrinsicsProvider] and a `java.lang.reflect.Proxy`-backed [CameraInfo] whose methods
+ * are never actually invoked, so this needs no CameraX mocking framework and no real camera.
  */
 class SessionScopedCameraIntrinsicsResolverTest {
     private fun fakeCameraInfo(): CameraInfo =
@@ -44,6 +44,10 @@ class SessionScopedCameraIntrinsicsResolverTest {
     ) : CameraIntrinsicsProvider {
         var callCount: Int = 0
             private set
+        var lastImageWidthPx: Int? = null
+            private set
+        var lastImageHeightPx: Int? = null
+            private set
 
         override fun resolve(
             cameraInfo: CameraInfo,
@@ -51,6 +55,8 @@ class SessionScopedCameraIntrinsicsResolverTest {
             imageHeightPx: Int?,
         ): CameraIntrinsicsResolution {
             callCount++
+            lastImageWidthPx = imageWidthPx
+            lastImageHeightPx = imageHeightPx
             return result()
         }
     }
@@ -61,9 +67,9 @@ class SessionScopedCameraIntrinsicsResolverTest {
         val resolver = SessionScopedCameraIntrinsicsResolver(provider)
         val cameraInfo = fakeCameraInfo()
 
-        val first = resolver.resolveOnce(cameraInfo)
-        val second = resolver.resolveOnce(cameraInfo)
-        val third = resolver.resolveOnce(cameraInfo)
+        val first = resolver.resolveOnce(cameraInfo, 1920, 1080)
+        val second = resolver.resolveOnce(cameraInfo, 1920, 1080)
+        val third = resolver.resolveOnce(cameraInfo, 1920, 1080)
 
         assertEquals(1, provider.callCount)
         assertEquals(first, second)
@@ -71,11 +77,38 @@ class SessionScopedCameraIntrinsicsResolverTest {
     }
 
     @Test
+    fun `resolveOnce passes the exact real dimensions through to the underlying provider`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+
+        resolver.resolveOnce(fakeCameraInfo(), imageWidthPx = 1280, imageHeightPx = 720)
+
+        assertEquals(1280, provider.lastImageWidthPx)
+        assertEquals(720, provider.lastImageHeightPx)
+    }
+
+    @Test
+    fun `resolveOnce rejects a zero or negative imageWidthPx`() {
+        val resolver = SessionScopedCameraIntrinsicsResolver(CountingFakeProvider { CameraIntrinsicsResolution(calibrated) })
+
+        assertFailsWith<IllegalArgumentException> { resolver.resolveOnce(fakeCameraInfo(), 0, 1080) }
+        assertFailsWith<IllegalArgumentException> { resolver.resolveOnce(fakeCameraInfo(), -1920, 1080) }
+    }
+
+    @Test
+    fun `resolveOnce rejects a zero or negative imageHeightPx`() {
+        val resolver = SessionScopedCameraIntrinsicsResolver(CountingFakeProvider { CameraIntrinsicsResolution(calibrated) })
+
+        assertFailsWith<IllegalArgumentException> { resolver.resolveOnce(fakeCameraInfo(), 1920, 0) }
+        assertFailsWith<IllegalArgumentException> { resolver.resolveOnce(fakeCameraInfo(), 1920, -1080) }
+    }
+
+    @Test
     fun `a resolved result maps to the core Resolved type, preserving the intrinsics`() {
         val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
         val resolver = SessionScopedCameraIntrinsicsResolver(provider)
 
-        val result = resolver.resolveOnce(fakeCameraInfo())
+        val result = resolver.resolveOnce(fakeCameraInfo(), 1920, 1080)
 
         val resolved = assertIs<CoreCameraIntrinsicsResolution.Resolved>(result)
         assertEquals(calibrated, resolved.intrinsics)
@@ -90,7 +123,7 @@ class SessionScopedCameraIntrinsicsResolverTest {
             }
         val resolver = SessionScopedCameraIntrinsicsResolver(provider)
 
-        val result = resolver.resolveOnce(fakeCameraInfo())
+        val result = resolver.resolveOnce(fakeCameraInfo(), 1920, 1080)
 
         val legacyFallback = assertIs<CoreCameraIntrinsicsResolution.LegacyFallback>(result)
         assertEquals(fallbackIntrinsics, legacyFallback.intrinsics)
@@ -109,7 +142,7 @@ class SessionScopedCameraIntrinsicsResolverTest {
             }
         val resolver = SessionScopedCameraIntrinsicsResolver(provider)
 
-        assertFailsWith<CancellationException> { resolver.resolveOnce(fakeCameraInfo()) }
+        assertFailsWith<CancellationException> { resolver.resolveOnce(fakeCameraInfo(), 1920, 1080) }
     }
 
     @Test
@@ -120,11 +153,11 @@ class SessionScopedCameraIntrinsicsResolverTest {
         val cameraInfo = fakeCameraInfo()
 
         val resolverA = SessionScopedCameraIntrinsicsResolver(provider)
-        resolverA.resolveOnce(cameraInfo)
-        resolverA.resolveOnce(cameraInfo) // cached within resolverA's own session - no extra call
+        resolverA.resolveOnce(cameraInfo, 1920, 1080)
+        resolverA.resolveOnce(cameraInfo, 1920, 1080) // cached within resolverA's own session - no extra call
 
         val resolverB = SessionScopedCameraIntrinsicsResolver(provider) // a new session's own owner
-        resolverB.resolveOnce(cameraInfo)
+        resolverB.resolveOnce(cameraInfo, 1920, 1080)
 
         // One fresh resolution per resolver instance (session), not one total, and not one per call.
         assertEquals(2, provider.callCount)

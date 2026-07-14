@@ -30,19 +30,33 @@ class SessionScopedCameraIntrinsicsResolver(
 
     /**
      * Returns the cached resolution if this session already resolved one; otherwise resolves via
-     * [provider], caches it, and returns it. [imageWidthPx]/[imageHeightPx] only affect the
-     * horizontal-FOV aspect ratio used by the legacy fallback (see
-     * `dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics`) — the
-     * real per-device `CAMERA_CHARACTERISTICS` path does not depend on them.
+     * [provider], caches it, and returns it.
+     *
+     * [imageWidthPx]/[imageHeightPx] must be the **real, analyzed** `ImageAnalysis` buffer
+     * dimensions — required and validated positive, not optional. The real per-device
+     * `CAMERA_CHARACTERISTICS` path does not depend on them, but the legacy fallback path
+     * (`dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics`) derives its
+     * horizontal FOV from their aspect ratio; calling this before the first analyzed frame's real
+     * dimensions are known — e.g. with a guessed or default size — would cache a wrong fallback
+     * horizontal FOV for the rest of the session, since resolution only ever happens once. Callers
+     * must wait for real dimensions themselves; see `CameraSessionIntrinsicsCoordinator`, whose
+     * entire purpose is guaranteeing that before calling this method in production.
+     *
+     * @throws IllegalArgumentException if [imageWidthPx] or [imageHeightPx] is not strictly
+     *   positive — a programmer-contract violation at the call site, not an expected runtime
+     *   outcome (a real `CameraFrameMetadata` can never carry a non-positive buffer dimension).
      */
     fun resolveOnce(
         cameraInfo: CameraInfo,
-        imageWidthPx: Int? = null,
-        imageHeightPx: Int? = null,
-    ): CoreCameraIntrinsicsResolution =
-        synchronized(lock) {
+        imageWidthPx: Int,
+        imageHeightPx: Int,
+    ): CoreCameraIntrinsicsResolution {
+        require(imageWidthPx > 0) { "imageWidthPx must be strictly positive; was $imageWidthPx" }
+        require(imageHeightPx > 0) { "imageHeightPx must be strictly positive; was $imageHeightPx" }
+        return synchronized(lock) {
             resolved ?: provider.resolve(cameraInfo, imageWidthPx, imageHeightPx).toCore().also { resolved = it }
         }
+    }
 
     private fun CameraIntrinsicsResolution.toCore(): CoreCameraIntrinsicsResolution =
         fallbackReason?.let { reason -> CoreCameraIntrinsicsResolution.LegacyFallback(intrinsics, reason) }

@@ -1650,9 +1650,10 @@ owner. It receives:
   together with its non-null return value (§10.2);
 - `onViewportChanged(widthPx, heightPx)` — from a `LaunchedEffect(overlaySize)` in `ArScreen`
   (§10.3); a no-op when the value is unchanged, so recomposition noise does not force a rebuild;
-- `onIntrinsicsResolved(resolution)` — from `ArScreen`'s `CameraPreview.onCameraInfo` callback
-  (§10.7); only the *first* call per provider instance has any effect — intrinsics resolve at
-  most once per bound camera session, then are reused for every subsequent frame.
+- `onIntrinsicsResolved(resolution)` — from `CameraSessionIntrinsicsCoordinator` (§10.7), not
+  directly from `CameraPreview.onCameraInfo`; only the *first* call per provider instance has any
+  effect — intrinsics resolve at most once per bound camera session, then are reused for every
+  subsequent frame.
 
 `CameraSessionGeometryProvider`'s constructor takes `maxAllowedPairDeltaNanos: Long =
 TimestampSyncConfig.MAX_PAIR_DELTA_NANOS`, threaded straight into every `createCameraSessionGeometry`
@@ -1691,31 +1692,78 @@ instance rather than reusing a disposed one.
 
 **`SessionScopedCameraIntrinsicsResolver`** (`SessionScopedCameraIntrinsicsResolver.kt`) wraps
 CAM-1b's `CameraIntrinsicsProvider`/`Camera2CameraIntrinsicsProvider` — reused verbatim, no second
-resolver or Camera2 seam — with once-per-instance caching: the first `resolveOnce(cameraInfo)`
-call performs the real Camera2 `CameraCharacteristics` lookup and maps CAM-1b's
-`CameraIntrinsicsResolution(intrinsics, fallbackReason: String?)` into CAM-1f's sealed
-`CameraIntrinsicsResolution` (§10.1); every later call on the same instance returns the cached
-value without repeating the lookup. One instance belongs to one bound camera session
+resolver or Camera2 seam — with once-per-instance caching: the first `resolveOnce(cameraInfo,
+imageWidthPx, imageHeightPx)` call performs the real Camera2 `CameraCharacteristics` lookup and
+maps CAM-1b's `CameraIntrinsicsResolution(intrinsics, fallbackReason: String?)` into CAM-1f's
+sealed `CameraIntrinsicsResolution` (§10.1); every later call on the same instance returns the
+cached value without repeating the lookup. One instance belongs to one bound camera session
 (`remember`ed alongside `CameraSessionGeometryProvider`); re-entering AR creates a new instance, so
 a fresh resolution is always attempted — nothing is cached across sessions.
 
-**`CameraPreview` gained `onCameraInfo: (CameraInfo) -> Unit = {}`** (CAM-1f addition, defaults to
-a no-op): called exactly once per successful bind — combined `Preview` + `ImageAnalysis`, or the
-Preview-only fallback (§4.4) — with the real, bound `Camera.cameraInfo`, and only for the
-confirmed-live session (gated by the same `CameraSessionLifecycle.confirmBound` late-dispose check
-that already guards `MobileLog.cameraAnalysisBound()`/`cameraPreviewBoundWithoutAnalysis()`), never
-for a bind that lost the race against disposal. This is what lets intrinsics resolution use the
-*actual* bound camera rather than a placeholder — CAM-1f does not add a second camera or sensor
-session owner to obtain it.
+**`resolveOnce`'s dimensions are `Int`, not `Int?`, and `require`d strictly positive** — an earlier
+revision accepted nullable, defaulted-to-`null` dimensions and dismissed calling it with `null` as
+"a minor nicety, not a correctness requirement." That was wrong: the real per-device
+`CAMERA_CHARACTERISTICS` path genuinely does not depend on the analyzed image's dimensions (focal
+length and physical sensor size are static device properties), but the **legacy fallback path does**
+— `legacyFallbackCameraIntrinsics` derives its horizontal FOV from the analyzed image's aspect
+ratio (§3.4), defaulting to a square 1:1 assumption when the dimensions are unknown. Because
+resolution only ever happens once per session and is cached for its entire lifetime, resolving with
+`null` at the moment `CameraInfo` becomes available — which is usually *before* the first
+`ImageAnalysis` frame has arrived — would permanently publish a wrong fallback horizontal FOV for
+every device that ever takes the fallback path with a non-square analyzed buffer (16:9, 4:3, or any
+other real aspect ratio). `CameraSessionGeometry.intrinsics` is part of the published bundle, so
+this is a correctness bug in what CAM-1f actually reports, not a cosmetic detail.
 
-`resolveOnce` is called with `imageWidthPx = null, imageHeightPx = null`: the `CAMERA_CHARACTERISTICS`
-path (focal length + physical sensor size) does not depend on analyzed buffer dimensions at all, and
-coupling resolution timing to "wait for the first frame's buffer size" would only refine the
-*fallback* path's aspect-derived horizontal FOV (§3.4) — a minor nicety, not a correctness
-requirement, and not worth the extra synchronization between the bind coroutine and the frame
-callback. **No recalculation is ever triggered within a session**: sensor physical size and the
-bound `CameraInfo` do not change while a session is bound, so there is no scenario in this PR that
-needs one.
+**`CameraSessionIntrinsicsCoordinator`** (`CameraSessionIntrinsicsCoordinator.kt`, CAM-1f addition)
+is what guarantees `resolveOnce` is only ever called once both real inputs are known:
+
+```kotlin
+class CameraSessionIntrinsicsCoordinator(
+    private val resolver: SessionScopedCameraIntrinsicsResolver,
+    private val onResolved: (CameraIntrinsicsResolution) -> Unit,
+) {
+    fun onCameraInfo(cameraInfo: CameraInfo)
+    fun onFrameMetadata(frame: CameraFrameMetadata)
+    fun dispose()
+}
+```
+
+- **Order-independent**: `onCameraInfo`/`onFrameMetadata` may arrive in either order — CameraX gives
+  no guarantee which fires first — and either ordering resolves correctly, exactly once, using the
+  *first* accepted `CameraInfo` and the *first* accepted frame's real `bufferWidthPx`/`bufferHeightPx`.
+  A repeated call to either method, once its own input has already been accepted, is a no-op; later
+  `CameraInfo`/frame values never override the first.
+- **Preview-only fallback**: if the combined `Preview` + `ImageAnalysis` bind is rejected and
+  `CameraPreview` falls back to Preview-only (§4.4), `onCameraInfo` may still fire, but no
+  `ImageAnalysis` frame is ever produced, so `onFrameMetadata` never fires. Resolution therefore
+  never happens in that case — by construction, not a special case — and CAM-1f geometry correctly
+  stays unavailable (no frame means no pairing means no bundle either; §10.6's `MissingFrame`/
+  `IntrinsicsUnavailable` states cover this). No `PreviewView` dimension is ever substituted for the
+  missing analyzed-frame dimensions, and Preview-only camera display itself is unaffected.
+- **Thread safety**: one internal lock guards the atomic "both inputs present, not yet claimed"
+  transition. The actual `resolveOnce` call (real Camera2 work) and the `onResolved` publish both run
+  *outside* that lock, so Camera2/`MobileLog`/`CameraSessionGeometryProvider` work never happens
+  while it is held.
+- **Disposal**: terminal and idempotent, same convention as every other CAM-1f/CAM-1d session owner.
+  A resolution already in flight when `dispose()` runs is not cancelled, but disposal is re-checked
+  immediately before publishing, so a resolution that completes *after* disposal can never publish —
+  proven by a deterministic (not merely probabilistic) race test using a blocking fake provider and
+  `CountDownLatch`s to force that exact interleaving (`CameraSessionIntrinsicsCoordinatorTest`).
+
+`ArScreen` wires `CameraPreview`'s `onCameraInfo` directly to `intrinsicsCoordinator::onCameraInfo`,
+and calls `intrinsicsCoordinator.onFrameMetadata(frame)` at the top of the `onFrameMetadata`
+callback — before the existing `timestampSynchronizer.onCameraFrame(frame)` call — so exact
+frame/pairing coherence (§10.2) is unaffected: the coordinator only reads `frame.bufferWidthPx`/
+`bufferHeightPx`, never the frame object itself, and never influences pairing. Disposal order in the
+session's `DisposableEffect.onDispose` is: `timestampSynchronizer.dispose()`, then
+`intrinsicsCoordinator.dispose()`, then `geometryProvider.dispose()` — pairing stops first, then
+intrinsics resolution stops, then the bundle owner that consumes both is disposed last, so neither
+upstream input can race a still-live `geometryProvider` into publishing from an ending session.
+
+**No recalculation is ever triggered within a session**: sensor physical size and the bound
+`CameraInfo` do not change while a session is bound, and the first analyzed frame's buffer
+dimensions do not change either (`ImageAnalysis` is bound once, with no target-resolution change
+mid-session), so there is no scenario in this PR that needs one.
 
 ### 10.8 Logging and debug state
 
@@ -1741,11 +1789,14 @@ buffer — matching the CAM-1c/1d logging conventions.
 
 ### 10.9 Current production wiring (this PR)
 
-`ArScreen` owns one `CameraSessionGeometryProvider` and one `SessionScopedCameraIntrinsicsResolver`
-(both `remember`ed), disposes the provider from the same `DisposableEffect(Unit)` that disposes
-`timestampSynchronizer`, feeds `onViewportChanged` from a `LaunchedEffect(overlaySize)`, and wires
-`CameraPreview`'s `onFrameMetadata`/`onCameraInfo` callbacks to `onPairedFrame`/`onIntrinsicsResolved`
-as described in §10.6–§10.7. **Nothing reads `CameraSessionGeometryProvider.state`** in this PR —
+`ArScreen` owns one `CameraSessionGeometryProvider`, one `SessionScopedCameraIntrinsicsResolver`,
+and one `CameraSessionIntrinsicsCoordinator` (all `remember`ed), disposes them from the same
+`DisposableEffect(Unit)` that disposes `timestampSynchronizer` — in the order
+`timestampSynchronizer` → `intrinsicsCoordinator` → `geometryProvider` (§10.7) — feeds
+`onViewportChanged` from a `LaunchedEffect(overlaySize)`, and wires `CameraPreview`'s
+`onCameraInfo` directly to `intrinsicsCoordinator::onCameraInfo` and `onFrameMetadata` to both
+`intrinsicsCoordinator.onFrameMetadata` and (via `timestampSynchronizer`) `onPairedFrame`, as
+described in §10.6–§10.7. **Nothing reads `CameraSessionGeometryProvider.state`** in this PR —
 it is fed but not consumed. The AR renderer (`ArScreen.calculateOverlay()` / `projectionParams`)
 still calls the legacy fixed `VERTICAL_FOV_DEG = 56.0` path exclusively, unchanged; no real
 intrinsics, crop/scale mapping, or paired rotation reaches rendering. No star matching, detection,
