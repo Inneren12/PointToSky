@@ -1,10 +1,8 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
 import dev.pointtosky.core.astro.coord.Equatorial
-import dev.pointtosky.core.astro.time.lstAt
 import dev.pointtosky.core.astro.transform.raDecToAltAz
 import dev.pointtosky.core.astro.units.radToDeg
-import java.time.Instant
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -48,9 +46,10 @@ data class LocalSkyDirection(
  *
  * Reuses the project's existing, tested astronomy transforms rather than re-deriving sidereal time or
  * equatorial↔horizontal spherical trigonometry:
- *  1. [lstAt] — local sidereal time from [StarProjectionContext.utcEpochMillis] (as a UTC `Instant`)
- *     and [StarProjectionContext.longitudeRad] (converted to east-positive degrees, matching
- *     `lstAt`'s own convention).
+ *  1. [dev.pointtosky.core.astro.time.lstAt] — local sidereal time from
+ *     [StarProjectionContext.utcEpochMillis] (as a UTC `Instant`) and
+ *     [StarProjectionContext.longitudeRad] (converted to east-positive degrees, matching `lstAt`'s own
+ *     convention).
  *  2. [raDecToAltAz] — the canonical Meeus equatorial→horizontal relations, with
  *     **`applyRefraction = false`**. CAM-2a is predict-only geometry, not an observed-appearance
  *     model: refraction would bias altitude by a caller-invisible, non-invertible amount and is out
@@ -58,13 +57,33 @@ data class LocalSkyDirection(
  *     refraction off "for geometric matching").
  *  3. The ENU embedding documented on [LocalSkyDirection] (`x = cosAlt·sinAz`, `y = cosAlt·cosAz`,
  *     `z = sinAlt`), computed directly in `Double`.
+ *
+ * A single-star convenience: computes its own [PreparedStarProjectionContext] via
+ * [prepareStarProjectionContext] and delegates to the 3-arg [equatorialToLocalSky] overload below. A
+ * batch caller projecting many stars for the same [context] (`projectStars`) calls
+ * [prepareStarProjectionContext] **once** instead — see that function's KDoc for why re-deriving
+ * sidereal time per star is redundant, not merely wasteful for its own sake.
  */
 fun equatorialToLocalSky(
     star: EquatorialStarDirection,
     context: StarProjectionContext,
 ): LocalSkyDirection {
-    val instant = Instant.ofEpochMilli(context.utcEpochMillis)
-    val lstDeg = lstAt(instant, radToDeg(context.longitudeRad)).lstDeg
+    val prepared = prepareStarProjectionContext(context)
+    return equatorialToLocalSky(star, latitudeRad = prepared.latitudeRad, lstDeg = prepared.lstDeg)
+}
+
+/**
+ * The batch-efficient core of [equatorialToLocalSky]: identical Meeus/ENU-embedding math, but taking an
+ * already-computed [lstDeg] (see [PreparedStarProjectionContext.lstDeg]/[prepareStarProjectionContext])
+ * instead of a full [StarProjectionContext] — so a caller projecting many stars for one observer/time
+ * (`projectStars`) computes sidereal time exactly once per batch, not once per star. `internal`: not a
+ * new public contract, purely `projectStars`'s own batch-perf implementation detail.
+ */
+internal fun equatorialToLocalSky(
+    star: EquatorialStarDirection,
+    latitudeRad: Double,
+    lstDeg: Double,
+): LocalSkyDirection {
     val horizontal =
         raDecToAltAz(
             eq =
@@ -73,7 +92,7 @@ fun equatorialToLocalSky(
                     decDeg = radToDeg(star.declinationRad),
                 ),
             lstDeg = lstDeg,
-            latDeg = radToDeg(context.latitudeRad),
+            latDeg = radToDeg(latitudeRad),
             applyRefraction = false,
         )
     return localSkyDirectionFromHorizontal(

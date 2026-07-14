@@ -74,6 +74,7 @@ import dev.pointtosky.core.astro.coord.Horizontal
 import dev.pointtosky.core.astro.identify.IdentifySolver
 import dev.pointtosky.core.astro.identify.angularSeparationDeg
 import dev.pointtosky.core.astro.projection.ViewportSize
+import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult
 import dev.pointtosky.core.astro.projection.horizontalToVector
 import dev.pointtosky.core.astro.projection.multiply
 import dev.pointtosky.core.astro.projection.projectDeviceVector
@@ -98,6 +99,10 @@ import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
 import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
 import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
 import dev.pointtosky.mobile.ar.camera.nextDebugSessionId
+import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
+import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
+import dev.pointtosky.mobile.ar.camera.prediction.reducePredictedStarOverlayState
+import dev.pointtosky.mobile.ar.camera.prediction.selectPredictedStarDirections
 import dev.pointtosky.mobile.ar.camera.toDiagnosticSnapshot
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.location.DeviceLocationRepository
@@ -287,6 +292,11 @@ fun ArScreen(
     val cameraGeometryStatusTransitionCount: Int
     val cameraGeometryObservedFrameCount: Long
     val cameraGeometryReadyBundleCount: Long
+    // CAM-2b: the exact same CameraSessionGeometryResult the CAM-1g diagnostics above observed for
+    // this recompute - reused as-is by the predicted-star overlay below rather than reading the
+    // provider's observation a second time (docs/camera_star_prediction_contract.md §14 "no second
+    // camera/session provider, no re-pairing timestamps").
+    val cameraGeometrySessionResult: CameraSessionGeometryResult?
     if (CameraGeometryDiagnosticsGate.isEnabled) {
         val geometryObservation by geometryProvider.observation.collectAsStateWithLifecycle()
         val sessionId = remember { nextDebugSessionId() }
@@ -309,12 +319,14 @@ fun ArScreen(
         cameraGeometryStatusTransitionCount = transitionCount.intValue
         cameraGeometryObservedFrameCount = debugState.observedFrameCount
         cameraGeometryReadyBundleCount = debugState.readyBundleCount
+        cameraGeometrySessionResult = geometryObservation.result
     } else {
         cameraGeometryDiagnosticSnapshot = null
         cameraGeometryDiagnosticSessionId = 0L
         cameraGeometryStatusTransitionCount = 0
         cameraGeometryObservedFrameCount = 0L
         cameraGeometryReadyBundleCount = 0L
+        cameraGeometrySessionResult = null
     }
 
     Box(
@@ -403,6 +415,83 @@ fun ArScreen(
                     ConstellationLayer(
                         overlay = it,
                         modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                // CAM-2b: internal-debug-only predicted-star overlay - visualizes the accepted CAM-2a
+                // projectStars(...) pipeline purely for diagnosis. Reuses cameraGeometrySessionResult
+                // (the raw, magnetic-north-referenced geometry CAM-1g already observed above - never
+                // re-paired, never corrected via correctedForTrueNorth here), declinationDeg (the
+                // exact same GeomagneticField value the legacy renderer computed above - no second
+                // model instance), and state.instant (the sky-render clock - no independent
+                // System.currentTimeMillis() read). Drawn on top of the legacy star/constellation
+                // layers above so both can be visually compared; never feeds calculateOverlay,
+                // projectionParams, or any production star position. See
+                // docs/camera_star_prediction_contract.md §14.
+                if (CameraGeometryDiagnosticsGate.isEnabled) {
+                    var showPredictedStarMarkers by remember { mutableStateOf(true) }
+                    var showPredictedStarPanel by remember { mutableStateOf(true) }
+                    // Follow-up task §2: SESSION_INTRINSICS is the safest, most explicit default -
+                    // never silently substitutes a diagnostic fallback FOV for the real session
+                    // intrinsics unless the tester explicitly opts in via PredictedStarOverlayControls.
+                    var predictedStarIntrinsicsMode by remember { mutableStateOf(PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS) }
+                    val predictedStars =
+                        remember(state.catalog, state.effectiveMagLimit) {
+                            selectPredictedStarDirections(visibilitySelectedStars(state))
+                        }
+                    val predictedStarOverlayState =
+                        remember(
+                            cameraGeometrySessionResult,
+                            state.locationResolved,
+                            state.location,
+                            state.instant,
+                            declinationDeg,
+                            predictedStars,
+                            predictedStarIntrinsicsMode,
+                        ) {
+                            reducePredictedStarOverlayState(
+                                gateEnabled = true,
+                                geometryResult = requireNotNull(cameraGeometrySessionResult) {
+                                    "cameraGeometrySessionResult must be populated whenever the gate is enabled"
+                                },
+                                observerLatitudeDeg = if (state.locationResolved) state.location.latDeg else null,
+                                observerLongitudeDeg = if (state.locationResolved) state.location.lonDeg else null,
+                                utcEpochMillis = state.instant.toEpochMilli(),
+                                magneticDeclinationDeg = declinationDeg,
+                                stars = predictedStars,
+                                intrinsicsMode = predictedStarIntrinsicsMode,
+                            )
+                        }
+
+                    if (showPredictedStarMarkers && predictedStarOverlayState is PredictedStarOverlayState.Ready) {
+                        PredictedStarMarkersCanvas(
+                            points = predictedStarOverlayState.points,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+
+                    if (showPredictedStarPanel) {
+                        PredictedStarOverlayPanel(
+                            state = predictedStarOverlayState,
+                            modifier =
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .statusBarsPadding()
+                                    .padding(top = 72.dp, start = 16.dp, end = 16.dp),
+                        )
+                    }
+
+                    PredictedStarOverlayControls(
+                        showMarkers = showPredictedStarMarkers,
+                        onShowMarkersChange = { showPredictedStarMarkers = it },
+                        showPanel = showPredictedStarPanel,
+                        onShowPanelChange = { showPredictedStarPanel = it },
+                        intrinsicsMode = predictedStarIntrinsicsMode,
+                        onIntrinsicsModeChange = { predictedStarIntrinsicsMode = it },
+                        modifier =
+                            Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 16.dp),
                     )
                 }
 
@@ -1100,6 +1189,22 @@ private fun ToggleRow(
     }
 }
 
+/**
+ * The phone's existing visibility selection: renderable catalog stars within
+ * [ArUiState.Ready.effectiveMagLimit]. Shared by [calculateOverlay] (the legacy renderer) and the
+ * CAM-2b predicted-star overlay (`dev.pointtosky.mobile.ar.camera.prediction`) so CAM-2b's bounded
+ * catalog subset is built from the phone's one existing visibility selection rather than
+ * re-implementing it (`docs/camera_star_prediction_contract.md` §14, "prefer the current
+ * visibility-selected phone catalog prefix rather than reading all stars independently").
+ */
+@VisibleForTesting
+internal fun visibilitySelectedStars(state: ArUiState.Ready): List<StarRecord> =
+    state.catalog?.catalog?.allStars().orEmpty()
+        .filter { it.isRenderablePoint() }
+        // effectiveMagLimit already encodes "no cap" as +∞, so apply it directly — no ≤ 0
+        // sentinel (a visibility limit can legitimately be ≤ 0, e.g. daytime, and must gate stars).
+        .filter { it.magnitude.toDouble() <= state.effectiveMagLimit }
+
 @VisibleForTesting
 internal fun calculateOverlay(
     state: ArUiState.Ready,
@@ -1155,12 +1260,7 @@ internal fun calculateOverlay(
     val constellationId = resolveConstellation(reticleEquatorial)
 
     // Full catalog — star points and labels span the whole frustum, not just the reticle's constellation.
-    val visibleStars: List<StarRecord> =
-        (state.catalog?.catalog?.allStars().orEmpty())
-            .filter { it.isRenderablePoint() }
-            // effectiveMagLimit already encodes "no cap" as +∞, so apply it directly — no ≤ 0
-            // sentinel (a visibility limit can legitimately be ≤ 0, e.g. daytime, and must gate stars).
-            .filter { it.magnitude.toDouble() <= state.effectiveMagLimit }
+    val visibleStars: List<StarRecord> = visibilitySelectedStars(state)
 
     // Project ALL mag-filtered stars; projectEquatorial returns null for off-screen ones.
     val projectedStars: List<OverlayObject> =

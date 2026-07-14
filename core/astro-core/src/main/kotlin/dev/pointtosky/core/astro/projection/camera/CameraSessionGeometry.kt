@@ -108,3 +108,53 @@ class CameraSessionGeometry private constructor(
             )
     }
 }
+
+/**
+ * Returns a new [CameraSessionGeometry] identical to this one in every respect **except**
+ * [intrinsics] (CAM-2b diagnostic-fallback hardening). [frame], [CameraSessionGeometry.frame]'s
+ * paired rotation, [CameraSessionGeometry.frameRotationDeltaNanos], [CameraSessionGeometry.cropScaleTransform],
+ * and [CameraSessionGeometry.viewportSize] are all copied through **exactly** — this is a field-level
+ * copy of an already-accepted, already-invariant-checked bundle, never a re-derivation.
+ *
+ * ## Why this exists, and what it replaces
+ * An earlier CAM-2b revision reconstructed a "same but for intrinsics" geometry by re-running the full
+ * pure factory [createCameraSessionGeometry] — including its `maxAllowedPairDeltaNanos` tolerance gate
+ * — and passed `abs(this.frameRotationDeltaNanos)` (the *actual accepted delta*) as that tolerance. That
+ * silently substituted the actual pair delta for the *configured* tolerance the original bundle was
+ * validated against (e.g. a real 25 ms configured tolerance became a reconstructed 3 ms one for a
+ * geometry whose actual delta happened to be 3 ms) — a fact this bundle never stored and the
+ * reconstruction had no way to recover correctly. [withIntrinsics] sidesteps the whole problem: it does
+ * not reconstruct a [FrameRotationPairingResult], does not call [pairFrameToNearestRotation], and does
+ * not read, derive, or check any tolerance at all — there is no tolerance parameter on this function's
+ * signature to conflate with the accepted delta in the first place. It simply copies the already-valid
+ * bundle's other fields and swaps in [intrinsics].
+ *
+ * ## Totality
+ * [CameraSessionGeometry.init] never validates anything about [CameraSessionGeometry.intrinsics] — its
+ * checks are only the cross-field relationships between [frame]/[cropScaleTransform]/[viewportSize]/
+ * [frameRotationDeltaNanos], none of which this function changes. Since `this` already satisfied those
+ * checks, the result always satisfies them too: **this function cannot fail** and returns
+ * [CameraSessionGeometry] directly, never a [CameraSessionGeometryResult] wrapper.
+ *
+ * ## Defensive ownership
+ * Implemented beside [CameraSessionGeometry.Companion.of] specifically so it can reuse that factory's
+ * own defensive-copying contract: [CameraSessionGeometry.pairedRotation] (read here) already returns a
+ * fresh copy of the stored snapshot, and [CameraSessionGeometry.Companion.of] copies its own
+ * `rotationMatrix` argument again on the way in — so the returned geometry's internal snapshot array is
+ * a distinct, independently-owned array from both `this` geometry's internal snapshot and whatever
+ * array any caller elsewhere still holds a reference to. Mutating any of those arrays after this call
+ * can never affect `this`, the result, or each other.
+ *
+ * @param intrinsics the resolved-or-fallback intrinsics the returned geometry should carry. Compared by
+ *   the caller against `this.intrinsics` when it needs to know whether a substitution actually occurred
+ *   (this function does not itself compare or reject an unchanged value).
+ */
+fun CameraSessionGeometry.withIntrinsics(intrinsics: CameraIntrinsicsResolution): CameraSessionGeometry =
+    CameraSessionGeometry.of(
+        frame = this.frame,
+        pairedRotation = this.pairedRotation,
+        frameRotationDeltaNanos = this.frameRotationDeltaNanos,
+        cropScaleTransform = this.cropScaleTransform,
+        intrinsics = intrinsics,
+        viewportSize = this.viewportSize,
+    )

@@ -1,7 +1,16 @@
 # Camera Star Prediction Contract (CAM-2a)
 
-**Status:** Pure math slice implemented and unit-tested. **Not** wired into any renderer, not
-device-validated, not a claim of pixel accuracy.
+**Status:** Pure math slice implemented and unit-tested (398 JVM tests as of the CAM-2b follow-up fix,
+§14.9/§14.10 — 388 original + 3 batched-astronomy + 7 `withIntrinsics` exact-preservation — executed via
+a direct `kotlinc`/JUnit-console invocation, since Gradle itself cannot run in either that PR's or
+CAM-2b's authoring sandbox; see §13/§14.10's disclosures). **Not** wired into any *production* renderer,
+not device-validated, not a claim of pixel accuracy. (A separate, `internalDebug`-only diagnostic
+*consumer* — CAM-2b, §14 — now visualizes this pipeline's output for physical-device comparison; it does
+not change this status line's claims about production rendering or device validation. CAM-2b also made
+two small, behavior-preserving/bug-fixing changes to this module's own code — batching the per-star
+sidereal-time computation (§14.12) and adding the exact-copy `CameraSessionGeometry.withIntrinsics`
+substitution used by the diagnostic-fallback intrinsics mode (§14.11) — both covered by the 398/398
+passing result above.)
 **Scope:** The predict-only geometry pipeline that turns a catalog star's RA/Dec, an observer
 location/time, and a [`CameraSessionGeometry`](../core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/projection/camera/CameraSessionGeometry.kt)
 bundle into a predicted position in camera/image/display space, plus a bounded visibility
@@ -896,3 +905,412 @@ declarations it calls) but its actual compilation is **not** verified, since ass
 Android SDK/CameraX classpath for a standalone `kotlinc` run was not attempted. This is disclosed, not
 hidden: whoever next has a working Gradle/JDK-17/Android-SDK environment should still run the exact
 commands above before treating this gate as closed.
+
+---
+
+## 14. CAM-2b: internal-debug predicted-star overlay (separate PR)
+
+CAM-2b is the "next slice" §12 described: an `internalDebug`-only diagnostic *consumer* of this
+package's `projectStars(...)` output, wired into `ArScreen` purely for visual diagnosis. It adds no
+code to `:core:astro-core` — everything below lives in `:mobile`, package
+`dev.pointtosky.mobile.ar.camera.prediction` (plus two small Compose files in `dev.pointtosky.mobile.ar`).
+
+### 14.1 Scope discipline (unchanged from §1/§9)
+
+CAM-2b **visualizes** CAM-2a; it does not extend it. Every "what this is not" bullet in §1 still holds
+verbatim: no pixels read, no detector, no matcher, no pose correction, no renderer change to
+`ArScreen.calculateOverlay()`/`projectionParams(viewport)`/`VERTICAL_FOV_DEG = 56.0` (still
+byte-for-byte unchanged — CAM-2b draws its own, separate, clearly-distinguishable marker layer on top,
+never routing CAM-2a output into `calculateOverlay`'s `OverlayData` or any production star position).
+
+### 14.2 Build gate — reused, not reinvented
+
+CAM-2b does **not** introduce a second flavor check. It reuses
+`dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticsGate`/`isDiagnosticsEnabled(debug, flavor)`
+verbatim — the exact same pure function and object CAM-1g already established
+(`docs/camera_coordinate_calibration_contract.md` §11.2). `PredictedStarOverlayReducerTest`'s gate
+truth-table test calls `isDiagnosticsEnabled` directly across all four `(debug, flavor)` combinations
+and asserts the reducer agrees: `debug+internal → enabled`, every other combination → `Disabled`.
+
+### 14.3 Bounded diagnostic input adapter
+
+`selectPredictedStarDirections(stars: List<StarRecord>, maxCount: Int = 200): List<EquatorialStarDirection>`
+(`PredictedStarCatalogAdapter.kt`) is the one place a mobile-side `StarRecord` (the same catalog record
+`ArViewModel`/`ArScreen`'s legacy renderer already reads via `PtskCatalogLoader`/`AstroCatalog`) becomes
+a CAM-2a `EquatorialStarDirection`:
+
+- **Input is expected to already be the phone's visibility-selected prefix** — `ArScreen.kt`'s
+  `visibilitySelectedStars(state)` (extracted, in this PR, from `calculateOverlay`'s previously-inline
+  `visibleStars` computation into a shared function both the legacy renderer and CAM-2b now call) —
+  never the full ~42k-star catalog read independently. `calculateOverlay`'s own output is byte-for-byte
+  unchanged by this extraction (same two filters, same order).
+- Sorts that prefix brightest-first (ascending magnitude, stable sort — ties keep catalog order), then
+  takes the first `maxCount` — deterministic, no spatial indexing.
+- Converts RA/Dec from degrees to radians exactly once, here.
+- Preserves a **stable** `catalogIndex` — each star's own `StarId.raw`, not a positional index that
+  would shift if the selection changed.
+- Passes `magnitude` through when present; carries no name/label.
+- Performs no sorting inside CAM-2a itself — `projectStars`'s own input-order-preservation contract
+  (§8) is unaffected; the adapter's sort/bound happens entirely before `projectStars` is ever called.
+
+`PREDICTED_STAR_OVERLAY_MAX_INPUT_STARS = 200` sits inside the task's suggested 100–300 range: the
+legacy renderer's own (production, non-diagnostic) `StarPointLayer` already caps its Canvas point layer
+at `MAX_STAR_POINTS = 1500` without a measured performance issue, so 200 diagnostic markers plus a
+status panel is comfortably inside the existing per-frame Canvas budget, while staying small enough
+that individual predicted markers stay visually distinguishable from the legacy overlay during a
+physical-device side-by-side comparison — the whole point of this slice.
+
+### 14.4 Observer/time/declination — reused, not duplicated
+
+`ArScreen.kt` supplies:
+
+- **Location:** `state.location.latDeg`/`lonDeg` (the same `ArUiState.Ready` field the legacy renderer
+  reads), only when `state.locationResolved` is true — otherwise CAM-2b reports
+  `ObserverLocationUnavailable` rather than silently projecting from the `(0, 0)` default placeholder
+  location.
+- **Time:** `state.instant.toEpochMilli()` — the exact `Instant` the sky-render state (`lstDeg`, the
+  legacy `calculateOverlay`, etc.) is already built from, sourced from `ArViewModel`'s
+  `SystemTimeSource` ticks. CAM-2b never calls `System.currentTimeMillis()` independently.
+- **Magnetic declination:** the exact `declinationDeg` local value `ArScreen.kt` already computes once
+  per `state.location` change for the legacy renderer's own `correctedForTrueNorth(declinationDeg)` call
+  (`android.hardware.GeomagneticField(...).declination`) — read, not recomputed. CAM-2b constructs no
+  second `GeomagneticField` instance. If that value were ever non-finite, the reducer reports
+  `MagneticDeclinationUnavailable` rather than silently substituting `0.0` — see §2.3's own warning
+  against exactly that failure mode.
+
+Degrees are converted to radians exactly once, inside `reducePredictedStarOverlayState`, immediately
+before `StarProjectionContext.of(...)` is called.
+
+### 14.5 Raw-rotation / context-declination ownership (closing §12's own caller-contract note)
+
+`reducePredictedStarOverlayState` (`PredictedStarOverlayReducer.kt`) receives a
+`CameraSessionGeometryResult` exactly as published by `CameraSessionGeometryProvider` — the same
+provider/`observation` `ArScreen` already collects for CAM-1g, reused here rather than re-collected,
+re-paired, or interpolated. `geometryResult.geometry.pairedRotation.rotationMatrix` is passed into
+`projectStars` **unmodified** — never run through `RotationFrame.correctedForTrueNorth` on the mobile
+side — while the declination described in §14.4 is passed as
+`StarProjectionContext.magneticDeclinationRad`. This is the single split CAM-2a's own contract requires
+(§2.3, §4.6, §12's caller-contract note): raw paired rotation **+** context declination, never a
+corrected matrix **+** a non-zero context declination together (which would double-correct true north).
+`reducePredictedStarOverlayState`'s KDoc states this explicitly, and
+`PredictedStarOverlayReducerTest`'s dedicated test cross-checks the reducer's `Ready` output against an
+independently-constructed `projectStars` call over the *same* raw geometry and a
+`StarProjectionContext` built with a non-zero declination, proving no extra correction is silently
+applied before `projectStars` is called.
+
+### 14.6 Diagnostic state and recomputation policy
+
+`PredictedStarOverlayState` (`PredictedStarOverlayState.kt`) is a small, immutable sealed interface —
+`Disabled` / `Waiting(reason)` / `Ready(points, summary, metadata)` / `Unavailable(reason)` — built
+exactly once per coherent recomputation by the pure `reducePredictedStarOverlayState`, called from
+Compose `remember` (`ArScreen.kt`) keyed on the current geometry observation, `state.locationResolved`/
+`state.location`/`state.instant`, `declinationDeg`, and the bounded star subset (itself `remember`ed
+separately, keyed only on the loaded catalog and `state.effectiveMagLimit`, so it is *not* rebuilt every
+frame just because geometry changed). No polling, no timer, no permanently launched coroutine, no
+unbounded queue — the projection itself runs synchronously inside `remember`'s calculation block, which
+CAM-2a's own §1 performance profile (a few hundred stars of pure arithmetic, no I/O) supports without
+moving off the main thread.
+
+Every non-`Ready` `CameraSessionGeometryResult` maps to a `Waiting(WaitingReason.GeometryNotReady(category))`,
+reusing CAM-1g's own `CameraGeometryDiagnosticCategory` mapping (`toDiagnosticCategory()`) rather than a
+second, parallel categorization — including `DISPOSED`, so a disposed or replaced geometry provider (a
+new camera session's first recompute, before its own first coherent geometry) reports `Waiting`, never
+an echo of a previous session's `Ready` points; the reducer is a pure function with no retained state
+across calls, so there is no code path that *could* carry a stale bundle forward.
+`StarPredictionBatchResult.IntrinsicsMappingUnavailable`'s `IntrinsicsMappingUnavailableReason` is
+surfaced as `PredictedStarOverlayState.Unavailable(reason)` directly — reused, not re-wrapped in a
+second enum.
+
+### 14.7 Drawing and diagnostic panel
+
+`toOverlayPoints` (`PredictedStarOverlayReducer.kt`) — the pure mapping from a full CAM-2a batch to
+drawable points — keeps only `PredictedStarClassification.VISIBLE_IN_VIEWPORT` projections, in their
+original batch order, and copies `PredictedStarProjection.displayPoint.x`/`.y` verbatim into
+`PredictedStarOverlayPoint.displayX`/`.displayY` — no additional scale, rotation, crop offset, or
+rounding; CAM-2a already returns final display coordinates. `PredictedStarOverlayMetadata`'s
+`summary`/counts, by contrast, always describe the **full** batch (including `BEHIND_CAMERA`/
+`OUTSIDE_IMAGE`/`INSIDE_IMAGE_OUTSIDE_VIEWPORT` counts), never just the drawn subset.
+
+`PredictedStarMarkersCanvas` (`dev.pointtosky.mobile.ar`) draws each point as a hollow circle plus a
+small cross, radius bounded to a tight magnitude-dependent range, in a fixed cyan
+(`Color(0xFF00E5FF)`) diagnostic color deliberately distinct from the legacy overlay's `BvColor`-toned
+filled dots and white reticle/labels — drawn as an additional layer *on top of* the existing
+`StarPointLayer`/`ConstellationLayer` output within the same `ArUiState.Ready` composition branch, never
+replacing it, so both can be visually compared in the same frame. No star textures, no names, no
+constellation art, no touch interaction. `PredictedStarOverlayPanel` renders a compact, bounded,
+non-interactive status block (input/visible/behind-camera/outside-image/inside-image-outside-viewport
+counts, frame/rotation timestamps, pair delta, `frame.rotationDegrees`, intrinsics source/reference,
+declination, and status/reason) — one block, never one line per star, never logged every frame.
+`PredictedStarOverlayControls` adds two session-local (non-persisted) toggles, "Show predicted stars"
+and "Show CAM-2b panel", defaulting to visible so an `internalDebug` tester sees the overlay
+immediately; both are internal-debug-only and never reachable from a public-facing setting.
+
+### 14.8 Scope confirmation
+
+Exactly the same confirmations §9 already makes for CAM-2a still hold, plus: no `:mobile` **production**
+code path draws CAM-2a output anywhere except this one `internalDebug`-gated overlay; `ArScreen`'s
+`calculateOverlay`/`projectionParams`/legacy star-point/constellation rendering are unmodified (the
+only refactor is extracting the pre-existing `visibleStars` filter into `visibilitySelectedStars`, a
+byte-for-byte-equivalent, shared, tested computation); no new `CameraSessionGeometryProvider`,
+`CameraTimestampSynchronizer`, or intrinsics resolver/coordinator instance was created — CAM-2b reads
+the one `geometryProvider.observation` `ArScreen` already collects for CAM-1g; the catalog asset format,
+`PtskCatalogLoader`, and `AstroCatalog` are untouched; no spatial index, persistence, analytics, or
+network call was added.
+
+### 14.9 Tests
+
+`:core:astro-core` JVM tests (batched-astronomy hardening, §14.12; exact-preservation intrinsics
+substitution, §14.11) — **executed** via §14.10's `kotlinc` workaround, 398/398 passing:
+
+| File | Covers |
+|---|---|
+| `PreparedStarProjectionContextTest` | `prepareStarProjectionContext` matches a manual per-field computation; the public 2-arg `equatorialToLocalSky(star, context)` delegates to the 3-arg prepared overload without changing output; a multi-star batch applies one shared prepared LST value consistently to every star (cross-checked against calling `projectStars` once per star) |
+| `CameraSessionGeometryTest` (follow-up additions) | `CameraSessionGeometry.withIntrinsics` (§14.11): changes only `intrinsics` — `frame`, `pairedRotation` values, `frameRotationDeltaNanos`, `cropScaleTransform`, and `viewportSize` are all preserved exactly across a nontrivial 25 ms configured-tolerance/3 ms actual-delta scenario; the original geometry is never mutated; a negative `frameRotationDeltaNanos` survives exactly (never flipped positive by an `abs()` derivation); defensive rotation-matrix ownership — mutating the caller's source array, a value read from the original geometry, or a value read from the replaced geometry never affects either geometry, and the two never share the same array instance |
+
+`:mobile` JVM tests (`src/test/java/dev/pointtosky/mobile/ar/camera/prediction/`) — **executed** via
+§14.10's `kotlinc` workaround (JUnit4/`kotlin-test-junit` binding, matching `:mobile`'s real Gradle
+configuration), 48/48 passing:
+
+| File | Covers |
+|---|---|
+| `PredictedStarCatalogAdapterTest` | stable catalog index, exactly-once degree→radian conversion, magnitude pass-through, deterministic bounded/brightest-first selection, empty/zero-bound edge cases |
+| `PredictedStarOverlayReducerTest` | gate truth table (§14.2); every non-`Ready` `CameraSessionGeometryResult` → `Waiting`; every `IntrinsicsMappingUnavailableReason` → `Unavailable`; `toOverlayPoints` classification filtering, exact coordinate pass-through, order preservation; full-batch summary counters; raw-rotation/context-declination ownership (§14.5) cross-check; disposal/session-reset statelessness; explicit intrinsics-mode behavior (§14.11) — session mode preserves `PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`, diagnostic fallback becomes `Ready` with an exact-dimension `AnalysisBuffer` projection reference at several frame sizes, the original session geometry is never mutated, the default mode is `SESSION_INTRINSICS`, and the panel text distinguishes the two modes without ever calling the fallback "calibrated"; (follow-up additions) diagnostic-fallback metadata preserves the session geometry's frame/rotation timestamps, actual pair delta (including a negative delta, exactly), and `frame.rotationDegrees` across a 25 ms configured-tolerance/3 ms actual-delta scenario, and produces byte-identical points/summary/sync-metadata to an equivalent session-mode geometry |
+| `PredictedStarOverlayFormatTest` | bounded, deterministic panel text — every required field present, never one line per star; session-mode single intrinsics line vs. diagnostic-fallback dual session/projection lines, never labeled calibrated |
+
+`:mobile` Compose UI tests (`src/androidTest/java/dev/pointtosky/mobile/ar/PredictedStarOverlayUiTest.kt`,
+not run in this sandbox — no Android SDK/emulator available, see §14.10): a pure (non-Compose) check that
+the `Ready` test fixture carries exactly 3 points (the fact backing the marker-canvas-presence assertion
+below — a Compose `Canvas` is one semantics node regardless of how many circles it draws internally, so
+marker *count* is never claimed via semantics-node counting); waiting-state panel content with no marker
+canvas present; `Unavailable`'s categorized reason text with no marker canvas present; `Ready`'s
+single-marker-canvas-node presence and panel counts; and state replacement (`Ready` → `Waiting(DISPOSED)`)
+via a small `PredictedStarOverlayTestHost` that conditionally renders the marker canvas exactly as
+`ArScreen.kt` does, asserting the canvas node count itself drops to `0` (stale marker-*layer* removal,
+not just panel-text replacement) and that the panel no longer contains the prior `Ready` state's counts.
+Not pixel-perfect screenshot tests — this repository does not use those.
+
+### 14.10 Validation status
+
+**Gradle itself still cannot run in this sandbox** — no Android SDK is installed, and `:core:astro-core`'s
+pinned JDK-17 Gradle toolchain cannot be downloaded (egress-blocked), the identical blocker CAM-2a's own
+authoring sandbox hit (§13, end). Unlike CAM-2a's own disclosure, this revision **did** manage to get
+real, executed (not fabricated) test results for two of the four gates below, by replicating CAM-2a's own
+documented workaround: invoking the Kotlin compiler (`kotlin-compiler-embeddable:2.0.20`, matching this
+project's pinned Kotlin version) directly against JDK 21 with `-jvm-target 17`, and running the compiled
+tests with the JUnit Platform Console Launcher — the same compiler, target bytecode, and test-library
+versions Gradle itself would use, just invoked without Gradle's build graph. Four separate gates, still
+not collapsed into one claim:
+
+- **`:core:astro-core` main + test compilation, and test execution — ACTUALLY RUN, ALL GREEN.**
+  `core/astro-core/src/main` (including this revision's `LocalSkyDirection.kt`/`CameraStarPredictor.kt`
+  changes and the new `PreparedStarProjectionContext.kt`) compiled cleanly with `kotlinc` against
+  `kotlin-stdlib:2.0.20`. `core/astro-core/src/test` compiled cleanly against that output (`-Xfriend-paths`
+  for `internal` visibility, matching what Gradle's `KotlinCompile` sets up automatically for a same-module
+  test source set) plus `kotlin-test-junit5:2.0.20`/`junit-jupiter:5.10.2`. Running the compiled tests via
+  `junit-platform-console-standalone:1.10.2`:
+
+  ```text
+  398 tests found, 398 successful, 0 failed
+  ```
+
+  (388 pre-existing + 3 `PreparedStarProjectionContextTest` cases + 7 follow-up `CameraSessionGeometry.withIntrinsics`
+  preservation/non-mutation/defensive-ownership cases, all passing individually too.) This is real
+  evidence the batched-LST refactor (§14.12) is behavior-preserving and the `withIntrinsics` exact-copy
+  substitution (§14.11) is correct, not a claim about `:mobile` or Android.
+- **`:mobile`'s CAM-2b prediction-package main + test compilation, and test execution — ACTUALLY RUN, ALL
+  GREEN, for the Android-free subset only.** `PredictedStarOverlayState.kt`, `PredictedStarCatalogAdapter.kt`,
+  `PredictedStarOverlayReducer.kt`, `PredictedStarOverlayFormat.kt`,
+  `PredictedStarOverlayIntrinsicsFallback.kt`, plus their two dependencies
+  `CameraGeometryDiagnostics.kt`/`CameraGeometryDiagnosticsGate.kt` and `core/astro`'s catalog
+  `Models.kt` (the file `StarRecord`/`StarId`/`ConstellationId` live in — none of these seven files import
+  any `android.*`/`androidx.*` package), compiled cleanly against the real `:core:astro-core` output above.
+  `CameraGeometryDiagnosticsGate.kt` needed one disclosed stand-in: a minimal `object BuildConfig { const
+  val DEBUG = true; const val FLAVOR = "internal" }` in place of the real AGP-generated class (unavailable
+  without a full Android build) — the code actually exercised
+  (`isDiagnosticsEnabled(debug, flavor)`, a pure function of its explicit parameters) never reads this
+  object; it exists only so the file type-checks as one compilation unit. `PredictedStarCatalogAdapterTest`,
+  `PredictedStarOverlayReducerTest`, and `PredictedStarOverlayFormatTest` compiled cleanly against that
+  output plus `kotlin-test-junit:2.0.20`/`junit:4.13.2`/`junit-vintage-engine:5.10.2` — matching `:mobile`'s
+  own actual Gradle JUnit4 binding (`mobile/build.gradle.kts`'s explicit `junit:junit:4.13.2` +
+  `kotlin("test")`), not the JUnit5 binding used for `:core:astro-core` above. Running the compiled tests:
+
+  ```text
+  48 tests found, 48 successful, 0 failed
+  ```
+
+  across all three classes (verified individually, not just as one aggregate count; 45 pre-existing + 3
+  follow-up `PredictedStarOverlayReducerTest` cases covering diagnostic-fallback synchronization-metadata
+  preservation).
+- **`:mobile` Compose/Android compilation** (`ArScreen.kt`'s integration, `PredictedStarOverlayUi.kt`,
+  `androidTest`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug`):
+  **not run, and not attempted via this workaround** — these require `android.jar`, the Compose K2
+  compiler plugin, and dozens of AndroidX/CameraX AARs with resource merging (AAPT2), which is
+  categorically different from — and not replicable by — a bare `kotlinc` invocation the way a pure-JVM
+  module's compilation is. This is the same boundary CAM-2a's own author drew ("no android.jar/CameraX
+  AAR classpath was assembled either," §13, end); it is not a gap specific to this revision's effort.
+- **Connected instrumentation tests** (`:mobile:connectedInternalDebugAndroidTest`): **not run** — no
+  device or emulator is available in this sandbox.
+
+Every file touched by CAM-2b (§14.1–§14.8, §14.11, §14.12) was written against the real, already-compiling
+production signatures it calls, and the two gates above that *could* be exercised this way now have real,
+executed, green results — not merely "authored and reviewed." The remaining two gates (Compose/Android
+compilation, connected instrumentation) are still genuinely unverified, stated explicitly rather than
+folded into the two green results above. Whoever next has a working Android SDK/JDK-17/Gradle environment
+should still run the full Gradle suite — the `kotlinc` workaround above is corroborating evidence, not a
+replacement for the real build graph (it does not exercise Gradle's own dependency resolution, resource
+processing, ProGuard/R8, or manifest merging) — in this order:
+
+```bash
+./gradlew :core:astro-core:test
+./gradlew :mobile:compileInternalDebugKotlin
+./gradlew :mobile:compilePublicDebugKotlin
+./gradlew :mobile:testInternalDebugUnitTest --tests "*PredictedStarOverlay*"
+./gradlew :mobile:testInternalDebugUnitTest --tests "*PredictedStarCatalogAdapterTest"
+./gradlew :mobile:testPublicDebugUnitTest --tests "*PredictedStarOverlay*"
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin
+./gradlew :mobile:compilePublicDebugAndroidTestKotlin
+./gradlew :mobile:testInternalDebugUnitTest
+./gradlew :mobile:testPublicDebugUnitTest
+./gradlew :mobile:lintInternalDebug
+./gradlew :mobile:lintPublicDebug
+./gradlew :mobile:assembleInternalDebug
+./gradlew :mobile:assemblePublicDebug
+./gradlew :mobile:connectedInternalDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=dev.pointtosky.mobile.ar.PredictedStarOverlayUiTest
+```
+
+before treating any of these gates as closed, and then complete
+`docs/validation/cam_2b_device_validation.md`'s physical checklist. Final status:
+**`CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (and, until the commands above are actually run through
+real Gradle and their results recorded here, also gated on full build/lint/assemble/instrumentation
+verification — see that file).
+
+### 14.11 Explicit intrinsics mode: session vs. diagnostic analysis-buffer fallback
+
+**The problem this closes.** §6.2's `CameraIntrinsicsReference.PhysicalSensor` gate is correct and
+unweakened by this section — `projectStars` still refuses to project a physical-sensor-referenced FOV
+directly, since no active-array/crop mapping to the `ImageAnalysis` buffer exists in this codebase. But
+the production session resolver commonly *does* successfully resolve real `CAMERA_CHARACTERISTICS`
+data, which is always `PhysicalSensor`-referenced (`CameraIntrinsics`'s own cross-field rule, §6.2).
+Without an alternative, CAM-2b would permanently report
+`Unavailable(PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED)` on many real devices and never draw a single
+marker — defeating its diagnostic purpose entirely.
+
+**`PredictedStarOverlayIntrinsicsMode`** (`PredictedStarOverlayIntrinsicsFallback.kt`, `:mobile`):
+
+```kotlin
+enum class PredictedStarOverlayIntrinsicsMode {
+    SESSION_INTRINSICS,
+    DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK,
+}
+```
+
+- **`SESSION_INTRINSICS`** (the default — see `ArScreen.kt`'s `remember { mutableStateOf(...) }`) uses
+  `geometryResult`'s geometry exactly as CAM-1f/1g published it; a `PhysicalSensor` session reference
+  still reports `Unavailable(PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED)`, unchanged. This is the
+  safest, most explicit choice: no substitution happens unless a tester deliberately opts in.
+- **`DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK`** builds `legacyFallbackCameraIntrinsics(imageWidthPx =
+  geometry.frame.bufferWidthPx, imageHeightPx = geometry.frame.bufferHeightPx)` — sized to the *current*
+  analyzed frame's exact dimensions, never a cached or guessed size — and projects with that instead.
+
+**Constructing the derived geometry without mutating anything.** `CameraSessionGeometry` has no public
+`copy(...)` (its sole construction path, `CameraSessionGeometry.of`, is `internal` to
+`:core:astro-core`), so the substitution is implemented *inside* `:core:astro-core`, beside that
+construction path, as a focused extension function:
+
+```kotlin
+fun CameraSessionGeometry.withIntrinsics(intrinsics: CameraIntrinsicsResolution): CameraSessionGeometry
+```
+
+(`CameraSessionGeometry.kt`). `withIntrinsics` copies the accepted, already-invariant-checked geometry
+bundle exactly — `frame`, `pairedRotation`, `frameRotationDeltaNanos`, `cropScaleTransform`, and
+`viewportSize` are all passed straight through to `CameraSessionGeometry.of` — and substitutes only
+`intrinsics`. It never reconstructs a `FrameRotationPairingResult`, never calls
+`pairFrameToNearestRotation`, and never reads, derives, or checks a pairing tolerance at all — there is no
+tolerance parameter on its signature to conflate with the accepted delta, so a caller's originally
+configured tolerance (which `CameraSessionGeometry` never stores as a field in the first place — see its
+own KDoc, "pairing-tolerance conformance is not an invariant of this class") can never be corrupted by
+this call. Because `CameraSessionGeometry.init` validates only the cross-field relationships between
+`frame`/`cropScaleTransform`/`viewportSize`/`frameRotationDeltaNanos` — never anything about `intrinsics`
+— and none of those fields change here, `withIntrinsics` **cannot fail**: it returns
+`CameraSessionGeometry` directly, never a `CameraSessionGeometryResult` wrapper, and there is no
+`DiagnosticFallbackGeometryUnavailable`-style waiting state for this mode. This never touches
+`CameraSessionGeometryProvider`, `SessionScopedCameraIntrinsicsResolver`, the original geometry
+observation, or any production intrinsics resolution — only a fresh, independent `CameraSessionGeometry`
+is returned, and the original is never mutated.
+
+**Never silently switched, never labeled calibrated.** `reducePredictedStarOverlayState` never chooses a
+mode automatically — whichever `intrinsicsMode` the caller supplies is exactly what runs, every time.
+`PredictedStarOverlayMetadata` carries `intrinsicsMode` plus **two** distinct intrinsics-description
+pairs: `sessionIntrinsicsSource`/`sessionIntrinsicsReference` (always the real session intrinsics) and
+`projectionIntrinsicsSource`/`projectionIntrinsicsReference` (whichever intrinsics were actually used to
+project — identical to the session pair for `SESSION_INTRINSICS`, the substituted fallback for
+`DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK`). The panel (`buildPredictedStarOverlayDiagnosticText`) always
+shows `intrinsics mode: session` or `intrinsics mode: diagnostic fallback`, and in fallback mode shows
+both lines side by side:
+
+```text
+intrinsics mode: diagnostic fallback
+session intrinsics: CAMERA_CHARACTERISTICS / PhysicalSensor
+projection intrinsics: LEGACY_FALLBACK / AnalysisBuffer(1920x1080)
+```
+
+— never "calibrated," never "resolved physical intrinsics." `PredictedStarOverlayControls` exposes the
+mode as an explicit two-way `SingleChoiceSegmentedButtonRow` ("Session intrinsics" / "Diagnostic
+fallback"), session-local and non-persisted, matching this codebase's existing toggle conventions.
+
+### 14.12 Batched per-frame astronomy (shared local sidereal time)
+
+**The problem this closes.** CAM-2b's bounded catalog subset can carry up to
+`PREDICTED_STAR_OVERLAY_MAX_INPUT_STARS = 200` stars, reprojected on every coherent geometry
+recomputation (potentially every camera frame). Before this change, `equatorialToLocalSky(star,
+context)` computed `Instant.ofEpochMilli(context.utcEpochMillis)` and `lstAt(instant,
+longitudeDeg).lstDeg` **independently for every star** — up to 200 redundant, bit-for-bit-identical
+local-sidereal-time computations per batch, since sidereal time depends only on the observer's
+longitude and the instant, never on any individual star.
+
+**`PreparedStarProjectionContext`** (`PreparedStarProjectionContext.kt`, `:core:astro-core`, `internal`
+— a batch-perf implementation detail, not a new public contract):
+
+```kotlin
+internal data class PreparedStarProjectionContext(
+    val latitudeRad: Double,
+    val lstDeg: Double,
+    val magneticDeclinationRad: Double,
+)
+
+internal fun prepareStarProjectionContext(context: StarProjectionContext): PreparedStarProjectionContext
+```
+
+`projectStars` now calls `prepareStarProjectionContext(context)` **once per batch**, before the
+`stars.map { ... }` loop, and every star is projected via a new `internal` 3-arg overload,
+`equatorialToLocalSky(star, latitudeRad, lstDeg)`, which is identical Meeus/ENU-embedding math to the
+existing 2-arg function, just taking an already-computed `lstDeg` instead of a full context. **The
+existing public `equatorialToLocalSky(star, context)` API is unchanged and still supported** — it
+computes its own `PreparedStarProjectionContext` and delegates to the 3-arg overload, so every existing
+caller/test keeps its exact prior behavior and output; only `projectStars`'s own internal batch loop was
+changed to share one prepared context instead of rebuilding it per star.
+
+**No astronomical convention changed, no output changed.** This is a pure refactor: the 2-arg function's
+observable output is bit-for-bit identical before and after (same `Instant`, same `lstAt` call, same
+`raDecToAltAz`/ENU-embedding formulas — only *where* the shared computation happens moved). Every
+existing `:core:astro-core` test (`EquatorialToLocalSkyTest`, `CameraStarProjectionTest`, and the rest of
+§13's table) continues to describe the same behavior. `PreparedStarProjectionContextTest` (§14.9) adds:
+a direct check that `prepareStarProjectionContext` matches a manual per-field computation; that the
+public 2-arg function's output equals the 3-arg overload's output for the same effective inputs; and —
+the batch-consistency claim itself — that a multi-star `projectStars` batch produces results bit-for-bit
+identical to calling `projectStars` once per star (each an independent singleton batch, each
+independently computing its own prepared context), proving the same shared LST value is applied
+consistently to every star in a real batch, not just the first.
+
+**No global mutable counters were added** to prove invocation counts; the proof above is structural
+(one `prepareStarProjectionContext` call site in `projectStars`, visible in the source) plus the
+input/output equivalence tests, which is sufficient since `lstAt` is a pure, deterministic function with
+no wall-clock or hidden state to drift between repeated calls.
+
+**Cadence cap deliberately not added.** The task authorizing this change permits an optional
+latest-only ~10 Hz diagnostic recomputation cap "if profiling or code structure still indicates
+main-thread risk" or "actual device testing shows jank." Neither condition has been met — no physical
+device is available in this sandbox to profile or observe jank on (§14.10) — so no cadence cap was
+added; the shared-LST batching above is judged sufficient on its own, and adding unrequested complexity
+without evidence it is needed would violate this task's own scope discipline (§14.1).

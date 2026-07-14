@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotSame
+import kotlin.test.assertTrue
 
 /**
  * Pure JVM tests for the CAM-1f [createCameraSessionGeometry] factory and the
@@ -510,5 +511,153 @@ class CameraSessionGeometryTest {
                 viewportSize = mismatchedTransform.viewportSize,
             )
         }
+    }
+
+    // --- withIntrinsics (CAM-2b follow-up task §1/§3): exact field-level intrinsics substitution ---
+
+    @Test
+    fun `withIntrinsics changes only intrinsics - frame, pairedRotation values, delta, cropScaleTransform, and viewportSize are all preserved`() {
+        // Configured tolerance (25 ms) is deliberately much larger than the actual accepted delta
+        // (3 ms) - the exact "tolerance strictly larger than delta" shape the old, buggy
+        // rebuildGeometryWithIntrinsics(maxAllowedPairDeltaNanos = abs(frameRotationDeltaNanos)) would
+        // have silently narrowed to a reconstructed 3 ms tolerance. withIntrinsics has no tolerance
+        // parameter at all, so there is nothing left to conflate with the actual delta.
+        val f = frame(timestampNanos = 1_000_000_000L, bufferWidthPx = 1920, bufferHeightPx = 1080, rotationDegrees = 90)
+        val actualDeltaNanos = 3_000_000L
+        val sample = rotationSample(timestampNanos = f.timestampNanos - actualDeltaNanos, fill = 1f)
+        val pairing = forgedPaired(f, sample, deltaNanos = actualDeltaNanos)
+        val configuredToleranceNanos = 25_000_000L
+
+        val ready =
+            assertIs<CameraSessionGeometryResult.Ready>(
+                createCameraSessionGeometry(
+                    f,
+                    pairing,
+                    resolvedIntrinsics,
+                    viewportWidthPx = 1080,
+                    viewportHeightPx = 1920,
+                    maxAllowedPairDeltaNanos = configuredToleranceNanos,
+                ),
+            )
+        val original = ready.geometry
+
+        val replaced = original.withIntrinsics(fallbackIntrinsics)
+
+        // Only intrinsics changed.
+        assertEquals(fallbackIntrinsics, replaced.intrinsics)
+        assertEquals(resolvedIntrinsics, original.intrinsics)
+        assertTrue(replaced.intrinsics != original.intrinsics, "withIntrinsics must actually change the intrinsics for this to be a meaningful test")
+
+        // Every other field is preserved exactly - a plain field-level copy, not a re-derivation.
+        assertEquals(original.frame, replaced.frame)
+        assertEquals(original.pairedRotation.timestampNanos, replaced.pairedRotation.timestampNanos)
+        assertContentEquals(original.pairedRotation.rotationMatrix, replaced.pairedRotation.rotationMatrix)
+        assertEquals(actualDeltaNanos, original.frameRotationDeltaNanos)
+        assertEquals(actualDeltaNanos, replaced.frameRotationDeltaNanos)
+        assertEquals(original.cropScaleTransform, replaced.cropScaleTransform)
+        assertEquals(original.viewportSize, replaced.viewportSize)
+
+        // The 25 ms configured tolerance this bundle was originally validated against is never
+        // represented anywhere on CameraSessionGeometry (see its own KDoc: "Pairing-tolerance
+        // conformance is not an invariant of this class") and withIntrinsics's signature carries no
+        // tolerance parameter to derive one from - so there is no field on either `original` or
+        // `replaced` a reconstruction bug could have corrupted from 25 ms down to the 3 ms actual
+        // delta. The frameRotationDeltaNanos assertions above are the exhaustive check: it is exactly
+        // 3 ms on both sides, never anything else.
+    }
+
+    @Test
+    fun `withIntrinsics never mutates the original geometry`() {
+        val f = frame(timestampNanos = 1_000L)
+        val pairing = paired(f, rotationTimestampNanos = 970L)
+        val ready = assertIs<CameraSessionGeometryResult.Ready>(createCameraSessionGeometry(f, pairing, resolvedIntrinsics, 1080, 1080))
+        val original = ready.geometry
+
+        original.withIntrinsics(fallbackIntrinsics)
+
+        // Calling withIntrinsics for its side effect (discarding the result) must leave `original`
+        // fully intact - it returns a new bundle, it never rewrites the receiver in place.
+        assertEquals(resolvedIntrinsics, original.intrinsics)
+        assertEquals(970L, original.pairedRotation.timestampNanos)
+    }
+
+    @Test
+    fun `withIntrinsics preserves a negative frameRotationDeltaNanos exactly - never flipped positive`() {
+        val f = frame(timestampNanos = 997_000_000L)
+        val negativeDeltaNanos = -3_000_000L // rotation sample is AFTER the frame
+        val sample = rotationSample(timestampNanos = f.timestampNanos - negativeDeltaNanos, fill = 1f)
+        val pairing = forgedPaired(f, sample, deltaNanos = negativeDeltaNanos)
+
+        val ready = assertIs<CameraSessionGeometryResult.Ready>(createCameraSessionGeometry(f, pairing, resolvedIntrinsics, 1080, 1080))
+        val original = ready.geometry
+        assertEquals(negativeDeltaNanos, original.frameRotationDeltaNanos)
+
+        val replaced = original.withIntrinsics(fallbackIntrinsics)
+
+        assertEquals(negativeDeltaNanos, replaced.frameRotationDeltaNanos)
+        assertTrue(
+            replaced.frameRotationDeltaNanos < 0L,
+            "expected a strictly negative frameRotationDeltaNanos; was ${replaced.frameRotationDeltaNanos}",
+        )
+    }
+
+    // --- withIntrinsics: defensive rotation-array ownership ----------------------------------------
+
+    @Test
+    fun `mutating the caller's source rotation-matrix array after withIntrinsics does not affect either geometry`() {
+        val matrix = FloatArray(9) { it.toFloat() }
+        val f = frame(timestampNanos = 1_000L)
+        val sample = TimedRotationSample(timestampNanos = 1_000L, rotationMatrix = matrix)
+        val pairing = forgedPaired(f, sample, deltaNanos = 0L)
+        val original =
+            assertIs<CameraSessionGeometryResult.Ready>(createCameraSessionGeometry(f, pairing, resolvedIntrinsics, 1080, 1080)).geometry
+
+        val replaced = original.withIntrinsics(fallbackIntrinsics)
+        matrix[0] = -999f
+
+        assertEquals(0f, original.pairedRotation.rotationMatrix[0])
+        assertEquals(0f, replaced.pairedRotation.rotationMatrix[0])
+    }
+
+    @Test
+    fun `mutating a rotation-matrix array read from the original geometry does not affect the replaced geometry`() {
+        val f = frame(timestampNanos = 1_000L)
+        val pairing = paired(f, rotationTimestampNanos = 970L)
+        val original =
+            assertIs<CameraSessionGeometryResult.Ready>(createCameraSessionGeometry(f, pairing, resolvedIntrinsics, 1080, 1080)).geometry
+
+        val replaced = original.withIntrinsics(fallbackIntrinsics)
+        val originalRead = original.pairedRotation
+        originalRead.rotationMatrix[0] = -999f
+
+        assertEquals(0f, original.pairedRotation.rotationMatrix[0])
+        assertEquals(0f, replaced.pairedRotation.rotationMatrix[0])
+    }
+
+    @Test
+    fun `mutating a rotation-matrix array read from the replaced geometry does not affect the original geometry`() {
+        val f = frame(timestampNanos = 1_000L)
+        val pairing = paired(f, rotationTimestampNanos = 970L)
+        val original =
+            assertIs<CameraSessionGeometryResult.Ready>(createCameraSessionGeometry(f, pairing, resolvedIntrinsics, 1080, 1080)).geometry
+
+        val replaced = original.withIntrinsics(fallbackIntrinsics)
+        val replacedRead = replaced.pairedRotation
+        replacedRead.rotationMatrix[0] = -999f
+
+        assertEquals(0f, replaced.pairedRotation.rotationMatrix[0])
+        assertEquals(0f, original.pairedRotation.rotationMatrix[0])
+    }
+
+    @Test
+    fun `original and replaced geometries never share the same rotation-matrix array instance`() {
+        val f = frame(timestampNanos = 1_000L)
+        val pairing = paired(f, rotationTimestampNanos = 970L)
+        val original =
+            assertIs<CameraSessionGeometryResult.Ready>(createCameraSessionGeometry(f, pairing, resolvedIntrinsics, 1080, 1080)).geometry
+
+        val replaced = original.withIntrinsics(fallbackIntrinsics)
+
+        assertNotSame(original.pairedRotation.rotationMatrix, replaced.pairedRotation.rotationMatrix)
     }
 }
