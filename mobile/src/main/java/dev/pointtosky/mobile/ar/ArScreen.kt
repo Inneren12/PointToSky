@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +54,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -85,10 +88,16 @@ import dev.pointtosky.core.datalayer.AimTargetKind
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticCategory
+import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
+import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticsGate
 import dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsCoordinator
 import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
 import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
+import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
+import dev.pointtosky.mobile.ar.camera.nextDebugSessionId
+import dev.pointtosky.mobile.ar.camera.toDiagnosticSnapshot
 import dev.pointtosky.mobile.datalayer.AimTargetOption
 import dev.pointtosky.mobile.location.DeviceLocationRepository
 import dev.pointtosky.mobile.render.BvColor
@@ -259,6 +268,45 @@ fun ArScreen(
     // future matcher's predictions will be displayed, not PreviewView's own (unmeasured) size.
     LaunchedEffect(overlaySize) {
         geometryProvider.onViewportChanged(overlaySize.width, overlaySize.height)
+    }
+
+    // CAM-1g: debug-only consumer of geometryProvider.state, gated so it never affects a production
+    // build (see docs/camera_coordinate_calibration_contract.md §11). Collected with
+    // collectAsStateWithLifecycle so collection stops automatically when this composition leaves -
+    // the same pattern ArRoute already uses for the AR view-model state - never a manually launched
+    // permanent coroutine. This is purely a read of the existing provider's state; it starts no new
+    // camera, sensor, resolver, or provider, and never feeds calculateOverlay/projectionParams.
+    val cameraGeometryDiagnosticSnapshot: CameraGeometryDiagnosticSnapshot?
+    val cameraGeometryDiagnosticSessionId: Long
+    val cameraGeometryStatusTransitionCount: Int
+    val cameraGeometryObservedFrameCount: Long
+    val cameraGeometryReadyBundleCount: Long
+    if (CameraGeometryDiagnosticsGate.isEnabled) {
+        val geometryResult by geometryProvider.state.collectAsStateWithLifecycle()
+        val sessionId = remember { nextDebugSessionId() }
+        val snapshot = remember(geometryResult) { geometryResult.toDiagnosticSnapshot() }
+        val transitionCount = remember { mutableStateOf(0) }
+        val lastCategory = remember { mutableStateOf<CameraGeometryDiagnosticCategory?>(null) }
+        SideEffect {
+            val previous = lastCategory.value
+            if (previous != null && previous != snapshot.category) {
+                transitionCount.value++
+            }
+            lastCategory.value = snapshot.category
+        }
+        val debugState = geometryProvider.debugState()
+
+        cameraGeometryDiagnosticSnapshot = snapshot
+        cameraGeometryDiagnosticSessionId = sessionId
+        cameraGeometryStatusTransitionCount = transitionCount.value
+        cameraGeometryObservedFrameCount = debugState.observedFrameCount
+        cameraGeometryReadyBundleCount = debugState.readyBundleCount
+    } else {
+        cameraGeometryDiagnosticSnapshot = null
+        cameraGeometryDiagnosticSessionId = 0L
+        cameraGeometryStatusTransitionCount = 0
+        cameraGeometryObservedFrameCount = 0L
+        cameraGeometryReadyBundleCount = 0L
     }
 
     Box(
@@ -462,7 +510,60 @@ fun ArScreen(
                 }
             }
         }
+
+        // CAM-1g: debug-only camera-geometry diagnostic overlay - see the gate/collection setup
+        // above. Non-interactive (plain Text, no clickable/pointerInput modifier), so it never
+        // intercepts AR gestures or camera interaction, and it never modifies calculateOverlay,
+        // projectionParams, or star positions - it only displays what CameraSessionGeometryProvider
+        // already publishes.
+        if (CameraGeometryDiagnosticsGate.isEnabled && cameraGeometryDiagnosticSnapshot != null) {
+            CameraGeometryDiagnosticOverlay(
+                snapshot = cameraGeometryDiagnosticSnapshot,
+                sessionId = cameraGeometryDiagnosticSessionId,
+                statusTransitionCount = cameraGeometryStatusTransitionCount,
+                observedFrameCount = cameraGeometryObservedFrameCount,
+                readyBundleCount = cameraGeometryReadyBundleCount,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .statusBarsPadding()
+                        .padding(top = 72.dp, start = 16.dp, end = 16.dp),
+            )
+        }
     }
+}
+
+/**
+ * CAM-1g compact diagnostic overlay (§5) - translucent, monospace, width-bounded, non-clickable.
+ * Purely a display of [CameraGeometryDiagnosticSnapshot]; touches no renderer/matcher/detector state.
+ */
+@Composable
+private fun CameraGeometryDiagnosticOverlay(
+    snapshot: CameraGeometryDiagnosticSnapshot,
+    sessionId: Long,
+    statusTransitionCount: Int,
+    observedFrameCount: Long,
+    readyBundleCount: Long,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text =
+            buildCameraGeometryDiagnosticText(
+                snapshot = snapshot,
+                sessionId = sessionId,
+                statusTransitionCount = statusTransitionCount,
+                observedFrameCount = observedFrameCount,
+                readyBundleCount = readyBundleCount,
+            ),
+        color = Color.White,
+        fontFamily = FontFamily.Monospace,
+        style = MaterialTheme.typography.bodySmall,
+        modifier =
+            modifier
+                .widthIn(max = 280.dp)
+                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
+                .padding(8.dp),
+    )
 }
 
 @Composable
