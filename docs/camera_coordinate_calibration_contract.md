@@ -1456,35 +1456,45 @@ renderer change — nothing yet reads the bundle it publishes.
 - **`CameraSessionGeometry`** (`CameraSessionGeometry.kt`):
 
   ```kotlin
-  data class CameraSessionGeometry private constructor(
+  class CameraSessionGeometry private constructor(
       val frame: CameraFrameMetadata,
-      val pairedRotation: TimedRotationSample,
+      private val pairedRotationSnapshot: TimedRotationSample,
       val frameRotationDeltaNanos: Long,
       val cropScaleTransform: CropScaleTransform,
       val intrinsics: CameraIntrinsicsResolution,
       val viewportSize: PixelSize,
-  )
+  ) {
+      val pairedRotation: TimedRotationSample
+          get() = pairedRotationSnapshot.copy(rotationMatrix = pairedRotationSnapshot.rotationMatrix.copyOf())
+  }
   ```
 
-  The primary constructor is `private` and the class is `@ConsistentCopyVisibility` (generated
-  `copy()` private too), matching `CropScaleTransform`'s CAM-1e construction contract (§9.0). The
-  only construction path is the pure factory `createCameraSessionGeometry` (§10.4); `init`
-  re-derives and `require`s the cross-field invariants anyway, so no other path — including a
-  hand-edited `copy()` — can produce an inconsistent instance:
+  A **regular class, not a `data class`** — an earlier revision exposed `pairedRotation` as a plain
+  constructor property, which copied the array once on ingestion but still let a caller corrupt the
+  bundle by mutating the array read back out of a `pairedRotation` access. `pairedRotation` is now a
+  computed property backed by a `private` snapshot, and **every read returns a fresh defensive
+  copy** — true immutability, not merely "copied once on the way in": neither the array a caller
+  originally handed off, nor an array read back out of any previous `pairedRotation` access, can
+  ever affect the bundle or a later read. The primary constructor is still `private`, so the only
+  construction path is the pure factory `createCameraSessionGeometry` (§10.4); `init` re-derives and
+  `require`s the cross-field invariants anyway, so no other path can produce an inconsistent
+  instance:
   - `cropScaleTransform.sourceBufferSize` equals `frame`'s buffer dimensions;
+  - `cropScaleTransform.sourceCrop` equals the frame-derived crop (`sourceCropFromFrame(frame)` —
+    the frame's crop rect when present, else the full buffer; the same helper
+    `createFillCenterCropScaleTransform` itself uses, so this mapping lives in exactly one place);
   - `cropScaleTransform.rotationDegrees` equals `frame.rotationDegrees`;
   - `cropScaleTransform.viewportSize` equals `viewportSize`;
   - `frameRotationDeltaNanos` equals `frame.timestampNanos - pairedRotation.timestampNanos`,
     computed with the same overflow-safe helper `FrameRotationPairingResult` uses.
 
-  A fifth invariant — the paired delta is within whatever pairing tolerance was configured — is
-  guaranteed **transitively**, not re-checked against a hardcoded constant: the factory accepts
-  only `FrameRotationPairingResult.Paired`, and `pairFrameToNearestRotation` only ever produces
-  that variant when the delta is within *its caller's* `maxAllowedDeltaNanos`, which may differ
-  from `TimestampSyncConfig.MAX_PAIR_DELTA_NANOS` if a session is configured with a non-default
-  tolerance. `pairedRotation`'s backing `FloatArray` is defensively copied by the factory, so a
-  caller mutating the array it originally handed off cannot corrupt the bundle afterward (the same
-  convention `RotationSampleHistory` uses, CAM-1d §4.5).
+  Pairing-tolerance conformance is **not** one of `init`'s invariants: `FrameRotationPairingResult.Paired`
+  and `FrameRotationPair` are both public data classes any caller can construct directly, not only
+  `pairFrameToNearestRotation` — an earlier revision's claim that "the factory accepts only `Paired`,
+  therefore the delta must already be within tolerance" assumed a `Paired` value could only
+  originate from `pairFrameToNearestRotation`, which is false for a publicly constructible type.
+  `createCameraSessionGeometry` (§10.4) validates the configured tolerance explicitly, against a
+  caller-supplied threshold, before ever calling the canonical factory — see §10.2.
 
 - **`CameraIntrinsicsResolution`** (`CameraIntrinsicsResolution.kt`) — the CAM-1f intrinsics
   policy, chosen from the two options CAM-1f's own task description offered:
@@ -1527,21 +1537,25 @@ renderer change — nothing yet reads the bundle it publishes.
   }
   ```
 
-  `RotationUnavailable`/`GeometryRejected` carry a reason enum (`NO_SAMPLES` /
-  `OUTSIDE_TOLERANCE` / `CLOCK_MISMATCH_SUSPECTED`, and
-  `FRAME_ROTATION_TIMESTAMP_MISMATCH` / `CROP_SCALE_CONSTRUCTION_FAILED` respectively) — never raw
-  exception text. `IntrinsicsUnavailable`/`MissingFrame`/`Disposed` are never returned by the pure
-  factory itself (it always requires an already-resolved frame/intrinsics as input); they exist for
-  the production session owner (§10.6), which publishes them while a bound session has not yet
-  produced those inputs. A cheap `CameraSessionGeometryStatus` enum (`status` extension property)
-  classifies any result without exposing reason detail, for logging/debug-state comparisons.
+  `RotationUnavailable` carries `NO_SAMPLES` / `OUTSIDE_TOLERANCE` / `CLOCK_MISMATCH_SUSPECTED`.
+  `GeometryRejected` carries `PAIRING_FRAME_MISMATCH` / `PAIRING_DELTA_MISMATCH` /
+  `PAIRING_OUTSIDE_CONFIGURED_TOLERANCE` / `CROP_SCALE_CONSTRUCTION_FAILED` — the first three exist
+  specifically because a `FrameRotationPairingResult.Paired` is publicly constructible and cannot be
+  trusted as proof of anything about how it was produced; see §10.2. No reason carries raw exception
+  text. `IntrinsicsUnavailable`/`MissingFrame`/`Disposed` are never returned by the pure factory
+  itself (it always requires an already-resolved frame/intrinsics as input); they exist for the
+  production session owner (§10.6), which publishes them while a bound session has not yet produced
+  those inputs. A cheap `CameraSessionGeometryStatus` enum (`status` extension property) classifies
+  any result without exposing reason detail, for logging/debug-state comparisons.
 
 ### 10.2 Frame/pairing coherence rule
 
 A published bundle must use **one exact** `CameraFrameMetadata`, the pairing result computed for
 *that same frame*, the current viewport, and the current session's intrinsics — never a frame
 combined with an independently-"latest" pairing result that happened to be computed for a
-different frame. This is enforced two ways:
+different frame. **`FrameRotationPairingResult.Paired` and `FrameRotationPair` are both public data
+classes** — any caller can construct one directly, not only `pairFrameToNearestRotation` — so a
+`Paired` value is never trusted as self-proving anything. Coherence is enforced two ways:
 
 1. **At the callback boundary** (Option A from CAM-1f's task description):
    `CameraTimestampSynchronizer.onCameraFrame(frame)` (CAM-1d) now *returns* the
@@ -1550,10 +1564,25 @@ different frame. This is enforced two ways:
    pairingResult)` pair to `CameraSessionGeometryProvider.onPairedFrame` together, in one call —
    it never separately reads `CameraFrameMetadataProvider.latest` and
    `CameraTimestampSynchronizer.latestResult` and assumes they describe the same frame.
-2. **At the pure factory** (defense in depth): `createCameraSessionGeometry` independently checks
-   `pairingResult.pair.frame.timestampNanos == frame.timestampNanos` and returns
-   `GeometryRejected(FRAME_ROTATION_TIMESTAMP_MISMATCH)` on any mismatch, so even a caller bug at
-   the production seam cannot silently wrap an incoherent pair into a bundle.
+2. **At the pure factory** (not merely defense in depth — the only real gate, since the pairing
+   result reaching this function did not necessarily come through step 1): `createCameraSessionGeometry`
+   validates, in order:
+   - **exact frame equality** — `paired.pair.frame != frame` (full `CameraFrameMetadata` structural
+     equality, not just `timestampNanos`) is rejected as `GeometryRejected(PAIRING_FRAME_MISMATCH)`.
+     Timestamp equality alone is **not** sufficient proof of coherence: two frames can share a
+     timestamp while differing in buffer dimensions, crop rect, or rotation, and only full metadata
+     equality catches that;
+   - **delta arithmetic** — `paired.pair.deltaNanos` must equal the overflow-safe delta actually
+     implied by `frame.timestampNanos` and `paired.pair.rotation.timestampNanos`; a mismatch is
+     `GeometryRejected(PAIRING_DELTA_MISMATCH)`;
+   - **configured tolerance** — the (now verified-correct) delta's absolute value must not exceed
+     `maxAllowedPairDeltaNanos` (§10.4); exceeding it is
+     `GeometryRejected(PAIRING_OUTSIDE_CONFIGURED_TOLERANCE)`, regardless of the `Paired` subtype
+     having been used. Using the `Paired` subtype alone as tolerance proof was the exact gap this
+     validation closes — a forged or mis-tagged `Paired` value cannot bypass it.
+
+   Any caller bug at the production seam — or a forged pairing result reaching the factory by any
+   other path — is caught here, categorically, never silently wrapped into a bundle.
 
 ### 10.3 Viewport authority
 
@@ -1577,6 +1606,7 @@ fun createCameraSessionGeometry(
     intrinsicsResolution: CameraIntrinsicsResolution,
     viewportWidthPx: Int,
     viewportHeightPx: Int,
+    maxAllowedPairDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
 ): CameraSessionGeometryResult
 ```
 
@@ -1584,12 +1614,18 @@ Deviates from the task description's illustrative `viewportSize: PixelSize` para
 `PixelSize` cannot represent a zero/negative size, so the *invalid* case must be checked before any
 `PixelSize` is constructed — plain, possibly-invalid `Int`s let that happen. Accepts only
 `FrameRotationPairingResult.Paired`; every other pairing outcome becomes a categorized
-`RotationUnavailable`. Builds the `CropScaleTransform` via the existing CAM-1e
+`RotationUnavailable`. `maxAllowedPairDeltaNanos` is validated explicitly (§10.2) rather than
+inferred from the `Paired` subtype — it `require`s non-negative (a programmer-contract violation at
+the call site throws, since that is not an expected runtime outcome) and defaults to
+`TimestampSyncConfig.MAX_PAIR_DELTA_NANOS`, but a caller whose pairing result was produced with a
+non-default tolerance (e.g. a `CameraTimestampSynchronizer` constructed with a custom
+`maxAllowedDeltaNanos`) must pass that same value here — see §10.6 for how the production owner
+shares it. Builds the `CropScaleTransform` via the existing CAM-1e
 `createFillCenterCropScaleTransform(frame, viewportWidthPx, viewportHeightPx)` — never a second,
 independent CropScale construction path — catching only its `IllegalArgumentException` as
-`GeometryRejected(CROP_SCALE_CONSTRUCTION_FAILED)`. Every rejection is a returned, categorized
-result, never a thrown exception; no result carries raw exception text. Pure, no Android
-dependency, no side effects, retains nothing past the call.
+`GeometryRejected(CROP_SCALE_CONSTRUCTION_FAILED)`. Every expected-runtime rejection is a returned,
+categorized result, never a thrown exception; no result carries raw exception text. Pure, no
+Android dependency, no side effects, retains nothing past the call.
 
 ### 10.5 Geometry quality classification
 
@@ -1617,6 +1653,16 @@ owner. It receives:
 - `onIntrinsicsResolved(resolution)` — from `ArScreen`'s `CameraPreview.onCameraInfo` callback
   (§10.7); only the *first* call per provider instance has any effect — intrinsics resolve at
   most once per bound camera session, then are reused for every subsequent frame.
+
+`CameraSessionGeometryProvider`'s constructor takes `maxAllowedPairDeltaNanos: Long =
+TimestampSyncConfig.MAX_PAIR_DELTA_NANOS`, threaded straight into every `createCameraSessionGeometry`
+call (§10.4). This must agree with whatever tolerance the session's `CameraTimestampSynchronizer`
+actually pairs against — `CameraTimestampSynchronizer.maxAllowedDeltaNanos` is a public, immutable
+`val` (CAM-1f addition) for exactly this reason, and `ArScreen` reads it directly when constructing
+the provider (`CameraSessionGeometryProvider(maxAllowedPairDeltaNanos =
+timestampSynchronizer.maxAllowedDeltaNanos)`) rather than letting both default independently. If a
+future change constructs either with a non-default tolerance, this wiring keeps them in sync
+without needing to remember to update both call sites.
 
 It publishes `state: StateFlow<CameraSessionGeometryResult>`, latest-value-only — never a queue —
 plus a bounded `debugState(): CameraSessionGeometryDebugState` (observed/ready/rejected counts,
@@ -1675,7 +1721,14 @@ needs one.
 
 `CameraSessionGeometryDebugState` (`CameraSessionGeometryProvider.kt`, alongside the provider,
 mirroring where CAM-1c's `CameraFrameDebugState` lives) is bounded — running counts plus the
-single latest status/quality/pair-delta, no historical list. `MobileLog` gained `cameraGeometry*`
+single latest status/quality/pair-delta, no historical list. `latestStatus` always reflects the
+*current* published result. `latestQuality`/`latestPairDeltaNanos` are populated only while the
+current result is `Ready`, and are explicitly cleared to `null` on every transition away from
+`Ready` — to `MissingFrame`, `InvalidViewport`, `RotationUnavailable`, `IntrinsicsUnavailable`,
+`GeometryRejected`, or `Disposed` — so a caller reading debug state never sees a stale quality/delta
+left over from a previous `Ready` bundle after the provider has actually stopped being ready. A
+later `Ready` recompute (while the provider remains active) repopulates both fields from that new
+bundle. `MobileLog` gained `cameraGeometry*`
 events (`MobileLog.kt`): `cameraGeometrySessionStarted()` (once, first update),
 `cameraGeometryFirstReady(quality)` (once, first `Ready`), `cameraGeometryStatusChanged(status)`
 (logged only on an actual status transition), `cameraGeometryFallbackIntrinsicsInUse()` (once, on

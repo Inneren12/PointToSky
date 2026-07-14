@@ -8,6 +8,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryStatus
 import dev.pointtosky.core.astro.projection.camera.FrameRotationPairingResult
 import dev.pointtosky.core.astro.projection.camera.IntrinsicsUnavailableReason
 import dev.pointtosky.core.astro.projection.camera.PixelSize
+import dev.pointtosky.core.astro.projection.camera.TimestampSyncConfig
 import dev.pointtosky.core.astro.projection.camera.createCameraSessionGeometry
 import dev.pointtosky.core.astro.projection.camera.quality
 import dev.pointtosky.core.astro.projection.camera.status
@@ -71,7 +72,17 @@ data class CameraSessionGeometryDebugState(
  * afterward. One provider instance belongs to one AR camera session; a new session gets a new
  * `remember`ed instance rather than reusing a disposed one.
  */
-class CameraSessionGeometryProvider {
+class CameraSessionGeometryProvider(
+    /**
+     * The pairing tolerance [createCameraSessionGeometry] validates against — must match whatever
+     * `CameraTimestampSynchronizer.maxAllowedDeltaNanos` this session's frame/pairing pairs were
+     * actually produced with (CAM-1f). Defaults to the same [TimestampSyncConfig.MAX_PAIR_DELTA_NANOS]
+     * default the synchronizer itself defaults to, but a caller constructing either with a custom
+     * tolerance must pass the same value to both — this provider never assumes the default silently
+     * agrees with a synchronizer configured otherwise.
+     */
+    private val maxAllowedPairDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
+) {
     private val _state =
         MutableStateFlow<CameraSessionGeometryResult>(CameraSessionGeometryResult.MissingFrame(viewportSize = null))
     val state: StateFlow<CameraSessionGeometryResult> = _state.asStateFlow()
@@ -207,6 +218,7 @@ class CameraSessionGeometryProvider {
                             intrinsicsResolution = requireNotNull(intrinsicsResolution),
                             viewportWidthPx = viewportWidthPx,
                             viewportHeightPx = viewportHeightPx,
+                            maxAllowedPairDeltaNanos = maxAllowedPairDeltaNanos,
                         )
                     if (built !is CameraSessionGeometryResult.Ready) rejectedBundleCount++
                     built
@@ -218,6 +230,12 @@ class CameraSessionGeometryProvider {
             readyBundleCount++
             latestQuality = result.quality
             latestPairDeltaNanos = result.geometry.frameRotationDeltaNanos
+        } else {
+            // A stale quality/delta from a previous Ready bundle must not survive into a status
+            // that no longer describes a Ready result - debug state must always describe the
+            // currently published result, never a leftover from a prior recompute.
+            latestQuality = null
+            latestPairDeltaNanos = null
         }
 
         _state.value = result

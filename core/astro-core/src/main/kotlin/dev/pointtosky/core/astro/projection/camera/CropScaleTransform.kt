@@ -408,13 +408,33 @@ data class CropScaleTransform private constructor(
 }
 
 /**
+ * The source crop [frame] implies: its crop rect when present, or the full buffer bounds `(0, 0,
+ * bufferWidth, bufferHeight)` when absent — the crop rect is honoured even when it equals the full
+ * buffer, and is never assumed to start at `(0, 0)`. Shared by [createFillCenterCropScaleTransform]
+ * (to build) and CAM-1f's `CameraSessionGeometry` invariant check (to verify), so the crop-from-frame
+ * mapping lives in exactly one place — this is plain field extraction, not a FILL_CENTER scale/offset
+ * equation.
+ */
+internal fun sourceCropFromFrame(frame: CameraFrameMetadata): PixelRect {
+    val bufferSize = PixelSize(frame.bufferWidthPx.toDouble(), frame.bufferHeightPx.toDouble())
+    // CameraFrameMetadata guarantees the four crop fields are all-present or all-absent, so a single
+    // non-null left implies the rest are present (asserted with requireNotNull, not a 4-way &&).
+    return frame.cropRectLeftPx?.let { left ->
+        PixelRect(
+            left = left.toDouble(),
+            top = requireNotNull(frame.cropRectTopPx).toDouble(),
+            right = requireNotNull(frame.cropRectRightPx).toDouble(),
+            bottom = requireNotNull(frame.cropRectBottomPx).toDouble(),
+        )
+    } ?: PixelRect(0.0, 0.0, bufferSize.width, bufferSize.height)
+}
+
+/**
  * Builds the pure FILL_CENTER [CropScaleTransform] for one [CameraFrameMetadata] frame and a display
  * viewport, with **no Android dependency and no side effects** (CAM-1e §8).
  *
- * The source crop is [frame]'s crop rect when present, or the full buffer bounds `(0, 0,
- * bufferWidth, bufferHeight)` when absent — the crop rect is honoured even when it equals the full
- * buffer, and is never assumed to start at `(0, 0)`. [CameraFrameMetadata.rotationDegrees] is taken
- * as the clockwise rotation required to bring the buffer into display orientation.
+ * The source crop is [sourceCropFromFrame]. [CameraFrameMetadata.rotationDegrees] is taken as the
+ * clockwise rotation required to bring the buffer into display orientation.
  *
  * @throws IllegalArgumentException if [viewportWidthPx] or [viewportHeightPx] is not strictly
  *   positive (invalid crop/rotation are already rejected by [CameraFrameMetadata] itself).
@@ -427,22 +447,9 @@ fun createFillCenterCropScaleTransform(
     require(viewportWidthPx > 0) { "viewportWidthPx must be strictly positive; was $viewportWidthPx" }
     require(viewportHeightPx > 0) { "viewportHeightPx must be strictly positive; was $viewportHeightPx" }
 
-    val bufferSize = PixelSize(frame.bufferWidthPx.toDouble(), frame.bufferHeightPx.toDouble())
-    // CameraFrameMetadata guarantees the four crop fields are all-present or all-absent, so a single
-    // non-null left implies the rest are present (asserted with requireNotNull, not a 4-way &&).
-    val sourceCrop =
-        frame.cropRectLeftPx?.let { left ->
-            PixelRect(
-                left = left.toDouble(),
-                top = requireNotNull(frame.cropRectTopPx).toDouble(),
-                right = requireNotNull(frame.cropRectRightPx).toDouble(),
-                bottom = requireNotNull(frame.cropRectBottomPx).toDouble(),
-            )
-        } ?: PixelRect(0.0, 0.0, bufferSize.width, bufferSize.height)
-
     return CropScaleTransform.fillCenter(
-        sourceCrop = sourceCrop,
-        sourceBufferSize = bufferSize,
+        sourceCrop = sourceCropFromFrame(frame),
+        sourceBufferSize = PixelSize(frame.bufferWidthPx.toDouble(), frame.bufferHeightPx.toDouble()),
         rotationDegrees = frame.rotationDegrees,
         viewportSize = PixelSize(viewportWidthPx.toDouble(), viewportHeightPx.toDouble()),
     )

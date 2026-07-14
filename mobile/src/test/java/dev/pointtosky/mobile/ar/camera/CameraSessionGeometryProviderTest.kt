@@ -183,7 +183,7 @@ class CameraSessionGeometryProviderTest {
         provider.onPairedFrame(f, pairing(otherFrame, 2_000L))
 
         val rejected = assertIs<CameraSessionGeometryResult.GeometryRejected>(provider.state.value)
-        assertEquals(GeometryRejectionReason.FRAME_ROTATION_TIMESTAMP_MISMATCH, rejected.reason)
+        assertEquals(GeometryRejectionReason.PAIRING_FRAME_MISMATCH, rejected.reason)
     }
 
     // --- Latest-value-only, fallback preservation -----------------------------------------------
@@ -217,6 +217,117 @@ class CameraSessionGeometryProviderTest {
         val ready = assertIs<CameraSessionGeometryResult.Ready>(provider.state.value)
         assertEquals(CameraGeometryQuality.LEGACY_INTRINSICS_FALLBACK, ready.quality)
         assertEquals(fallback, ready.geometry.intrinsics)
+    }
+
+    // --- Debug-state clearing on non-Ready results ----------------------------------------------
+
+    @Test
+    fun `Ready to InvalidViewport clears latestQuality and latestPairDeltaNanos`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+        val f = frame(1_000L)
+        provider.onPairedFrame(f, pairing(f, 1_000L))
+        assertIs<CameraSessionGeometryResult.Ready>(provider.state.value)
+        val readyDebug = provider.debugState()
+        assertEquals(CameraGeometryQuality.CALIBRATED, readyDebug.latestQuality)
+        assertEquals(0L, readyDebug.latestPairDeltaNanos)
+
+        provider.onViewportChanged(0, 0)
+
+        assertIs<CameraSessionGeometryResult.InvalidViewport>(provider.state.value)
+        val debug = provider.debugState()
+        assertEquals(null, debug.latestQuality)
+        assertEquals(null, debug.latestPairDeltaNanos)
+        assertEquals(CameraSessionGeometryStatus.INVALID_VIEWPORT, debug.latestStatus)
+    }
+
+    @Test
+    fun `Ready to RotationUnavailable clears latestQuality and latestPairDeltaNanos`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+        val f = frame(1_000L)
+        provider.onPairedFrame(f, pairing(f, 1_000L))
+        assertIs<CameraSessionGeometryResult.Ready>(provider.state.value)
+
+        val staleFrame = frame(2_000L)
+        val noSamples =
+            pairFrameToNearestRotation(
+                frame = staleFrame,
+                samples = emptyList(),
+                maxAllowedDeltaNanos = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
+                clockMismatchThresholdNanos = TimestampSyncConfig.CLOCK_MISMATCH_THRESHOLD_NANOS,
+            )
+        provider.onPairedFrame(staleFrame, noSamples)
+
+        assertIs<CameraSessionGeometryResult.RotationUnavailable>(provider.state.value)
+        val debug = provider.debugState()
+        assertEquals(null, debug.latestQuality)
+        assertEquals(null, debug.latestPairDeltaNanos)
+        assertEquals(CameraSessionGeometryStatus.ROTATION_UNAVAILABLE, debug.latestStatus)
+    }
+
+    @Test
+    fun `Ready to GeometryRejected clears latestQuality and latestPairDeltaNanos`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+        val f = frame(1_000L)
+        provider.onPairedFrame(f, pairing(f, 1_000L))
+        assertIs<CameraSessionGeometryResult.Ready>(provider.state.value)
+
+        val staleFrame = frame(3_000L)
+        val mismatchedPairing = pairing(frame(9_000L), 9_000L) // pairing computed for an unrelated frame
+        provider.onPairedFrame(staleFrame, mismatchedPairing)
+
+        val rejected = assertIs<CameraSessionGeometryResult.GeometryRejected>(provider.state.value)
+        assertEquals(GeometryRejectionReason.PAIRING_FRAME_MISMATCH, rejected.reason)
+        val debug = provider.debugState()
+        assertEquals(null, debug.latestQuality)
+        assertEquals(null, debug.latestPairDeltaNanos)
+        assertEquals(CameraSessionGeometryStatus.GEOMETRY_REJECTED, debug.latestStatus)
+    }
+
+    @Test
+    fun `Ready to Disposed clears latestQuality and latestPairDeltaNanos`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+        val f = frame(1_000L)
+        provider.onPairedFrame(f, pairing(f, 1_000L))
+        assertIs<CameraSessionGeometryResult.Ready>(provider.state.value)
+
+        provider.dispose()
+
+        assertEquals(CameraSessionGeometryResult.Disposed, provider.state.value)
+        val debug = provider.debugState()
+        assertEquals(null, debug.latestQuality)
+        assertEquals(null, debug.latestPairDeltaNanos)
+        assertEquals(CameraSessionGeometryStatus.DISPOSED, debug.latestStatus)
+    }
+
+    @Test
+    fun `a subsequent Ready repopulates latestQuality and latestPairDeltaNanos while the provider is active`() {
+        val provider = CameraSessionGeometryProvider()
+        provider.onViewportChanged(1080, 1920)
+        provider.onIntrinsicsResolved(resolved)
+        val f = frame(1_000L)
+        provider.onPairedFrame(f, pairing(f, 1_000L))
+        assertIs<CameraSessionGeometryResult.Ready>(provider.state.value)
+
+        // Drive the provider into a non-Ready state, clearing the debug fields.
+        provider.onViewportChanged(0, 0)
+        assertIs<CameraSessionGeometryResult.InvalidViewport>(provider.state.value)
+        assertEquals(null, provider.debugState().latestQuality)
+
+        // Restoring a valid viewport rebuilds against the still-latest frame/pairing pair.
+        provider.onViewportChanged(1080, 1920)
+
+        val ready = assertIs<CameraSessionGeometryResult.Ready>(provider.state.value)
+        val debug = provider.debugState()
+        assertEquals(CameraGeometryQuality.CALIBRATED, debug.latestQuality)
+        assertEquals(ready.geometry.frameRotationDeltaNanos, debug.latestPairDeltaNanos)
     }
 
     // --- Disposal --------------------------------------------------------------------------------

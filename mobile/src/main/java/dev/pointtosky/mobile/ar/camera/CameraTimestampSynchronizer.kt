@@ -49,7 +49,12 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class CameraTimestampSynchronizer(
     historyCapacity: Int = TimestampSyncConfig.ROTATION_HISTORY_CAPACITY,
-    private val maxAllowedDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
+    /**
+     * Publicly readable (CAM-1f) so `CameraSessionGeometryProvider` can be configured with the
+     * exact same tolerance this synchronizer actually pairs against, instead of silently assuming
+     * the default — see `createCameraSessionGeometry`'s `maxAllowedPairDeltaNanos` parameter.
+     */
+    val maxAllowedDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
     private val clockMismatchThresholdNanos: Long = TimestampSyncConfig.CLOCK_MISMATCH_THRESHOLD_NANOS,
 ) {
     init {

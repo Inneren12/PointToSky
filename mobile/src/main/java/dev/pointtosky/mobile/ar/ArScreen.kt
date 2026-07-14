@@ -221,8 +221,13 @@ fun ArScreen(
     // CAM-1f: session-scoped geometry bundle owner and once-per-session intrinsics resolver. Fed
     // below, but not consumed by rendering or any matcher yet (see
     // docs/camera_coordinate_calibration_contract.md §11). Same one-composition ownership and
-    // terminal-dispose convention as timestampSynchronizer above.
-    val geometryProvider = remember { CameraSessionGeometryProvider() }
+    // terminal-dispose convention as timestampSynchronizer above. The provider's pairing tolerance
+    // is read from timestampSynchronizer itself, never a separately-assumed default, so the two
+    // never disagree about what "within tolerance" means for this session.
+    val geometryProvider =
+        remember {
+            CameraSessionGeometryProvider(maxAllowedPairDeltaNanos = timestampSynchronizer.maxAllowedDeltaNanos)
+        }
     val intrinsicsResolver = remember { SessionScopedCameraIntrinsicsResolver() }
     DisposableEffect(Unit) {
         onDispose {

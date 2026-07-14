@@ -23,13 +23,36 @@ enum class IntrinsicsUnavailableReason {
     PENDING,
 }
 
-/** Why [CameraSessionGeometryResult.GeometryRejected] was returned (CAM-1f). */
+/**
+ * Why [CameraSessionGeometryResult.GeometryRejected] was returned (CAM-1f).
+ *
+ * [FrameRotationPairingResult.Paired] and [FrameRotationPair] are both publicly constructible —
+ * neither can be trusted as proof that it actually originated from [pairFrameToNearestRotation].
+ * [createCameraSessionGeometry] therefore validates their contents explicitly rather than assuming
+ * anything about how a `Paired` value was produced; [PAIRING_FRAME_MISMATCH],
+ * [PAIRING_DELTA_MISMATCH], and [PAIRING_OUTSIDE_CONFIGURED_TOLERANCE] are the categorized outcomes
+ * of that validation.
+ */
 enum class GeometryRejectionReason {
     /**
-     * The [FrameRotationPairingResult.Paired] result's frame timestamp did not match the frame
-     * supplied to [createCameraSessionGeometry] — the pairing was computed for a different frame.
+     * `paired.pair.frame != frame` supplied to [createCameraSessionGeometry] — exact metadata
+     * equality, not just a timestamp match, so a forged or stale pairing whose frame differs only
+     * in dimensions, crop rect, or rotation (but shares the same timestamp) is still caught.
      */
-    FRAME_ROTATION_TIMESTAMP_MISMATCH,
+    PAIRING_FRAME_MISMATCH,
+
+    /**
+     * `paired.pair.deltaNanos` does not equal the overflow-safe delta between `frame` and
+     * `paired.pair.rotation`'s timestamps — the pair's own arithmetic is internally inconsistent.
+     */
+    PAIRING_DELTA_MISMATCH,
+
+    /**
+     * The (verified-correct) delta exceeds the tolerance [createCameraSessionGeometry] was called
+     * with, even though the pairing result used the [FrameRotationPairingResult.Paired] subtype —
+     * that subtype alone is not proof of tolerance conformance for a publicly constructible type.
+     */
+    PAIRING_OUTSIDE_CONFIGURED_TOLERANCE,
 
     /** [CropScaleTransform] construction rejected the supplied frame/viewport geometry. */
     CROP_SCALE_CONSTRUCTION_FAILED,
@@ -116,6 +139,22 @@ val CameraSessionGeometryResult.status: CameraSessionGeometryStatus
  * This function never rebuilds or reinterprets a rotation sample independently of the supplied
  * pairing result; [CameraSessionGeometry.pairedRotation] is always exactly `pairingResult.pair.rotation`.
  *
+ * **A `Paired` value is not trusted as proof of anything by construction** — both
+ * [FrameRotationPairingResult.Paired] and [FrameRotationPair] are public data classes any caller
+ * can build directly, not just [pairFrameToNearestRotation]. This function therefore validates,
+ * before ever building a bundle:
+ *  - `paired.pair.frame == frame` (exact metadata equality — [GeometryRejectionReason.PAIRING_FRAME_MISMATCH]);
+ *  - `paired.pair.deltaNanos` matches the overflow-safe delta actually implied by the two
+ *    timestamps ([GeometryRejectionReason.PAIRING_DELTA_MISMATCH]);
+ *  - that (now verified-correct) delta's absolute value does not exceed [maxAllowedPairDeltaNanos]
+ *    ([GeometryRejectionReason.PAIRING_OUTSIDE_CONFIGURED_TOLERANCE]) — the `Paired` subtype alone
+ *    is never treated as tolerance proof.
+ *
+ * [maxAllowedPairDeltaNanos] defaults to [TimestampSyncConfig.MAX_PAIR_DELTA_NANOS] but callers
+ * whose [FrameRotationPairingResult] was produced with a non-default tolerance (e.g. a
+ * `CameraTimestampSynchronizer` constructed with a custom `maxAllowedDeltaNanos`) must pass that
+ * same value here — the two must agree, or a correctly-paired result can be wrongly rejected.
+ *
  * [viewportWidthPx]/[viewportHeightPx] are plain, possibly-invalid integers rather than a
  * pre-built [PixelSize]: [PixelSize] cannot represent a zero/negative size, so a zero viewport
  * must be checked *before* any [PixelSize] is constructed, and reported as
@@ -123,12 +162,14 @@ val CameraSessionGeometryResult.status: CameraSessionGeometryStatus
  * fake `1x1` size.
  *
  * Every rejection path returns a categorized [CameraSessionGeometryResult] rather than throwing —
- * these are expected runtime outcomes (stale pairing, out-of-tolerance motion, a not-yet-ready
- * viewport), not programmer-contract violations — and no result carries raw exception text.
+ * these are expected runtime outcomes (a forged or stale pairing, out-of-tolerance motion, a
+ * not-yet-ready viewport), not programmer-contract violations — and no result carries raw
+ * exception text.
  *
- * @throws IllegalArgumentException only for a genuine programmer-contract violation surfaced by
- *   [CameraSessionGeometry]'s own invariant checks, which should be unreachable given the
- *   validation this function performs first.
+ * @throws IllegalArgumentException if [maxAllowedPairDeltaNanos] is negative (a programmer-contract
+ *   violation at the call site, not an expected runtime outcome), or — expected to be unreachable
+ *   given the validation this function performs first — from [CameraSessionGeometry]'s own
+ *   invariant checks.
  */
 fun createCameraSessionGeometry(
     frame: CameraFrameMetadata,
@@ -136,7 +177,12 @@ fun createCameraSessionGeometry(
     intrinsicsResolution: CameraIntrinsicsResolution,
     viewportWidthPx: Int,
     viewportHeightPx: Int,
+    maxAllowedPairDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
 ): CameraSessionGeometryResult {
+    require(maxAllowedPairDeltaNanos >= 0L) {
+        "maxAllowedPairDeltaNanos must be non-negative; was $maxAllowedPairDeltaNanos"
+    }
+
     if (viewportWidthPx <= 0 || viewportHeightPx <= 0) {
         return CameraSessionGeometryResult.InvalidViewport(viewportWidthPx, viewportHeightPx)
     }
@@ -163,8 +209,17 @@ fun createCameraSessionGeometry(
                 )
         }
 
-    if (paired.pair.frame.timestampNanos != frame.timestampNanos) {
-        return CameraSessionGeometryResult.GeometryRejected(GeometryRejectionReason.FRAME_ROTATION_TIMESTAMP_MISMATCH)
+    if (paired.pair.frame != frame) {
+        return CameraSessionGeometryResult.GeometryRejected(GeometryRejectionReason.PAIRING_FRAME_MISMATCH)
+    }
+
+    val expectedDelta = overflowSafeDeltaNanos(frame.timestampNanos, paired.pair.rotation.timestampNanos)
+    if (paired.pair.deltaNanos != expectedDelta) {
+        return CameraSessionGeometryResult.GeometryRejected(GeometryRejectionReason.PAIRING_DELTA_MISMATCH)
+    }
+
+    if (overflowSafeAbsNanos(expectedDelta) > maxAllowedPairDeltaNanos) {
+        return CameraSessionGeometryResult.GeometryRejected(GeometryRejectionReason.PAIRING_OUTSIDE_CONFIGURED_TOLERANCE)
     }
 
     val transform =
