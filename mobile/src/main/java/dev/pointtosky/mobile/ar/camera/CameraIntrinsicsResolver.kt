@@ -1,6 +1,7 @@
 package dev.pointtosky.mobile.ar.camera
 
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.horizontalFovDeg
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
@@ -110,6 +111,7 @@ internal fun resolveCameraIntrinsics(
                 principalPointXPx = null,
                 principalPointYPx = null,
                 source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                reference = CameraIntrinsicsReference.PhysicalSensor,
             )
         CameraIntrinsicsResolution(intrinsics = intrinsics, fallbackReason = null)
     } catch (_: IllegalArgumentException) {

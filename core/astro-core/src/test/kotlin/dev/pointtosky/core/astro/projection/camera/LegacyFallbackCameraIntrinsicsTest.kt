@@ -94,4 +94,44 @@ class LegacyFallbackCameraIntrinsicsTest {
             )
         }
     }
+
+    // --- reference: CAM-2a intrinsics-provenance hardening -------------------------------------------
+    //
+    // legacyFallbackCameraIntrinsics's own reference must track the *same* known/unknown split its FOV
+    // derivation already uses - never derived from `source` alone (see CameraIntrinsics.reference's
+    // KDoc for why that was insufficient). This is the *real* production factory, not a synthetic test
+    // constructor, so these pin the actual provenance a real CAM-1f fallback resolution produces.
+
+    @Test
+    fun `known image dimensions produce an AnalysisBuffer reference with those exact dimensions`() {
+        val intrinsics = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = 1080)
+        assertEquals(CameraIntrinsicsReference.AnalysisBuffer(1920, 1080), intrinsics.reference)
+    }
+
+    @Test
+    fun `no image dimensions produce an Unspecified reference, never AnalysisBuffer`() {
+        val intrinsics = legacyFallbackCameraIntrinsics()
+        assertEquals(CameraIntrinsicsReference.Unspecified, intrinsics.reference)
+    }
+
+    @Test
+    fun `partially-known or invalid image dimensions all produce an Unspecified reference`() {
+        val onlyWidth = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = null)
+        val onlyHeight = legacyFallbackCameraIntrinsics(imageWidthPx = null, imageHeightPx = 1080)
+        val invalidZero = legacyFallbackCameraIntrinsics(imageWidthPx = 0, imageHeightPx = 1080)
+        val invalidNegative = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = -1)
+
+        listOf(onlyWidth, onlyHeight, invalidZero, invalidNegative).forEach { intrinsics ->
+            assertEquals(CameraIntrinsicsReference.Unspecified, intrinsics.reference, "intrinsics=$intrinsics")
+        }
+    }
+
+    @Test
+    fun `different known dimensions produce different AnalysisBuffer references, never reused across sizes`() {
+        val hd = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = 1080)
+        val vga = legacyFallbackCameraIntrinsics(imageWidthPx = 640, imageHeightPx = 480)
+        assertEquals(CameraIntrinsicsReference.AnalysisBuffer(1920, 1080), hd.reference)
+        assertEquals(CameraIntrinsicsReference.AnalysisBuffer(640, 480), vga.reference)
+        assertTrue(hd.reference != vga.reference)
+    }
 }

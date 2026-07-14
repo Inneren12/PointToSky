@@ -74,6 +74,7 @@ class CameraSessionGeometryTest {
                 principalPointXPx = null,
                 principalPointYPx = null,
                 source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                reference = CameraIntrinsicsReference.PhysicalSensor,
             ),
         )
 

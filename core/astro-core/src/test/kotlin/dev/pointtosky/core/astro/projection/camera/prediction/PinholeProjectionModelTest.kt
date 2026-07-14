@@ -151,14 +151,18 @@ class PinholeProjectionModelTest {
         assertEquals(850.0, right.x, eps) // 500*0.5 + 600
     }
 
-    // --- forGeometry: buffer-space, analysis-buffer-referenced intrinsics only ----------------------
+    // --- forGeometry: buffer-space, exactly-matching analysis-buffer-referenced intrinsics only -----
     //
-    // forGeometry requires `referenceSpace == ANALYSIS_BUFFER` (Blocker 2): a physical-sensor
+    // forGeometry requires `reference` to be a `CameraIntrinsicsReference.AnalysisBuffer` whose
+    // widthPx/heightPx exactly match geometry.frame's buffer (Blocker 2, hardened further to check
+    // exact dimensions, not just a bare reference-space label): a physical-sensor
     // (`CAMERA_CHARACTERISTICS`) intrinsics value's FOV is not known to map onto the analysis buffer
     // (CameraX may crop/scale the sensor into that stream, and this codebase captures no such
-    // crop/scale metadata), so forGeometry throws for it rather than silently misapplying it. See the
-    // dedicated rejection test below and `CameraStarPredictor`'s `IntrinsicsMappingUnavailable` path,
-    // which is what callers should actually check before ever calling forGeometry directly.
+    // crop/scale metadata), and an analysis-buffer intrinsics value resolved for a different buffer
+    // size must not be silently reused either, so forGeometry throws for both rather than silently
+    // misapplying them. See the dedicated rejection tests below and `CameraStarPredictor`'s
+    // `IntrinsicsMappingUnavailable` path, which is what callers should actually check before ever
+    // calling forGeometry directly.
 
     @Test
     fun `forGeometry derives fx,fy from analysis-buffer-referenced intrinsics FOV over the full buffer`() {
@@ -166,7 +170,8 @@ class PinholeProjectionModelTest {
             buildTestGeometry(
                 bufferWidthPx = 1000,
                 bufferHeightPx = 500,
-                intrinsicsResolution = analysisBufferIntrinsics(horizontalFovDeg = 60.0, verticalFovDeg = 40.0),
+                intrinsicsResolution =
+                    analysisBufferIntrinsics(referenceWidthPx = 1000, referenceHeightPx = 500, horizontalFovDeg = 60.0, verticalFovDeg = 40.0),
             )
         val model = PinholeProjectionModel.forGeometry(geometry)
 
@@ -223,7 +228,8 @@ class PinholeProjectionModelTest {
             buildTestGeometry(
                 bufferWidthPx = 1000,
                 bufferHeightPx = 500,
-                intrinsicsResolution = analysisBufferIntrinsics(principalPointXPx = 480.0, principalPointYPx = 260.0),
+                intrinsicsResolution =
+                    analysisBufferIntrinsics(referenceWidthPx = 1000, referenceHeightPx = 500, principalPointXPx = 480.0, principalPointYPx = 260.0),
             )
         val model = PinholeProjectionModel.forGeometry(geometry)
         assertEquals(480.0, model.principalPointXPx, eps)
@@ -243,6 +249,91 @@ class PinholeProjectionModelTest {
         assertFailsWith<IllegalArgumentException> {
             PinholeProjectionModel.forGeometry(geometry)
         }
+    }
+
+    // --- forGeometry: Unspecified (dimensionless) reference is rejected, never a guessed default -----
+
+    @Test
+    fun `forGeometry throws for an Unspecified (dimensionless) reference`() {
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 500,
+                intrinsicsResolution = unspecifiedReferenceIntrinsics(),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            PinholeProjectionModel.forGeometry(geometry)
+        }
+    }
+
+    // --- forGeometry: exact buffer-dimension compatibility, not merely matching aspect ratio ---------
+
+    @Test
+    fun `forGeometry throws when the AnalysisBuffer reference width does not match the geometry buffer width`() {
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1200,
+                bufferHeightPx = 500,
+                intrinsicsResolution = analysisBufferIntrinsics(referenceWidthPx = 1000, referenceHeightPx = 500),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            PinholeProjectionModel.forGeometry(geometry)
+        }
+    }
+
+    @Test
+    fun `forGeometry throws when the AnalysisBuffer reference height does not match the geometry buffer height`() {
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 600,
+                intrinsicsResolution = analysisBufferIntrinsics(referenceWidthPx = 1000, referenceHeightPx = 500),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            PinholeProjectionModel.forGeometry(geometry)
+        }
+    }
+
+    @Test
+    fun `forGeometry throws for a same-aspect-ratio but differently-sized buffer - aspect match is not enough`() {
+        // reference=1000x500 (2:1) vs geometry buffer=2000x1000 (also 2:1): same shape, different
+        // absolute size. Silently accepting this would misapply a fx/fy derived for a half-size buffer.
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 2000,
+                bufferHeightPx = 1000,
+                intrinsicsResolution = analysisBufferIntrinsics(referenceWidthPx = 1000, referenceHeightPx = 500),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            PinholeProjectionModel.forGeometry(geometry)
+        }
+    }
+
+    @Test
+    fun `forGeometry throws for a different-aspect-ratio buffer`() {
+        // reference=1920x1080 (16:9) vs geometry buffer=1440x1080 (4:3).
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1440,
+                bufferHeightPx = 1080,
+                intrinsicsResolution = analysisBufferIntrinsics(referenceWidthPx = 1920, referenceHeightPx = 1080),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            PinholeProjectionModel.forGeometry(geometry)
+        }
+    }
+
+    @Test
+    fun `forGeometry accepts an AnalysisBuffer reference that exactly matches the geometry buffer`() {
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1234,
+                bufferHeightPx = 987,
+                intrinsicsResolution = analysisBufferIntrinsics(referenceWidthPx = 1234, referenceHeightPx = 987),
+            )
+        val model = PinholeProjectionModel.forGeometry(geometry)
+        assertEquals(1234.0, model.imageWidthPx, eps)
+        assertEquals(987.0, model.imageHeightPx, eps)
     }
 
     private fun assertEquals(

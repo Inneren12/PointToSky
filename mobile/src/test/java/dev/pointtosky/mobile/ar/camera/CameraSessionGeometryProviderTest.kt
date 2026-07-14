@@ -3,6 +3,7 @@ package dev.pointtosky.mobile.ar.camera
 import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
 import dev.pointtosky.core.astro.projection.camera.CameraGeometryQuality
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult
@@ -63,6 +64,7 @@ class CameraSessionGeometryProviderTest {
                 principalPointXPx = null,
                 principalPointYPx = null,
                 source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                reference = CameraIntrinsicsReference.PhysicalSensor,
             ),
         )
 

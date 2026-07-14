@@ -2,6 +2,7 @@ package dev.pointtosky.core.astro.projection.camera.prediction
 
 import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
@@ -107,11 +108,13 @@ internal fun legacyFallbackIntrinsics(
 
 /**
  * A 90 fov/90 fov **physical-sensor-referenced** (`CAMERA_CHARACTERISTICS`) intrinsics value — i.e.
- * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR] — used
- * only by tests that specifically exercise the `StarPredictionBatchResult.IntrinsicsMappingUnavailable`
- * path (Blocker 2). **Not** a safe default for other tests: `PinholeProjectionModel.forGeometry`
- * throws for this reference space, and `projectStars` reports it unavailable rather than projecting.
- * See [analysisBufferIntrinsics] for the analysis-buffer-referenced fixture most tests should use.
+ * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference.PhysicalSensor] — used only
+ * by tests that specifically exercise the `StarPredictionBatchResult.IntrinsicsMappingUnavailable`
+ * path (`PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`). **Not** a safe default for other tests:
+ * `PinholeProjectionModel.forGeometry` throws for this reference, and `projectStars` reports it
+ * unavailable rather than projecting. See [analysisBufferIntrinsics] for the analysis-buffer-
+ * referenced fixture most tests should use, and [unspecifiedReferenceIntrinsics] for the
+ * dimensionless-fallback case.
  */
 internal fun resolvedIntrinsics(
     horizontalFovDeg: Double = 90.0,
@@ -129,20 +132,31 @@ internal fun resolvedIntrinsics(
             principalPointXPx = principalPointXPx,
             principalPointYPx = principalPointYPx,
             source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+            reference = CameraIntrinsicsReference.PhysicalSensor,
         ),
     )
 
 /**
- * A 90 fov/90 fov **analysis-buffer-referenced** (`LEGACY_FALLBACK`-sourced, per
- * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace]) intrinsics value with
- * a custom FOV — unlike the real
+ * An **analysis-buffer-referenced** (`LEGACY_FALLBACK`-sourced) intrinsics value with a custom FOV and
+ * **explicit, caller-supplied** [CameraIntrinsicsReference.AnalysisBuffer] dimensions
+ * ([referenceWidthPx]/[referenceHeightPx]) — unlike the real
  * [dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics], which always
- * hardcodes a 56 deg vertical FOV, this lets tests keep the clean 90/90 deg hand-computed pixel math
- * ([PinholeProjectionModelTest]'s worked example) while still being a value `projectStars`/
- * `PinholeProjectionModel.forGeometry` will actually accept (`referenceSpace == ANALYSIS_BUFFER`).
- * The default [buildTestGeometry] intrinsics, and the fixture most CAM-2a tests should reach for.
+ * hardcodes a 56 deg vertical FOV, this lets tests keep clean hand-computed pixel math
+ * ([PinholeProjectionModelTest]'s 90/90 deg worked example) while still being a value `projectStars`/
+ * `PinholeProjectionModel.forGeometry` will actually accept.
+ *
+ * [referenceWidthPx]/[referenceHeightPx] are **required, not defaulted** — deliberately: an earlier
+ * revision of this fixture defaulted to a fixed 90/90 deg FOV with no reference dimensions at all
+ * (relying solely on `source == LEGACY_FALLBACK`), which let a test build intrinsics "compatible" with
+ * *any* buffer size purely by construction — exactly the dimensionless/stale-aspect bug this hardening
+ * closes, just relocated into the test fixtures. Callers must say which buffer these dimensions
+ * actually describe; [buildTestGeometry] wires its own `bufferWidthPx`/`bufferHeightPx` through by
+ * default so ordinary tests get an automatic exact match, and a test that wants to exercise a
+ * mismatch must pass different values explicitly (see `*_DIMENSIONS_MISMATCH` tests).
  */
 internal fun analysisBufferIntrinsics(
+    referenceWidthPx: Int,
+    referenceHeightPx: Int,
     horizontalFovDeg: Double = 90.0,
     verticalFovDeg: Double = 90.0,
     principalPointXPx: Double? = null,
@@ -158,6 +172,34 @@ internal fun analysisBufferIntrinsics(
             principalPointXPx = principalPointXPx,
             principalPointYPx = principalPointYPx,
             source = CameraIntrinsicsSource.LEGACY_FALLBACK,
+            reference = CameraIntrinsicsReference.AnalysisBuffer(referenceWidthPx, referenceHeightPx),
+        ),
+        reason = "test_fixture",
+    )
+
+/**
+ * A `LEGACY_FALLBACK`-sourced intrinsics value carrying
+ * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference.Unspecified] — models a
+ * dimensionless legacy fallback (e.g. resolved before the first analyzed frame's real dimensions were
+ * known). Used only by tests exercising `StarPredictionBatchResult.IntrinsicsMappingUnavailable`'s
+ * `ANALYSIS_BUFFER_REFERENCE_MISSING` path; never a safe default, since there are no reference
+ * dimensions to check against anything.
+ */
+internal fun unspecifiedReferenceIntrinsics(
+    horizontalFovDeg: Double = 90.0,
+    verticalFovDeg: Double = 90.0,
+): CameraIntrinsicsResolution.LegacyFallback =
+    CameraIntrinsicsResolution.LegacyFallback(
+        CameraIntrinsics(
+            horizontalFovDeg = horizontalFovDeg,
+            verticalFovDeg = verticalFovDeg,
+            focalLengthMm = null,
+            sensorWidthMm = null,
+            sensorHeightMm = null,
+            principalPointXPx = null,
+            principalPointYPx = null,
+            source = CameraIntrinsicsSource.LEGACY_FALLBACK,
+            reference = CameraIntrinsicsReference.Unspecified,
         ),
         reason = "test_fixture",
     )
@@ -174,7 +216,8 @@ internal fun buildTestGeometry(
     viewportWidthPx: Int = 1000,
     viewportHeightPx: Int = 500,
     rotationMatrix: FloatArray = IDENTITY_ROTATION_MATRIX,
-    intrinsicsResolution: CameraIntrinsicsResolution = analysisBufferIntrinsics(),
+    intrinsicsResolution: CameraIntrinsicsResolution =
+        analysisBufferIntrinsics(referenceWidthPx = bufferWidthPx, referenceHeightPx = bufferHeightPx),
     frameTimestampNanos: Long = 1_000L,
     rotationTimestampNanos: Long = 1_000L,
 ): CameraSessionGeometry {
@@ -227,10 +270,15 @@ internal fun neutralContext(
  * Mirrors `remapRotationMatrixForDisplay` (`mobile/.../ar/DisplayRemap.kt`) — column-permutes a
  * row-major device→world matrix the same way `SensorManager.remapCoordinateSystem` does for the
  * given display rotation, reimplemented here (not imported: `:core:astro-core` cannot depend on
- * `:mobile`/Android) purely so CAM-2a's coupled tests can build realistic, non-synthetic paired
- * fixtures. Only columns 0/1 (device X/Y — screen right/up) are permuted; column 2 (device Z —
- * forward/back) is always carried through unchanged, since every display rotation is a rotation
- * about the device's own Z axis.
+ * `:mobile`/Android) purely so CAM-2a's **self-consistent basis-composition tests** (see
+ * `CameraStarProjectionTest`'s and `PredictedStarClassificationTest`'s coupled-rotation sections) can
+ * build one attitude matrix per display rotation from a single base pose, paired via
+ * [pairedFrameRotationDegrees] below. This reimplementation is a faithful copy of the *column-
+ * permutation formula* `remapForDisplay` uses — it is not a claim that these tests otherwise model or
+ * reproduce CameraX's real sensor-orientation/rotation reporting (sensor orientation is not modeled
+ * here at all; see [pairedFrameRotationDegrees]'s KDoc). Only columns 0/1 (device X/Y — screen
+ * right/up) are permuted; column 2 (device Z — forward/back) is always carried through unchanged,
+ * since every display rotation is a rotation about the device's own Z axis.
  *
  * ```text
  * displayRotationDegrees=0:   X' =  X,  Y' =  Y
@@ -265,9 +313,10 @@ internal fun remapColumnsForDisplayRotationDegrees(
 }
 
 /**
- * The `frame.rotationDegrees` value that keeps the whole prediction pipeline physically consistent
- * for an attitude matrix built via [remapColumnsForDisplayRotationDegrees] at [displayRotationDegrees]
- * — **not** [displayRotationDegrees] itself. Derived (not guessed) by composing two independent,
+ * The `frame.rotationDegrees` value that keeps this file's **self-consistent basis-composition
+ * tests** internally (algebraically) consistent for an attitude matrix built via
+ * [remapColumnsForDisplayRotationDegrees] at [displayRotationDegrees] — **not**
+ * [displayRotationDegrees] itself. Derived (not guessed) by composing two independent,
  * already-trusted formulas and finding which pairing makes them cancel for the same physical
  * direction:
  *  - [remapColumnsForDisplayRotationDegrees] (mirroring `remapForDisplay`) transforms a fixed world
@@ -281,12 +330,21 @@ internal fun remapColumnsForDisplayRotationDegrees(
  * positive) convention the attitude side uses, so composing the two consistently requires
  * `frame.rotationDegrees = (360 - displayRotationDegrees) % 360`, not `displayRotationDegrees` itself
  * — confirmed both symbolically and by direct numeric substitution (see
- * `CameraStarProjectionTest`'s coupled-rotation section for the worked check). This mirrors a
- * well-known Android convention (rotating a device 90 deg clockwise by hand is reported as
- * `Surface.ROTATION_270`, not `ROTATION_90`), which independently corroborates the sign found here —
- * but this pairing is used only to build **internally self-consistent** test fixtures; it is not a
- * verified fact about any real device's `ImageProxy.imageInfo.rotationDegrees` vs.
- * `Display.getRotation()` relationship (that remains an open device-alignment risk, unchanged by this
- * PR — see `docs/camera_star_prediction_contract.md` §11).
+ * `CameraStarProjectionTest`'s coupled-rotation section for the worked check).
+ *
+ * **This is an algebraic pairing only, not a modeled or verified CameraX/device fact.** It happens to
+ * mirror a well-known Android convention (rotating a device 90 deg clockwise by hand is reported as
+ * `Surface.ROTATION_270`, not `ROTATION_90`), which is a loose corroboration of the sign found here,
+ * but that convention is about `Surface`/`Display` rotation reporting in general — it says nothing
+ * about `ImageProxy.imageInfo.rotationDegrees` specifically, and CameraX derives that value from the
+ * camera sensor's own mounting orientation (`CameraCharacteristics.SENSOR_ORIENTATION`) combined with
+ * the target/display rotation, neither of which this pairing (or anything else in this file) models.
+ * Do not read this function, or the tests that use it, as establishing "the real production
+ * relationship" or "a realistic CameraX pairing" — they establish only that
+ * [DisplayAlignedOpticalToBufferOpticalTransform] and `CropScaleTransform`'s forward rotation compose
+ * correctly for *some* self-consistent `(attitude, frame.rotationDegrees)` pairing. Whether any real
+ * device actually reports *this* pairing for a given physical rotation remains an open,
+ * unverified device-alignment risk (unchanged by this PR — see
+ * `docs/camera_star_prediction_contract.md` §11).
  */
 internal fun pairedFrameRotationDegrees(displayRotationDegrees: Int): Int = (360 - displayRotationDegrees) % 360

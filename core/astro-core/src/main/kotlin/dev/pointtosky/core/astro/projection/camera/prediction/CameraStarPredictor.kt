@@ -1,9 +1,8 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
-import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
 import dev.pointtosky.core.astro.projection.camera.CropScaleTransform
-import dev.pointtosky.core.astro.projection.camera.referenceSpace
 
 /**
  * Projects [stars] into predicted camera/image/display positions for one [geometry] bundle and
@@ -14,11 +13,22 @@ import dev.pointtosky.core.astro.projection.camera.referenceSpace
  *  - no coroutine, prior-call state, or catalog asset access;
  *  - input order is preserved — stars are never reordered or sorted by magnitude.
  *
- * Checks [geometry].intrinsics.intrinsics.referenceSpace **first** (see
- * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace]): a physical-sensor FOV
- * has no recorded mapping to the analyzed buffer's own pixel grid, so this returns
- * [StarPredictionBatchResult.IntrinsicsMappingUnavailable] for the *whole batch* rather than
- * fabricating a buffer-space pinhole model from it. Only once that check passes is
+ * Checks [geometry].intrinsics.intrinsics.reference **first** (see
+ * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference]) and returns
+ * [StarPredictionBatchResult.IntrinsicsMappingUnavailable] for the *whole batch*, categorized by
+ * exactly why, rather than ever fabricating or silently reusing a buffer-space pinhole model:
+ *  - [CameraIntrinsicsReference.PhysicalSensor] (a physical-sensor-referenced calibrated FOV with no
+ *    recorded crop/scale mapping to any analysis buffer) →
+ *    [IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED].
+ *  - [CameraIntrinsicsReference.Unspecified] (a dimensionless fallback with no reference dimensions
+ *    to check at all) → [IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_REFERENCE_MISSING].
+ *  - [CameraIntrinsicsReference.AnalysisBuffer] whose `widthPx`/`heightPx` do not **exactly** match
+ *    [geometry].frame's buffer dimensions (e.g. intrinsics resolved for a different
+ *    buffer/session and reused here — matching aspect ratio is not enough, see
+ *    [CameraIntrinsicsReference.AnalysisBuffer]'s KDoc) →
+ *    [IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_DIMENSIONS_MISMATCH].
+ *
+ * Only once an exact-match [CameraIntrinsicsReference.AnalysisBuffer] is confirmed is
  * [PinholeProjectionModel.forGeometry] read once per call (it is the same for every star in the
  * batch — the rotation, intrinsics, and crop/display transform are all fixed for one [geometry]).
  *
@@ -31,15 +41,24 @@ fun projectStars(
     context: StarProjectionContext,
     geometry: CameraSessionGeometry,
 ): StarPredictionBatchResult {
-    val intrinsics = geometry.intrinsics.intrinsics
-    if (intrinsics.referenceSpace != CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER) {
-        return StarPredictionBatchResult.IntrinsicsMappingUnavailable(
-            IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED,
-        )
+    val reference = geometry.intrinsics.intrinsics.reference
+    val unavailableReason =
+        when (reference) {
+            is CameraIntrinsicsReference.PhysicalSensor -> IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED
+            is CameraIntrinsicsReference.Unspecified -> IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_REFERENCE_MISSING
+            is CameraIntrinsicsReference.AnalysisBuffer ->
+                if (reference.widthPx != geometry.frame.bufferWidthPx || reference.heightPx != geometry.frame.bufferHeightPx) {
+                    IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_DIMENSIONS_MISMATCH
+                } else {
+                    null
+                }
+        }
+    if (unavailableReason != null) {
+        return StarPredictionBatchResult.IntrinsicsMappingUnavailable(unavailableReason)
     }
 
     val pinhole = PinholeProjectionModel.forGeometry(geometry)
-    return StarPredictionBatchResult.Ready(stars.map { star -> projectOneStar(star, context, geometry, pinhole) })
+    return StarPredictionBatchResult.Ready.of(stars.map { star -> projectOneStar(star, context, geometry, pinhole) })
 }
 
 private fun projectOneStar(

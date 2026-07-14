@@ -13,8 +13,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Section B (camera rotation anchors, literal matrices), the coupled attitude/frame-rotation
- * consistency section, Section E (end-to-end pure cases), and Section F (defensive tests) for CAM-2a.
+ * Section B (camera rotation anchors, literal matrices), the self-consistent basis-composition test
+ * section (algebraic consistency only — see that section's own comment block for exactly what it does
+ * and does not prove), Section E (end-to-end pure cases), and Section F (defensive tests) for CAM-2a.
  */
 class CameraStarProjectionTest {
     private val eps = 1e-6
@@ -179,17 +180,17 @@ class CameraStarProjectionTest {
     }
 
     // =====================================================================================
-    // Coupled attitude/frame-rotation consistency (Blocker 1 fix)
+    // Self-consistent basis-composition tests (Blocker 1 fix)
     //
     // The old "all four rotations" check held the *same* synthetic display-aligned rotation matrix
-    // fixed while independently varying frame.rotationDegrees — real production behavior changes
-    // both together (a physically-rotated device changes both the attitude the sensor reports and
-    // the value CameraX reports for frame.rotationDegrees). These tests instead:
-    //  1. build the attitude matrix the way `remapForDisplay` actually would, for one fixed physical
-    //     attitude re-expressed at each of the four display rotations
+    // fixed while independently varying frame.rotationDegrees. That could never catch the real bug
+    // class, because production changes attitude and frame.rotationDegrees *together* for a physical
+    // rotation. These tests instead:
+    //  1. build the attitude matrix by column-permutation, mirroring `remapForDisplay`'s formula, for
+    //     one fixed base pose re-expressed at each of the four display rotations
     //     (see [remapColumnsForDisplayRotationDegrees]);
-    //  2. pair it with the frame.rotationDegrees value that keeps the whole pipeline internally
-    //     consistent (see [pairedFrameRotationDegrees] — derived from composing
+    //  2. pair it with the frame.rotationDegrees value that keeps the algebra self-consistent (see
+    //     [pairedFrameRotationDegrees] — derived from composing
     //     [remapColumnsForDisplayRotationDegrees] with [DisplayAlignedOpticalToBufferOpticalTransform],
     //     not guessed);
     //  3. project world directions defined *relative to the device's own current axes*
@@ -199,10 +200,16 @@ class CameraStarProjectionTest {
     //     display whose own pixel dimensions do not change shape just because the sensor buffer's
     //     rotation differs.
     //
-    // These are pure-math consistency checks only — they prove [DisplayAlignedOpticalToBufferOpticalTransform]
-    // and `CropScaleTransform`'s forward rotation compose correctly for a self-consistent
-    // (attitude, frame.rotationDegrees) pairing, not that any real device actually reports that
-    // pairing (see `docs/camera_star_prediction_contract.md` §11 for that open risk).
+    // These are pure-math, self-consistent basis-composition tests only — they prove
+    // [DisplayAlignedOpticalToBufferOpticalTransform] and `CropScaleTransform`'s forward rotation
+    // compose correctly for *some* self-consistent (attitude, frame.rotationDegrees) pairing. They are
+    // NOT a claim about "the real production relationship" or "a realistic CameraX pairing": CameraX
+    // derives `ImageProxy.imageInfo.rotationDegrees` from the camera's own sensor-mounting orientation
+    // (`CameraCharacteristics.SENSOR_ORIENTATION`) combined with the target/display rotation, and
+    // neither this test file nor [pairedFrameRotationDegrees] models sensor orientation at all — see
+    // [pairedFrameRotationDegrees]'s KDoc (`TestGeometryFixtures.kt`) for the full caveat. Whether any
+    // real device reports this exact pairing remains an open, unverified device-alignment risk (see
+    // `docs/camera_star_prediction_contract.md` §11).
     // =====================================================================================
 
     private val coupledInstant: Instant = Instant.parse("2024-04-04T04:00:00Z")
@@ -489,6 +496,74 @@ class CameraStarProjectionTest {
         val result = projectStars(listOf(star), context, geometry)
         val unavailable = assertIs<StarPredictionBatchResult.IntrinsicsMappingUnavailable>(result)
         assertEquals(IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED, unavailable.reason)
+    }
+
+    @Test
+    fun `E8b - a dimensionless (Unspecified) intrinsics reference is reported unavailable as reference-missing`() {
+        // A legacy fallback resolved with no analyzed-frame dimensions yet has no reference dimensions
+        // to check against anything - it must never be treated as analysis-buffer-compatible, and must
+        // be distinguishable from the physical-sensor-unsupported case above.
+        val (star, context) = forwardAxisStar()
+        val geometry =
+            buildTestGeometry(
+                rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
+                intrinsicsResolution = unspecifiedReferenceIntrinsics(),
+            )
+        val result = projectStars(listOf(star), context, geometry)
+        val unavailable = assertIs<StarPredictionBatchResult.IntrinsicsMappingUnavailable>(result)
+        assertEquals(IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_REFERENCE_MISSING, unavailable.reason)
+    }
+
+    @Test
+    fun `E8c - an AnalysisBuffer reference for a different buffer size is reported unavailable as a dimensions mismatch`() {
+        // Regression guard for the exact bug this hardening closes: intrinsics resolved for one buffer
+        // (or session) must not be silently reused against a geometry backed by a different buffer,
+        // even though both are LEGACY_FALLBACK/analysis-buffer-referenced in a general sense.
+        val (star, context) = forwardAxisStar()
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 500,
+                rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
+                intrinsicsResolution = analysisBufferIntrinsics(referenceWidthPx = 1920, referenceHeightPx = 1080),
+            )
+        val result = projectStars(listOf(star), context, geometry)
+        val unavailable = assertIs<StarPredictionBatchResult.IntrinsicsMappingUnavailable>(result)
+        assertEquals(IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_DIMENSIONS_MISMATCH, unavailable.reason)
+    }
+
+    @Test
+    fun `E8d - stale-session reuse - intrinsics built for one buffer size cannot silently project a different buffer`() {
+        // Simulates the exact scenario this hardening exists to prevent: build intrinsics referencing
+        // one analyzed buffer (e.g. an earlier session's 1920x1080 stream), then attempt to use them
+        // for a geometry backed by a different buffer (e.g. a new session's 1000x500 stream). The
+        // result must be a typed mismatch, never a fabricated Ready prediction.
+        val staleIntrinsics = analysisBufferIntrinsics(referenceWidthPx = 1920, referenceHeightPx = 1080)
+        val (star, context) = forwardAxisStar()
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 500,
+                rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
+                intrinsicsResolution = staleIntrinsics,
+            )
+        val result = projectStars(listOf(star), context, geometry)
+        val unavailable = assertIs<StarPredictionBatchResult.IntrinsicsMappingUnavailable>(result)
+        assertEquals(IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_DIMENSIONS_MISMATCH, unavailable.reason)
+    }
+
+    @Test
+    fun `E8e - an exactly-matching AnalysisBuffer reference still produces Ready`() {
+        val (star, context) = forwardAxisStar()
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 500,
+                rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
+                intrinsicsResolution = analysisBufferIntrinsics(referenceWidthPx = 1000, referenceHeightPx = 500),
+            )
+        val result = projectStars(listOf(star), context, geometry)
+        assertIs<StarPredictionBatchResult.Ready>(result)
     }
 
     @Test

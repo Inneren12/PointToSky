@@ -2131,7 +2131,7 @@ derivation, conventions, and worked examples live in the focused companion doc,
 a short pointer plus the essential facts needed to keep this file's own inventory/risk-register
 accurate.
 
-**Status:** pure math, unit-tested (339 JVM tests), **not** wired into any renderer or `:mobile` code
+**Status:** pure math, unit-tested (367 JVM tests), **not** wired into any renderer or `:mobile` code
 path, **not** device-validated. §11.9 above records CAM-1g's own device-gate status as unchanged; the
 task authorizing this PR explicitly permits CAM-2a to proceed as an isolated math slice despite that
 outstanding gate, provided it stays unwired and unclaimed as device-validated — both of which hold
@@ -2173,23 +2173,41 @@ here.
   intrinsics-derived focal length (`fx = width / (2·tan(hFov/2))`, likewise `fy`) into the **unrotated
   full analyzed-buffer** coordinate space, with `CropScaleTransform.imageToDisplay` (already existing,
   CAM-1e) doing the one-and-only rotation. `forGeometry` now requires the resolved intrinsics'
-  `referenceSpace` to be `ANALYSIS_BUFFER` (see the next bullet) and throws otherwise — it is no longer
-  possible for a physical-sensor-referenced calibrated FOV to be silently applied as if it were an
-  analysis-buffer FOV.
-- `CameraIntrinsicsReferenceSpace` (`ANALYSIS_BUFFER` / `PHYSICAL_SENSOR`) — a second correctness gap:
-  `CameraIntrinsics` (CAM-1b) derives FOV from `SENSOR_INFO_PHYSICAL_SIZE` + focal length with no
-  active-array/crop-region reasoning at all (confirmed by inspecting `CameraIntrinsicsResolver.kt`), so
-  a `CAMERA_CHARACTERISTICS`-sourced (calibrated) intrinsics value describes the **physical sensor**,
-  not necessarily the `ImageAnalysis` buffer CameraX may have cropped/scaled it into — a mapping this
-  codebase captures no metadata for. `referenceSpace` is a derived (not independently settable)
-  extension property: `LEGACY_FALLBACK` → `ANALYSIS_BUFFER` (safe, since the legacy fallback already
-  targets the buffer's own aspect ratio), `CAMERA_CHARACTERISTICS`/`CAMERA_INTRINSIC_CALIBRATION` →
-  `PHYSICAL_SENSOR` (not safely mappable today). `projectStars` checks this **before** ever
-  constructing a `PinholeProjectionModel` and returns `StarPredictionBatchResult.IntrinsicsMappingUnavailable`
-  instead of fabricating a buffer-space FOV or silently falling back to the legacy 56° without saying so.
+  `reference` to be a `CameraIntrinsicsReference.AnalysisBuffer` (see the next bullet) whose
+  `widthPx`/`heightPx` **exactly** equal `geometry.frame`'s buffer dimensions, and throws otherwise —
+  it is no longer possible for a physical-sensor-referenced calibrated FOV, a dimensionless fallback,
+  or an analysis-buffer-referenced value resolved for a *different* buffer/session to be silently
+  applied as if it matched this one.
+- `CameraIntrinsicsReference` (`AnalysisBuffer(widthPx, heightPx)` / `PhysicalSensor` / `Unspecified`)
+  — a second correctness gap, hardened twice: `CameraIntrinsics` (CAM-1b) derives FOV from
+  `SENSOR_INFO_PHYSICAL_SIZE` + focal length with no active-array/crop-region reasoning at all
+  (confirmed by inspecting `CameraIntrinsicsResolver.kt`), so a `CAMERA_CHARACTERISTICS`-sourced
+  (calibrated) intrinsics value describes the **physical sensor**, not necessarily the `ImageAnalysis`
+  buffer CameraX may have cropped/scaled it into — a mapping this codebase captures no metadata for.
+  The first fix derived an `ANALYSIS_BUFFER`/`PHYSICAL_SENSOR` label purely from `source`
+  (`LEGACY_FALLBACK` → always "safe"), which review found insufficient: `legacyFallbackCameraIntrinsics`
+  can be constructed with no dimensions, with dimensions from a different buffer/session, or with a
+  different aspect ratio, then reused against an arbitrary `CameraSessionGeometry` — deriving "safe"
+  from `source` alone cannot detect any of that, recreating the exact dimensionless/stale-aspect
+  fallback bug CAM-1f's own coordinator prevents, just one layer higher. `CameraIntrinsicsReference` is
+  now **caller-supplied data**, not derived from `source`: `AnalysisBuffer` carries its own
+  `widthPx`/`heightPx` so a consumer can check them against the real buffer, `PhysicalSensor` means no
+  analysis-buffer mapping is known at all, and `Unspecified` means no reference dimensions were ever
+  available (e.g. a fallback resolved before the first analyzed frame). `CameraIntrinsics.init` still
+  enforces the one cross-field rule production must uphold (`CAMERA_CHARACTERISTICS`/
+  `CAMERA_INTRINSIC_CALIBRATION` ⇒ `PhysicalSensor`; `LEGACY_FALLBACK` ⇒ `AnalysisBuffer` or
+  `Unspecified`) as defense in depth, without pretending `AnalysisBuffer`'s actual dimensions are
+  implied by `source`. `projectStars` checks `reference` **before** ever constructing a
+  `PinholeProjectionModel` and returns a categorized
+  `StarPredictionBatchResult.IntrinsicsMappingUnavailable(reason)` — `PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`,
+  `ANALYSIS_BUFFER_REFERENCE_MISSING`, or `ANALYSIS_BUFFER_DIMENSIONS_MISMATCH` — instead of fabricating
+  a buffer-space FOV or silently reusing a mismatched one.
 - `StarPredictionBatchResult` — sealed result (`Ready(projections)` /
   `IntrinsicsMappingUnavailable(reason)`) so "the calibrated intrinsics can't be mapped to this buffer"
   is a distinct, explicit, typed outcome rather than an exception or a silently-degraded projection.
+  `Ready`'s primary constructor is `private`; the sole public path, `Ready.of(...)`, stores a defensive
+  copy of its input list, so a caller cannot mutate an already-returned `Ready` result through a
+  reference to the (possibly mutable) list it originally passed in.
 - `PredictedStarProjection` / `PredictedStarClassification` — a bounded result distinguishing
   behind-camera, outside-crop, inside-crop-but-outside-viewport, and visible, carrying no rotation
   matrix, catalog object, or Android type. `init` enforces there is no public "impossible" state:
@@ -2212,9 +2230,14 @@ pinhole model's unrotated-buffer coordinate space and the IMU-derived device fra
 co-registered on a real device (same unresolved class of risk as R8 below); camera-to-IMU extrinsic
 offset and lens distortion remain unmodeled, matching CAM-1's own deferred scope (§3.3). The
 display-aligned/buffer-optical basis mismatch (R12) and the physical-sensor/analysis-buffer intrinsics
-mismatch (R13) are both now closed **at the pure-math level** by the transform and reference-space
-check above — see R12/R13 in Appendix A — but neither of those fixes is itself device-validated; they
-are internally-consistent-by-construction, not confirmed against real hardware.
+mismatch (R13) are both now closed **at the pure-math level** by the transform and the
+`CameraIntrinsicsReference` exact-dimension check above — see R12/R13 in Appendix A — but neither of
+those fixes is itself device-validated; they are internally-consistent-by-construction, not confirmed
+against real hardware. R12's own tests are explicitly **self-consistent basis-composition tests**, not
+a model of CameraX's real sensor-orientation/rotation-reporting behavior (see
+`docs/camera_star_prediction_contract.md` §11's first bullet) — they do not model
+`CameraCharacteristics.SENSOR_ORIENTATION` or how CameraX derives `ImageProxy.imageInfo.rotationDegrees`
+from it, so they cannot and do not claim to reproduce "the real production relationship."
 
 ---
 
@@ -2234,4 +2257,4 @@ are internally-consistent-by-construction, not confirmed against real hardware.
 | R10 | Sensor/camera clock base mismatch | §4 sync | age gate + near-still fallback (§4.3); measured nearest-sample pairing + tolerance/mismatch thresholds + diagnostic compatibility status, not yet device-validated (§4.5) |
 | R11 | `pairedRotation`'s device frame vs. the pinhole model's unrotated-buffer pixel grid may not be co-registered on a real device | CAM-2a `PinholeProjectionModel`/`worldToDeviceVector` | traced (not guessed) transpose direction + literal-matrix tests (§12, `docs/camera_star_prediction_contract.md` §4/§11) — pure math only, not yet device-validated |
 | R12 | Display-aligned optical ray fed directly into the buffer-space pinhole model double-applies rotation for `rotationDegrees ∈ {90, 270}` | CAM-2a `DisplayAlignedOpticalToBufferOpticalTransform` | one explicit inverse-basis transform, derived from `CropScaleTransform.rotateClockwise`'s own Jacobian; coupled attitude/`frame.rotationDegrees` tests for all four rotations (`docs/camera_star_prediction_contract.md` §4.5) — closed at the pure-math/internal-consistency level, not device-validated |
-| R13 | A physical-sensor-referenced calibrated FOV (`CameraIntrinsics`) silently assumed to describe the `ImageAnalysis` buffer, when CameraX may have cropped/scaled the sensor into that buffer | CAM-2a `PinholeProjectionModel.forGeometry` / `CameraIntrinsicsReferenceSpace` | `forGeometry` requires `referenceSpace == ANALYSIS_BUFFER` and throws otherwise; `projectStars` checks this first and returns `StarPredictionBatchResult.IntrinsicsMappingUnavailable` instead of fabricating or silently downgrading (`docs/camera_star_prediction_contract.md` §6.2) |
+| R13 | A physical-sensor-referenced calibrated FOV (`CameraIntrinsics`) silently assumed to describe the `ImageAnalysis` buffer, when CameraX may have cropped/scaled the sensor into that buffer; and (hardened further) an analysis-buffer-referenced FOV resolved for one buffer/session silently reused against a different, dimensionless, or differently-sized buffer | CAM-2a `PinholeProjectionModel.forGeometry` / `CameraIntrinsicsReference` | `CameraIntrinsicsReference.AnalysisBuffer` carries its own `widthPx`/`heightPx` as data, not merely a source-derived label; `forGeometry` requires an exact width/height match against `geometry.frame`'s buffer (aspect-ratio match alone is not accepted) and throws otherwise; `projectStars` checks this first and returns a categorized `StarPredictionBatchResult.IntrinsicsMappingUnavailable` (`PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED` / `ANALYSIS_BUFFER_REFERENCE_MISSING` / `ANALYSIS_BUFFER_DIMENSIONS_MISMATCH`) instead of fabricating, silently downgrading, or reusing a stale/mismatched reference (`docs/camera_star_prediction_contract.md` §6.2) |

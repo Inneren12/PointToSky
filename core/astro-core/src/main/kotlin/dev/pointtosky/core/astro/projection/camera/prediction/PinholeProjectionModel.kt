@@ -1,10 +1,9 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
-import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
 import dev.pointtosky.core.astro.projection.camera.PixelPoint
-import dev.pointtosky.core.astro.projection.camera.referenceSpace
 import kotlin.math.tan
 
 /**
@@ -84,17 +83,22 @@ data class PinholeProjectionModel(
          * fx = imageWidthPx  / (2 · tan(horizontalFovDeg / 2))
          * fy = imageHeightPx / (2 · tan(verticalFovDeg   / 2))
          * ```
-         * This is only valid when [geometry].intrinsics.intrinsics.[referenceSpace] is
-         * [CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER] — i.e. the FOV is already known to be
-         * measured over the same pixel grid as [imageWidthPx]/[imageHeightPx]. As of CAM-1b, that
-         * holds for [CameraIntrinsicsResolution.LegacyFallback] (built from the analyzed image's own
-         * aspect ratio) but **not** for [CameraIntrinsicsResolution.Resolved] (`CAMERA_CHARACTERISTICS`
-         * FOV is measured over the full physical sensor, with no recorded crop/scale relationship to
-         * any particular `ImageAnalysis` output resolution — see [CameraIntrinsicsReferenceSpace]'s
-         * KDoc). Callers must check [referenceSpace] themselves — via `projectStars`'s
-         * `StarPredictionBatchResult.IntrinsicsMappingUnavailable` path — **before** calling this
-         * function; this is a defense-in-depth contract check for a caller that skipped that step, not
-         * the expected-runtime-outcome path.
+         * This is only valid when [geometry].intrinsics.intrinsics.[dev.pointtosky.core.astro.projection.camera.CameraIntrinsics.reference]
+         * is a [CameraIntrinsicsReference.AnalysisBuffer] whose
+         * [CameraIntrinsicsReference.AnalysisBuffer.widthPx]/[CameraIntrinsicsReference.AnalysisBuffer.heightPx]
+         * **exactly** match [geometry].frame's buffer dimensions — i.e. the FOV is already known,
+         * with recorded dimensions to prove it, to be measured over this exact pixel grid. Matching
+         * aspect ratio alone is not enough (see [CameraIntrinsicsReference.AnalysisBuffer]'s KDoc): a
+         * `1000x500`-referenced value must not be silently reused for a `2000x1000` buffer just
+         * because the shape matches. [CameraIntrinsicsReference.PhysicalSensor] (`CAMERA_CHARACTERISTICS`
+         * FOV, measured over the full physical sensor with no recorded crop/scale relationship to any
+         * particular `ImageAnalysis` output resolution) and [CameraIntrinsicsReference.Unspecified]
+         * (a dimensionless legacy fallback, e.g. resolved before the first analyzed frame's real
+         * dimensions were known) are both never valid here. Callers must check
+         * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsics.reference] themselves — via
+         * `projectStars`'s `StarPredictionBatchResult.IntrinsicsMappingUnavailable` path — **before**
+         * calling this function; this is a defense-in-depth contract check for a caller that skipped
+         * that step, not the expected-runtime-outcome path.
          *
          * The principal point defaults to the buffer's geometric center
          * (`imageWidthPx/2`, `imageHeightPx/2`) when
@@ -102,14 +106,20 @@ data class PinholeProjectionModel(
          * `principalPointYPx` is absent — which is always, as of CAM-1b (see
          * `docs/camera_coordinate_calibration_contract.md` §3.4).
          *
-         * @throws IllegalArgumentException if the intrinsics' [referenceSpace] is not
-         *   [CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER].
+         * @throws IllegalArgumentException if the intrinsics' [dev.pointtosky.core.astro.projection.camera.CameraIntrinsics.reference]
+         *   is not an [CameraIntrinsicsReference.AnalysisBuffer], or its dimensions do not exactly
+         *   match [geometry].frame's buffer dimensions.
          */
         fun forGeometry(geometry: CameraSessionGeometry): PinholeProjectionModel {
             val intrinsics = geometry.intrinsics.intrinsics
-            require(intrinsics.referenceSpace == CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER) {
-                "PinholeProjectionModel requires ANALYSIS_BUFFER-referenced intrinsics; was ${intrinsics.referenceSpace}. " +
+            val reference = intrinsics.reference
+            require(reference is CameraIntrinsicsReference.AnalysisBuffer) {
+                "PinholeProjectionModel requires an AnalysisBuffer-referenced intrinsics value; was $reference. " +
                     "Callers must check this via projectStars' StarPredictionBatchResult.IntrinsicsMappingUnavailable path first."
+            }
+            require(reference.widthPx == geometry.frame.bufferWidthPx && reference.heightPx == geometry.frame.bufferHeightPx) {
+                "AnalysisBuffer reference dimensions (${reference.widthPx}x${reference.heightPx}) must exactly match " +
+                    "geometry.frame buffer dimensions (${geometry.frame.bufferWidthPx}x${geometry.frame.bufferHeightPx})"
             }
             val widthPx = geometry.cropScaleTransform.sourceBufferSize.width
             val heightPx = geometry.cropScaleTransform.sourceBufferSize.height

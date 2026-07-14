@@ -32,7 +32,7 @@ are correct, where would it appear?* It is **predict-only**:
   `VERTICAL_FOV_DEG = 56.0` are byte-for-byte unchanged. Nothing in `:mobile` calls into this
   package. This is deliberate: the task authorizing CAM-2a explicitly allows it to be implemented
   as an "pure isolated math slice" precisely *because* it must not be represented as
-  device-validated or wired into production rendering (see §8 below on CAM-1g's status).
+  device-validated or wired into production rendering (see §10 below on CAM-1g's status).
 
 ## 2. Input conventions
 
@@ -364,9 +364,10 @@ rest of the way to a display pixel. The pinhole model applies **no rotation of i
 directly; the coupled tests described in §4.5 confirm rotation is applied exactly once end-to-end (not
 ignored, not doubled, not sign-swapped for the 90°/270° cases).
 
-### 6.2 Deriving focal length in pixels, and the intrinsics reference-space gate
+### 6.2 Deriving focal length in pixels, and the intrinsics-reference gate
 
-**This is the fix for a second correctness blocker found in the same review.** `CameraIntrinsics`
+**This is the fix for a second correctness blocker found in the same review**, hardened further in a
+follow-up review of the fix itself (see the "provenance hardening" note below). `CameraIntrinsics`
 never stores a pixel focal length directly — only FOV in degrees (plus optional physical mm focal
 length / sensor size, and an optional principal point) — so any source derives pixel focal length via
 the same formula:
@@ -384,57 +385,107 @@ derived from `SENSOR_INFO_PHYSICAL_SIZE` and focal length alone — there is no
 confirms zero hits for any of those across `:mobile`/`:core:astro-core`). That FOV describes the
 **physical sensor**, not necessarily the `ImageAnalysis` buffer — CameraX may crop and/or scale the
 sensor into that buffer, and nothing here captures the crop/scale metadata that would be needed to
-translate one into the other. The `.LegacyFallback` source, by contrast, is always safe: its FOV is
-already derived with the buffer's own aspect ratio in mind (`legacyFallbackCameraIntrinsics`).
+translate one into the other.
 
-`CameraIntrinsicsReferenceSpace` (`CameraIntrinsics.kt`) makes this an explicit, typed distinction
-instead of an unstated assumption:
+**`source` vs `reference`.** `CameraIntrinsics.source` ([CameraIntrinsicsSource]) answers *"where did
+these numbers come from"* — it says nothing about which pixel grid the FOV applies to.
+`CameraIntrinsics.reference` (`CameraIntrinsicsReference`) is the separate, explicit answer to *that*
+question:
 
 ```kotlin
-enum class CameraIntrinsicsReferenceSpace { ANALYSIS_BUFFER, PHYSICAL_SENSOR }
-
-val CameraIntrinsics.referenceSpace: CameraIntrinsicsReferenceSpace
-    get() = when (source) {
-        CameraIntrinsicsSource.LEGACY_FALLBACK -> CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER
-        CameraIntrinsicsSource.CAMERA_CHARACTERISTICS -> CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR
-        CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION -> CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR
-    }
+sealed interface CameraIntrinsicsReference {
+    data class AnalysisBuffer(val widthPx: Int, val heightPx: Int) : CameraIntrinsicsReference
+    data object PhysicalSensor : CameraIntrinsicsReference
+    data object Unspecified : CameraIntrinsicsReference
+}
 ```
 
-`referenceSpace` is **derived**, not independently settable — it is a pure function of the existing
-`CameraIntrinsicsSource`, so there is no way to construct an intrinsics value whose `source` and
-`referenceSpace` disagree.
+**Provenance hardening (this revision).** An earlier version of this fix derived an
+`ANALYSIS_BUFFER`/`PHYSICAL_SENSOR` enum purely from `source` (`LEGACY_FALLBACK` → always
+"analysis-buffer-safe"). That was insufficient: `legacyFallbackCameraIntrinsics` can be — and in tests
+routinely was — constructed with no image dimensions, with dimensions from a different buffer/session,
+or with a different aspect ratio, then reused against an arbitrary `CameraSessionGeometry`. Deriving
+"safe" from `source` alone cannot detect any of that; it recreated the exact dimensionless/stale-aspect
+fallback bug CAM-1f's own coordinator was built to prevent, just one layer higher, at the CAM-2a
+boundary. `CameraIntrinsicsReference.AnalysisBuffer` now **carries its own dimensions** as data, so a
+consumer can check them against the buffer it is actually projecting into, not just trust a label:
 
-Two options were considered for closing this gap (per the task authorizing this fix): deriving
+- **`AnalysisBuffer(widthPx, heightPx)`** — the FOV is measured over an analysis buffer of exactly
+  these dimensions. The *only* variant `PinholeProjectionModel.forGeometry`/`projectStars` will ever
+  build a pinhole model from, and only when `widthPx`/`heightPx` **exactly** match
+  `geometry.frame.bufferWidthPx`/`bufferHeightPx` — matching aspect ratio alone is **not** sufficient
+  (a `1000x500` reference must not be silently reused for a `2000x1000` buffer at the same 2:1 shape).
+- **`PhysicalSensor`** — the FOV is measured over the physical sensor, with no recorded crop/scale
+  mapping to any analysis buffer. Always what `CAMERA_CHARACTERISTICS`/`CAMERA_INTRINSIC_CALIBRATION`
+  carry (`CameraIntrinsics.init` enforces this cross-field rule, so `source`/`reference` can never
+  claim otherwise for these sources).
+- **`Unspecified`** — no analysis-buffer dimensions were available at all, e.g.
+  `legacyFallbackCameraIntrinsics()` called with no (or invalid) image dimensions. Distinct from
+  `AnalysisBuffer`: there is nothing here to check against anything, so it must never be treated as
+  analysis-buffer-compatible. This preserves `legacyFallbackCameraIntrinsics`'s ability to be
+  constructed dimensionlessly (for whatever legacy-renderer-adjacent callers might need that outside
+  CAM-2a's buffer-projection path) while keeping that uncertainty explicit and machine-checkable
+  rather than silently defaulting to a guessed aspect ratio.
+
+`reference` is **not** derived from `source` — it is caller-supplied data. `CameraIntrinsics.init`
+only re-validates the one cross-field rule production code must uphold (`CAMERA_CHARACTERISTICS`/
+`CAMERA_INTRINSIC_CALIBRATION` ⇒ `PhysicalSensor`; `LEGACY_FALLBACK` ⇒ `AnalysisBuffer` or
+`Unspecified`), which rules out the specific mislabeling this hardening exists to prevent without
+pretending `reference`'s actual dimensions are somehow implied by `source`.
+
+Two options were considered for closing the original gap (per the task authorizing this fix): deriving
 explicit output-buffer intrinsics from active-array + crop + scale metadata ("Option A"), or making the
 mismatch an explicit, reported, unavailable result ("Option B"). **Option A is not available**: as
 noted above, this codebase captures none of the crop/scale metadata Option A would require, and
 fabricating one would mean inventing a calibrated focal length that was never actually measured for
-that buffer. **Option B is what this PR implements**:
+that buffer. **Option B is what this PR implements**, now with exact-dimension checking rather than a
+bare reference-space label:
 
-- `PinholeProjectionModel.forGeometry(geometry)` now `require`s
-  `geometry.intrinsics.intrinsics.referenceSpace == CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER`
-  before deriving `fx`/`fy`, and throws `IllegalArgumentException` otherwise — it can no longer be
-  called (directly or via `projectStars`) in a way that silently treats a physical-sensor FOV as an
-  analysis-buffer FOV.
-- `projectStars` (§8) checks `referenceSpace` **first**, before ever constructing a
-  `PinholeProjectionModel`, and returns `StarPredictionBatchResult.IntrinsicsMappingUnavailable(
-  IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED)` instead of either
-  fabricating an output-buffer FOV or silently substituting the legacy 56° fallback without saying so.
+- `PinholeProjectionModel.forGeometry(geometry)` `require`s
+  `geometry.intrinsics.intrinsics.reference` to be a `CameraIntrinsicsReference.AnalysisBuffer` whose
+  `widthPx`/`heightPx` **exactly** equal `geometry.frame.bufferWidthPx`/`bufferHeightPx`, and throws
+  `IllegalArgumentException` otherwise — for a caller that skips the check below, not the
+  expected-runtime-outcome path.
+- `projectStars` (§8) checks `reference` **first**, before ever constructing a
+  `PinholeProjectionModel`, and returns a categorized
+  `StarPredictionBatchResult.IntrinsicsMappingUnavailable(reason)` instead of ever fabricating an
+  output-buffer FOV or silently substituting/reusing a mismatched one:
+  - `PhysicalSensor` → `IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`.
+  - `Unspecified` → `IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_REFERENCE_MISSING`.
+  - `AnalysisBuffer` with dimensions that do not exactly match the geometry's buffer →
+    `IntrinsicsMappingUnavailableReason.ANALYSIS_BUFFER_DIMENSIONS_MISMATCH`.
+
   A caller that receives `Ready` — never `IntrinsicsMappingUnavailable` — has an explicit guarantee the
-  FOV used was actually buffer-referenced.
+  FOV used was actually measured over *this exact* buffer, not merely "some analysis buffer at some
+  point."
 
 `PinholeProjectionModel.forGeometry(geometry)` builds `fx`/`fy` from
 `geometry.cropScaleTransform.sourceBufferSize` (equal to `frame.bufferWidthPx`/`bufferHeightPx` by
-`CameraSessionGeometry`'s own invariant) and `geometry.intrinsics.intrinsics`, once the reference-space
-check above has passed.
+`CameraSessionGeometry`'s own invariant) and `geometry.intrinsics.intrinsics`, once the reference check
+above has passed.
 
-**Tests:** `PinholeProjectionModelTest` covers analysis-buffer-referenced `fx`/`fy` derivation (both
-the custom-FOV test fixture and the real `.LegacyFallback`), that `forGeometry` throws for a
-physical-sensor-referenced (`CAMERA_CHARACTERISTICS`) value, and principal-point handling.
-`CameraStarProjectionTest`'s `E8` case confirms `projectStars` itself reports
-`IntrinsicsMappingUnavailable` (never a fabricated or silently-downgraded `Ready` result) for the same
-physical-sensor case.
+**Production assignments:**
+
+- `CameraIntrinsicsResolver.kt`'s `CAMERA_CHARACTERISTICS` branch sets
+  `reference = CameraIntrinsicsReference.PhysicalSensor`.
+- `legacyFallbackCameraIntrinsics(imageWidthPx, imageHeightPx)` sets
+  `reference = CameraIntrinsicsReference.AnalysisBuffer(imageWidthPx, imageHeightPx)` when both are
+  known and strictly positive, else `reference = CameraIntrinsicsReference.Unspecified` — mirroring the
+  exact same known/unknown split its horizontal-FOV derivation already uses, so the two can never
+  silently disagree about whether real dimensions were available.
+
+**Tests:** `CameraIntrinsicsTest` covers `AnalysisBuffer`'s own dimension validation and the
+`source`/`reference` cross-field rule. `LegacyFallbackCameraIntrinsicsTest` covers the *real* factory
+(`legacyFallbackCameraIntrinsics`, not just a synthetic test constructor): known dimensions produce an
+`AnalysisBuffer` with those exact dimensions; unknown/invalid dimensions produce `Unspecified`.
+`PinholeProjectionModelTest` covers exact-match `fx`/`fy` derivation (both the custom-FOV test fixture
+and the real `.LegacyFallback`), and that `forGeometry` throws for `PhysicalSensor`, `Unspecified`, a
+width mismatch, a height mismatch, a same-aspect-ratio-but-different-size mismatch, and a
+different-aspect-ratio mismatch. `CameraStarProjectionTest`'s `E8`/`E8b`/`E8c`/`E8d`/`E8e` cases confirm
+`projectStars` itself reports the correct categorized `IntrinsicsMappingUnavailableReason` (never a
+fabricated or silently-downgraded `Ready` result) for the physical-sensor, dimensionless, mismatched,
+and stale-session-reuse cases respectively, and that an exact match still produces `Ready`.
+`StarPredictionBatchResultTest` covers `Ready`'s own defensive-copy guarantee (§8).
 
 ### 6.3 Principal-point policy
 
@@ -497,10 +548,20 @@ Boundaries are **inclusive** on both the crop and viewport checks (matching
 
 ```kotlin
 sealed interface StarPredictionBatchResult {
-    data class Ready(val projections: List<PredictedStarProjection>) : StarPredictionBatchResult
+    class Ready private constructor(val projections: List<PredictedStarProjection>) : StarPredictionBatchResult {
+        companion object {
+            fun of(projections: List<PredictedStarProjection>): Ready = Ready(projections.toList())
+        }
+    }
     data class IntrinsicsMappingUnavailable(
         val reason: IntrinsicsMappingUnavailableReason,
     ) : StarPredictionBatchResult
+}
+
+enum class IntrinsicsMappingUnavailableReason {
+    PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED,
+    ANALYSIS_BUFFER_REFERENCE_MISSING,
+    ANALYSIS_BUFFER_DIMENSIONS_MISMATCH,
 }
 
 fun projectStars(
@@ -512,12 +573,20 @@ fun projectStars(
 
 Pure, deterministic, stateless: no coroutine, no prior-call state, no catalog asset access, input
 order preserved within `Ready.projections` (never sorted by magnitude or visibility). The result is
-`IntrinsicsMappingUnavailable` (§6.2) whenever `geometry.intrinsics.intrinsics.referenceSpace` is not
-`ANALYSIS_BUFFER` — checked once, before any per-star work. Otherwise `PinholeProjectionModel.forGeometry`
-is computed once per call (fixed for the whole batch, not once per star) and every star is projected
-into `Ready`. An empty star list is `Ready` with an empty `projections` list, not
-`IntrinsicsMappingUnavailable` — the reference-space check runs regardless of input size, but an empty
-batch is not itself an error.
+`IntrinsicsMappingUnavailable` (§6.2) whenever `geometry.intrinsics.intrinsics.reference` is not an
+exactly-matching `CameraIntrinsicsReference.AnalysisBuffer` — checked once, before any per-star work,
+and categorized by `IntrinsicsMappingUnavailableReason` (`PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`
+for `PhysicalSensor`, `ANALYSIS_BUFFER_REFERENCE_MISSING` for `Unspecified`,
+`ANALYSIS_BUFFER_DIMENSIONS_MISMATCH` for an `AnalysisBuffer` whose dimensions don't exactly equal
+`geometry.frame`'s buffer). Otherwise `PinholeProjectionModel.forGeometry` is computed once per call
+(fixed for the whole batch, not once per star) and every star is projected into `Ready`. An empty star
+list is `Ready` with an empty `projections` list, not `IntrinsicsMappingUnavailable` — the reference
+check runs regardless of input size, but an empty batch is not itself an error.
+
+`Ready`'s primary constructor is `private`; `Ready.of(...)` is the sole public construction path and
+stores a **defensive copy** (`List.toList()`) of whatever list it is given, so a caller that later
+mutates its own (possibly mutable) source list cannot reach back into an already-returned, documented-
+immutable `Ready` result and change it (`StarPredictionBatchResultTest`).
 
 `PredictedStarProjection` carries only: `catalogIndex`, `magnitude`, `classification`,
 `cameraDirection` (a plain `CameraDirectionSnapshot`, never null except for `BEHIND_CAMERA`),
@@ -578,15 +647,24 @@ claims to have solved:
   pure-math level), but it does **not** by itself prove the IMU-derived device axes and the raw
   (pre-`rotationDegrees`) buffer's pixel grid are actually co-registered on a given device — that is
   exactly the kind of alignment `docs/camera_coordinate_calibration_contract.md` §9.9/§9.10 (CAM-1e)
-  already flags as unverified without a physical marker/grid test, and remains open.
-- **Physical-sensor vs. analysis-buffer intrinsics.** §6.2's `CameraIntrinsicsReferenceSpace` makes the
+  already flags as unverified without a physical marker/grid test, and remains open. §4.5's
+  self-consistent basis-composition tests (`CameraStarProjectionTest`, `PredictedStarClassificationTest`)
+  prove only that this transform and `CropScaleTransform`'s forward rotation compose correctly for
+  *some* self-consistent `(attitude, frame.rotationDegrees)` pairing built by algebraically composing
+  two already-trusted formulas — they do not model, and are not a claim about, the camera sensor's own
+  mounting orientation (`CameraCharacteristics.SENSOR_ORIENTATION`) or how CameraX actually derives
+  `ImageProxy.imageInfo.rotationDegrees` from it in combination with the target/display rotation.
+  Whether any real device reports the specific pairing these tests use remains unverified and is a
+  distinct, still-open question from the pure-math correctness these tests do establish.
+- **Physical-sensor vs. analysis-buffer intrinsics.** §6.2's `CameraIntrinsicsReference` makes the
   distinction between a physical-sensor-referenced calibrated FOV and an analysis-buffer-referenced one
-  explicit, and `forGeometry`/`projectStars` refuse to silently mix them (closing R13 in the
-  calibration contract's risk register). It does **not** add the crop/scale metadata that would let a
-  physical-sensor intrinsics value ever be *safely* mapped onto the analysis buffer — a device with
-  only `CAMERA_CHARACTERISTICS`-sourced intrinsics will get `IntrinsicsMappingUnavailable` from this PR
-  onward, not a (possibly wrong) projection. Closing that gap for real would require CameraX
-  crop/scale metadata this codebase does not currently capture.
+  explicit and dimension-bearing, and `forGeometry`/`projectStars` refuse to silently mix them or reuse
+  a stale/mismatched buffer size (closing R13 in the calibration contract's risk register). It does
+  **not** add the crop/scale metadata that would let a physical-sensor intrinsics value ever be
+  *safely* mapped onto the analysis buffer — a device with only `CAMERA_CHARACTERISTICS`-sourced
+  intrinsics will get `IntrinsicsMappingUnavailable` from this PR onward, not a (possibly wrong)
+  projection. Closing that gap for real would require CameraX crop/scale metadata this codebase does
+  not currently capture.
 - **Camera-to-IMU extrinsic offset**, assumed zero (mirrors the existing CAM-1 assumption,
   `docs/camera_coordinate_calibration_contract.md` §3.3): any physical tilt between the lens axis and
   the IMU is not modeled.
@@ -614,12 +692,15 @@ between predicted and legacy-rendered positions — still not a matcher, just a 
 | `EquatorialStarDirectionTest` | F | invariants, canonical-storage-only construction (`of` is the sole public path), many-turn RA, equivalent-canonical equality |
 | `StarProjectionContextTest` | F | invariants, canonical-storage-only construction, many-turn longitude, equivalent-canonical equality |
 | `EquatorialToLocalSkyTest` | A | zenith, meridian transit, east/west hour-angle sign, longitude east-positive, RA wraparound continuity, pole-adjacent declinations, unit-length/finite sweep |
-| `CameraStarProjectionTest` | B, E, F | literal-matrix rotation anchors (identity/yaw/pitch/180°, transpose-vs-direct distinguishing); coupled attitude/`frame.rotationDegrees` tests (§4.5: same-forward-is-center, device-relative right/up anchors, pre-fix double-rotation regression guard); 10 end-to-end synthetic cases; defensive invalid-input and no-NaN/Infinity sweep |
+| `CameraStarProjectionTest` | B, E, F | literal-matrix rotation anchors (identity/yaw/pitch/180°, transpose-vs-direct distinguishing); self-consistent basis-composition tests (§4.5: same-forward-is-center, device-relative right/up anchors, pre-fix double-rotation regression guard); 10 end-to-end synthetic cases (`E1`-`E10`) plus `E8b`-`E8e` covering `ANALYSIS_BUFFER_REFERENCE_MISSING`, `ANALYSIS_BUFFER_DIMENSIONS_MISMATCH`, stale-session reuse, and exact-match `Ready`; defensive invalid-input and no-NaN/Infinity sweep |
 | `DisplayAlignedOpticalToBufferOpticalTransformTest` | — | §4.5 literal mapping table for all four rotations, `z` invariance, 90°/270° mutual inverse, 0°/180° self-inverse, invalid-`rotationDegrees` rejection |
-| `PinholeProjectionModelTest` | C | worked-example arithmetic, edge/just-outside frustum, custom principal point, `forGeometry` analysis-buffer/legacy-fallback derivation, §6.2 `forGeometry` throws for physical-sensor-referenced intrinsics |
-| `PredictedStarClassificationTest` | D | full crop, non-zero crop origin, outside-crop, horizontal/vertical `FILL_CENTER` exclusion, inclusive edge policy, coupled attitude/rotation classification for all four rotations |
+| `CameraIntrinsicsTest` | — | FOV/physical-dimension/principal-point invariants; §6.2 `CameraIntrinsicsReference.AnalysisBuffer`'s own positive-dimension validation; `source`/`reference` cross-field consistency (both accepted and rejected combinations) |
+| `LegacyFallbackCameraIntrinsicsTest` | — | §6.2 FOV derivation (aspect-derived vs. square-default); the *real* `legacyFallbackCameraIntrinsics` factory's `reference` provenance — known dimensions → `AnalysisBuffer` with those exact dimensions, unknown/invalid → `Unspecified`, distinct dimensions → distinct (never-reused) references |
+| `PinholeProjectionModelTest` | C | worked-example arithmetic, edge/just-outside frustum, custom principal point, `forGeometry` exact-match analysis-buffer/legacy-fallback derivation; §6.2 `forGeometry` throws for `PhysicalSensor`, `Unspecified`, a width mismatch, a height mismatch, a same-aspect-ratio-different-size mismatch, and a different-aspect-ratio mismatch |
+| `PredictedStarClassificationTest` | D | full crop, non-zero crop origin, outside-crop, horizontal/vertical `FILL_CENTER` exclusion, inclusive edge policy, self-consistent basis-composition classification test for all four rotations |
 | `PredictedStarProjectionTest` | — | `BEHIND_CAMERA`/other-classification null-vs-non-null invariant (both directions), partial-combination rejection, scalar validation, `CameraDirectionSnapshot` finiteness |
 | `StarPredictionSummaryTest` | — | count-sum invariant, non-negative counts (each field), `Long`-sum overflow safety |
+| `StarPredictionBatchResultTest` | §8 | `Ready.of`'s defensive-copy guarantee (mutating the source list afterward, appending to it, and the returned list never being the same instance), input-order preservation, content-equality, empty-list handling |
 | `DeviceToOpticalCameraTransformTest` | — | fixed sign-flip, its own inverse |
 
 Commands run (see the PR description for full output):
@@ -628,11 +709,15 @@ Commands run (see the PR description for full output):
 ./gradlew :core:astro-core:test --tests "*EquatorialToLocalSkyTest"
 ./gradlew :core:astro-core:test --tests "*CameraStarProjectionTest"
 ./gradlew :core:astro-core:test --tests "*DisplayAlignedOpticalToBufferOpticalTransformTest"
+./gradlew :core:astro-core:test --tests "*CameraIntrinsics*Test"
 ./gradlew :core:astro-core:test --tests "*PinholeProjectionModelTest"
 ./gradlew :core:astro-core:test --tests "*PredictedStarClassificationTest"
 ./gradlew :core:astro-core:test --tests "*PredictedStarProjectionTest"
 ./gradlew :core:astro-core:test --tests "*StarPredictionSummaryTest"
+./gradlew :core:astro-core:test --tests "*StarPredictionBatchResultTest"
+./gradlew :core:astro-core:test --tests "*SessionScopedCameraIntrinsicsResolverTest"
 ./gradlew :core:astro-core:test
+./gradlew :mobile:testInternalDebugUnitTest --tests "*CameraSessionIntrinsicsCoordinatorTest"
 ./gradlew :mobile:testInternalDebugUnitTest
 ./gradlew :mobile:testPublicDebugUnitTest
 ./gradlew :mobile:lintInternalDebug
@@ -641,15 +726,19 @@ Commands run (see the PR description for full output):
 
 **Gradle itself could not run in the authoring sandbox** — no JDK 17 is installed, and both the
 Gradle-wrapper distribution download and a foojay-resolver JDK 17 auto-provision attempt were
-blocked by the sandbox's egress policy (GitHub release-asset downloads return `403`). All 339 tests
+blocked by the sandbox's egress policy (GitHub release-asset downloads return `403`). All 367 tests
 above were verified instead with the Kotlin compiler (`kotlin-compiler-embeddable:2.0.20`, matching
 the project's pinned Kotlin version) invoked directly against JDK 21 with `-jvm-target 17`, and run
 with the JUnit Platform Console Launcher (`junit-platform-console-standalone:1.10.2`,
 `junit-jupiter:5.10.2`, matching the project's pinned JUnit version) — the same compiler, target
 bytecode version, and test versions Gradle itself would use, just invoked without Gradle's build
-graph. This covers `:core:astro-core:test` only — the `:mobile` Gradle tasks (`testInternalDebugUnitTest`,
-`testPublicDebugUnitTest`, `lintInternalDebug`, `assembleInternalDebug`) require the Android Gradle
-Plugin/SDK and were **not** run or approximated in this sandbox; this PR does not touch any `:mobile`
-source, but that is not a substitute for actually running those gates. This is disclosed, not hidden:
-whoever next has a working Gradle/JDK-17/Android-SDK environment should still run the exact commands
-above before treating this gate as closed.
+graph. This covers `:core:astro-core:test` only — the `:mobile` Gradle tasks (`testInternalDebugUnitTest`
+— which is also where `SessionScopedCameraIntrinsicsResolverTest`/`CameraSessionIntrinsicsCoordinatorTest`
+actually live, both under `:mobile`, not `:core:astro-core` — `testPublicDebugUnitTest`,
+`lintInternalDebug`, `assembleInternalDebug`) require the Android Gradle Plugin/SDK and were **not**
+run or approximated in this sandbox (no `android.jar`/CameraX AAR classpath was assembled either).
+This PR's `:mobile` changes are five mechanical `reference = CameraIntrinsicsReference.PhysicalSensor`/
+import additions (reviewed by hand, no logic change), but that is not a substitute for actually
+running those gates. This is disclosed, not hidden: whoever next has a working
+Gradle/JDK-17/Android-SDK environment should still run the exact commands above before treating this
+gate as closed.

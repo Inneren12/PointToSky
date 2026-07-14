@@ -188,18 +188,22 @@ class PredictedStarClassificationTest {
         assertTrue(result.displayPoint!!.x > 999.0, "expected ${result.displayPoint.x} to exceed the 999px viewport width")
     }
 
-    // --- All four frame rotations, coupled with the matching attitude (Blocker 1 fix) ----------------
+    // --- Self-consistent basis-composition test: all four frame rotations paired with the matching
+    // --- attitude (Blocker 1 fix) ---------------------------------------------------------------------
     //
     // The previous version of this test held ONE fixed, synthetic display-aligned rotation matrix
     // constant while independently varying frame.rotationDegrees across all four values - exactly the
-    // "mixed basis" bug this fix closes (a real device changes both the sensor attitude, via
-    // `remapForDisplay`, and frame.rotationDegrees together). This version builds all four attitude
-    // matrices from ONE base pose via [remapColumnsForDisplayRotationDegrees] (mirroring
-    // `remapForDisplay`'s exact column permutation) and pairs each with the corresponding
-    // [pairedFrameRotationDegrees] value - see `CameraStarProjectionTest`'s "coupled rotations" section
-    // for the full derivation and the off-axis (screen-right/up) anchors; this test focuses on
-    // classification specifically: the on-axis star must classify VISIBLE_IN_VIEWPORT, at the exact
-    // viewport center, for a fixed (non-rotation-matching) viewport, across all four real pairings.
+    // "mixed basis" bug this fix closes (production changes both the sensor attitude, via
+    // `remapForDisplay`, and frame.rotationDegrees together for a physical rotation). This version
+    // builds all four attitude matrices from ONE base pose via [remapColumnsForDisplayRotationDegrees]
+    // (mirroring `remapForDisplay`'s exact column permutation) and pairs each with the corresponding
+    // [pairedFrameRotationDegrees] value - see `CameraStarProjectionTest`'s self-consistent
+    // basis-composition test section for the full derivation, the off-axis (screen-right/up) anchors,
+    // and the explicit caveat that this pairing is an algebraic self-consistency construction, not a
+    // modeled or verified CameraX/device fact (sensor orientation is not modeled anywhere in this test
+    // suite). This test focuses on classification specifically: the on-axis star must classify
+    // VISIBLE_IN_VIEWPORT, at the exact viewport center, for a fixed (non-rotation-matching) viewport,
+    // across all four self-consistent pairings.
 
     @Test
     fun `coupled attitude and frame rotationDegrees - on-axis star is VISIBLE_IN_VIEWPORT at center for all four`() {
