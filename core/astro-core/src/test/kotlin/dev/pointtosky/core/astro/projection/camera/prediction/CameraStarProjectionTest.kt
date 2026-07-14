@@ -1,7 +1,10 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
+import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
 import java.time.Instant
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -10,8 +13,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Section B (camera rotation anchors, literal matrices), Section E (end-to-end pure cases), and
- * Section F (defensive tests) for CAM-2a.
+ * Section B (camera rotation anchors, literal matrices), the coupled attitude/frame-rotation
+ * consistency section, Section E (end-to-end pure cases), and Section F (defensive tests) for CAM-2a.
  */
 class CameraStarProjectionTest {
     private val eps = 1e-6
@@ -28,6 +31,23 @@ class CameraStarProjectionTest {
         assertTrue(abs(actual.z - expectedZ) < eps, "$message: z expected $expectedZ but was ${actual.z}")
     }
 
+    /**
+     * The full world -> device -> display-optical -> buffer-optical -> gate/normalize chain, for a
+     * given [rotationDegrees] (default `0`, i.e. an identity buffer transform — Section B below tests
+     * the attitude/rotation-matrix math in isolation from frame rotation; the coupled section further
+     * down exercises non-zero, *paired* [rotationDegrees] explicitly).
+     */
+    private fun projectFullPipeline(
+        world: LocalSkyDirection,
+        rotationMatrix: FloatArray,
+        rotationDegrees: Int = 0,
+    ): CameraDirectionProjection {
+        val device = worldToDeviceVector(rotationMatrix, world)
+        val displayOptical = DeviceToOpticalCameraTransform.apply(device)
+        val bufferOptical = DisplayAlignedOpticalToBufferOpticalTransform.apply(displayOptical, rotationDegrees)
+        return projectBufferOpticalDirection(bufferOptical)
+    }
+
     // =====================================================================================
     // Section B: camera rotation anchors (literal matrices, literal expected directions)
     // =====================================================================================
@@ -38,20 +58,20 @@ class CameraStarProjectionTest {
         val device = worldToDeviceVector(IDENTITY_ROTATION_MATRIX, LocalSkyDirection(0.0, 0.0, -1.0))
         assertVector(0.0, 0.0, -1.0, device, "identity: nadir -> device forward")
 
-        val projection = projectToCameraDirection(LocalSkyDirection(0.0, 0.0, -1.0), IDENTITY_ROTATION_MATRIX)
+        val projection = projectFullPipeline(LocalSkyDirection(0.0, 0.0, -1.0), IDENTITY_ROTATION_MATRIX)
         val inFront = assertIs<CameraDirectionProjection.InFront>(projection)
         assertTrue(abs(inFront.normalizedX) < eps && abs(inFront.normalizedY) < eps, "nadir must project to image center")
     }
 
     @Test
     fun `identity rotation - world zenith (opposite of forward) is rejected as behind the camera`() {
-        val projection = projectToCameraDirection(LocalSkyDirection(0.0, 0.0, 1.0), IDENTITY_ROTATION_MATRIX)
+        val projection = projectFullPipeline(LocalSkyDirection(0.0, 0.0, 1.0), IDENTITY_ROTATION_MATRIX)
         assertEquals(CameraDirectionProjection.BehindCamera, projection)
     }
 
     @Test
     fun `north-facing upright camera - north horizon maps to image center`() {
-        val projection = projectToCameraDirection(LocalSkyDirection(0.0, 1.0, 0.0), NORTH_UPRIGHT_ROTATION_MATRIX)
+        val projection = projectFullPipeline(LocalSkyDirection(0.0, 1.0, 0.0), NORTH_UPRIGHT_ROTATION_MATRIX)
         val inFront = assertIs<CameraDirectionProjection.InFront>(projection)
         assertTrue(abs(inFront.normalizedX) < eps && abs(inFront.normalizedY) < eps, "camera forward must project to image center")
     }
@@ -60,7 +80,7 @@ class CameraStarProjectionTest {
     fun `north-facing upright camera - east is to the right (increasing normalizedX)`() {
         // 20 deg east of north: cardinal-check helper gives an exact, non-degenerate local sky vector.
         val direction = localSkyDirectionFromHorizontal(azimuthRad = Math.toRadians(20.0), altitudeRad = 0.0)
-        val projection = projectToCameraDirection(direction, NORTH_UPRIGHT_ROTATION_MATRIX)
+        val projection = projectFullPipeline(direction, NORTH_UPRIGHT_ROTATION_MATRIX)
         val inFront = assertIs<CameraDirectionProjection.InFront>(projection)
         assertTrue(inFront.normalizedX > 0.0, "east of a north-facing camera must have positive normalizedX, was ${inFront.normalizedX}")
         assertTrue(abs(inFront.normalizedY) < eps, "on the horizon, normalizedY must be ~0")
@@ -70,7 +90,7 @@ class CameraStarProjectionTest {
     fun `north-facing upright camera - above the horizon maps to smaller normalizedY (image up)`() {
         // 20 deg above due north.
         val direction = localSkyDirectionFromHorizontal(azimuthRad = 0.0, altitudeRad = Math.toRadians(20.0))
-        val projection = projectToCameraDirection(direction, NORTH_UPRIGHT_ROTATION_MATRIX)
+        val projection = projectFullPipeline(direction, NORTH_UPRIGHT_ROTATION_MATRIX)
         val inFront = assertIs<CameraDirectionProjection.InFront>(projection)
         assertTrue(abs(inFront.normalizedX) < eps, "on the meridian, normalizedX must be ~0")
         assertTrue(
@@ -81,25 +101,25 @@ class CameraStarProjectionTest {
 
     @Test
     fun `90 degree yaw right (north to east) - world east maps to device forward axis`() {
-        val projection = projectToCameraDirection(LocalSkyDirection(1.0, 0.0, 0.0), EAST_UPRIGHT_ROTATION_MATRIX)
+        val projection = projectFullPipeline(LocalSkyDirection(1.0, 0.0, 0.0), EAST_UPRIGHT_ROTATION_MATRIX)
         val inFront = assertIs<CameraDirectionProjection.InFront>(projection)
         assertTrue(abs(inFront.normalizedX) < eps && abs(inFront.normalizedY) < eps, "east must project to image center for the east-facing camera")
     }
 
     @Test
     fun `90 degree yaw left (north to west) - world west maps to device forward axis`() {
-        val projection = projectToCameraDirection(LocalSkyDirection(-1.0, 0.0, 0.0), WEST_UPRIGHT_ROTATION_MATRIX)
+        val projection = projectFullPipeline(LocalSkyDirection(-1.0, 0.0, 0.0), WEST_UPRIGHT_ROTATION_MATRIX)
         val inFront = assertIs<CameraDirectionProjection.InFront>(projection)
         assertTrue(abs(inFront.normalizedX) < eps && abs(inFront.normalizedY) < eps, "west must project to image center for the west-facing camera")
     }
 
     @Test
     fun `90 degree pitch up (north to zenith) - world zenith maps to device forward axis, nadir is rejected`() {
-        val zenithProjection = projectToCameraDirection(LocalSkyDirection(0.0, 0.0, 1.0), ZENITH_UPRIGHT_ROTATION_MATRIX)
+        val zenithProjection = projectFullPipeline(LocalSkyDirection(0.0, 0.0, 1.0), ZENITH_UPRIGHT_ROTATION_MATRIX)
         val inFront = assertIs<CameraDirectionProjection.InFront>(zenithProjection)
         assertTrue(abs(inFront.normalizedX) < eps && abs(inFront.normalizedY) < eps, "zenith must project to image center for the zenith-pitched camera")
 
-        val nadirProjection = projectToCameraDirection(LocalSkyDirection(0.0, 0.0, -1.0), ZENITH_UPRIGHT_ROTATION_MATRIX)
+        val nadirProjection = projectFullPipeline(LocalSkyDirection(0.0, 0.0, -1.0), ZENITH_UPRIGHT_ROTATION_MATRIX)
         assertEquals(CameraDirectionProjection.BehindCamera, nadirProjection)
     }
 
@@ -111,11 +131,11 @@ class CameraStarProjectionTest {
 
     @Test
     fun `180 degree rotation (north to south) - south maps to device forward, north is now rejected`() {
-        val southProjection = projectToCameraDirection(LocalSkyDirection(0.0, -1.0, 0.0), SOUTH_UPRIGHT_ROTATION_MATRIX)
+        val southProjection = projectFullPipeline(LocalSkyDirection(0.0, -1.0, 0.0), SOUTH_UPRIGHT_ROTATION_MATRIX)
         val inFront = assertIs<CameraDirectionProjection.InFront>(southProjection)
         assertTrue(abs(inFront.normalizedX) < eps && abs(inFront.normalizedY) < eps, "south must project to image center for the south-facing camera")
 
-        val northProjection = projectToCameraDirection(LocalSkyDirection(0.0, 1.0, 0.0), SOUTH_UPRIGHT_ROTATION_MATRIX)
+        val northProjection = projectFullPipeline(LocalSkyDirection(0.0, 1.0, 0.0), SOUTH_UPRIGHT_ROTATION_MATRIX)
         assertEquals(CameraDirectionProjection.BehindCamera, northProjection)
     }
 
@@ -159,6 +179,176 @@ class CameraStarProjectionTest {
     }
 
     // =====================================================================================
+    // Coupled attitude/frame-rotation consistency (Blocker 1 fix)
+    //
+    // The old "all four rotations" check held the *same* synthetic display-aligned rotation matrix
+    // fixed while independently varying frame.rotationDegrees — real production behavior changes
+    // both together (a physically-rotated device changes both the attitude the sensor reports and
+    // the value CameraX reports for frame.rotationDegrees). These tests instead:
+    //  1. build the attitude matrix the way `remapForDisplay` actually would, for one fixed physical
+    //     attitude re-expressed at each of the four display rotations
+    //     (see [remapColumnsForDisplayRotationDegrees]);
+    //  2. pair it with the frame.rotationDegrees value that keeps the whole pipeline internally
+    //     consistent (see [pairedFrameRotationDegrees] — derived from composing
+    //     [remapColumnsForDisplayRotationDegrees] with [DisplayAlignedOpticalToBufferOpticalTransform],
+    //     not guessed);
+    //  3. project world directions defined *relative to the device's own current axes*
+    //     (`col0`/`col1` of the remapped matrix) — the notion of "screen right"/"screen up" a viewer
+    //     of the live, correctly-oriented preview would actually perceive;
+    //  4. use one *fixed* (non-rotation-matching) viewport, modeling a real, portrait-locked physical
+    //     display whose own pixel dimensions do not change shape just because the sensor buffer's
+    //     rotation differs.
+    //
+    // These are pure-math consistency checks only — they prove [DisplayAlignedOpticalToBufferOpticalTransform]
+    // and `CropScaleTransform`'s forward rotation compose correctly for a self-consistent
+    // (attitude, frame.rotationDegrees) pairing, not that any real device actually reports that
+    // pairing (see `docs/camera_star_prediction_contract.md` §11 for that open risk).
+    // =====================================================================================
+
+    private val coupledInstant: Instant = Instant.parse("2024-04-04T04:00:00Z")
+    private val coupledLonDeg = 20.0
+    private val twentyDegRad = Math.toRadians(20.0)
+
+    /** `cos(20 deg)*North + sin(20 deg)*axis`, for a device-relative "20 deg off forward, toward axis" test direction. */
+    private fun offAxis(axis: LocalSkyDirection): LocalSkyDirection {
+        val c = cos(twentyDegRad)
+        val s = sin(twentyDegRad)
+        return LocalSkyDirection(
+            x = c * 0.0 + s * axis.x,
+            y = c * 1.0 + s * axis.y,
+            z = c * 0.0 + s * axis.z,
+        )
+    }
+
+    private fun remappedColumn0(displayRotationDegrees: Int): LocalSkyDirection {
+        val r = remapColumnsForDisplayRotationDegrees(NORTH_UPRIGHT_ROTATION_MATRIX, displayRotationDegrees)
+        return LocalSkyDirection(r[0].toDouble(), r[3].toDouble(), r[6].toDouble())
+    }
+
+    private fun remappedColumn1(displayRotationDegrees: Int): LocalSkyDirection {
+        val r = remapColumnsForDisplayRotationDegrees(NORTH_UPRIGHT_ROTATION_MATRIX, displayRotationDegrees)
+        return LocalSkyDirection(r[1].toDouble(), r[4].toDouble(), r[7].toDouble())
+    }
+
+    private fun coupledGeometry(displayRotationDegrees: Int): CameraSessionGeometryAndFrameRotation {
+        val attitude = remapColumnsForDisplayRotationDegrees(NORTH_UPRIGHT_ROTATION_MATRIX, displayRotationDegrees)
+        val frameRotationDegrees = pairedFrameRotationDegrees(displayRotationDegrees)
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 500,
+                rotationDegrees = frameRotationDegrees,
+                viewportWidthPx = 1000,
+                viewportHeightPx = 500, // fixed viewport for every display rotation - see section comment above
+                rotationMatrix = attitude,
+            )
+        return CameraSessionGeometryAndFrameRotation(geometry, frameRotationDegrees)
+    }
+
+    private data class CameraSessionGeometryAndFrameRotation(
+        val geometry: CameraSessionGeometry,
+        val frameRotationDegrees: Int,
+    )
+
+    private fun projectSingleReady(
+        star: EquatorialStarDirection,
+        context: StarProjectionContext,
+        geometry: CameraSessionGeometry,
+    ): PredictedStarProjection = (projectStars(listOf(star), context, geometry) as StarPredictionBatchResult.Ready).projections.single()
+
+    @Test
+    fun `coupled rotations - the same physical forward direction is the display center for all four`() {
+        for (d in listOf(0, 90, 180, 270)) {
+            val (geometry, _) = coupledGeometry(d)
+            val (star, context) = meridianTransitStar(coupledInstant, coupledLonDeg, latDeg = 45.0, decDeg = 45.0, lowerCulmination = true)
+            val result = projectSingleReady(star, context, geometry)
+            val displayPoint = assertNotNull(result.displayPoint, "d=$d")
+            assertTrue(abs(displayPoint.x - 500.0) < eps, "d=$d: expected center x=500, was ${displayPoint.x}")
+            assertTrue(abs(displayPoint.y - 250.0) < eps, "d=$d: expected center y=250, was ${displayPoint.y}")
+        }
+    }
+
+    @Test
+    fun `coupled rotations - the current device-relative right direction always increases display X`() {
+        for (d in listOf(0, 90, 180, 270)) {
+            val (geometry, frameRotationDegrees) = coupledGeometry(d)
+            val world = offAxis(remappedColumn0(d))
+            val attitude = remapColumnsForDisplayRotationDegrees(NORTH_UPRIGHT_ROTATION_MATRIX, d)
+            val cameraProjection = projectFullPipeline(world, attitude, frameRotationDegrees)
+            val inFront = assertIs<CameraDirectionProjection.InFront>(cameraProjection, "d=$d")
+
+            val pinhole = PinholeProjectionModel.forGeometry(geometry)
+            val imagePoint = pinhole.project(inFront.normalizedX, inFront.normalizedY)
+            val displayPoint = geometry.cropScaleTransform.imageToDisplay(imagePoint)
+
+            assertTrue(displayPoint.x > 500.0, "d=$d: expected increased display X, was ${displayPoint.x}")
+            assertTrue(abs(displayPoint.y - 250.0) < 1.0, "d=$d: expected ~unchanged display Y, was ${displayPoint.y}")
+        }
+    }
+
+    @Test
+    fun `coupled rotations - the current device-relative up direction always decreases display Y`() {
+        for (d in listOf(0, 90, 180, 270)) {
+            val (geometry, frameRotationDegrees) = coupledGeometry(d)
+            val world = offAxis(remappedColumn1(d))
+            val attitude = remapColumnsForDisplayRotationDegrees(NORTH_UPRIGHT_ROTATION_MATRIX, d)
+            val cameraProjection = projectFullPipeline(world, attitude, frameRotationDegrees)
+            val inFront = assertIs<CameraDirectionProjection.InFront>(cameraProjection, "d=$d")
+
+            val pinhole = PinholeProjectionModel.forGeometry(geometry)
+            val imagePoint = pinhole.project(inFront.normalizedX, inFront.normalizedY)
+            val displayPoint = geometry.cropScaleTransform.imageToDisplay(imagePoint)
+
+            assertTrue(displayPoint.y < 250.0, "d=$d: expected decreased display Y, was ${displayPoint.y}")
+            assertTrue(abs(displayPoint.x - 500.0) < 1.0, "d=$d: expected ~unchanged display X, was ${displayPoint.x}")
+        }
+    }
+
+    @Test
+    fun `coupled rotations - skipping the buffer-optical correction reproduces the pre-fix double-rotation bug`() {
+        // Regression guard for Blocker 1 itself: feeding the *display-aligned* optical ray straight
+        // into the buffer-space pinhole model - i.e. skipping
+        // [DisplayAlignedOpticalToBufferOpticalTransform] entirely, exactly what this codebase did
+        // before this fix - must NOT reproduce the correct, consistent up-anchor for a rotated case.
+        //
+        // Note this is deliberately *not* "apply the unpaired rotationDegrees value to both the
+        // direction correction and CropScaleTransform" (an earlier draft of this test tried that): for
+        // any rotationDegrees k applied *consistently* to both stages,
+        // `CropScaleTransform.rotateClockwise(·, k)` is exactly the mathematical inverse of
+        // `DisplayAlignedOpticalToBufferOpticalTransform.apply(·, k)` by construction (see that
+        // object's KDoc derivation), so the two cancel out regardless of which (self-consistent) k is
+        // chosen - that composition can never distinguish a correct pairing from an incorrect one. The
+        // only way to reproduce the real Blocker 1 bug is to *omit* the correction, not to mismatch it.
+        val d = 90
+        val attitude = remapColumnsForDisplayRotationDegrees(NORTH_UPRIGHT_ROTATION_MATRIX, d)
+        val frameRotationDegrees = pairedFrameRotationDegrees(d)
+        val world = offAxis(remappedColumn1(d))
+
+        val device = worldToDeviceVector(attitude, world)
+        val displayOptical = DeviceToOpticalCameraTransform.apply(device)
+        // Pre-fix bug: project displayOptical directly, never converting to buffer-optical space.
+        val cameraProjection = projectBufferOpticalDirection(BufferOpticalCameraVector(displayOptical.x, displayOptical.y, displayOptical.z))
+        val inFront = assertIs<CameraDirectionProjection.InFront>(cameraProjection)
+
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 500,
+                rotationDegrees = frameRotationDegrees,
+                viewportWidthPx = 1000,
+                viewportHeightPx = 500,
+            )
+        val pinhole = PinholeProjectionModel.forGeometry(geometry)
+        val imagePoint = pinhole.project(inFront.normalizedX, inFront.normalizedY)
+        val displayPoint = geometry.cropScaleTransform.imageToDisplay(imagePoint)
+
+        // With the fix applied (see the "up direction always decreases display Y" test above) this
+        // would be (500, <250); omitting the buffer-optical correction instead shows an X-shift (the Y
+        // anchor "leaking" into X), the exact symptom of the double-rotation bug this fix closes.
+        assertTrue(abs(displayPoint.x - 500.0) > 50.0, "expected the uncorrected pipeline to break the X-invariance, was ${displayPoint.x}")
+    }
+
+    // =====================================================================================
     // Section E: full end-to-end pure cases
     // =====================================================================================
 
@@ -175,7 +365,7 @@ class CameraStarProjectionTest {
     fun `E1 - forward-axis star projects to the display center`() {
         val (star, context) = forwardAxisStar()
         val geometry = buildTestGeometry(rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX)
-        val result = projectStars(listOf(star), context, geometry).single()
+        val result = projectSingleReady(star, context, geometry)
 
         assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, result.classification)
         val displayPoint = assertNotNull(result.displayPoint)
@@ -187,7 +377,7 @@ class CameraStarProjectionTest {
     fun `E2 - behind-camera star is classified BEHIND_CAMERA with no pixel data`() {
         val (star, context) = behindCameraStar()
         val geometry = buildTestGeometry(rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX)
-        val result = projectStars(listOf(star), context, geometry).single()
+        val result = projectSingleReady(star, context, geometry)
 
         assertEquals(PredictedStarClassification.BEHIND_CAMERA, result.classification)
         assertNull(result.cameraDirection)
@@ -208,7 +398,7 @@ class CameraStarProjectionTest {
                 cropRectRightPx = 700,
                 cropRectBottomPx = 500,
             )
-        val result = projectStars(listOf(star), context, geometry).single()
+        val result = projectSingleReady(star, context, geometry)
 
         assertEquals(PredictedStarClassification.OUTSIDE_IMAGE, result.classification)
         assertNotNull(result.cameraDirection) // in front of the camera
@@ -228,7 +418,7 @@ class CameraStarProjectionTest {
                 viewportWidthPx = 500,
                 viewportHeightPx = 500,
             )
-        val result = projectStars(listOf(star), context, geometry).single()
+        val result = projectSingleReady(star, context, geometry)
 
         assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, result.classification)
         val displayPoint = assertNotNull(result.displayPoint)
@@ -247,7 +437,7 @@ class CameraStarProjectionTest {
                 viewportHeightPx = 1920,
                 rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
             )
-        val result = projectStars(listOf(star), context, geometry).single()
+        val result = projectSingleReady(star, context, geometry)
         assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, result.classification)
         assertTrue(abs(result.displayPoint!!.x - 540.0) < eps)
         assertTrue(abs(result.displayPoint.y - 960.0) < eps)
@@ -264,38 +454,41 @@ class CameraStarProjectionTest {
                 viewportHeightPx = 1080,
                 rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
             )
-        val result = projectStars(listOf(star), context, geometry).single()
+        val result = projectSingleReady(star, context, geometry)
         assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, result.classification)
         assertTrue(abs(result.displayPoint!!.x - 960.0) < eps)
         assertTrue(abs(result.displayPoint.y - 540.0) < eps)
     }
 
     @Test
-    fun `E7 - legacy-fallback intrinsics path produces a visible on-axis prediction`() {
+    fun `E7 - legacy-fallback (analysis-buffer) intrinsics path produces a visible on-axis prediction`() {
         val (star, context) = forwardAxisStar()
         val geometry =
             buildTestGeometry(
                 rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
                 intrinsicsResolution = legacyFallbackIntrinsics(imageWidthPx = 1000, imageHeightPx = 500),
             )
-        val result = projectStars(listOf(star), context, geometry).single()
+        val result = projectSingleReady(star, context, geometry)
         assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, result.classification)
         assertTrue(abs(result.displayPoint!!.x - 500.0) < eps)
         assertTrue(abs(result.displayPoint.y - 250.0) < eps)
     }
 
     @Test
-    fun `E8 - calibrated intrinsics path produces a visible on-axis prediction`() {
+    fun `E8 - calibrated (physical-sensor) intrinsics path is reported unavailable, never fabricated`() {
+        // Blocker 2 fix: CAMERA_CHARACTERISTICS-sourced intrinsics are physical-sensor-referenced (no
+        // recorded crop/scale mapping to the analyzed buffer), so this must NOT silently produce a
+        // Ready prediction - it must report IntrinsicsMappingUnavailable instead of fabricating a
+        // buffer-space focal length from a physical-sensor FOV.
         val (star, context) = forwardAxisStar()
         val geometry =
             buildTestGeometry(
                 rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
                 intrinsicsResolution = resolvedIntrinsics(horizontalFovDeg = 70.0, verticalFovDeg = 50.0),
             )
-        val result = projectStars(listOf(star), context, geometry).single()
-        assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, result.classification)
-        assertTrue(abs(result.displayPoint!!.x - 500.0) < eps)
-        assertTrue(abs(result.displayPoint.y - 250.0) < eps)
+        val result = projectStars(listOf(star), context, geometry)
+        val unavailable = assertIs<StarPredictionBatchResult.IntrinsicsMappingUnavailable>(result)
+        assertEquals(IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED, unavailable.reason)
     }
 
     @Test
@@ -310,7 +503,7 @@ class CameraStarProjectionTest {
             )
         val geometry = buildTestGeometry(rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX)
 
-        val results = projectStars(stars, context, geometry)
+        val results = assertIs<StarPredictionBatchResult.Ready>(projectStars(stars, context, geometry)).projections
         assertEquals(listOf(3, 1, 2), results.map { it.catalogIndex }, "order must mirror input order exactly, never sorted by magnitude/visibility")
     }
 
@@ -330,10 +523,10 @@ class CameraStarProjectionTest {
 
     @Test
     fun `invalid inputs are rejected by the input types themselves, not by projectStars`() {
-        assertFailsWithMessage { EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = Double.NaN, declinationRad = 0.0) }
-        assertFailsWithMessage { EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = 0.0, declinationRad = 2.0) } // > pi/2
-        assertFailsWithMessage { StarProjectionContext(latitudeRad = 2.0, longitudeRad = 0.0, utcEpochMillis = 0L) } // > pi/2
-        assertFailsWithMessage { StarProjectionContext(latitudeRad = 0.0, longitudeRad = Double.NaN, utcEpochMillis = 0L) }
+        assertFailsWithMessage { EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = Double.NaN, declinationRad = 0.0) }
+        assertFailsWithMessage { EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = 0.0, declinationRad = 2.0) } // > pi/2
+        assertFailsWithMessage { StarProjectionContext.of(latitudeRad = 2.0, longitudeRad = 0.0, utcEpochMillis = 0L) } // > pi/2
+        assertFailsWithMessage { StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = Double.NaN, utcEpochMillis = 0L) }
     }
 
     @Test
@@ -360,10 +553,11 @@ class CameraStarProjectionTest {
                                     EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = Math.toRadians(ra), declinationRad = Math.toRadians(dec))
                                 }
                             }
-                        val context = StarProjectionContext(Math.toRadians(lat), Math.toRadians(lon), instant.toEpochMilli())
+                        val context = StarProjectionContext.of(Math.toRadians(lat), Math.toRadians(lon), instant.toEpochMilli())
                         val geometry = buildTestGeometry(rotationMatrix = rotation)
 
-                        for (result in projectStars(stars, context, geometry)) {
+                        val results = assertIs<StarPredictionBatchResult.Ready>(projectStars(stars, context, geometry)).projections
+                        for (result in results) {
                             result.cameraDirection?.let {
                                 assertTrue(
                                     it.cameraX.isFinite() && it.cameraY.isFinite() && it.cameraZ.isFinite() &&
@@ -378,5 +572,13 @@ class CameraStarProjectionTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun `an empty star list is Ready with an empty projections list, not unavailable`() {
+        val geometry = buildTestGeometry(rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX)
+        val context = neutralContext()
+        val result = assertIs<StarPredictionBatchResult.Ready>(projectStars(emptyList(), context, geometry))
+        assertEquals(emptyList(), result.projections)
     }
 }

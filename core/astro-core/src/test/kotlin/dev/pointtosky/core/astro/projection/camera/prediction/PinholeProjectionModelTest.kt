@@ -151,15 +151,22 @@ class PinholeProjectionModelTest {
         assertEquals(850.0, right.x, eps) // 500*0.5 + 600
     }
 
-    // --- forGeometry: buffer-space, calibrated vs legacy-fallback -----------------------------------
+    // --- forGeometry: buffer-space, analysis-buffer-referenced intrinsics only ----------------------
+    //
+    // forGeometry requires `referenceSpace == ANALYSIS_BUFFER` (Blocker 2): a physical-sensor
+    // (`CAMERA_CHARACTERISTICS`) intrinsics value's FOV is not known to map onto the analysis buffer
+    // (CameraX may crop/scale the sensor into that stream, and this codebase captures no such
+    // crop/scale metadata), so forGeometry throws for it rather than silently misapplying it. See the
+    // dedicated rejection test below and `CameraStarPredictor`'s `IntrinsicsMappingUnavailable` path,
+    // which is what callers should actually check before ever calling forGeometry directly.
 
     @Test
-    fun `forGeometry derives fx,fy from the resolved (calibrated) intrinsics FOV over the full buffer`() {
+    fun `forGeometry derives fx,fy from analysis-buffer-referenced intrinsics FOV over the full buffer`() {
         val geometry =
             buildTestGeometry(
                 bufferWidthPx = 1000,
                 bufferHeightPx = 500,
-                intrinsicsResolution = resolvedIntrinsics(horizontalFovDeg = 60.0, verticalFovDeg = 40.0),
+                intrinsicsResolution = analysisBufferIntrinsics(horizontalFovDeg = 60.0, verticalFovDeg = 40.0),
             )
         val model = PinholeProjectionModel.forGeometry(geometry)
 
@@ -216,11 +223,26 @@ class PinholeProjectionModelTest {
             buildTestGeometry(
                 bufferWidthPx = 1000,
                 bufferHeightPx = 500,
-                intrinsicsResolution = resolvedIntrinsics(principalPointXPx = 480.0, principalPointYPx = 260.0),
+                intrinsicsResolution = analysisBufferIntrinsics(principalPointXPx = 480.0, principalPointYPx = 260.0),
             )
         val model = PinholeProjectionModel.forGeometry(geometry)
         assertEquals(480.0, model.principalPointXPx, eps)
         assertEquals(260.0, model.principalPointYPx, eps)
+    }
+
+    // --- forGeometry: physical-sensor-referenced intrinsics are rejected, never silently used -------
+
+    @Test
+    fun `forGeometry throws for physical-sensor-referenced (calibrated) intrinsics`() {
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 500,
+                intrinsicsResolution = resolvedIntrinsics(horizontalFovDeg = 60.0, verticalFovDeg = 40.0),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            PinholeProjectionModel.forGeometry(geometry)
+        }
     }
 
     private fun assertEquals(

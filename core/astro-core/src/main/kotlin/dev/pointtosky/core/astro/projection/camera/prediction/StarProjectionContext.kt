@@ -12,16 +12,21 @@ import kotlin.math.PI
  *    [dev.pointtosky.core.astro.coord.GeoPoint.latDeg], just in radians). Always range-checked.
  *  - [longitudeRad] is geographic longitude in radians, **east-positive** (matching
  *    `GeoPoint.lonDeg`'s convention and [dev.pointtosky.core.astro.time.lstAt]'s `longitudeDeg`
- *    parameter). The primary constructor only requires it to be finite; prefer
- *    [StarProjectionContext.of], which wraps it into the canonical `[-π, π)` interval via
- *    [wrapRadMinusPiToPi] before constructing.
+ *    parameter), and is **always** stored canonically in `[-π, π)`. The primary constructor is
+ *    `private` and [of] — which wraps via [wrapRadMinusPiToPi] before constructing — is the *only*
+ *    way to obtain an instance: `@ConsistentCopyVisibility` makes the generated `copy()` private too
+ *    (mirroring [dev.pointtosky.core.astro.projection.camera.CropScaleTransform]'s own convention),
+ *    so a noncanonical longitude cannot reach storage via direct construction *or* `copy()`. `init`
+ *    re-derives and checks the same range as defense in depth, even though [of] is the only
+ *    reachable path.
  *  - [utcEpochMillis] is an absolute instant — milliseconds since the Unix epoch, UTC, exactly as
  *    `Instant.ofEpochMilli(utcEpochMillis)` would interpret it. It is converted to a Julian day (see
  *    [dev.pointtosky.core.astro.time.instantToJulianDay]) and then local sidereal time (see
  *    [dev.pointtosky.core.astro.time.lstAt]) — never compared against wall-clock time, never
  *    adjusted by a timezone offset.
  */
-data class StarProjectionContext(
+@ConsistentCopyVisibility
+data class StarProjectionContext private constructor(
     val latitudeRad: Double,
     val longitudeRad: Double,
     val utcEpochMillis: Long,
@@ -32,10 +37,17 @@ data class StarProjectionContext(
         require(latitudeRad in -PI / 2.0..PI / 2.0) {
             "latitudeRad must be in [-π/2, π/2]; was $latitudeRad"
         }
+        require(longitudeRad >= -PI && longitudeRad < PI) {
+            "longitudeRad must be canonical [-π, π); was $longitudeRad"
+        }
     }
 
     companion object {
-        /** Canonical factory: wraps [longitudeRad] into `[-π, π)` (see [wrapRadMinusPiToPi]) before constructing. */
+        /**
+         * The sole construction path: wraps [longitudeRad] into `[-π, π)` (see
+         * [wrapRadMinusPiToPi]) before constructing, so no noncanonical longitude can ever reach a
+         * stored [StarProjectionContext].
+         */
         fun of(
             latitudeRad: Double,
             longitudeRad: Double,

@@ -50,7 +50,7 @@ class PredictedStarClassificationTest {
                 viewportHeightPx = viewportHeightPx,
                 rotationMatrix = rotationMatrix,
             )
-        return projectStars(listOf(star), context, geometry).single()
+        return (projectStars(listOf(star), context, geometry) as StarPredictionBatchResult.Ready).projections.single()
     }
 
     // Center (500,250): camera facing the north horizon exactly, star at the north horizon.
@@ -188,27 +188,42 @@ class PredictedStarClassificationTest {
         assertTrue(result.displayPoint!!.x > 999.0, "expected ${result.displayPoint.x} to exceed the 999px viewport width")
     }
 
-    // --- All four frame rotations --------------------------------------------------------------------
+    // --- All four frame rotations, coupled with the matching attitude (Blocker 1 fix) ----------------
+    //
+    // The previous version of this test held ONE fixed, synthetic display-aligned rotation matrix
+    // constant while independently varying frame.rotationDegrees across all four values - exactly the
+    // "mixed basis" bug this fix closes (a real device changes both the sensor attitude, via
+    // `remapForDisplay`, and frame.rotationDegrees together). This version builds all four attitude
+    // matrices from ONE base pose via [remapColumnsForDisplayRotationDegrees] (mirroring
+    // `remapForDisplay`'s exact column permutation) and pairs each with the corresponding
+    // [pairedFrameRotationDegrees] value - see `CameraStarProjectionTest`'s "coupled rotations" section
+    // for the full derivation and the off-axis (screen-right/up) anchors; this test focuses on
+    // classification specifically: the on-axis star must classify VISIBLE_IN_VIEWPORT, at the exact
+    // viewport center, for a fixed (non-rotation-matching) viewport, across all four real pairings.
 
     @Test
-    fun `all four frame rotations map the same buffer-space point to distinct, correctly rotated positions`() {
-        val (star, context) = leftEdgeFixture() // buffer-space imagePoint is always (0, 250)
+    fun `coupled attitude and frame rotationDegrees - on-axis star is VISIBLE_IN_VIEWPORT at center for all four`() {
+        val (star, context) = meridianTransitStar(instant, lonDeg, latDeg = 45.0, decDeg = 45.0, lowerCulmination = true)
 
-        val rot0 = projectSingle(NORTHEAST_UPRIGHT_ROTATION_MATRIX, star, context, rotationDegrees = 0, viewportWidthPx = 1000, viewportHeightPx = 500)
-        val rot90 = projectSingle(NORTHEAST_UPRIGHT_ROTATION_MATRIX, star, context, rotationDegrees = 90, viewportWidthPx = 500, viewportHeightPx = 1000)
-        val rot180 = projectSingle(NORTHEAST_UPRIGHT_ROTATION_MATRIX, star, context, rotationDegrees = 180, viewportWidthPx = 1000, viewportHeightPx = 500)
-        val rot270 = projectSingle(NORTHEAST_UPRIGHT_ROTATION_MATRIX, star, context, rotationDegrees = 270, viewportWidthPx = 500, viewportHeightPx = 1000)
-
-        assertApprox(0.0, rot0.displayPoint!!.x); assertApprox(250.0, rot0.displayPoint.y)
-        assertApprox(250.0, rot90.displayPoint!!.x); assertApprox(0.0, rot90.displayPoint.y)
-        assertApprox(1000.0, rot180.displayPoint!!.x); assertApprox(250.0, rot180.displayPoint.y)
-        assertApprox(250.0, rot270.displayPoint!!.x); assertApprox(1000.0, rot270.displayPoint.y)
-
-        // Every one of these lands exactly on an edge of its (matching) viewport - still visible
-        // (inclusive boundary), and each rotation produces a genuinely different display position,
-        // proving rotationDegrees is applied exactly once (never ignored, never doubled).
-        for (result in listOf(rot0, rot90, rot180, rot270)) {
-            assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, result.classification)
+        for (displayRotationDegrees in listOf(0, 90, 180, 270)) {
+            val attitude = remapColumnsForDisplayRotationDegrees(NORTH_UPRIGHT_ROTATION_MATRIX, displayRotationDegrees)
+            val frameRotationDegrees = pairedFrameRotationDegrees(displayRotationDegrees)
+            val result =
+                projectSingle(
+                    attitude,
+                    star,
+                    context,
+                    rotationDegrees = frameRotationDegrees,
+                    viewportWidthPx = 1000, // fixed viewport for every display rotation, see comment above
+                    viewportHeightPx = 500,
+                )
+            assertEquals(
+                PredictedStarClassification.VISIBLE_IN_VIEWPORT,
+                result.classification,
+                "displayRotationDegrees=$displayRotationDegrees (frame.rotationDegrees=$frameRotationDegrees)",
+            )
+            assertApprox(500.0, result.displayPoint!!.x)
+            assertApprox(250.0, result.displayPoint.y)
         }
     }
 

@@ -11,16 +11,17 @@ package dev.pointtosky.core.astro.projection.camera.prediction
 internal const val FORWARD_EPSILON: Double = 1e-9
 
 /**
- * The result of projecting one [LocalSkyDirection] into optical-camera space (CAM-2a §6): either a
- * direction strictly in front of the camera, with pinhole-normalized coordinates, or an explicit
- * behind-camera rejection. There is no third, silently-wrong outcome — a non-finite intermediate value
- * is folded into [BehindCamera] rather than ever being returned as a normalized coordinate.
+ * The result of projecting one [LocalSkyDirection] into **native-buffer** optical-camera space
+ * (CAM-2a §6): either a direction strictly in front of the camera, with pinhole-normalized
+ * coordinates ready for [PinholeProjectionModel], or an explicit behind-camera rejection. There is no
+ * third, silently-wrong outcome — a non-finite intermediate value is folded into [BehindCamera] rather
+ * than ever being returned as a normalized coordinate.
  */
 sealed interface CameraDirectionProjection {
     /**
-     * @property cameraX optical-camera X (see [OpticalCameraVector]).
-     * @property cameraY optical-camera Y.
-     * @property cameraZ optical-camera Z (forward depth); always `> `[FORWARD_EPSILON].
+     * @property cameraX native-buffer optical-camera X (see [BufferOpticalCameraVector]).
+     * @property cameraY native-buffer optical-camera Y.
+     * @property cameraZ native-buffer optical-camera Z (forward depth); always `> `[FORWARD_EPSILON].
      * @property normalizedX `cameraX / cameraZ`.
      * @property normalizedY `cameraY / cameraZ`.
      */
@@ -37,33 +38,27 @@ sealed interface CameraDirectionProjection {
 }
 
 /**
- * Converts a world-space [LocalSkyDirection] into a [CameraDirectionProjection]: applies the
- * device←world rotation ([worldToDeviceVector]) then the fixed device→optical basis change
- * ([DeviceToOpticalCameraTransform]), and divides by depth only when strictly in front of the camera.
+ * The forward-gate and pinhole-normalize step, operating on an already-computed
+ * [BufferOpticalCameraVector] — i.e. **after** [worldToDeviceVector],
+ * [DeviceToOpticalCameraTransform], and [DisplayAlignedOpticalToBufferOpticalTransform] have all been
+ * applied (see `CameraStarPredictor.kt` for the full chain). Taking a [BufferOpticalCameraVector]
+ * specifically (not a bare `OpticalCameraVector`) makes it a type error to pass a still
+ * display-aligned ray here — the exact space-mixing bug this function's split from the old
+ * combined `projectToCameraDirection` exists to prevent.
  *
- * [rotationMatrix] must be exactly
- * [dev.pointtosky.core.astro.projection.camera.TimedRotationSample.rotationMatrix] (or an
- * equally-shaped row-major `FloatArray(9)`) for the frame this direction is being projected against —
- * this function does not read a [dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry]
- * itself, so it cannot enforce that the matrix and direction were paired for the same call; the
- * batch API (`projectStars`) is responsible for that pairing.
+ * Divides by depth only when strictly in front of the camera (`cameraZ > `[FORWARD_EPSILON]`).
  */
-fun projectToCameraDirection(
-    world: LocalSkyDirection,
-    rotationMatrix: FloatArray,
-): CameraDirectionProjection {
-    val device = worldToDeviceVector(rotationMatrix, world)
-    val optical = DeviceToOpticalCameraTransform.apply(device)
-    if (optical.z <= FORWARD_EPSILON) return CameraDirectionProjection.BehindCamera
+fun projectBufferOpticalDirection(bufferOptical: BufferOpticalCameraVector): CameraDirectionProjection {
+    if (bufferOptical.z <= FORWARD_EPSILON) return CameraDirectionProjection.BehindCamera
 
-    val normalizedX = optical.x / optical.z
-    val normalizedY = optical.y / optical.z
+    val normalizedX = bufferOptical.x / bufferOptical.z
+    val normalizedY = bufferOptical.y / bufferOptical.z
     if (!normalizedX.isFinite() || !normalizedY.isFinite()) return CameraDirectionProjection.BehindCamera
 
     return CameraDirectionProjection.InFront(
-        cameraX = optical.x,
-        cameraY = optical.y,
-        cameraZ = optical.z,
+        cameraX = bufferOptical.x,
+        cameraY = bufferOptical.y,
+        cameraZ = bufferOptical.z,
         normalizedX = normalizedX,
         normalizedY = normalizedY,
     )

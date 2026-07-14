@@ -90,8 +90,8 @@ internal fun meridianTransitStar(
     val lstDeg = lstAt(instant, lonDeg).lstDeg
     val hourAngleDeg = if (lowerCulmination) 180.0 else 0.0
     val raDeg = wrapDeg0To360(lstDeg - hourAngleDeg)
-    val star = EquatorialStarDirection(catalogIndex, Math.toRadians(raDeg), Math.toRadians(decDeg), magnitude)
-    val context = StarProjectionContext(Math.toRadians(latDeg), Math.toRadians(lonDeg), instant.toEpochMilli())
+    val star = EquatorialStarDirection.of(catalogIndex, Math.toRadians(raDeg), Math.toRadians(decDeg), magnitude)
+    val context = StarProjectionContext.of(Math.toRadians(latDeg), Math.toRadians(lonDeg), instant.toEpochMilli())
     return star to context
 }
 
@@ -106,8 +106,12 @@ internal fun legacyFallbackIntrinsics(
     )
 
 /**
- * A 90 fov/90 fov "resolved" (calibrated) intrinsics value, used by tests that need a real (not
- * legacy-fallback) [CameraIntrinsicsResolution].
+ * A 90 fov/90 fov **physical-sensor-referenced** (`CAMERA_CHARACTERISTICS`) intrinsics value — i.e.
+ * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR] — used
+ * only by tests that specifically exercise the `StarPredictionBatchResult.IntrinsicsMappingUnavailable`
+ * path (Blocker 2). **Not** a safe default for other tests: `PinholeProjectionModel.forGeometry`
+ * throws for this reference space, and `projectStars` reports it unavailable rather than projecting.
+ * See [analysisBufferIntrinsics] for the analysis-buffer-referenced fixture most tests should use.
  */
 internal fun resolvedIntrinsics(
     horizontalFovDeg: Double = 90.0,
@@ -128,6 +132,36 @@ internal fun resolvedIntrinsics(
         ),
     )
 
+/**
+ * A 90 fov/90 fov **analysis-buffer-referenced** (`LEGACY_FALLBACK`-sourced, per
+ * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace]) intrinsics value with
+ * a custom FOV — unlike the real
+ * [dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics], which always
+ * hardcodes a 56 deg vertical FOV, this lets tests keep the clean 90/90 deg hand-computed pixel math
+ * ([PinholeProjectionModelTest]'s worked example) while still being a value `projectStars`/
+ * `PinholeProjectionModel.forGeometry` will actually accept (`referenceSpace == ANALYSIS_BUFFER`).
+ * The default [buildTestGeometry] intrinsics, and the fixture most CAM-2a tests should reach for.
+ */
+internal fun analysisBufferIntrinsics(
+    horizontalFovDeg: Double = 90.0,
+    verticalFovDeg: Double = 90.0,
+    principalPointXPx: Double? = null,
+    principalPointYPx: Double? = null,
+): CameraIntrinsicsResolution.LegacyFallback =
+    CameraIntrinsicsResolution.LegacyFallback(
+        CameraIntrinsics(
+            horizontalFovDeg = horizontalFovDeg,
+            verticalFovDeg = verticalFovDeg,
+            focalLengthMm = null,
+            sensorWidthMm = null,
+            sensorHeightMm = null,
+            principalPointXPx = principalPointXPx,
+            principalPointYPx = principalPointYPx,
+            source = CameraIntrinsicsSource.LEGACY_FALLBACK,
+        ),
+        reason = "test_fixture",
+    )
+
 /** Builds a `Ready` [CameraSessionGeometry] for tests, skipping the CAM-1c/1d/1f plumbing ceremony. */
 internal fun buildTestGeometry(
     bufferWidthPx: Int = 1000,
@@ -140,7 +174,7 @@ internal fun buildTestGeometry(
     viewportWidthPx: Int = 1000,
     viewportHeightPx: Int = 500,
     rotationMatrix: FloatArray = IDENTITY_ROTATION_MATRIX,
-    intrinsicsResolution: CameraIntrinsicsResolution = resolvedIntrinsics(),
+    intrinsicsResolution: CameraIntrinsicsResolution = analysisBufferIntrinsics(),
     frameTimestampNanos: Long = 1_000L,
     rotationTimestampNanos: Long = 1_000L,
 ): CameraSessionGeometry {
@@ -180,11 +214,79 @@ internal fun star(
     rightAscensionRad: Double = 0.0,
     declinationRad: Double = 0.0,
     magnitude: Double? = null,
-): EquatorialStarDirection = EquatorialStarDirection(catalogIndex, rightAscensionRad, declinationRad, magnitude)
+): EquatorialStarDirection = EquatorialStarDirection.of(catalogIndex, rightAscensionRad, declinationRad, magnitude)
 
 /** A neutral [StarProjectionContext] (equator, Greenwich, epoch zero) for tests that don't care about the astronomy. */
 internal fun neutralContext(
     latitudeRad: Double = 0.0,
     longitudeRad: Double = 0.0,
     utcEpochMillis: Long = 0L,
-): StarProjectionContext = StarProjectionContext(latitudeRad, longitudeRad, utcEpochMillis)
+): StarProjectionContext = StarProjectionContext.of(latitudeRad, longitudeRad, utcEpochMillis)
+
+/**
+ * Mirrors `remapRotationMatrixForDisplay` (`mobile/.../ar/DisplayRemap.kt`) — column-permutes a
+ * row-major device→world matrix the same way `SensorManager.remapCoordinateSystem` does for the
+ * given display rotation, reimplemented here (not imported: `:core:astro-core` cannot depend on
+ * `:mobile`/Android) purely so CAM-2a's coupled tests can build realistic, non-synthetic paired
+ * fixtures. Only columns 0/1 (device X/Y — screen right/up) are permuted; column 2 (device Z —
+ * forward/back) is always carried through unchanged, since every display rotation is a rotation
+ * about the device's own Z axis.
+ *
+ * ```text
+ * displayRotationDegrees=0:   X' =  X,  Y' =  Y
+ * displayRotationDegrees=90:  X' = -Y,  Y' =  X
+ * displayRotationDegrees=180: X' = -X,  Y' = -Y
+ * displayRotationDegrees=270: X' =  Y,  Y' = -X
+ * ```
+ */
+internal fun remapColumnsForDisplayRotationDegrees(
+    matrix: FloatArray,
+    displayRotationDegrees: Int,
+): FloatArray {
+    val out = FloatArray(9)
+    for (row in 0 until 3) {
+        val o = row * 3
+        val x = matrix[o]
+        val y = matrix[o + 1]
+        val z = matrix[o + 2]
+        val (xPrime, yPrime) =
+            when (displayRotationDegrees) {
+                0 -> x to y
+                90 -> -y to x
+                180 -> -x to -y
+                270 -> y to -x
+                else -> error("displayRotationDegrees must be one of 0/90/180/270; was $displayRotationDegrees")
+            }
+        out[o] = xPrime
+        out[o + 1] = yPrime
+        out[o + 2] = z
+    }
+    return out
+}
+
+/**
+ * The `frame.rotationDegrees` value that keeps the whole prediction pipeline physically consistent
+ * for an attitude matrix built via [remapColumnsForDisplayRotationDegrees] at [displayRotationDegrees]
+ * — **not** [displayRotationDegrees] itself. Derived (not guessed) by composing two independent,
+ * already-trusted formulas and finding which pairing makes them cancel for the same physical
+ * direction:
+ *  - [remapColumnsForDisplayRotationDegrees] (mirroring `remapForDisplay`) transforms a fixed world
+ *    direction's *device*-frame components by the standard **counter-clockwise** rotation matrix for
+ *    angle `+displayRotationDegrees` (verified algebraically from the column-permutation table).
+ *  - [DisplayAlignedOpticalToBufferOpticalTransform] — independently derived straight from
+ *    `CropScaleTransform.rotateClockwise`'s Jacobian — implements the *inverse* of that same crop's
+ *    **clockwise** pixel rotation for a given `rotationDegrees`.
+ *
+ * A clockwise pixel rotation is a *negative*-signed rotation in the standard (counter-clockwise
+ * positive) convention the attitude side uses, so composing the two consistently requires
+ * `frame.rotationDegrees = (360 - displayRotationDegrees) % 360`, not `displayRotationDegrees` itself
+ * — confirmed both symbolically and by direct numeric substitution (see
+ * `CameraStarProjectionTest`'s coupled-rotation section for the worked check). This mirrors a
+ * well-known Android convention (rotating a device 90 deg clockwise by hand is reported as
+ * `Surface.ROTATION_270`, not `ROTATION_90`), which independently corroborates the sign found here —
+ * but this pairing is used only to build **internally self-consistent** test fixtures; it is not a
+ * verified fact about any real device's `ImageProxy.imageInfo.rotationDegrees` vs.
+ * `Display.getRotation()` relationship (that remains an open device-alignment risk, unchanged by this
+ * PR — see `docs/camera_star_prediction_contract.md` §11).
+ */
+internal fun pairedFrameRotationDegrees(displayRotationDegrees: Int): Int = (360 - displayRotationDegrees) % 360

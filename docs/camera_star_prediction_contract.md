@@ -41,7 +41,8 @@ are correct, where would it appear?* It is **predict-only**:
 (`EquatorialStarDirection.kt`)
 
 ```kotlin
-data class EquatorialStarDirection(
+@ConsistentCopyVisibility
+data class EquatorialStarDirection private constructor(
     val catalogIndex: Int,
     val rightAscensionRad: Double,
     val declinationRad: Double,
@@ -51,13 +52,16 @@ data class EquatorialStarDirection(
 
 - `rightAscensionRad` — radians, increasing eastward (matches
   [`Equatorial.raDeg`](../core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/coord/Coordinates.kt),
-  just in radians). The primary constructor only requires it to be **finite** — it does not enforce
-  the canonical `[0, 2π)` range, so a directly-constructed value may legitimately sit outside it.
-  **`EquatorialStarDirection.of(...)`** is the canonical factory: it wraps RA into `[0, 2π)` via
-  `wrapRadTwoPi` before constructing. This is the "normalize in the factory" policy the CAM-2a task
-  called for (as opposed to "require canonical input and reject otherwise") — chosen because
-  upstream RA arithmetic (proper motion, epoch correction, catalog joins) can easily drift a hair
-  outside `[0, 2π)`, and that is not a caller error worth rejecting.
+  just in radians). Storage is **canonical-only**: the primary constructor is `private`, so both
+  direct construction and the compiler-generated `copy()` are confined to this file, and `init`
+  re-validates `rightAscensionRad ∈ [0, 2π)` as defense in depth. **`EquatorialStarDirection.of(...)`**
+  is the sole public entry point: it wraps RA into `[0, 2π)` via `wrapRadTwoPi` before calling the
+  private constructor. This closes a gap an earlier CAM-2a draft had: that draft normalized only in
+  `of(...)` while leaving the primary constructor (and therefore `copy()`) able to store a
+  noncanonical value directly. Choosing "normalize, don't reject" (rather than validating and
+  throwing on out-of-range input) is still the right policy — upstream RA arithmetic (proper motion,
+  epoch correction, catalog joins) can easily drift a hair outside `[0, 2π)`, and that is not a caller
+  error worth rejecting — but it must be *impossible* to bypass, not just conventionally avoided.
 - `declinationRad` — radians, `[-π/2, +π/2]` inclusive, positive toward the north celestial pole.
   Always range-checked (no wraparound concept applies to declination).
 - `magnitude` — apparent visual magnitude, smaller = brighter, `null` when unknown. **Never** used
@@ -73,7 +77,8 @@ Wraparound is tested (`EquatorialStarDirectionTest`, `AngleWrapTest`, and
 (`StarProjectionContext.kt`)
 
 ```kotlin
-data class StarProjectionContext(
+@ConsistentCopyVisibility
+data class StarProjectionContext private constructor(
     val latitudeRad: Double,
     val longitudeRad: Double,
     val utcEpochMillis: Long,
@@ -83,9 +88,10 @@ data class StarProjectionContext(
 - `latitudeRad` — `[-π/2, +π/2]` inclusive, positive north. Always range-checked.
 - `longitudeRad` — **east-positive** (matches `GeoPoint.lonDeg` and
   [`lstAt`](../core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/time/SiderealTime.kt)'s
-  `longitudeDeg` parameter). Same normalize-in-factory policy as RA:
-  `StarProjectionContext.of(...)` wraps into the canonical `[-π, π)` via `wrapRadMinusPiToPi`; the
-  primary constructor only requires it finite.
+  `longitudeDeg` parameter). Same canonical-storage policy as RA (§2.1): the primary constructor is
+  `private` (so `copy()` cannot bypass it either) and `init` re-validates `longitudeRad ∈ [-π, π)`;
+  `StarProjectionContext.of(...)` is the sole public entry point, wrapping into `[-π, π)` via
+  `wrapRadMinusPiToPi` before calling the private constructor.
 - `utcEpochMillis` — an absolute instant (`Instant.ofEpochMilli(utcEpochMillis)`), never compared to
   wall-clock time, never adjusted by a timezone or device locale. No function in this package reads
   `System.currentTimeMillis()`, `ZoneId.systemDefault()`, or any device locale.
@@ -197,6 +203,115 @@ Y"`). Substituting `opticalZ = -deviceZ` and `opticalY = -deviceY` reproduces bo
 fy·normalizedY + cy` land in the same sign convention the legacy renderer already uses — independent
 confirmation that this is the physically-correct basis change, not an arbitrary pick.
 
+### 4.5 Display-aligned optical basis is not the native-buffer optical basis: `DisplayAlignedOpticalToBufferOpticalTransform`
+
+**This is the fix for a correctness blocker found in review of the first CAM-2a draft.** §4.1's
+`pairedRotation` (and therefore §4.4's `OpticalCameraVector` output) is **display-aligned**: it comes
+from `RotationFrame`'s sensor attitude *after* `remapForDisplay` has run
+(`docs/camera_coordinate_calibration_contract.md` §1.3/§1.4), so `+x`/`+y` mean *display*-right/-up
+for whatever the display's current rotation happens to be — not the sensor's own fixed row/column
+axes. §6's `PinholeProjectionModel`, by contrast, projects into the **native, unrotated,
+uncropped analysis buffer** (`frame.bufferWidthPx × frame.bufferHeightPx`), and
+`CropScaleTransform.imageToDisplay` (§7) then applies its **own** forward rotation by
+`frame.rotationDegrees` to reach a display pixel.
+
+The first draft fed `OpticalCameraVector` straight into the pinhole model. For
+`rotationDegrees ∈ {0, 180}` this happens to be harmless (the buffer and display axes coincide up to
+a sign both stages already agree on), but for `rotationDegrees ∈ {90, 270}` it silently double-applies
+rotation: once implicitly, because the display-aligned attitude already has the rotation baked into
+its axes, and once explicitly, via `CropScaleTransform`.
+
+`DisplayAlignedOpticalToBufferOpticalTransform` (`DisplayAlignedOpticalToBufferOpticalTransform.kt`)
+is the one explicit, pure correction, inserted exactly once between §4.4 and §6:
+
+```text
+worldToDeviceVector → DeviceToOpticalCameraTransform → DisplayAlignedOpticalToBufferOpticalTransform → PinholeProjectionModel.project → CropScaleTransform.imageToDisplay
+```
+
+It converts a display-aligned `OpticalCameraVector` into a distinct `BufferOpticalCameraVector` type
+— a type deliberately different from `OpticalCameraVector` so the two bases can never again be
+silently mixed up in this package.
+
+**Derivation (not guessed): the exact inverse of `CropScaleTransform`'s own pixel rotation.**
+`CropScaleTransform`'s private `rotateClockwise(x, y, w, h, rotationDegrees)` maps a crop-local buffer
+point to its rotated-image-local point:
+
+```text
+  0°: xr = x,      yr = y
+ 90°: xr = h − y,  yr = x
+180°: xr = w − x,  yr = h − y
+270°: xr = y,      yr = w − x
+```
+
+Only the *linear* part (the Jacobian) matters for a direction vector — a ray has no position, so the
+`w`/`h` translation terms drop out:
+
+```text
+  0°: J = [[ 1, 0], [ 0, 1]]      90°: J = [[ 0,-1], [ 1, 0]]
+180°: J = [[-1, 0], [ 0,-1]]     270°: J = [[ 0, 1], [-1, 0]]
+```
+
+`displayOptical = J(rotationDegrees) · bufferOptical` is what `imageToDisplay` (buffer→display) does,
+so recovering `bufferOptical` from `displayOptical` requires **`J(rotationDegrees)⁻¹`**. Each
+`J(k·90°)` is orthogonal, so its inverse is its transpose: `J(90°)⁻¹ = J(270°)`, `J(270°)⁻¹ = J(90°)`
+(verified `J(90°)·J(270°) = I`), and `J(0°)`/`J(180°)` are each their own inverse. Substituting gives
+the mapping table `DisplayAlignedOpticalToBufferOpticalTransform.apply` implements
+(`dx`/`dy` = `displayOptical.x`/`.y`; `z` is never touched — this is a 2D change of basis around the
+optical `Z` axis only, and rotating a display's content about its own normal cannot change how far in
+front of the lens a direction is):
+
+```text
+rotationDegrees   bufferX        bufferY
+        0            dx             dy
+       90            dy            −dx
+      180           −dx            −dy
+      270           −dy             dx
+```
+
+**Tests** (`DisplayAlignedOpticalToBufferOpticalTransformTest`): the literal table above for all four
+rotations, `z` invariance, that composing 90°/270° (either order) returns the original vector, that
+0°/180° are each their own inverse, and rejection of any `rotationDegrees` outside `{0, 90, 180,
+270}`.
+
+**Coupled attitude/frame-rotation tests** (`CameraStarProjectionTest`'s "coupled rotations" section,
+`PredictedStarClassificationTest`'s matching test): a naive per-rotation test that holds one fixed
+attitude matrix constant while independently varying `frame.rotationDegrees` cannot catch this bug's
+real shape, because a real device changes **both** together (attitude, via `remapForDisplay`, and
+`frame.rotationDegrees`) for the same physical pose. These tests instead:
+
+1. Build all four attitude matrices from **one** base pose via the test-only
+   `remapColumnsForDisplayRotationDegrees` helper, mirroring `remapForDisplay`'s exact
+   column-permutation table.
+2. Pair each with the `frame.rotationDegrees` value that keeps the whole chain internally consistent —
+   the test-only `pairedFrameRotationDegrees(d) = (360 - d) % 360`, derived by composing
+   `remapColumnsForDisplayRotationDegrees` (a standard counter-clockwise rotation) with this
+   transform's clockwise-inverse convention and finding the pairing that cancels; this happens to
+   match the well-known Android fact that rotating a device 90° clockwise by hand is reported as
+   `Surface.ROTATION_270`, which corroborates but does not by itself prove the pairing.
+3. Project world directions defined *relative to the device's own current axes* (device-relative
+   "screen right"/"screen up") against one **fixed** viewport (a portrait-locked physical display
+   whose pixel dimensions do not change shape just because the buffer's rotation differs), and assert:
+   the same physical forward direction is the display center for all four rotations; the
+   device-relative right direction always increases display X; the device-relative up direction
+   always decreases display Y.
+4. A dedicated regression test reproduces the **pre-fix bug directly** — feeding a display-aligned ray
+   straight into the pinhole model (i.e. skipping this transform entirely, exactly what the first
+   draft did) — and confirms that breaks the anchor (the up-direction test's Y-response leaks into an
+   X-shift instead). An earlier attempt at this regression test instead tried "apply the *unpaired*
+   `rotationDegrees` value consistently to both the direction-correction and `CropScaleTransform`
+   stages" — that construction can *never* fail, for any input, because
+   `CropScaleTransform.rotateClockwise(·, k)` is by construction the exact inverse of
+   `DisplayAlignedOpticalToBufferOpticalTransform.apply(·, k)` for **any** self-consistently-applied
+   `k`, not just the physically correct one; only *omitting* the correction (not merely mismatching
+   it) reproduces the real bug.
+
+**What these tests do and do not prove:** they are pure-math internal-consistency checks — that this
+transform and `CropScaleTransform`'s forward rotation compose correctly for a self-consistent
+`(attitude, frame.rotationDegrees)` pairing. They do **not** prove any real device actually reports
+that pairing; whether `pairedRotation`'s IMU-derived axes and the raw analysis buffer's pixel grid are
+actually co-registered on physical hardware remains open (§11, R12 in the calibration contract's risk
+register).
+
 ## 5. Camera-ray result and forward gate
 
 `CameraDirectionProjection` (`CameraDirectionProjection.kt`):
@@ -243,24 +358,83 @@ All of `imageWidthPx`/`imageHeightPx`/`principalPointXPx`/`principalPointYPx` (a
 This is CAM-2a's chosen **Model A**: project directly into unrotated source-buffer coordinates, then
 let `CropScaleTransform.imageToDisplay`'s existing rotate→scale→offset pipeline carry the point the
 rest of the way to a display pixel. The pinhole model applies **no rotation of its own** — applying
-`frame.rotationDegrees` again here would rotate the point twice. `PredictedStarClassificationTest`'s
-all-four-rotations test confirms rotation is applied exactly once (not ignored, not doubled).
+`frame.rotationDegrees` again here would rotate the point twice. The ray it projects is always a
+`BufferOpticalCameraVector` — i.e. it has already gone through §4.5's
+`DisplayAlignedOpticalToBufferOpticalTransform` — never the display-aligned `OpticalCameraVector`
+directly; the coupled tests described in §4.5 confirm rotation is applied exactly once end-to-end (not
+ignored, not doubled, not sign-swapped for the 90°/270° cases).
 
-### 6.2 Deriving focal length in pixels
+### 6.2 Deriving focal length in pixels, and the intrinsics reference-space gate
 
-`CameraIntrinsics` never stores a pixel focal length directly — only FOV in degrees (plus optional
-physical mm focal length / sensor size, and an optional principal point). So both
-`CameraIntrinsicsResolution.Resolved` (real per-device FOV) and `.LegacyFallback` (the hardcoded 56°
-vertical / aspect-derived horizontal default) go through the **same** derivation:
+**This is the fix for a second correctness blocker found in the same review.** `CameraIntrinsics`
+never stores a pixel focal length directly — only FOV in degrees (plus optional physical mm focal
+length / sensor size, and an optional principal point) — so any source derives pixel focal length via
+the same formula:
 
 ```text
 fx = imageWidthPx  / (2 · tan(horizontalFovDeg / 2))
 fy = imageHeightPx / (2 · tan(verticalFovDeg   / 2))
 ```
 
-`PinholeProjectionModel.forGeometry(geometry)` builds this from
+The bug: this formula is only valid if `horizontalFovDeg`/`verticalFovDeg` actually describe the field
+of view over `imageWidthPx × imageHeightPx` — the **analysis buffer**. Inspecting
+`CameraIntrinsicsResolver.kt` (CAM-1b) shows its `CAMERA_CHARACTERISTICS`-sourced (calibrated) FOV is
+derived from `SENSOR_INFO_PHYSICAL_SIZE` and focal length alone — there is no
+`SCALER_CROP_REGION`/active-array/sensor-orientation reasoning anywhere in this codebase (`grep`
+confirms zero hits for any of those across `:mobile`/`:core:astro-core`). That FOV describes the
+**physical sensor**, not necessarily the `ImageAnalysis` buffer — CameraX may crop and/or scale the
+sensor into that buffer, and nothing here captures the crop/scale metadata that would be needed to
+translate one into the other. The `.LegacyFallback` source, by contrast, is always safe: its FOV is
+already derived with the buffer's own aspect ratio in mind (`legacyFallbackCameraIntrinsics`).
+
+`CameraIntrinsicsReferenceSpace` (`CameraIntrinsics.kt`) makes this an explicit, typed distinction
+instead of an unstated assumption:
+
+```kotlin
+enum class CameraIntrinsicsReferenceSpace { ANALYSIS_BUFFER, PHYSICAL_SENSOR }
+
+val CameraIntrinsics.referenceSpace: CameraIntrinsicsReferenceSpace
+    get() = when (source) {
+        CameraIntrinsicsSource.LEGACY_FALLBACK -> CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER
+        CameraIntrinsicsSource.CAMERA_CHARACTERISTICS -> CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR
+        CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION -> CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR
+    }
+```
+
+`referenceSpace` is **derived**, not independently settable — it is a pure function of the existing
+`CameraIntrinsicsSource`, so there is no way to construct an intrinsics value whose `source` and
+`referenceSpace` disagree.
+
+Two options were considered for closing this gap (per the task authorizing this fix): deriving
+explicit output-buffer intrinsics from active-array + crop + scale metadata ("Option A"), or making the
+mismatch an explicit, reported, unavailable result ("Option B"). **Option A is not available**: as
+noted above, this codebase captures none of the crop/scale metadata Option A would require, and
+fabricating one would mean inventing a calibrated focal length that was never actually measured for
+that buffer. **Option B is what this PR implements**:
+
+- `PinholeProjectionModel.forGeometry(geometry)` now `require`s
+  `geometry.intrinsics.intrinsics.referenceSpace == CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER`
+  before deriving `fx`/`fy`, and throws `IllegalArgumentException` otherwise — it can no longer be
+  called (directly or via `projectStars`) in a way that silently treats a physical-sensor FOV as an
+  analysis-buffer FOV.
+- `projectStars` (§8) checks `referenceSpace` **first**, before ever constructing a
+  `PinholeProjectionModel`, and returns `StarPredictionBatchResult.IntrinsicsMappingUnavailable(
+  IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED)` instead of either
+  fabricating an output-buffer FOV or silently substituting the legacy 56° fallback without saying so.
+  A caller that receives `Ready` — never `IntrinsicsMappingUnavailable` — has an explicit guarantee the
+  FOV used was actually buffer-referenced.
+
+`PinholeProjectionModel.forGeometry(geometry)` builds `fx`/`fy` from
 `geometry.cropScaleTransform.sourceBufferSize` (equal to `frame.bufferWidthPx`/`bufferHeightPx` by
-`CameraSessionGeometry`'s own invariant) and `geometry.intrinsics.intrinsics`.
+`CameraSessionGeometry`'s own invariant) and `geometry.intrinsics.intrinsics`, once the reference-space
+check above has passed.
+
+**Tests:** `PinholeProjectionModelTest` covers analysis-buffer-referenced `fx`/`fy` derivation (both
+the custom-FOV test fixture and the real `.LegacyFallback`), that `forGeometry` throws for a
+physical-sensor-referenced (`CAMERA_CHARACTERISTICS`) value, and principal-point handling.
+`CameraStarProjectionTest`'s `E8` case confirms `projectStars` itself reports
+`IntrinsicsMappingUnavailable` (never a fabricated or silently-downgraded `Ready` result) for the same
+physical-sensor case.
 
 ### 6.3 Principal-point policy
 
@@ -322,24 +496,44 @@ Boundaries are **inclusive** on both the crop and viewport checks (matching
 ## 8. Batch API and result shape
 
 ```kotlin
+sealed interface StarPredictionBatchResult {
+    data class Ready(val projections: List<PredictedStarProjection>) : StarPredictionBatchResult
+    data class IntrinsicsMappingUnavailable(
+        val reason: IntrinsicsMappingUnavailableReason,
+    ) : StarPredictionBatchResult
+}
+
 fun projectStars(
     stars: List<EquatorialStarDirection>,
     context: StarProjectionContext,
     geometry: CameraSessionGeometry,
-): List<PredictedStarProjection>
+): StarPredictionBatchResult
 ```
 
 Pure, deterministic, stateless: no coroutine, no prior-call state, no catalog asset access, input
-order preserved (never sorted by magnitude or visibility). `PinholeProjectionModel.forGeometry` is
-computed once per call (fixed for the whole batch), not once per star.
+order preserved within `Ready.projections` (never sorted by magnitude or visibility). The result is
+`IntrinsicsMappingUnavailable` (§6.2) whenever `geometry.intrinsics.intrinsics.referenceSpace` is not
+`ANALYSIS_BUFFER` — checked once, before any per-star work. Otherwise `PinholeProjectionModel.forGeometry`
+is computed once per call (fixed for the whole batch, not once per star) and every star is projected
+into `Ready`. An empty star list is `Ready` with an empty `projections` list, not
+`IntrinsicsMappingUnavailable` — the reference-space check runs regardless of input size, but an empty
+batch is not itself an error.
 
 `PredictedStarProjection` carries only: `catalogIndex`, `magnitude`, `classification`,
 `cameraDirection` (a plain `CameraDirectionSnapshot`, never null except for `BEHIND_CAMERA`),
 `imagePoint`/`displayPoint` (plain `PixelPoint?`). No rotation matrix, no history, no Android type,
-no catalog object, no mutable array, no exception text, no device identifier is exposed.
+no catalog object, no mutable array, no exception text, no device identifier is exposed. Its `init`
+enforces there is no publicly-constructible "impossible" combination: `cameraDirection`/`imagePoint`/
+`displayPoint` must be all `null` for `BEHIND_CAMERA` and all non-null for every other classification
+— this is checked, not just documented, so no direct construction or `copy()` can produce a mismatched
+combination (`PredictedStarProjectionTest`). `CameraDirectionSnapshot`'s five scalars are each
+validated finite.
 
 `StarPredictionSummary`/`summarizeStarPredictions` (`StarPredictionSummary.kt`) provide a bounded
-count-only summary for tests and a future CAM-2b debug overlay — no per-star text, no logging.
+count-only summary for tests and a future CAM-2b debug overlay — no per-star text, no logging. Every
+count is validated non-negative, and the four classification counts' sum is computed in `Long`
+specifically so four `Int`-range counts near `Int.MAX_VALUE` cannot silently wrap around into a value
+that coincidentally matches `inputCount` (`StarPredictionSummaryTest`).
 
 ## 9. Scope confirmation
 
@@ -378,10 +572,21 @@ claims to have solved:
 
 - **Buffer-axis vs. device-axis co-registration.** §4.2's device frame comes from
   `SensorManager.getRotationMatrixFromVector` after `remapForDisplay` — i.e. it is *display-rotation*
-  aware. §6.1's pinhole model projects into the *native, unrotated sensor buffer* grid. Whether the
-  IMU-derived device axes and the raw (pre-`rotationDegrees`) buffer's pixel grid are actually
-  co-registered on a given device is exactly the kind of alignment `docs/camera_coordinate_calibration_contract.md`
-  §9.9/§9.10 (CAM-1e) already flags as unverified without a physical marker/grid test.
+  aware. §6.1's pinhole model projects into the *native, unrotated sensor buffer* grid. §4.5's
+  `DisplayAlignedOpticalToBufferOpticalTransform` makes the **basis change** between these two frames
+  explicit and internally consistent (closing R12 in the calibration contract's risk register at the
+  pure-math level), but it does **not** by itself prove the IMU-derived device axes and the raw
+  (pre-`rotationDegrees`) buffer's pixel grid are actually co-registered on a given device — that is
+  exactly the kind of alignment `docs/camera_coordinate_calibration_contract.md` §9.9/§9.10 (CAM-1e)
+  already flags as unverified without a physical marker/grid test, and remains open.
+- **Physical-sensor vs. analysis-buffer intrinsics.** §6.2's `CameraIntrinsicsReferenceSpace` makes the
+  distinction between a physical-sensor-referenced calibrated FOV and an analysis-buffer-referenced one
+  explicit, and `forGeometry`/`projectStars` refuse to silently mix them (closing R13 in the
+  calibration contract's risk register). It does **not** add the crop/scale metadata that would let a
+  physical-sensor intrinsics value ever be *safely* mapped onto the analysis buffer — a device with
+  only `CAMERA_CHARACTERISTICS`-sourced intrinsics will get `IntrinsicsMappingUnavailable` from this PR
+  onward, not a (possibly wrong) projection. Closing that gap for real would require CameraX
+  crop/scale metadata this codebase does not currently capture.
 - **Camera-to-IMU extrinsic offset**, assumed zero (mirrors the existing CAM-1 assumption,
   `docs/camera_coordinate_calibration_contract.md` §3.3): any physical tilt between the lens axis and
   the IMU is not modeled.
@@ -406,13 +611,15 @@ between predicted and legacy-rendered positions — still not a matcher, just a 
 | File | Section | Covers |
 |---|---|---|
 | `AngleWrapTest` | — | `wrapRadTwoPi`/`wrapRadMinusPiToPi` wraparound at exact and near-boundary values |
-| `EquatorialStarDirectionTest` | F | invariants, RA wraparound policy (constructor vs. `of`) |
-| `StarProjectionContextTest` | F | invariants, longitude wraparound policy (constructor vs. `of`) |
+| `EquatorialStarDirectionTest` | F | invariants, canonical-storage-only construction (`of` is the sole public path), many-turn RA, equivalent-canonical equality |
+| `StarProjectionContextTest` | F | invariants, canonical-storage-only construction, many-turn longitude, equivalent-canonical equality |
 | `EquatorialToLocalSkyTest` | A | zenith, meridian transit, east/west hour-angle sign, longitude east-positive, RA wraparound continuity, pole-adjacent declinations, unit-length/finite sweep |
-| `CameraStarProjectionTest` | B, E, F | literal-matrix rotation anchors (identity/yaw/pitch/180°, transpose-vs-direct distinguishing), 10 end-to-end synthetic cases, defensive invalid-input and no-NaN/Infinity sweep |
-| `PinholeProjectionModelTest` | C | worked-example arithmetic, edge/just-outside frustum, custom principal point, `forGeometry` buffer-space/calibrated/fallback derivation |
-| `PredictedStarClassificationTest` | D | full crop, non-zero crop origin, outside-crop, horizontal/vertical `FILL_CENTER` exclusion, inclusive edge policy, all four rotations |
-| `StarPredictionSummaryTest` | — | count invariant |
+| `CameraStarProjectionTest` | B, E, F | literal-matrix rotation anchors (identity/yaw/pitch/180°, transpose-vs-direct distinguishing); coupled attitude/`frame.rotationDegrees` tests (§4.5: same-forward-is-center, device-relative right/up anchors, pre-fix double-rotation regression guard); 10 end-to-end synthetic cases; defensive invalid-input and no-NaN/Infinity sweep |
+| `DisplayAlignedOpticalToBufferOpticalTransformTest` | — | §4.5 literal mapping table for all four rotations, `z` invariance, 90°/270° mutual inverse, 0°/180° self-inverse, invalid-`rotationDegrees` rejection |
+| `PinholeProjectionModelTest` | C | worked-example arithmetic, edge/just-outside frustum, custom principal point, `forGeometry` analysis-buffer/legacy-fallback derivation, §6.2 `forGeometry` throws for physical-sensor-referenced intrinsics |
+| `PredictedStarClassificationTest` | D | full crop, non-zero crop origin, outside-crop, horizontal/vertical `FILL_CENTER` exclusion, inclusive edge policy, coupled attitude/rotation classification for all four rotations |
+| `PredictedStarProjectionTest` | — | `BEHIND_CAMERA`/other-classification null-vs-non-null invariant (both directions), partial-combination rejection, scalar validation, `CameraDirectionSnapshot` finiteness |
+| `StarPredictionSummaryTest` | — | count-sum invariant, non-negative counts (each field), `Long`-sum overflow safety |
 | `DeviceToOpticalCameraTransformTest` | — | fixed sign-flip, its own inverse |
 
 Commands run (see the PR description for full output):
@@ -420,18 +627,29 @@ Commands run (see the PR description for full output):
 ```bash
 ./gradlew :core:astro-core:test --tests "*EquatorialToLocalSkyTest"
 ./gradlew :core:astro-core:test --tests "*CameraStarProjectionTest"
+./gradlew :core:astro-core:test --tests "*DisplayAlignedOpticalToBufferOpticalTransformTest"
 ./gradlew :core:astro-core:test --tests "*PinholeProjectionModelTest"
 ./gradlew :core:astro-core:test --tests "*PredictedStarClassificationTest"
+./gradlew :core:astro-core:test --tests "*PredictedStarProjectionTest"
+./gradlew :core:astro-core:test --tests "*StarPredictionSummaryTest"
 ./gradlew :core:astro-core:test
+./gradlew :mobile:testInternalDebugUnitTest
+./gradlew :mobile:testPublicDebugUnitTest
+./gradlew :mobile:lintInternalDebug
+./gradlew :mobile:assembleInternalDebug
 ```
 
 **Gradle itself could not run in the authoring sandbox** — no JDK 17 is installed, and both the
 Gradle-wrapper distribution download and a foojay-resolver JDK 17 auto-provision attempt were
-blocked by the sandbox's egress policy (GitHub release-asset downloads return `403`). All 300 tests
+blocked by the sandbox's egress policy (GitHub release-asset downloads return `403`). All 339 tests
 above were verified instead with the Kotlin compiler (`kotlin-compiler-embeddable:2.0.20`, matching
 the project's pinned Kotlin version) invoked directly against JDK 21 with `-jvm-target 17`, and run
 with the JUnit Platform Console Launcher (`junit-platform-console-standalone:1.10.2`,
 `junit-jupiter:5.10.2`, matching the project's pinned JUnit version) — the same compiler, target
 bytecode version, and test versions Gradle itself would use, just invoked without Gradle's build
-graph. This is disclosed, not hidden: whoever next has a working Gradle/JDK-17 environment should
-still run the exact commands above before treating this gate as closed.
+graph. This covers `:core:astro-core:test` only — the `:mobile` Gradle tasks (`testInternalDebugUnitTest`,
+`testPublicDebugUnitTest`, `lintInternalDebug`, `assembleInternalDebug`) require the Android Gradle
+Plugin/SDK and were **not** run or approximated in this sandbox; this PR does not touch any `:mobile`
+source, but that is not a substitute for actually running those gates. This is disclosed, not hidden:
+whoever next has a working Gradle/JDK-17/Android-SDK environment should still run the exact commands
+above before treating this gate as closed.

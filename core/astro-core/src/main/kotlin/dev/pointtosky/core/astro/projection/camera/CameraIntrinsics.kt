@@ -94,3 +94,58 @@ data class CameraIntrinsics(
         }
     }
 }
+
+/**
+ * Which pixel grid a [CameraIntrinsics] value's [CameraIntrinsics.horizontalFovDeg]/
+ * [CameraIntrinsics.verticalFovDeg] are actually measured over (CAM-2a hardening). This distinction
+ * exists because CAM-1b's own resolution path (`CameraIntrinsicsResolver.kt`,
+ * [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS]) derives FOV from Camera2
+ * `SENSOR_INFO_PHYSICAL_SIZE` — the **full physical sensor**'s dimensions — and a selected focal
+ * length, with **no** reasoning about `SENSOR_INFO_ACTIVE_ARRAY_SIZE`, `SCALER_CROP_REGION`, or how
+ * CameraX scales/crops the active array down into the `ImageAnalysis` output stream. None of that
+ * crop/scale metadata is read anywhere in this codebase as of CAM-1b/CAM-2a. A physical-sensor FOV
+ * therefore cannot be assumed to equal the analyzed buffer's own FOV — the same physical sensor can
+ * back `ImageAnalysis` streams of many different resolutions and aspect ratios, each seeing a
+ * different (and currently unrecorded) fraction of that physical FOV.
+ *
+ * [dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics], by contrast, derives
+ * its horizontal FOV from the *analyzed image's own aspect ratio* (`imageWidthPx`/`imageHeightPx`,
+ * the exact analysis-buffer dimensions) — it is analysis-buffer-referenced by construction, even
+ * though the vertical FOV value itself (56°) is not a calibrated measurement of anything.
+ */
+enum class CameraIntrinsicsReferenceSpace {
+    /**
+     * FOV is measured over the same pixel grid [dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata.bufferWidthPx]/
+     * `bufferHeightPx` describes — safe to use directly with a buffer-space pinhole model
+     * ([dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel]).
+     */
+    ANALYSIS_BUFFER,
+
+    /**
+     * FOV is measured over the physical sensor (or some other non-analysis-buffer region) with no
+     * recorded mapping to the analyzed buffer's own pixel grid — **not** safe to feed directly into a
+     * buffer-space pinhole model without that missing crop/scale metadata.
+     */
+    PHYSICAL_SENSOR,
+}
+
+/**
+ * [CameraIntrinsicsReferenceSpace] this value's FOV was measured over, derived from [CameraIntrinsics.source]
+ * — never an independently-settable field, so `source` and `referenceSpace` cannot disagree.
+ *
+ * - [CameraIntrinsicsSource.LEGACY_FALLBACK] → [CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER]: always
+ *   built from the analyzed image's own dimensions (see [CameraIntrinsicsReferenceSpace]'s KDoc).
+ * - [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS] → [CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR]:
+ *   derived from `SENSOR_INFO_PHYSICAL_SIZE`, with no active-array/crop-region reasoning connecting it
+ *   to any particular analysis-buffer resolution.
+ * - [CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION] → [CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR]:
+ *   conservative default — this source is unused as of CAM-1b/CAM-2a (`LENS_INTRINSIC_CALIBRATION` is
+ *   deliberately unparsed), so nothing has established an analysis-buffer mapping for it either.
+ */
+val CameraIntrinsics.referenceSpace: CameraIntrinsicsReferenceSpace
+    get() =
+        when (source) {
+            CameraIntrinsicsSource.LEGACY_FALLBACK -> CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER
+            CameraIntrinsicsSource.CAMERA_CHARACTERISTICS -> CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR
+            CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION -> CameraIntrinsicsReferenceSpace.PHYSICAL_SENSOR
+        }

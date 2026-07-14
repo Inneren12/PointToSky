@@ -10,52 +10,46 @@ import kotlin.test.assertTrue
 class StarProjectionContextTest {
     private val eps = 1e-9
 
-    // --- Primary constructor -------------------------------------------------------------------------
-
-    @Test
-    fun `primary constructor accepts longitude outside -π,π without normalizing it`() {
-        val context = StarProjectionContext(latitudeRad = 0.0, longitudeRad = 4.0, utcEpochMillis = 0L)
-        assertEquals(4.0, context.longitudeRad)
-    }
+    // --- of(): the only construction path; every stored longitude is canonical [-π, π) --------------
 
     @Test
     fun `non-finite latitude is rejected`() {
         assertFailsWith<IllegalArgumentException> {
-            StarProjectionContext(latitudeRad = Double.NaN, longitudeRad = 0.0, utcEpochMillis = 0L)
+            StarProjectionContext.of(latitudeRad = Double.NaN, longitudeRad = 0.0, utcEpochMillis = 0L)
         }
     }
 
     @Test
     fun `non-finite longitude is rejected`() {
         assertFailsWith<IllegalArgumentException> {
-            StarProjectionContext(latitudeRad = 0.0, longitudeRad = Double.POSITIVE_INFINITY, utcEpochMillis = 0L)
+            StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = Double.POSITIVE_INFINITY, utcEpochMillis = 0L)
         }
         assertFailsWith<IllegalArgumentException> {
-            StarProjectionContext(latitudeRad = 0.0, longitudeRad = Double.NEGATIVE_INFINITY, utcEpochMillis = 0L)
+            StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = Double.NEGATIVE_INFINITY, utcEpochMillis = 0L)
         }
     }
 
     @Test
     fun `latitude outside -π,2,π,2 is rejected`() {
         assertFailsWith<IllegalArgumentException> {
-            StarProjectionContext(latitudeRad = PI / 2.0 + 0.001, longitudeRad = 0.0, utcEpochMillis = 0L)
+            StarProjectionContext.of(latitudeRad = PI / 2.0 + 0.001, longitudeRad = 0.0, utcEpochMillis = 0L)
         }
         assertFailsWith<IllegalArgumentException> {
-            StarProjectionContext(latitudeRad = -PI / 2.0 - 0.001, longitudeRad = 0.0, utcEpochMillis = 0L)
+            StarProjectionContext.of(latitudeRad = -PI / 2.0 - 0.001, longitudeRad = 0.0, utcEpochMillis = 0L)
         }
     }
 
     @Test
     fun `latitude exactly at the poles is accepted`() {
-        StarProjectionContext(latitudeRad = PI / 2.0, longitudeRad = 0.0, utcEpochMillis = 0L)
-        StarProjectionContext(latitudeRad = -PI / 2.0, longitudeRad = 0.0, utcEpochMillis = 0L)
+        StarProjectionContext.of(latitudeRad = PI / 2.0, longitudeRad = 0.0, utcEpochMillis = 0L)
+        StarProjectionContext.of(latitudeRad = -PI / 2.0, longitudeRad = 0.0, utcEpochMillis = 0L)
     }
 
     @Test
     fun `any long is accepted for utcEpochMillis including negative`() {
-        StarProjectionContext(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = Long.MIN_VALUE)
-        StarProjectionContext(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = Long.MAX_VALUE)
-        StarProjectionContext(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = -1L)
+        StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = Long.MIN_VALUE)
+        StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = Long.MAX_VALUE)
+        StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = -1L)
     }
 
     // --- of(): normalizes longitude into [-π, π) ------------------------------------------------------
@@ -90,5 +84,31 @@ class StarProjectionContextTest {
         val context = StarProjectionContext.of(latitudeRad = 0.5, longitudeRad = 0.1, utcEpochMillis = 999L)
         assertEquals(0.5, context.latitudeRad)
         assertEquals(999L, context.utcEpochMillis)
+    }
+
+    @Test
+    fun `of handles many-turn longitudes without precision loss beyond floating tolerance`() {
+        val manyTurns = 1000.0 * 2.0 * PI + 0.4
+        val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = manyTurns, utcEpochMillis = 0L)
+        assertTrue(abs(context.longitudeRad - 0.4) < 1e-6)
+    }
+
+    @Test
+    fun `of applied to equivalent canonical longitude values (many turns apart) produces equal instances`() {
+        val a = StarProjectionContext.of(latitudeRad = 0.2, longitudeRad = -0.9, utcEpochMillis = 42L)
+        val b = StarProjectionContext.of(latitudeRad = 0.2, longitudeRad = -0.9 + 4.0 * 2.0 * PI, utcEpochMillis = 42L)
+        assertTrue(abs(a.longitudeRad - b.longitudeRad) < 1e-9)
+        assertEquals(a.latitudeRad, b.latitudeRad)
+        assertEquals(a.utcEpochMillis, b.utcEpochMillis)
+    }
+
+    @Test
+    fun `copy is not part of the public API`() {
+        // StarProjectionContext is @ConsistentCopyVisibility + `private constructor`, so both the
+        // constructor and the generated copy() are private to this file — there is no public path
+        // (direct construction or copy()) that can produce a noncanonical longitude. This test exists
+        // to document that guarantee; the actual enforcement is compile-time (see the class KDoc).
+        val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.5, utcEpochMillis = 0L)
+        assertTrue(abs(context.longitudeRad - 0.5) < eps)
     }
 }

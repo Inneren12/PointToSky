@@ -1,7 +1,9 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
 import dev.pointtosky.core.astro.projection.camera.CropScaleTransform
+import dev.pointtosky.core.astro.projection.camera.referenceSpace
 
 /**
  * Projects [stars] into predicted camera/image/display positions for one [geometry] bundle and
@@ -12,19 +14,32 @@ import dev.pointtosky.core.astro.projection.camera.CropScaleTransform
  *  - no coroutine, prior-call state, or catalog asset access;
  *  - input order is preserved — stars are never reordered or sorted by magnitude.
  *
- * Reads [PinholeProjectionModel.forGeometry] once per call (it is the same for every star in the
- * batch — the rotation, intrinsics, and crop/display transform are all fixed for one [geometry]) and
- * then, for each star: [equatorialToLocalSky] → [projectToCameraDirection] → (if in front)
- * [PinholeProjectionModel.project] → crop/viewport classification via
- * [geometry].cropScaleTransform`.
+ * Checks [geometry].intrinsics.intrinsics.referenceSpace **first** (see
+ * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace]): a physical-sensor FOV
+ * has no recorded mapping to the analyzed buffer's own pixel grid, so this returns
+ * [StarPredictionBatchResult.IntrinsicsMappingUnavailable] for the *whole batch* rather than
+ * fabricating a buffer-space pinhole model from it. Only once that check passes is
+ * [PinholeProjectionModel.forGeometry] read once per call (it is the same for every star in the
+ * batch — the rotation, intrinsics, and crop/display transform are all fixed for one [geometry]).
+ *
+ * For each star: [equatorialToLocalSky] → [worldToDeviceVector] → [DeviceToOpticalCameraTransform] →
+ * [DisplayAlignedOpticalToBufferOpticalTransform] → [projectBufferOpticalDirection] → (if in front)
+ * [PinholeProjectionModel.project] → crop/viewport classification via `geometry.cropScaleTransform`.
  */
 fun projectStars(
     stars: List<EquatorialStarDirection>,
     context: StarProjectionContext,
     geometry: CameraSessionGeometry,
-): List<PredictedStarProjection> {
+): StarPredictionBatchResult {
+    val intrinsics = geometry.intrinsics.intrinsics
+    if (intrinsics.referenceSpace != CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER) {
+        return StarPredictionBatchResult.IntrinsicsMappingUnavailable(
+            IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED,
+        )
+    }
+
     val pinhole = PinholeProjectionModel.forGeometry(geometry)
-    return stars.map { star -> projectOneStar(star, context, geometry, pinhole) }
+    return StarPredictionBatchResult.Ready(stars.map { star -> projectOneStar(star, context, geometry, pinhole) })
 }
 
 private fun projectOneStar(
@@ -34,7 +49,15 @@ private fun projectOneStar(
     pinhole: PinholeProjectionModel,
 ): PredictedStarProjection {
     val localSky = equatorialToLocalSky(star, context)
-    val cameraProjection = projectToCameraDirection(localSky, geometry.pairedRotation.rotationMatrix)
+
+    val displayDevice = worldToDeviceVector(rotationMatrix = geometry.pairedRotation.rotationMatrix, world = localSky)
+    val displayOptical = DeviceToOpticalCameraTransform.apply(displayDevice)
+    val bufferOptical =
+        DisplayAlignedOpticalToBufferOpticalTransform.apply(
+            displayOptical = displayOptical,
+            rotationDegrees = geometry.frame.rotationDegrees,
+        )
+    val cameraProjection = projectBufferOpticalDirection(bufferOptical)
 
     return when (cameraProjection) {
         is CameraDirectionProjection.BehindCamera ->

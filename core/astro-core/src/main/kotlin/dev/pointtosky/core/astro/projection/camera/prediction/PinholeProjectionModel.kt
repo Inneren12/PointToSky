@@ -1,8 +1,10 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReferenceSpace
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
 import dev.pointtosky.core.astro.projection.camera.PixelPoint
+import dev.pointtosky.core.astro.projection.camera.referenceSpace
 import kotlin.math.tan
 
 /**
@@ -82,21 +84,33 @@ data class PinholeProjectionModel(
          * fx = imageWidthPx  / (2 · tan(horizontalFovDeg / 2))
          * fy = imageHeightPx / (2 · tan(verticalFovDeg   / 2))
          * ```
-         * This applies uniformly whether [geometry].intrinsics is
-         * [CameraIntrinsicsResolution.Resolved] (a real per-device FOV) or
-         * [CameraIntrinsicsResolution.LegacyFallback] (the hardcoded 56° vertical / aspect-derived
-         * horizontal default) — [dev.pointtosky.core.astro.projection.camera.CameraIntrinsics] never
-         * stores a pixel focal length directly in either case, only a FOV in degrees, so both sources
-         * go through the same derivation here.
+         * This is only valid when [geometry].intrinsics.intrinsics.[referenceSpace] is
+         * [CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER] — i.e. the FOV is already known to be
+         * measured over the same pixel grid as [imageWidthPx]/[imageHeightPx]. As of CAM-1b, that
+         * holds for [CameraIntrinsicsResolution.LegacyFallback] (built from the analyzed image's own
+         * aspect ratio) but **not** for [CameraIntrinsicsResolution.Resolved] (`CAMERA_CHARACTERISTICS`
+         * FOV is measured over the full physical sensor, with no recorded crop/scale relationship to
+         * any particular `ImageAnalysis` output resolution — see [CameraIntrinsicsReferenceSpace]'s
+         * KDoc). Callers must check [referenceSpace] themselves — via `projectStars`'s
+         * `StarPredictionBatchResult.IntrinsicsMappingUnavailable` path — **before** calling this
+         * function; this is a defense-in-depth contract check for a caller that skipped that step, not
+         * the expected-runtime-outcome path.
          *
          * The principal point defaults to the buffer's geometric center
          * (`imageWidthPx/2`, `imageHeightPx/2`) when
          * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsics.principalPointXPx]/
          * `principalPointYPx` is absent — which is always, as of CAM-1b (see
          * `docs/camera_coordinate_calibration_contract.md` §3.4).
+         *
+         * @throws IllegalArgumentException if the intrinsics' [referenceSpace] is not
+         *   [CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER].
          */
         fun forGeometry(geometry: CameraSessionGeometry): PinholeProjectionModel {
             val intrinsics = geometry.intrinsics.intrinsics
+            require(intrinsics.referenceSpace == CameraIntrinsicsReferenceSpace.ANALYSIS_BUFFER) {
+                "PinholeProjectionModel requires ANALYSIS_BUFFER-referenced intrinsics; was ${intrinsics.referenceSpace}. " +
+                    "Callers must check this via projectStars' StarPredictionBatchResult.IntrinsicsMappingUnavailable path first."
+            }
             val widthPx = geometry.cropScaleTransform.sourceBufferSize.width
             val heightPx = geometry.cropScaleTransform.sourceBufferSize.height
 

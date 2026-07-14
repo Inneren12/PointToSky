@@ -56,8 +56,8 @@ class EquatorialToLocalSkyTest {
         val latDeg = 40.0
         val lstDeg = lstAt(instant, lonDeg).lstDeg
 
-        val star = EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = Math.toRadians(lstDeg), declinationRad = Math.toRadians(latDeg))
-        val context = StarProjectionContext(latitudeRad = Math.toRadians(latDeg), longitudeRad = Math.toRadians(lonDeg), utcEpochMillis = instant.toEpochMilli())
+        val star = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = Math.toRadians(lstDeg), declinationRad = Math.toRadians(latDeg))
+        val context = StarProjectionContext.of(latitudeRad = Math.toRadians(latDeg), longitudeRad = Math.toRadians(lonDeg), utcEpochMillis = instant.toEpochMilli())
 
         val sky = equatorialToLocalSky(star, context)
         assertVectorEquals(0.0, 0.0, 1.0, sky, "zenith when LST == RA and dec == lat")
@@ -71,8 +71,8 @@ class EquatorialToLocalSkyTest {
         val lonDeg = 10.0
         val lstDeg = lstAt(instant, lonDeg).lstDeg
 
-        val star = EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = Math.toRadians(lstDeg), declinationRad = 0.0)
-        val context = StarProjectionContext(latitudeRad = 0.0, longitudeRad = Math.toRadians(lonDeg), utcEpochMillis = instant.toEpochMilli())
+        val star = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = Math.toRadians(lstDeg), declinationRad = 0.0)
+        val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = Math.toRadians(lonDeg), utcEpochMillis = instant.toEpochMilli())
 
         val sky = equatorialToLocalSky(star, context)
         assertVectorEquals(0.0, 0.0, 1.0, sky, "equatorial dec=0 star transiting the meridian at the equator")
@@ -87,8 +87,8 @@ class EquatorialToLocalSkyTest {
         // tau = LST - RA = -90 deg => RA = LST + 90 deg.
         val raDeg = wrapDeg0To360(lstDeg + 90.0)
 
-        val star = EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = Math.toRadians(raDeg), declinationRad = 0.0)
-        val context = StarProjectionContext(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = instant.toEpochMilli())
+        val star = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = Math.toRadians(raDeg), declinationRad = 0.0)
+        val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = instant.toEpochMilli())
 
         val sky = equatorialToLocalSky(star, context)
         assertVectorEquals(1.0, 0.0, 0.0, sky, "tau=-90 deg at the equator must be due east, on the horizon")
@@ -101,8 +101,8 @@ class EquatorialToLocalSkyTest {
         // tau = LST - RA = +90 deg => RA = LST - 90 deg.
         val raDeg = wrapDeg0To360(lstDeg - 90.0)
 
-        val star = EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = Math.toRadians(raDeg), declinationRad = 0.0)
-        val context = StarProjectionContext(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = instant.toEpochMilli())
+        val star = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = Math.toRadians(raDeg), declinationRad = 0.0)
+        val context = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = instant.toEpochMilli())
 
         val sky = equatorialToLocalSky(star, context)
         assertVectorEquals(-1.0, 0.0, 0.0, sky, "tau=+90 deg at the equator must be due west, on the horizon")
@@ -114,10 +114,10 @@ class EquatorialToLocalSkyTest {
     fun `increasing StarProjectionContext longitude (further east) advances local sidereal time`() {
         val instant = Instant.parse("2024-05-05T05:00:00Z")
         val lst0Deg = lstAt(instant, 0.0).lstDeg
-        val star = EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = Math.toRadians(lst0Deg), declinationRad = 0.0)
+        val star = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = Math.toRadians(lst0Deg), declinationRad = 0.0)
 
-        val greenwich = StarProjectionContext(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = instant.toEpochMilli())
-        val fifteenEast = StarProjectionContext(latitudeRad = 0.0, longitudeRad = Math.toRadians(15.0), utcEpochMillis = instant.toEpochMilli())
+        val greenwich = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = 0.0, utcEpochMillis = instant.toEpochMilli())
+        val fifteenEast = StarProjectionContext.of(latitudeRad = 0.0, longitudeRad = Math.toRadians(15.0), utcEpochMillis = instant.toEpochMilli())
 
         val skyGreenwich = equatorialToLocalSky(star, greenwich)
         assertVectorEquals(0.0, 0.0, 1.0, skyGreenwich, "reference star is at zenith at longitude 0")
@@ -140,7 +140,7 @@ class EquatorialToLocalSkyTest {
 
     @Test
     fun `RA wraparound around a multiple of 2π yields the same local sky direction`() {
-        val context = StarProjectionContext(latitudeRad = Math.toRadians(20.0), longitudeRad = Math.toRadians(-40.0), utcEpochMillis = 1_700_000_000_000L)
+        val context = StarProjectionContext.of(latitudeRad = Math.toRadians(20.0), longitudeRad = Math.toRadians(-40.0), utcEpochMillis = 1_700_000_000_000L)
 
         val starA = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = 0.3, declinationRad = 0.2)
         val starB = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = 0.3 + 3.0 * 2.0 * PI, declinationRad = 0.2)
@@ -152,7 +152,7 @@ class EquatorialToLocalSkyTest {
 
     @Test
     fun `RA values straddling the 0,2π seam project to nearly the same local sky direction`() {
-        val context = StarProjectionContext(latitudeRad = Math.toRadians(10.0), longitudeRad = 0.0, utcEpochMillis = 1_700_000_000_000L)
+        val context = StarProjectionContext.of(latitudeRad = Math.toRadians(10.0), longitudeRad = 0.0, utcEpochMillis = 1_700_000_000_000L)
 
         val justBelowZero = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = -0.0005, declinationRad = 0.1)
         val justAboveZero = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = 0.0005, declinationRad = 0.1)
@@ -175,11 +175,11 @@ class EquatorialToLocalSkyTest {
 
         val instantA = Instant.parse("2024-02-02T02:00:00Z")
         val instantB = Instant.parse("2024-09-09T18:30:00Z")
-        val contextA = StarProjectionContext(latitudeRad = latRad, longitudeRad = 0.3, utcEpochMillis = instantA.toEpochMilli())
-        val contextB = StarProjectionContext(latitudeRad = latRad, longitudeRad = -1.1, utcEpochMillis = instantB.toEpochMilli())
+        val contextA = StarProjectionContext.of(latitudeRad = latRad, longitudeRad = 0.3, utcEpochMillis = instantA.toEpochMilli())
+        val contextB = StarProjectionContext.of(latitudeRad = latRad, longitudeRad = -1.1, utcEpochMillis = instantB.toEpochMilli())
 
-        val starRaA = EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = 1.234, declinationRad = PI / 2.0)
-        val starRaB = EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = 4.321, declinationRad = PI / 2.0)
+        val starRaA = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = 1.234, declinationRad = PI / 2.0)
+        val starRaB = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = 4.321, declinationRad = PI / 2.0)
 
         val skyA = equatorialToLocalSky(starRaA, contextA)
         val skyB = equatorialToLocalSky(starRaB, contextB)
@@ -195,8 +195,8 @@ class EquatorialToLocalSkyTest {
         val expectedZ = sin(-latRad)
 
         val instant = Instant.parse("2024-02-02T02:00:00Z")
-        val context = StarProjectionContext(latitudeRad = latRad, longitudeRad = 0.3, utcEpochMillis = instant.toEpochMilli())
-        val star = EquatorialStarDirection(catalogIndex = 0, rightAscensionRad = 1.234, declinationRad = -PI / 2.0)
+        val context = StarProjectionContext.of(latitudeRad = latRad, longitudeRad = 0.3, utcEpochMillis = instant.toEpochMilli())
+        val star = EquatorialStarDirection.of(catalogIndex = 0, rightAscensionRad = 1.234, declinationRad = -PI / 2.0)
 
         val sky = equatorialToLocalSky(star, context)
         assertTrue(abs(sky.z - expectedZ) < eps, "SCP altitude must equal minus latitude: z=${sky.z}")
