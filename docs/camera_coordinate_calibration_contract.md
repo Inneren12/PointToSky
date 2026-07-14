@@ -2110,8 +2110,66 @@ from the task description is transcribed, unexecuted, into
 `docs/validation/cam_1g_device_validation.md` for whoever next has a physical device available. Per
 §10.10/§9.10, readiness alone (even if it could be observed) would not itself prove
 Preview/ImageAnalysis pixel alignment — that still requires a visible marker/grid or a future
-detector, out of scope here. **CAM-2a (predict-only projection) must not begin until this device gate
-has actually been run and reviewed**, not merely implemented.
+detector, out of scope here. This section originally read "CAM-2a (predict-only projection) must not
+begin until this device gate has actually been run and reviewed." **Update (CAM-2a):** the task
+authorizing CAM-2a explicitly permits it to be implemented as a pure, isolated math slice
+notwithstanding this outstanding gate, on the condition that it is not wired into production
+rendering and not represented as device-validated — see §12 below. This status line
+(`CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`) is otherwise **unchanged**: no physical-device pass
+has been run for CAM-1g or CAM-2a.
+
+---
+
+## 12. CAM-2a predict-only star projection pipeline (this PR)
+
+CAM-2a adds a pure, isolated math slice — package `dev.pointtosky.core.astro.projection.camera.prediction`
+in `:core:astro-core` — that computes deterministic predicted star positions in camera-normalized,
+analyzed-image, and display coordinates from a catalog star's RA/Dec, an observer location/time, and
+an existing `CameraSessionGeometry` bundle (CAM-1f), plus a bounded visibility classification. **Full
+derivation, conventions, and worked examples live in the focused companion doc,
+[`docs/camera_star_prediction_contract.md`](camera_star_prediction_contract.md)** — this section is
+a short pointer plus the essential facts needed to keep this file's own inventory/risk-register
+accurate.
+
+**Status:** pure math, unit-tested (300 JVM tests), **not** wired into any renderer or `:mobile` code
+path, **not** device-validated. §11.9 above records CAM-1g's own device-gate status as unchanged; the
+task authorizing this PR explicitly permits CAM-2a to proceed as an isolated math slice despite that
+outstanding gate, provided it stays unwired and unclaimed as device-validated — both of which hold
+here.
+
+**What it adds** (all new files, package `.../camera/prediction`):
+
+- `EquatorialStarDirection` / `StarProjectionContext` — pure input types (RA/Dec radians, east-positive
+  longitude, absolute UTC instant), each normalizing its wraparound-prone angle (RA / longitude) in a
+  canonical `of(...)` factory rather than the primary constructor.
+- `LocalSkyDirection` / `equatorialToLocalSky` — reuses the existing ENU basis
+  (`horizontalToVector`'s convention, §1.3 above) and reuses `lstAt`/`raDecToAltAz` verbatim
+  (refraction off, per §2 Step A's own recommendation); only the small ENU-embedding arithmetic is
+  freshly written, in `Double` for precision.
+- `worldToDeviceVector` — applies `pairedRotation`'s **transpose** to a world vector. This traces
+  and reconfirms §1.3/§2 Step C's existing "`rotationMatrix` is device→world; `transpose` is
+  world→device" fact against the production `RotationFrame`/`ArScreen` code, rather than assuming it.
+- `DeviceToOpticalCameraTransform` — the one fixed device→optical sign flip (`+y`/`+z` negated),
+  derived from and consistent with the existing (legacy) `projectDeviceVector`'s own sign behavior.
+- `CameraDirectionProjection` / `PinholeProjectionModel` — pinhole projection using **real**
+  intrinsics-derived focal length (`fx = width / (2·tan(hFov/2))`, likewise `fy`), not the legacy
+  fixed 56° — into the **unrotated full analyzed-buffer** coordinate space, with
+  `CropScaleTransform.imageToDisplay` (already existing, CAM-1e) doing the one-and-only rotation.
+- `PredictedStarProjection` / `PredictedStarClassification` — a bounded result distinguishing
+  behind-camera, outside-crop, inside-crop-but-outside-viewport, and visible, carrying no rotation
+  matrix, catalog object, or Android type.
+- `projectStars(stars, context, geometry)` — the pure, stateless, order-preserving batch API; plus
+  `summarizeStarPredictions` for a bounded count-only summary.
+
+**What it explicitly does not add:** pixel reads, a detector/matcher, pose correction, rotation
+interpolation/SLERP, any renderer change, or any new `CameraSessionGeometryProvider` producer/consumer
+in `:mobile`. `ArScreen.calculateOverlay()`/`projectionParams(viewport)`/`VERTICAL_FOV_DEG = 56.0` are
+byte-for-byte unchanged.
+
+**Risk register additions** — see `docs/camera_star_prediction_contract.md` §11 for detail: the
+pinhole model's unrotated-buffer coordinate space and the IMU-derived device frame are not verified
+co-registered on a real device (same unresolved class of risk as R8 below); camera-to-IMU extrinsic
+offset and lens distortion remain unmodeled, matching CAM-1's own deferred scope (§3.3).
 
 ---
 
@@ -2129,3 +2187,4 @@ has actually been run and reviewed**, not merely implemented.
 | R8 | `FILL_CENTER` crop ignored (image ≠ viewport aspect) | `CameraPreview` + Step E | crop/scale test (§6.5); pure `CropScaleTransform` forward/inverse + visibility tests (§9, CAM-1e) — not yet wired/device-validated |
 | R9 | Front-camera mirroring | (back camera only today) | flip guard if front added |
 | R10 | Sensor/camera clock base mismatch | §4 sync | age gate + near-still fallback (§4.3); measured nearest-sample pairing + tolerance/mismatch thresholds + diagnostic compatibility status, not yet device-validated (§4.5) |
+| R11 | `pairedRotation`'s device frame vs. the pinhole model's unrotated-buffer pixel grid may not be co-registered on a real device | CAM-2a `PinholeProjectionModel`/`worldToDeviceVector` | traced (not guessed) transpose direction + literal-matrix tests (§12, `docs/camera_star_prediction_contract.md` §4/§11) — pure math only, not yet device-validated |
