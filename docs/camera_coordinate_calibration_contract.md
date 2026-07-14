@@ -1667,7 +1667,11 @@ without needing to remember to update both call sites.
 
 It publishes `state: StateFlow<CameraSessionGeometryResult>`, latest-value-only — never a queue —
 plus a bounded `debugState(): CameraSessionGeometryDebugState` (observed/ready/rejected counts,
-latest status/quality/pair-delta; no historical list). A published bundle always combines the
+latest status/quality/pair-delta; no historical list). (CAM-1g later adds a third, combined
+`observation: StateFlow<CameraSessionGeometryObservation>` publishing `state` and `debugState()`
+together from the same locked recompute, specifically so a live UI observes counter changes even when
+`state` alone would not re-emit a structurally-equal result — see §11.3.) A published bundle always
+combines the
 frame/pairing pair from the most recent `onPairedFrame` call with whatever viewport and intrinsics
 are current at rebuild time (§10.2) — `onViewportChanged`/`onIntrinsicsResolved` each trigger a
 rebuild against the still-latest frame/pairing pair, so a viewport rotation or the intrinsics
@@ -1938,31 +1942,79 @@ object CameraGeometryDiagnosticsGate {
 ```
 
 `isDiagnosticsEnabled` is a plain pure function of `(debug, flavor)` — `CameraGeometryDiagnosticsGateTest`
-exercises all four combinations plus one assertion that the gate object itself evaluates `true` under
-the `internalDebug` variant `:mobile:testInternalDebugUnitTest` actually runs as, without needing to
-swap `BuildConfig` fields in a test. The overlay is therefore compiled into every variant but only
-*shown* in `internalDebug` — it never appears in `internalRelease`, `publicDebug`, or `publicRelease`.
-No new user-facing setting, developer-options screen, or persistent preference was added; no existing
-debug-overlay toggle mechanism exists elsewhere in `:mobile` to reuse (checked — no
-`BuildConfig.DEBUG`-gated UI or developer-options screen predates this PR).
+exercises all four `(debug, flavor)` combinations against it directly, plus one assertion that the gate
+*object* (`CameraGeometryDiagnosticsGate.isEnabled`) agrees with `isDiagnosticsEnabled(BuildConfig.DEBUG,
+BuildConfig.FLAVOR)` for whichever variant is currently running.
 
-### 11.3 Collection — lifecycle-aware, composition-scoped
+**Flavor-aware, not `internalDebug`-only.** `CameraGeometryDiagnosticsGateTest` lives in the shared
+`src/test` source set, so it is compiled and run once per test variant —
+`testInternalDebugUnitTest` *and* `testPublicDebugUnitTest` both execute the same class, and
+`BuildConfig.FLAVOR` differs between the two (`"internal"` vs `"public"`). An earlier revision of this
+test hardcoded `assertTrue(CameraGeometryDiagnosticsGate.isEnabled)`, which only holds for
+`internalDebug` and fails outright under `testPublicDebugUnitTest` (`BuildConfig.FLAVOR == "public"` ⇒
+the correct, expected gate value is `false`). The fix computes the *expected* value from the same
+`BuildConfig` fields the gate itself reads, then asserts the gate agrees — so the same assertion is
+correct under both variants without weakening what the gate itself does: the overlay is still compiled
+into every variant but only *shown* in `internalDebug` — it never appears in `internalRelease`,
+`publicDebug`, or `publicRelease`. No new user-facing setting, developer-options screen, or persistent
+preference was added; no existing debug-overlay toggle mechanism exists elsewhere in `:mobile` to reuse
+(checked — no `BuildConfig.DEBUG`-gated UI or developer-options screen predates this PR).
 
-`ArScreen` collects `geometryProvider.state` with `collectAsStateWithLifecycle()` — the exact pattern
-`ArRoute` already uses for `viewModel.state` (`ArScreen.kt`, both call sites). The collection lives
-entirely inside `if (CameraGeometryDiagnosticsGate.isEnabled) { ... }` inside the `ArScreen` composable
-body: conditional composable calls are fully supported by Compose (unlike hook-order rules in other
-UI frameworks), and because the gate's value is fixed for the process lifetime, the branch taken never
-changes across recompositions of a given build. No manually launched permanent coroutine is used —
-the underlying collection is scoped to the composition via `collectAsStateWithLifecycle`'s own
-`LaunchedEffect`, so it is cancelled the moment `ArScreen` leaves composition, matching §12's lifecycle
-requirements. `CameraGeometryDiagnosticsGate` reads `geometryProvider.debugState()` (§10.6/§10.8 —
-bounded counters, no historical list) for `observedFrameCount`/`readyBundleCount`, reusing the existing
-CAM-1f debug-state surface rather than adding duplicate counters. A local `SideEffect` compares the
-snapshot's `category` across recompositions to maintain a bounded `statusTransitionCount` — the one
-counter CAM-1f's `debugState()` does not already expose — without adding a second provider or owner.
-`ArScreen` starts no new camera, sensor, resolver, or provider; it only reads
-`CameraSessionGeometryProvider.state`/`debugState()`, both already fed by the existing CAM-1f wiring.
+### 11.3 Collection — one observable `CameraSessionGeometryObservation`, lifecycle-aware and composition-scoped
+
+**Why not `state` + `debugState()`.** The first revision of this section had `ArScreen` separately
+collect `geometryProvider.state` (a `StateFlow<CameraSessionGeometryResult>`) and sample
+`geometryProvider.debugState()` (a plain synchronized getter, not a `Flow`) once per recomposition.
+That under-notifies a live UI: `StateFlow` never re-emits a *structurally-equal* value, so two
+consecutive frames that both produce `IntrinsicsUnavailable(PENDING)` — or two consecutive
+`RotationUnavailable` results with the same reason — publish only one `state` emission between them,
+even though `observedFrameCount` advanced on the second frame. Compose never recomposes for that
+second frame (nothing it collects changed), so the diagnostic overlay's frame/ready counters could sit
+stale for the entire time a session stayed in one non-ready category — exactly the situation the
+physical-device checklist's stationary/slow-pan/fast-pan tests need live counters for.
+
+**Fix: `CameraSessionGeometryProvider.observation`.** `CameraSessionGeometryProvider.kt` adds:
+
+```kotlin
+data class CameraSessionGeometryObservation(
+    val result: CameraSessionGeometryResult,
+    val debugState: CameraSessionGeometryDebugState,
+)
+
+val observation: StateFlow<CameraSessionGeometryObservation>
+```
+
+`recomputeLocked()` (the one place that ever changes `result`/counters/latest-status) publishes both
+`_state.value` and `_observation.value` from the *same* just-computed `result` and the *same*
+post-update counters, in the same locked section, via a shared `debugStateLocked()` helper (also used
+by the still-available `debugState()` getter, so the field list is never duplicated). Because
+`CameraSessionGeometryObservation` bundles the counters into the value being compared for
+`StateFlow`'s equality-based no-op-on-equal-emit behavior, **a counter-only change (same `result`,
+advanced `debugState`) still produces a new, distinct `CameraSessionGeometryObservation` and therefore
+still emits** — this is what closes the staleness gap above. `dispose()` publishes
+`CameraSessionGeometryObservation(result = Disposed, debugState = debugStateLocked())` after counters
+are already cleared, under the same lock. `observation` remains bounded, immutable, latest-value-only
+— no queue, no history — exactly like `state`/`debugState()` before it. The pre-existing `state`
+`StateFlow` is unchanged and still available for any simpler consumer that only needs the result.
+
+**Collection in `ArScreen`.** `ArScreen` collects `geometryProvider.observation` (not `state`, and not
+a direct `debugState()` sample) with `collectAsStateWithLifecycle()` — the same pattern `ArRoute`
+already uses for `viewModel.state` (`ArScreen.kt`, both call sites). The collection lives entirely
+inside `if (CameraGeometryDiagnosticsGate.isEnabled) { ... }` inside the `ArScreen` composable body:
+conditional composable calls are fully supported by Compose (unlike hook-order rules in other UI
+frameworks), and because the gate's value is fixed for the process lifetime, the branch taken never
+changes across recompositions of a given build. No manually launched permanent coroutine, no timer, no
+polling loop is used — the underlying collection is scoped to the composition via
+`collectAsStateWithLifecycle`'s own `LaunchedEffect`, so it is cancelled the moment `ArScreen` leaves
+composition, matching §12's lifecycle requirements. The diagnostic snapshot is built from
+`geometryObservation.result.toDiagnosticSnapshot()`; the displayed frame/ready counters are read
+directly from `geometryObservation.debugState` — `ArScreen` no longer calls
+`geometryProvider.debugState()` for live display. A local `SideEffect` compares the snapshot's
+`category` (not the raw observation) across recompositions to maintain a bounded
+`statusTransitionCount`: a counter-only observation emission (same category, advanced counters) does
+not bump it, since the comparison is on `category`, not on emission identity or count. `ArScreen`
+starts no new camera, sensor, resolver, or provider — this is one lifecycle-aware collection of one
+existing provider's `observation`, nothing more.
 
 ### 11.4 Center-probe (§7)
 
@@ -2022,15 +2074,17 @@ rather than reusing a disposed one (§12, Test G).
 
 ### 11.7 Lifecycle
 
-The diagnostic consumer adds no new lifecycle surface of its own: it reads `geometryProvider.state`/
-`debugState()`, both owned and disposed exactly as CAM-1f already specifies (§10.6). Because
+The diagnostic consumer adds no new lifecycle surface of its own: it reads
+`geometryProvider.observation`, owned and disposed exactly as CAM-1f already specifies for `state`
+(§10.6) — `dispose()` publishes both from the same locked transition. Because
 `collectAsStateWithLifecycle`'s collection is scoped to the `ArScreen` composition (§11.3), it stops
 the moment `ArScreen` leaves composition — before, not after, `geometryProvider.dispose()` runs in the
 same `DisposableEffect.onDispose` — so no diagnostic recomposition can read from a disposed provider
-except to display the terminal `Disposed`/`DISPOSED` category itself, which is expected and transient.
-A freshly entered `ArScreen` composition gets a fresh `remember`ed `geometryProvider` (§10.6, unchanged
-by this PR) and a fresh `nextDebugSessionId()` value, so no prior session's frame timestamp, counters,
-or `Ready` bundle can leak into a new session's first recomposition.
+except to display the terminal `Disposed`/`DISPOSED` category itself (with its counters already
+cleared), which is expected and transient. A freshly entered `ArScreen` composition gets a fresh
+`remember`ed `geometryProvider` (§10.6, unchanged by this PR) and a fresh `nextDebugSessionId()` value,
+so no prior session's frame timestamp, counters, or `Ready` bundle can leak into a new session's first
+recomposition.
 
 ### 11.8 Confirmation (scope boundaries)
 

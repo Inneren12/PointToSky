@@ -271,31 +271,38 @@ fun ArScreen(
         geometryProvider.onViewportChanged(overlaySize.width, overlaySize.height)
     }
 
-    // CAM-1g: debug-only consumer of geometryProvider.state, gated so it never affects a production
-    // build (see docs/camera_coordinate_calibration_contract.md §11). Collected with
+    // CAM-1g: debug-only consumer of geometryProvider.observation, gated so it never affects a
+    // production build (see docs/camera_coordinate_calibration_contract.md §11). Collected with
     // collectAsStateWithLifecycle so collection stops automatically when this composition leaves -
     // the same pattern ArRoute already uses for the AR view-model state - never a manually launched
-    // permanent coroutine. This is purely a read of the existing provider's state; it starts no new
-    // camera, sensor, resolver, or provider, and never feeds calculateOverlay/projectionParams.
+    // permanent coroutine. `observation` (not the plain `state` StateFlow, and not a direct
+    // `debugState()` sample) is collected because it publishes the result together with the counters
+    // as of that same recompute and therefore reliably emits even when consecutive recomputes
+    // produce a structurally-equal result (e.g. repeated IntrinsicsUnavailable/RotationUnavailable) -
+    // `state` alone would never re-emit there, leaving Compose un-invalidated and the counters stale.
+    // This is purely a read of the existing provider's observation; it starts no new camera, sensor,
+    // resolver, or provider, and never feeds calculateOverlay/projectionParams.
     val cameraGeometryDiagnosticSnapshot: CameraGeometryDiagnosticSnapshot?
     val cameraGeometryDiagnosticSessionId: Long
     val cameraGeometryStatusTransitionCount: Int
     val cameraGeometryObservedFrameCount: Long
     val cameraGeometryReadyBundleCount: Long
     if (CameraGeometryDiagnosticsGate.isEnabled) {
-        val geometryResult by geometryProvider.state.collectAsStateWithLifecycle()
+        val geometryObservation by geometryProvider.observation.collectAsStateWithLifecycle()
         val sessionId = remember { nextDebugSessionId() }
-        val snapshot = remember(geometryResult) { geometryResult.toDiagnosticSnapshot() }
+        val snapshot = remember(geometryObservation.result) { geometryObservation.result.toDiagnosticSnapshot() }
         val transitionCount = remember { mutableIntStateOf(0) }
         val lastCategory = remember { mutableStateOf<CameraGeometryDiagnosticCategory?>(null) }
         SideEffect {
+            // Counter-only observation emissions (same category, advanced counters) must not bump
+            // this - it tracks category transitions only, never raw emission count.
             val previous = lastCategory.value
             if (previous != null && previous != snapshot.category) {
                 transitionCount.intValue++
             }
             lastCategory.value = snapshot.category
         }
-        val debugState = geometryProvider.debugState()
+        val debugState = geometryObservation.debugState
 
         cameraGeometryDiagnosticSnapshot = snapshot
         cameraGeometryDiagnosticSessionId = sessionId

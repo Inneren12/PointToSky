@@ -5,6 +5,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -168,6 +169,34 @@ class CameraGeometryDiagnosticFormatTest {
         assertTrue(text.contains("CAM geometry: READY_CALIBRATED"))
         assertTrue(text.contains("session: 4"))
         assertTrue(text.contains("round-trip: 0.000 px"))
+    }
+
+    // --- Counter-only changes must still change the built text (CAM-1g gate follow-up) -----------
+
+    @Test
+    fun `a frame-count-only change produces different overlay text even though the snapshot is unchanged`() {
+        val snapshot = emptySnapshotFor(CameraGeometryDiagnosticCategory.INTRINSICS_PENDING)
+
+        val textAtFrameOne =
+            buildCameraGeometryDiagnosticText(
+                snapshot = snapshot,
+                sessionId = 1,
+                statusTransitionCount = 0,
+                observedFrameCount = 1,
+                readyBundleCount = 0,
+            )
+        val textAtFrameTwo =
+            buildCameraGeometryDiagnosticText(
+                snapshot = snapshot,
+                sessionId = 1,
+                statusTransitionCount = 0,
+                observedFrameCount = 2,
+                readyBundleCount = 0,
+            )
+
+        assertTrue(textAtFrameOne.contains("frames: 1"))
+        assertTrue(textAtFrameTwo.contains("frames: 2"))
+        assertNotEquals(textAtFrameOne, textAtFrameTwo)
     }
 
     private fun emptySnapshotFor(category: CameraGeometryDiagnosticCategory) =

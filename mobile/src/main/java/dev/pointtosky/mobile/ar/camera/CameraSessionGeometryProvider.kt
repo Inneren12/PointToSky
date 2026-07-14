@@ -32,11 +32,36 @@ data class CameraSessionGeometryDebugState(
 )
 
 /**
+ * One atomically-published observation of [CameraSessionGeometryProvider]'s activity (CAM-1g):
+ * the [result] published by a given recompute, together with the [debugState] counters/latest
+ * fields as they stood at the end of that *same* recompute. Bounded, immutable, latest-value-only
+ * — no matrix, no pixel data, no historical list, no raw exception text, no identifier.
+ *
+ * Exists because [state] alone under-notifies a live UI: `StateFlow` never re-emits a
+ * structurally-equal [CameraSessionGeometryResult] (e.g. two consecutive
+ * `IntrinsicsUnavailable(PENDING)` results from two different frames), so a consumer collecting
+ * only [state] would never see `debugState()`'s counters advance while the result category stays
+ * unchanged. [observation] always emits on every recompute because [debugState] changes whenever a
+ * counter does, even when [result] does not — see [CameraSessionGeometryProvider.recomputeLocked].
+ */
+data class CameraSessionGeometryObservation(
+    val result: CameraSessionGeometryResult,
+    val debugState: CameraSessionGeometryDebugState,
+)
+
+/**
  * Session-scoped production owner combining CAM-1c frame metadata, the CAM-1d frame/rotation
  * pairing computed for that *same* frame, the AR overlay viewport, and a once-per-session CAM-1b
  * intrinsics resolution into the latest [CameraSessionGeometryResult] (CAM-1f). Publishes
- * latest-value-only via [state] — never a queue of historical bundles. Nothing in `:mobile`
- * consumes [state] yet; this PR wires the owner only, not a renderer or matcher.
+ * latest-value-only via [state] — never a queue of historical bundles.
+ *
+ * **Live observation (CAM-1g).** [observation] is the recommended way for a UI to observe this
+ * provider: it publishes a [CameraSessionGeometryObservation] combining [result][CameraSessionGeometryObservation.result]
+ * with the [debugState][CameraSessionGeometryObservation.debugState] counters as of that exact
+ * recompute, and — unlike [state] alone — it reliably emits even when consecutive recomputes
+ * produce a structurally-equal [CameraSessionGeometryResult], because the counters inside
+ * [CameraSessionGeometryObservation.debugState] still advance. [state] is kept unchanged for any
+ * existing/simpler consumer that only needs the result itself.
  *
  * **Frame/pairing coherence.** [onPairedFrame] takes a frame and the pairing result computed for
  * that *exact* frame together, in one call — never combined from two independently "latest"
@@ -83,9 +108,21 @@ class CameraSessionGeometryProvider(
      */
     private val maxAllowedPairDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
 ) {
-    private val _state =
-        MutableStateFlow<CameraSessionGeometryResult>(CameraSessionGeometryResult.MissingFrame(viewportSize = null))
+    private val initialResult: CameraSessionGeometryResult = CameraSessionGeometryResult.MissingFrame(viewportSize = null)
+
+    private val _state = MutableStateFlow(initialResult)
     val state: StateFlow<CameraSessionGeometryResult> = _state.asStateFlow()
+
+    private val _observation =
+        MutableStateFlow(
+            CameraSessionGeometryObservation(
+                result = initialResult,
+                debugState = initialDebugState(),
+            ),
+        )
+
+    /** See the class kdoc "Live observation" section - the preferred way to observe this provider. */
+    val observation: StateFlow<CameraSessionGeometryObservation> = _observation.asStateFlow()
 
     // Single lock serializing every update method with the disposed transition - see the class
     // kdoc. Every field below is read/written only while holding it.
@@ -156,9 +193,10 @@ class CameraSessionGeometryProvider(
     }
 
     /**
-     * Terminal, idempotent: after this call every update method is a permanent no-op, [state]
-     * becomes [CameraSessionGeometryResult.Disposed], and all cached inputs/counters are cleared.
-     * Callers must invoke this exactly when the owning AR session ends.
+     * Terminal, idempotent: after this call every update method is a permanent no-op, [state]/
+     * [observation] become [CameraSessionGeometryResult.Disposed] (with cleared counters), and all
+     * cached inputs/counters are cleared. Callers must invoke this exactly when the owning AR
+     * session ends.
      */
     fun dispose() {
         val plan =
@@ -177,25 +215,44 @@ class CameraSessionGeometryProvider(
                 latestQuality = null
                 latestPairDeltaNanos = null
                 _state.value = CameraSessionGeometryResult.Disposed
+                _observation.value =
+                    CameraSessionGeometryObservation(
+                        result = CameraSessionGeometryResult.Disposed,
+                        debugState = debugStateLocked(),
+                    )
                 LogPlan(disposed = true)
             }
         runLog(plan)
     }
 
     /** Debug snapshot for a minimal readout - no pixels, no matrices, only counters/status/quality. */
-    fun debugState(): CameraSessionGeometryDebugState =
-        synchronized(lock) {
-            CameraSessionGeometryDebugState(
-                observedFrameCount = observedFrameCount,
-                readyBundleCount = readyBundleCount,
-                rejectedBundleCount = rejectedBundleCount,
-                latestStatus = latestStatus,
-                latestQuality = latestQuality,
-                latestPairDeltaNanos = latestPairDeltaNanos,
-            )
-        }
+    fun debugState(): CameraSessionGeometryDebugState = synchronized(lock) { debugStateLocked() }
 
-    /** Must be called while holding [lock]. Rebuilds [state] from whatever inputs are currently cached. */
+    /**
+     * Must be called while holding [lock]. The single place [CameraSessionGeometryDebugState] is
+     * constructed from the current fields - both [debugState] and every [observation] publication
+     * (via [recomputeLocked] and [dispose]) delegate here so the field list never duplicates.
+     */
+    private fun debugStateLocked(): CameraSessionGeometryDebugState =
+        CameraSessionGeometryDebugState(
+            observedFrameCount = observedFrameCount,
+            readyBundleCount = readyBundleCount,
+            rejectedBundleCount = rejectedBundleCount,
+            latestStatus = latestStatus,
+            latestQuality = latestQuality,
+            latestPairDeltaNanos = latestPairDeltaNanos,
+        )
+
+    /**
+     * Must be called while holding [lock]. Rebuilds [state]/[observation] from whatever inputs are
+     * currently cached. [observation] is published from the *same* result and the *same*
+     * post-update counters computed here, in the same locked section — never assembled from two
+     * independently-read snapshots — so `observation.result.status == observation.debugState.latestStatus`
+     * always holds. Because [CameraSessionGeometryObservation.debugState] carries the just-updated
+     * counters, [_observation] changes (and therefore emits) on every call to this function, even on
+     * a run where [result] is structurally equal to the previous one - see the class kdoc "Live
+     * observation" section.
+     */
     private fun recomputeLocked(): LogPlan {
         val frame = latestFrame
         val result: CameraSessionGeometryResult =
@@ -239,9 +296,24 @@ class CameraSessionGeometryProvider(
         }
 
         _state.value = result
+        _observation.value =
+            CameraSessionGeometryObservation(
+                result = result,
+                debugState = debugStateLocked(),
+            )
         recomputeCount++
         return planLog(result)
     }
+
+    private fun initialDebugState(): CameraSessionGeometryDebugState =
+        CameraSessionGeometryDebugState(
+            observedFrameCount = 0L,
+            readyBundleCount = 0L,
+            rejectedBundleCount = 0L,
+            latestStatus = CameraSessionGeometryStatus.MISSING_FRAME,
+            latestQuality = null,
+            latestPairDeltaNanos = null,
+        )
 
     private fun currentViewportSizeOrNullLocked(): PixelSize? =
         if (viewportWidthPx > 0 && viewportHeightPx > 0) {
