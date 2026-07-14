@@ -21,7 +21,7 @@ import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayMetadata
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayPoint
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayWaitingReason
-import kotlin.test.assertEquals
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith

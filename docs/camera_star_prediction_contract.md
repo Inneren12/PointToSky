@@ -1,14 +1,16 @@
 # Camera Star Prediction Contract (CAM-2a)
 
-**Status:** Pure math slice implemented and unit-tested (391 JVM tests as of the CAM-2b batching update,
-§14.9/§14.10 — 388 original + 3 new — executed via a direct `kotlinc`/JUnit-console invocation, since
-Gradle itself cannot run in either that PR's or CAM-2b's authoring sandbox; see §13/§14.10's disclosures).
-**Not** wired into any *production* renderer, not device-validated, not a claim of pixel accuracy. (A
-separate, `internalDebug`-only diagnostic *consumer* — CAM-2b, §14 — now visualizes this pipeline's
-output for physical-device comparison; it does not change this status line's claims about production
-rendering or device validation. CAM-2b also made one small, behavior-preserving refactor to this
-module's own code — batching the per-star sidereal-time computation, §14.12 — which the 391/391 passing
-result above already covers.)
+**Status:** Pure math slice implemented and unit-tested (398 JVM tests as of the CAM-2b follow-up fix,
+§14.9/§14.10 — 388 original + 3 batched-astronomy + 7 `withIntrinsics` exact-preservation — executed via
+a direct `kotlinc`/JUnit-console invocation, since Gradle itself cannot run in either that PR's or
+CAM-2b's authoring sandbox; see §13/§14.10's disclosures). **Not** wired into any *production* renderer,
+not device-validated, not a claim of pixel accuracy. (A separate, `internalDebug`-only diagnostic
+*consumer* — CAM-2b, §14 — now visualizes this pipeline's output for physical-device comparison; it does
+not change this status line's claims about production rendering or device validation. CAM-2b also made
+two small, behavior-preserving/bug-fixing changes to this module's own code — batching the per-star
+sidereal-time computation (§14.12) and adding the exact-copy `CameraSessionGeometry.withIntrinsics`
+substitution used by the diagnostic-fallback intrinsics mode (§14.11) — both covered by the 398/398
+passing result above.)
 **Scope:** The predict-only geometry pipeline that turns a catalog star's RA/Dec, an observer
 location/time, and a [`CameraSessionGeometry`](../core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/projection/camera/CameraSessionGeometry.kt)
 bundle into a predicted position in camera/image/display space, plus a bounded visibility
@@ -1057,21 +1059,22 @@ network call was added.
 
 ### 14.9 Tests
 
-`:core:astro-core` JVM tests (batched-astronomy hardening, §14.12) — **executed** via §14.10's `kotlinc`
-workaround, 391/391 passing:
+`:core:astro-core` JVM tests (batched-astronomy hardening, §14.12; exact-preservation intrinsics
+substitution, §14.11) — **executed** via §14.10's `kotlinc` workaround, 398/398 passing:
 
 | File | Covers |
 |---|---|
 | `PreparedStarProjectionContextTest` | `prepareStarProjectionContext` matches a manual per-field computation; the public 2-arg `equatorialToLocalSky(star, context)` delegates to the 3-arg prepared overload without changing output; a multi-star batch applies one shared prepared LST value consistently to every star (cross-checked against calling `projectStars` once per star) |
+| `CameraSessionGeometryTest` (follow-up additions) | `CameraSessionGeometry.withIntrinsics` (§14.11): changes only `intrinsics` — `frame`, `pairedRotation` values, `frameRotationDeltaNanos`, `cropScaleTransform`, and `viewportSize` are all preserved exactly across a nontrivial 25 ms configured-tolerance/3 ms actual-delta scenario; the original geometry is never mutated; a negative `frameRotationDeltaNanos` survives exactly (never flipped positive by an `abs()` derivation); defensive rotation-matrix ownership — mutating the caller's source array, a value read from the original geometry, or a value read from the replaced geometry never affects either geometry, and the two never share the same array instance |
 
 `:mobile` JVM tests (`src/test/java/dev/pointtosky/mobile/ar/camera/prediction/`) — **executed** via
 §14.10's `kotlinc` workaround (JUnit4/`kotlin-test-junit` binding, matching `:mobile`'s real Gradle
-configuration), 45/45 passing:
+configuration), 48/48 passing:
 
 | File | Covers |
 |---|---|
 | `PredictedStarCatalogAdapterTest` | stable catalog index, exactly-once degree→radian conversion, magnitude pass-through, deterministic bounded/brightest-first selection, empty/zero-bound edge cases |
-| `PredictedStarOverlayReducerTest` | gate truth table (§14.2); every non-`Ready` `CameraSessionGeometryResult` → `Waiting`; every `IntrinsicsMappingUnavailableReason` → `Unavailable`; `toOverlayPoints` classification filtering, exact coordinate pass-through, order preservation; full-batch summary counters; raw-rotation/context-declination ownership (§14.5) cross-check; disposal/session-reset statelessness; explicit intrinsics-mode behavior (§14.11) — session mode preserves `PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`, diagnostic fallback becomes `Ready` with an exact-dimension `AnalysisBuffer` projection reference at several frame sizes, the original session geometry is never mutated, the default mode is `SESSION_INTRINSICS`, and the panel text distinguishes the two modes without ever calling the fallback "calibrated" |
+| `PredictedStarOverlayReducerTest` | gate truth table (§14.2); every non-`Ready` `CameraSessionGeometryResult` → `Waiting`; every `IntrinsicsMappingUnavailableReason` → `Unavailable`; `toOverlayPoints` classification filtering, exact coordinate pass-through, order preservation; full-batch summary counters; raw-rotation/context-declination ownership (§14.5) cross-check; disposal/session-reset statelessness; explicit intrinsics-mode behavior (§14.11) — session mode preserves `PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`, diagnostic fallback becomes `Ready` with an exact-dimension `AnalysisBuffer` projection reference at several frame sizes, the original session geometry is never mutated, the default mode is `SESSION_INTRINSICS`, and the panel text distinguishes the two modes without ever calling the fallback "calibrated"; (follow-up additions) diagnostic-fallback metadata preserves the session geometry's frame/rotation timestamps, actual pair delta (including a negative delta, exactly), and `frame.rotationDegrees` across a 25 ms configured-tolerance/3 ms actual-delta scenario, and produces byte-identical points/summary/sync-metadata to an equivalent session-mode geometry |
 | `PredictedStarOverlayFormatTest` | bounded, deterministic panel text — every required field present, never one line per star; session-mode single intrinsics line vs. diagnostic-fallback dual session/projection lines, never labeled calibrated |
 
 `:mobile` Compose UI tests (`src/androidTest/java/dev/pointtosky/mobile/ar/PredictedStarOverlayUiTest.kt`,
@@ -1107,12 +1110,13 @@ not collapsed into one claim:
   `junit-platform-console-standalone:1.10.2`:
 
   ```text
-  391 tests found, 391 successful, 0 failed
+  398 tests found, 398 successful, 0 failed
   ```
 
-  (388 pre-existing + the 3 new `PreparedStarProjectionContextTest` cases, all passing individually too.)
-  This is real evidence the batched-LST refactor (§14.12) is behavior-preserving, not a claim about
-  `:mobile` or Android.
+  (388 pre-existing + 3 `PreparedStarProjectionContextTest` cases + 7 follow-up `CameraSessionGeometry.withIntrinsics`
+  preservation/non-mutation/defensive-ownership cases, all passing individually too.) This is real
+  evidence the batched-LST refactor (§14.12) is behavior-preserving and the `withIntrinsics` exact-copy
+  substitution (§14.11) is correct, not a claim about `:mobile` or Android.
 - **`:mobile`'s CAM-2b prediction-package main + test compilation, and test execution — ACTUALLY RUN, ALL
   GREEN, for the Android-free subset only.** `PredictedStarOverlayState.kt`, `PredictedStarCatalogAdapter.kt`,
   `PredictedStarOverlayReducer.kt`, `PredictedStarOverlayFormat.kt`,
@@ -1131,10 +1135,12 @@ not collapsed into one claim:
   `kotlin("test")`), not the JUnit5 binding used for `:core:astro-core` above. Running the compiled tests:
 
   ```text
-  45 tests found, 45 successful, 0 failed
+  48 tests found, 48 successful, 0 failed
   ```
 
-  across all three classes (verified individually, not just as one aggregate count).
+  across all three classes (verified individually, not just as one aggregate count; 45 pre-existing + 3
+  follow-up `PredictedStarOverlayReducerTest` cases covering diagnostic-fallback synchronization-metadata
+  preservation).
 - **`:mobile` Compose/Android compilation** (`ArScreen.kt`'s integration, `PredictedStarOverlayUi.kt`,
   `androidTest`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug`):
   **not run, and not attempted via this workaround** — these require `android.jar`, the Compose K2
@@ -1209,19 +1215,29 @@ enum class PredictedStarOverlayIntrinsicsMode {
 
 **Constructing the derived geometry without mutating anything.** `CameraSessionGeometry` has no public
 `copy(...)` (its sole construction path, `CameraSessionGeometry.of`, is `internal` to
-`:core:astro-core`), so `rebuildGeometryWithIntrinsics(geometry, intrinsicsResolution)` goes through the
-existing public, pure factory `createCameraSessionGeometry` instead: it builds a
-`FrameRotationPairingResult.Paired` from the *original* geometry's own already-validated `frame`/
-`pairedRotation`/`frameRotationDeltaNanos` (never re-pairing, never re-deriving a rotation sample) and
-calls `createCameraSessionGeometry` with the *same* frame/viewport and only the intrinsics resolution
-replaced. `maxAllowedPairDeltaNanos` is set to `abs(geometry.frameRotationDeltaNanos)` — the exact delta
-the original geometry already carries — so the reconstruction can never spuriously reject a pairing that
-was already valid; the pairing/timestamp facts are replayed, not re-checked. This never touches
+`:core:astro-core`), so the substitution is implemented *inside* `:core:astro-core`, beside that
+construction path, as a focused extension function:
+
+```kotlin
+fun CameraSessionGeometry.withIntrinsics(intrinsics: CameraIntrinsicsResolution): CameraSessionGeometry
+```
+
+(`CameraSessionGeometry.kt`). `withIntrinsics` copies the accepted, already-invariant-checked geometry
+bundle exactly — `frame`, `pairedRotation`, `frameRotationDeltaNanos`, `cropScaleTransform`, and
+`viewportSize` are all passed straight through to `CameraSessionGeometry.of` — and substitutes only
+`intrinsics`. It never reconstructs a `FrameRotationPairingResult`, never calls
+`pairFrameToNearestRotation`, and never reads, derives, or checks a pairing tolerance at all — there is no
+tolerance parameter on its signature to conflate with the accepted delta, so a caller's originally
+configured tolerance (which `CameraSessionGeometry` never stores as a field in the first place — see its
+own KDoc, "pairing-tolerance conformance is not an invariant of this class") can never be corrupted by
+this call. Because `CameraSessionGeometry.init` validates only the cross-field relationships between
+`frame`/`cropScaleTransform`/`viewportSize`/`frameRotationDeltaNanos` — never anything about `intrinsics`
+— and none of those fields change here, `withIntrinsics` **cannot fail**: it returns
+`CameraSessionGeometry` directly, never a `CameraSessionGeometryResult` wrapper, and there is no
+`DiagnosticFallbackGeometryUnavailable`-style waiting state for this mode. This never touches
 `CameraSessionGeometryProvider`, `SessionScopedCameraIntrinsicsResolver`, the original geometry
 observation, or any production intrinsics resolution — only a fresh, independent `CameraSessionGeometry`
-is returned. If the derived geometry cannot be built as `Ready` (practically unreachable, since frame/
-viewport are unchanged and already valid), `reducePredictedStarOverlayState` reports
-`Waiting(DiagnosticFallbackGeometryUnavailable)` rather than throwing.
+is returned, and the original is never mutated.
 
 **Never silently switched, never labeled calibrated.** `reducePredictedStarOverlayState` never chooses a
 mode automatically — whichever `intrinsicsMode` the caller supplies is exactly what runs, every time.

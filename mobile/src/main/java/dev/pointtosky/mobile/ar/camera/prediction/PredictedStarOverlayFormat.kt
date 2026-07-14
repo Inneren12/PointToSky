@@ -14,7 +14,6 @@ private fun formatWaitingReason(reason: PredictedStarOverlayWaitingReason): Stri
         PredictedStarOverlayWaitingReason.ObservationTimeUnavailable -> "observation time unavailable"
         PredictedStarOverlayWaitingReason.MagneticDeclinationUnavailable -> "magnetic declination unavailable"
         PredictedStarOverlayWaitingReason.NoStarsSelected -> "no stars selected"
-        PredictedStarOverlayWaitingReason.DiagnosticFallbackGeometryUnavailable -> "diagnostic fallback geometry unavailable"
     }
 
 /** Signed, one-decimal milliseconds — always carries an explicit `+`/`-` sign, never bare digits. */

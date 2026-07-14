@@ -36,16 +36,6 @@ sealed interface PredictedStarOverlayWaitingReason {
 
     /** The bounded diagnostic catalog subset ([selectPredictedStarDirections]) is empty. */
     data object NoStarsSelected : PredictedStarOverlayWaitingReason
-
-    /**
-     * [PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK] was selected, but
-     * [rebuildGeometryWithIntrinsics] did not return a
-     * [dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult.Ready] bundle — e.g. the
-     * derived crop/scale transform construction failed. Practically unreachable (the derived geometry
-     * reuses the exact frame/viewport an already-`Ready` session geometry already validated), but
-     * reported explicitly rather than throwing, matching this codebase's categorized-result convention.
-     */
-    data object DiagnosticFallbackGeometryUnavailable : PredictedStarOverlayWaitingReason
 }
 
 /**

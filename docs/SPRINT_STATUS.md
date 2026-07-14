@@ -16,7 +16,7 @@ No" — it is never described as simply "tested," which would misstate what was 
 | CAM-1c–1f | CameraX `Preview`+`ImageAnalysis`, frame metadata, timestamp-paired rotation, crop/rotation/display transform, immutable `CameraSessionGeometry`, session-scoped geometry provider | Yes | Yes | Yes (per that PR's own record) | Yes (per that PR's own record) | No |
 | CAM-1g | `internalDebug`-only camera-geometry diagnostics overlay; observable geometry result + debug counters | Yes | Yes | Yes (per that PR's own record) | Yes (per that PR's own record) | **No — `CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`** |
 | CAM-2a | Pure, Android-free star prediction (`projectStars`): catalog RA/Dec + observer location/time + magnetic declination + `CameraSessionGeometry` → predicted camera/image/display positions, with typed unavailable outcomes | Yes | Yes | Yes (388 tests, `:core:astro-core`, verified via a direct `kotlinc`/JUnit-console invocation — Gradle itself could not run; see `docs/camera_star_prediction_contract.md` §13) | Partial (`:core:astro-core` compilation confirmed this way; `:mobile` not attempted by that PR) | No — not wired into any renderer, no device claim |
-| CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode | Yes | Yes | **Partial** — Android-free subset only: `:core:astro-core` (391/391) and `:mobile`'s prediction-package unit tests (45/45), via a `kotlinc`/JUnit-console workaround, not real Gradle; Compose/`androidTest`/instrumentation tests **not run**; see below | **Partial** — same Android-free subset compiled via the workaround; real Gradle main/androidTest compilation, lint, and assemble **not run** | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** |
+| CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode via a total, exact-copy `CameraSessionGeometry.withIntrinsics` substitution | Yes | Yes | **Partial** — Android-free subset only: `:core:astro-core` (398/398) and `:mobile`'s prediction-package unit tests (48/48), via a `kotlinc`/JUnit-console workaround, not real Gradle; Compose/`androidTest`/instrumentation tests **not run**; see below | **Partial** — same Android-free subset compiled via the workaround; real Gradle main/androidTest compilation, lint, and assemble **not run** | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** |
 
 ## CAM-2b (this sprint)
 
@@ -41,9 +41,11 @@ No" — it is never described as simply "tested," which would misstate what was 
   `DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK` opt-in) lets CAM-2b draw markers on sessions whose real
   intrinsics are `PhysicalSensor`-referenced (common once Camera2 characteristics resolve), by
   substituting a legacy fixed-FOV, analysis-buffer-referenced intrinsics sized to the exact current
-  frame — built via a derived, immutable geometry that never mutates the original session geometry or
-  provider, and always labeled distinctly ("session" vs. "diagnostic fallback," never "calibrated") in
-  the panel.
+  frame — via `CameraSessionGeometry.withIntrinsics` (`:core:astro-core`), a total (cannot-fail) field-
+  level copy of the accepted geometry bundle that changes only `intrinsics` and never re-derives a
+  pairing tolerance from the accepted delta, never mutates the original session geometry or provider,
+  and is always labeled distinctly ("session" vs. "diagnostic fallback," never "calibrated") in the
+  panel.
 - **Batched astronomy:** `projectStars` now computes local sidereal time once per batch
   (`PreparedStarProjectionContext`, `:core:astro-core`) instead of once per star, avoiding up to 200
   redundant `lstAt` calls per frame; the public `equatorialToLocalSky(star, context)` API and its output
@@ -58,12 +60,14 @@ No" — it is never described as simply "tested," which would misstate what was 
     clean, against the real `:core:astro-core` output. `:mobile`'s Compose/`ArScreen.kt` integration —
     **not compiled**; requires `android.jar`, the Compose K2 compiler plugin, and AndroidX/CameraX AARs,
     which a bare `kotlinc` invocation cannot replicate (the same boundary CAM-2a's own author drew).
-  - *JVM unit tests*: `:core:astro-core:test` — **actually run: 391/391 passing** (388 pre-existing + 3
-    new `PreparedStarProjectionContextTest` cases). `:mobile`'s `PredictedStarCatalogAdapterTest`/
-    `PredictedStarOverlayReducerTest`/`PredictedStarOverlayFormatTest` — **actually run: 45/45 passing**
-    (JUnit4/`kotlin-test-junit`, matching `:mobile`'s real Gradle binding; one disclosed stub
-    `BuildConfig` object stood in for the AGP-generated one, never read by the code under test).
-    `:mobile`'s Compose UI test (`PredictedStarOverlayUiTest`) — **not run**, same reason as above.
+  - *JVM unit tests*: `:core:astro-core:test` — **actually run: 398/398 passing** (388 pre-existing + 3
+    `PreparedStarProjectionContextTest` cases + 7 follow-up `CameraSessionGeometry.withIntrinsics`
+    exact-preservation/non-mutation/defensive-ownership cases). `:mobile`'s `PredictedStarCatalogAdapterTest`/
+    `PredictedStarOverlayReducerTest`/`PredictedStarOverlayFormatTest` — **actually run: 48/48 passing**
+    (45 pre-existing + 3 follow-up diagnostic-fallback synchronization-metadata cases; JUnit4/
+    `kotlin-test-junit`, matching `:mobile`'s real Gradle binding; one disclosed stub `BuildConfig` object
+    stood in for the AGP-generated one, never read by the code under test). `:mobile`'s Compose UI test
+    (`PredictedStarOverlayUiTest`) — **not run**, same reason as above.
   - *androidTest compilation* (`:mobile:compileInternalDebugAndroidTestKotlin`/
     `compilePublicDebugAndroidTestKotlin`): **not run** — requires the Android SDK.
   - *Connected instrumentation tests* (`:mobile:connectedInternalDebugAndroidTest`): **not run** — no

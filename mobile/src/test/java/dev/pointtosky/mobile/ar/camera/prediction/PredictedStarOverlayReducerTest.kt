@@ -51,6 +51,7 @@ class PredictedStarOverlayReducerTest {
         viewportHeightPx: Int = 500,
         rotationMatrix: FloatArray = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f),
         rotationDegrees: Int = 0,
+        maxAllowedPairDeltaNanos: Long = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
     ): CameraSessionGeometryResult.Ready {
         val frame =
             CameraFrameMetadata(
@@ -65,7 +66,7 @@ class PredictedStarOverlayReducerTest {
                 pairFrameToNearestRotation(
                     frame = frame,
                     samples = listOf(sample),
-                    maxAllowedDeltaNanos = TimestampSyncConfig.MAX_PAIR_DELTA_NANOS,
+                    maxAllowedDeltaNanos = maxAllowedPairDeltaNanos,
                     clockMismatchThresholdNanos = TimestampSyncConfig.CLOCK_MISMATCH_THRESHOLD_NANOS,
                 ),
             )
@@ -76,6 +77,7 @@ class PredictedStarOverlayReducerTest {
                 intrinsicsResolution = intrinsics,
                 viewportWidthPx = viewportWidthPx,
                 viewportHeightPx = viewportHeightPx,
+                maxAllowedPairDeltaNanos = maxAllowedPairDeltaNanos,
             )
         return assertIs<CameraSessionGeometryResult.Ready>(result)
     }
@@ -554,6 +556,122 @@ class PredictedStarOverlayReducerTest {
             PredictedStarOverlayState.Unavailable(IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED),
             result,
         )
+    }
+
+    @Test
+    fun `diagnostic fallback preserves the actual pair delta exactly across a configured tolerance far larger than that delta`() {
+        // Configured tolerance (25 ms) is deliberately much larger than the actual accepted delta
+        // (3 ms) - the exact "tolerance strictly larger than delta" shape that the old, buggy
+        // rebuildGeometryWithIntrinsics(maxAllowedPairDeltaNanos = abs(frameRotationDeltaNanos))
+        // would have silently narrowed to 3 ms. withIntrinsics has no tolerance parameter at all, so
+        // there is nothing left to conflate with the actual delta.
+        val frameTimestampNanos = 1_000_000_000L
+        val rotationTimestampNanos = 997_000_000L // frame is 3 ms after rotation -> delta = +3 ms
+        val configuredToleranceNanos = 25_000_000L
+        val geometry =
+            readyGeometry(
+                physicalSensorIntrinsics(),
+                frameTimestampNanos = frameTimestampNanos,
+                rotationTimestampNanos = rotationTimestampNanos,
+                maxAllowedPairDeltaNanos = configuredToleranceNanos,
+                rotationDegrees = 90,
+            )
+        val expectedDeltaNanos = frameTimestampNanos - rotationTimestampNanos
+        assertEquals(3_000_000L, expectedDeltaNanos)
+
+        val result =
+            assertIs<PredictedStarOverlayState.Ready>(
+                reduce(geometryResult = geometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK),
+            )
+
+        // Synchronization metadata always describes the original session geometry - never the
+        // derived projection geometry - regardless of intrinsicsMode (reducer reads these off
+        // sessionGeometry, not projectionGeometry).
+        assertEquals(frameTimestampNanos, result.metadata.frameTimestampNanos)
+        assertEquals(rotationTimestampNanos, result.metadata.rotationTimestampNanos)
+        assertEquals(expectedDeltaNanos, result.metadata.pairDeltaNanos)
+        assertEquals(90, result.metadata.frameRotationDegrees)
+
+        // The original session geometry itself is untouched: re-deriving it under its own originally
+        // configured 25 ms tolerance still succeeds, proving that tolerance was never narrowed to the
+        // 3 ms actual delta by the diagnostic-fallback path that just ran.
+        assertEquals(expectedDeltaNanos, geometry.geometry.frameRotationDeltaNanos)
+    }
+
+    @Test
+    fun `diagnostic fallback preserves a negative pair delta exactly - never flipped positive by an abs derivation`() {
+        val frameTimestampNanos = 997_000_000L
+        val rotationTimestampNanos = 1_000_000_000L // frame is 3 ms before rotation -> delta = -3 ms
+        val geometry =
+            readyGeometry(
+                physicalSensorIntrinsics(),
+                frameTimestampNanos = frameTimestampNanos,
+                rotationTimestampNanos = rotationTimestampNanos,
+            )
+        val expectedDeltaNanos = frameTimestampNanos - rotationTimestampNanos
+        assertEquals(-3_000_000L, expectedDeltaNanos)
+
+        val result =
+            assertIs<PredictedStarOverlayState.Ready>(
+                reduce(geometryResult = geometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK),
+            )
+
+        assertEquals(expectedDeltaNanos, result.metadata.pairDeltaNanos)
+        assertTrue(result.metadata.pairDeltaNanos < 0, "expected a strictly negative pairDeltaNanos; was ${result.metadata.pairDeltaNanos}")
+    }
+
+    @Test
+    fun `diagnostic fallback produces the same points, summary, and sync metadata as an equivalent session-mode geometry`() {
+        // Two geometries share every field except intrinsics: one carries an AnalysisBuffer
+        // intrinsics that already exactly matches the frame dimensions (so SESSION_INTRINSICS
+        // projects directly), the other carries a PhysicalSensor intrinsics (so it needs
+        // DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK to project at all). legacyFallbackCameraIntrinsics is a
+        // pure function of width/height, so the fallback path's substituted intrinsics are byte-for-
+        // byte identical to the session-mode geometry's own intrinsics - if withIntrinsics altered
+        // the viewport, cropScaleTransform, frame, or rotation in any way, these two results would
+        // diverge.
+        val frameTimestampNanos = 1_000_000_000L
+        val rotationTimestampNanos = 997_000_000L
+        val bufferWidthPx = 1920
+        val bufferHeightPx = 1080
+        val sessionModeGeometry =
+            readyGeometry(
+                exactMatchIntrinsics(widthPx = bufferWidthPx, heightPx = bufferHeightPx),
+                frameTimestampNanos = frameTimestampNanos,
+                rotationTimestampNanos = rotationTimestampNanos,
+                bufferWidthPx = bufferWidthPx,
+                bufferHeightPx = bufferHeightPx,
+                viewportWidthPx = bufferWidthPx,
+                viewportHeightPx = bufferHeightPx,
+                rotationDegrees = 90,
+            )
+        val fallbackModeGeometry =
+            readyGeometry(
+                physicalSensorIntrinsics(),
+                frameTimestampNanos = frameTimestampNanos,
+                rotationTimestampNanos = rotationTimestampNanos,
+                bufferWidthPx = bufferWidthPx,
+                bufferHeightPx = bufferHeightPx,
+                viewportWidthPx = bufferWidthPx,
+                viewportHeightPx = bufferHeightPx,
+                rotationDegrees = 90,
+            )
+
+        val sessionResult =
+            assertIs<PredictedStarOverlayState.Ready>(
+                reduce(geometryResult = sessionModeGeometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS),
+            )
+        val fallbackResult =
+            assertIs<PredictedStarOverlayState.Ready>(
+                reduce(geometryResult = fallbackModeGeometry, intrinsicsMode = PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK),
+            )
+
+        assertEquals(sessionResult.points, fallbackResult.points)
+        assertEquals(sessionResult.summary, fallbackResult.summary)
+        assertEquals(sessionResult.metadata.frameTimestampNanos, fallbackResult.metadata.frameTimestampNanos)
+        assertEquals(sessionResult.metadata.rotationTimestampNanos, fallbackResult.metadata.rotationTimestampNanos)
+        assertEquals(sessionResult.metadata.pairDeltaNanos, fallbackResult.metadata.pairDeltaNanos)
+        assertEquals(sessionResult.metadata.frameRotationDegrees, fallbackResult.metadata.frameRotationDegrees)
     }
 
     @Test

@@ -12,6 +12,7 @@ import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionBatc
 import dev.pointtosky.core.astro.projection.camera.prediction.StarProjectionContext
 import dev.pointtosky.core.astro.projection.camera.prediction.projectStars
 import dev.pointtosky.core.astro.projection.camera.prediction.summarizeStarPredictions
+import dev.pointtosky.core.astro.projection.camera.withIntrinsics
 import dev.pointtosky.mobile.ar.camera.toDiagnosticCategory
 
 /**
@@ -39,12 +40,12 @@ import dev.pointtosky.mobile.ar.camera.toDiagnosticCategory
  *    `Unavailable(PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED)`, exactly as CAM-2a's own contract
  *    requires; this mode never weakens that gate.
  *  - [PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK] builds a *derived*
- *    geometry ([rebuildGeometryWithIntrinsics]) whose intrinsics are a legacy fixed-FOV,
- *    analysis-buffer-referenced substitute sized to the session's own current frame dimensions, and
- *    projects with that instead — [geometryResult]/[CameraSessionGeometry] itself is never mutated,
- *    only read. If the derived geometry cannot be built as `Ready` (practically unreachable — see
- *    [rebuildGeometryWithIntrinsics]'s KDoc), this reports
- *    [PredictedStarOverlayWaitingReason.DiagnosticFallbackGeometryUnavailable] rather than throwing.
+ *    geometry via [dev.pointtosky.core.astro.projection.camera.withIntrinsics] — an exact field-level
+ *    copy of the session geometry with only its intrinsics substituted by a legacy fixed-FOV,
+ *    analysis-buffer-referenced value sized to the session's own current frame dimensions — and
+ *    projects with that instead. [geometryResult]/[CameraSessionGeometry] itself is never mutated, only
+ *    read. `withIntrinsics` cannot fail (see its own KDoc), so there is no failure/waiting branch for
+ *    this mode.
  *
  * The mode is never switched automatically inside this function — whichever [intrinsicsMode] the caller
  * supplies is exactly what runs, every time.
@@ -112,9 +113,7 @@ fun reducePredictedStarOverlayState(
                         ),
                         reason = "CAM-2b diagnostic analysis-buffer fallback",
                     )
-                val rebuilt = rebuildGeometryWithIntrinsics(sessionGeometry, fallbackIntrinsics)
-                (rebuilt as? CameraSessionGeometryResult.Ready)?.geometry
-                    ?: return PredictedStarOverlayState.Waiting(PredictedStarOverlayWaitingReason.DiagnosticFallbackGeometryUnavailable)
+                sessionGeometry.withIntrinsics(fallbackIntrinsics)
             }
         }
 

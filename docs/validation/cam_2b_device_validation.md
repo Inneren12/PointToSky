@@ -8,8 +8,10 @@ rotation sensor available. **Tests authored: Yes. Tests executed: Partially. Bui
 sandbox: no Android SDK is installed, and even the pure-JVM `:core:astro-core` module could not compile
 through Gradle because its pinned JDK-17 toolchain could not be downloaded (egress-blocked). A `kotlinc`/
 JUnit-console workaround (matching CAM-2a's own documented precedent) did, however, actually compile and
-run `:core:astro-core`'s full test suite (391/391 passing) and `:mobile`'s Android-free CAM-2b
-prediction-package tests (45/45 passing) — real, executed results, not fabricated. `:mobile`'s
+run `:core:astro-core`'s full test suite (398/398 passing, including the follow-up
+`CameraSessionGeometry.withIntrinsics` exact-preservation tests) and `:mobile`'s Android-free CAM-2b
+prediction-package tests (48/48 passing, including the follow-up diagnostic-fallback synchronization-
+metadata reducer tests) — real, executed results, not fabricated. `:mobile`'s
 Compose/`ArScreen.kt` compilation, `androidTest` compilation, lint, assemble, and connected
 instrumentation tests remain genuinely unexecuted — assembling `android.jar`, the Compose compiler
 plugin, and AndroidX/CameraX AARs is not replicable by a bare compiler invocation. See
@@ -123,7 +125,7 @@ Compose overlay/panel/controls are implemented, and JVM/Compose-UI tests have be
 of them (see the PR description for exact file names and commands). Of those, the Android-free subset —
 `:core:astro-core`'s full suite and `:mobile`'s `PredictedStarCatalogAdapterTest`/
 `PredictedStarOverlayReducerTest`/`PredictedStarOverlayFormatTest` — has actually been **compiled and
-run** via a `kotlinc`/JUnit-console workaround (391/391 and 45/45 passing respectively; real results, not
+run** via a `kotlinc`/JUnit-console workaround (398/398 and 48/48 passing respectively; real results, not
 fabricated). **`:mobile`'s Compose/`ArScreen.kt` compilation, its Compose UI test
 (`PredictedStarOverlayUiTest`), `androidTest` compilation, lint, assemble, and connected instrumentation
 tests have not actually been executed** in the authoring sandbox — see
