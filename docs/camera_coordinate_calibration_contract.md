@@ -2272,6 +2272,66 @@ does.
 
 ---
 
+## 13. CAM-2b debug-only predicted-star overlay consumer (this PR)
+
+CAM-2a (§12) produced `PredictedStarProjection` values but nothing consumed them. CAM-2b adds the
+**first** consumer — an `internalDebug`-only diagnostic overlay inside `ArScreen` — so the CAM-2a
+pipeline can finally be visually cross-checked against the legacy renderer and, eventually, against a
+physical device. This is the CAM-2a §12 "next slice" described there, now implemented. **Full
+derivation, adapter/reducer design, and the physical-device checklist live in the focused companion
+doc, [`docs/camera_star_prediction_contract.md`](camera_star_prediction_contract.md) §14** — this
+section is a short pointer plus the essential facts needed to keep this file's own inventory/risk
+register accurate.
+
+**Status:** implemented and JVM-unit-tested, **not** device-validated. Mirrors CAM-1g's/CAM-2a's own
+status lines (§11.9, §12): a coding agent authored and tested this with no physical Android device,
+camera hardware, or rotation sensor available.
+
+**What it adds** (`:mobile`, package `dev.pointtosky.mobile.ar.camera.prediction`, plus two small
+Compose additions in `dev.pointtosky.mobile.ar`):
+
+- A bounded catalog adapter (`selectPredictedStarDirections`) that converts the phone's own
+  visibility-selected `StarRecord` prefix (the same filter `ArScreen.calculateOverlay` already applies,
+  now shared via `visibilitySelectedStars`) into `EquatorialStarDirection`, bounded to
+  `PREDICTED_STAR_OVERLAY_MAX_INPUT_STARS = 200` brightest-first entries, keyed by each star's stable
+  catalog id — never the full ~42k-star catalog, never a second catalog parser, never sorting inside
+  CAM-2a itself.
+- A pure reducer (`reducePredictedStarOverlayState`) that gates on the same `internalDebug` flavor check
+  CAM-1g already established (`CameraGeometryDiagnosticsGate`/`isDiagnosticsEnabled` — reused directly,
+  not a second inconsistent flavor check), maps every non-`Ready` `CameraSessionGeometryResult` and
+  every `IntrinsicsMappingUnavailableReason` to a specific typed `PredictedStarOverlayWaitingReason`/
+  the reason itself, and otherwise calls `projectStars(...)` with the **raw**, still magnetic-north-
+  referenced `CameraSessionGeometry` CAM-1f/1g already publish — never a matrix pre-corrected via
+  `RotationFrame.correctedForTrueNorth` — plus the legacy renderer's own already-computed
+  `GeomagneticField` declination as `StarProjectionContext.magneticDeclinationRad`. Passing both a
+  corrected matrix and a non-zero context declination would double-correct true north (§12's own R3);
+  the reducer's KDoc makes this ownership split explicit, and a dedicated unit test cross-checks the
+  reducer's output against an independent `projectStars` call over the same raw geometry.
+- A bounded, immutable UI state (`PredictedStarOverlayState`: `Disabled`/`Waiting`/`Ready`/
+  `Unavailable`) built once per coherent recomputation via Compose `remember`, keyed on the geometry
+  observation, observer location/time, declination, and the bounded star subset — never a polling loop,
+  never a permanently launched coroutine, never an unbounded queue.
+- Two small Compose additions (`PredictedStarMarkersCanvas`, `PredictedStarOverlayPanel`,
+  `PredictedStarOverlayControls`) that draw only `VISIBLE_IN_VIEWPORT` predictions, anchored exactly at
+  CAM-2a's own `displayPoint` with no further scale/rotation/offset, in a fixed cyan
+  hollow-circle-plus-cross style deliberately distinct from the legacy `BvColor` star dots — drawn on
+  top of the existing legacy overlay, never replacing it — plus a compact status panel and a
+  session-local (non-persisted) pair of toggles.
+
+**What it explicitly does not add:** pixel reads, a detector/matcher, pose correction, rotation
+interpolation/SLERP, any change to `ArScreen.calculateOverlay()`/`projectionParams(viewport)`/
+`VERTICAL_FOV_DEG = 56.0` (all byte-for-byte unchanged), any new `CameraSessionGeometryProvider`
+instance (CAM-2b reuses the exact provider/observation `ArScreen` already collects for CAM-1g), any
+catalog asset or parser change, or physical-sensor intrinsics support (CAM-2a's
+`PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED` gate is unchanged and still surfaces as a categorized
+`Unavailable` state, never a fabricated projection).
+
+**Risk register addition** — see Appendix A, R14: the predicted-marker/legacy-overlay visual comparison
+this slice enables is itself unverified on real hardware; every risk CAM-2a already carried (R3, R11,
+R12, R13) is unchanged and still open.
+
+---
+
 ## Appendix A — sign/handedness risk register (quick reference)
 
 | # | Risk | Where | Guard |
@@ -2289,3 +2349,4 @@ does.
 | R11 | `pairedRotation`'s device frame vs. the pinhole model's unrotated-buffer pixel grid may not be co-registered on a real device | CAM-2a `PinholeProjectionModel`/`worldToDeviceVector` | traced (not guessed) transpose direction + literal-matrix tests (§12, `docs/camera_star_prediction_contract.md` §4/§11) — pure math only, not yet device-validated |
 | R12 | Display-aligned optical ray fed directly into the buffer-space pinhole model double-applies rotation for `rotationDegrees ∈ {90, 270}` | CAM-2a `DisplayAlignedOpticalToBufferOpticalTransform` | one explicit inverse-basis transform, derived from `CropScaleTransform.rotateClockwise`'s own Jacobian; coupled attitude/`frame.rotationDegrees` tests for all four rotations (`docs/camera_star_prediction_contract.md` §4.5) — closed at the pure-math/internal-consistency level, not device-validated |
 | R13 | A physical-sensor-referenced calibrated FOV (`CameraIntrinsics`) silently assumed to describe the `ImageAnalysis` buffer, when CameraX may have cropped/scaled the sensor into that buffer; and (hardened further) an analysis-buffer-referenced FOV resolved for one buffer/session silently reused against a different, dimensionless, or differently-sized buffer | CAM-2a `PinholeProjectionModel.forGeometry` / `CameraIntrinsicsReference` | `CameraIntrinsicsReference.AnalysisBuffer` carries its own `widthPx`/`heightPx` as data, not merely a source-derived label; `forGeometry` requires an exact width/height match against `geometry.frame`'s buffer (aspect-ratio match alone is not accepted) and throws otherwise; `projectStars` checks this first and returns a categorized `StarPredictionBatchResult.IntrinsicsMappingUnavailable` (`PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED` / `ANALYSIS_BUFFER_REFERENCE_MISSING` / `ANALYSIS_BUFFER_DIMENSIONS_MISMATCH`) instead of fabricating, silently downgrading, or reusing a stale/mismatched reference (`docs/camera_star_prediction_contract.md` §6.2) |
+| R14 | CAM-2b's predicted-marker overlay visually implies alignment with the legacy renderer/real sky, but the comparison itself is not yet verified on real hardware — every upstream risk it depends on (R3, R11, R12, R13) is unchanged and still open | CAM-2b `ArScreen` predicted-star overlay | JVM-tested reducer/adapter only; physical-device checklist transcribed, unexecuted, into `docs/validation/cam_2b_device_validation.md` (§13, `docs/camera_star_prediction_contract.md` §14) |

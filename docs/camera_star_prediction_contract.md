@@ -1,7 +1,9 @@
 # Camera Star Prediction Contract (CAM-2a)
 
-**Status:** Pure math slice implemented and unit-tested. **Not** wired into any renderer, not
-device-validated, not a claim of pixel accuracy.
+**Status:** Pure math slice implemented and unit-tested. **Not** wired into any *production* renderer,
+not device-validated, not a claim of pixel accuracy. (A separate, `internalDebug`-only diagnostic
+*consumer* — CAM-2b, §14 — now visualizes this pipeline's output for physical-device comparison; it
+does not change this status line's claims about production rendering or device validation.)
 **Scope:** The predict-only geometry pipeline that turns a catalog star's RA/Dec, an observer
 location/time, and a [`CameraSessionGeometry`](../core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/projection/camera/CameraSessionGeometry.kt)
 bundle into a predicted position in camera/image/display space, plus a bounded visibility
@@ -896,3 +898,198 @@ declarations it calls) but its actual compilation is **not** verified, since ass
 Android SDK/CameraX classpath for a standalone `kotlinc` run was not attempted. This is disclosed, not
 hidden: whoever next has a working Gradle/JDK-17/Android-SDK environment should still run the exact
 commands above before treating this gate as closed.
+
+---
+
+## 14. CAM-2b: internal-debug predicted-star overlay (separate PR)
+
+CAM-2b is the "next slice" §12 described: an `internalDebug`-only diagnostic *consumer* of this
+package's `projectStars(...)` output, wired into `ArScreen` purely for visual diagnosis. It adds no
+code to `:core:astro-core` — everything below lives in `:mobile`, package
+`dev.pointtosky.mobile.ar.camera.prediction` (plus two small Compose files in `dev.pointtosky.mobile.ar`).
+
+### 14.1 Scope discipline (unchanged from §1/§9)
+
+CAM-2b **visualizes** CAM-2a; it does not extend it. Every "what this is not" bullet in §1 still holds
+verbatim: no pixels read, no detector, no matcher, no pose correction, no renderer change to
+`ArScreen.calculateOverlay()`/`projectionParams(viewport)`/`VERTICAL_FOV_DEG = 56.0` (still
+byte-for-byte unchanged — CAM-2b draws its own, separate, clearly-distinguishable marker layer on top,
+never routing CAM-2a output into `calculateOverlay`'s `OverlayData` or any production star position).
+
+### 14.2 Build gate — reused, not reinvented
+
+CAM-2b does **not** introduce a second flavor check. It reuses
+`dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticsGate`/`isDiagnosticsEnabled(debug, flavor)`
+verbatim — the exact same pure function and object CAM-1g already established
+(`docs/camera_coordinate_calibration_contract.md` §11.2). `PredictedStarOverlayReducerTest`'s gate
+truth-table test calls `isDiagnosticsEnabled` directly across all four `(debug, flavor)` combinations
+and asserts the reducer agrees: `debug+internal → enabled`, every other combination → `Disabled`.
+
+### 14.3 Bounded diagnostic input adapter
+
+`selectPredictedStarDirections(stars: List<StarRecord>, maxCount: Int = 200): List<EquatorialStarDirection>`
+(`PredictedStarCatalogAdapter.kt`) is the one place a mobile-side `StarRecord` (the same catalog record
+`ArViewModel`/`ArScreen`'s legacy renderer already reads via `PtskCatalogLoader`/`AstroCatalog`) becomes
+a CAM-2a `EquatorialStarDirection`:
+
+- **Input is expected to already be the phone's visibility-selected prefix** — `ArScreen.kt`'s
+  `visibilitySelectedStars(state)` (extracted, in this PR, from `calculateOverlay`'s previously-inline
+  `visibleStars` computation into a shared function both the legacy renderer and CAM-2b now call) —
+  never the full ~42k-star catalog read independently. `calculateOverlay`'s own output is byte-for-byte
+  unchanged by this extraction (same two filters, same order).
+- Sorts that prefix brightest-first (ascending magnitude, stable sort — ties keep catalog order), then
+  takes the first `maxCount` — deterministic, no spatial indexing.
+- Converts RA/Dec from degrees to radians exactly once, here.
+- Preserves a **stable** `catalogIndex` — each star's own `StarId.raw`, not a positional index that
+  would shift if the selection changed.
+- Passes `magnitude` through when present; carries no name/label.
+- Performs no sorting inside CAM-2a itself — `projectStars`'s own input-order-preservation contract
+  (§8) is unaffected; the adapter's sort/bound happens entirely before `projectStars` is ever called.
+
+`PREDICTED_STAR_OVERLAY_MAX_INPUT_STARS = 200` sits inside the task's suggested 100–300 range: the
+legacy renderer's own (production, non-diagnostic) `StarPointLayer` already caps its Canvas point layer
+at `MAX_STAR_POINTS = 1500` without a measured performance issue, so 200 diagnostic markers plus a
+status panel is comfortably inside the existing per-frame Canvas budget, while staying small enough
+that individual predicted markers stay visually distinguishable from the legacy overlay during a
+physical-device side-by-side comparison — the whole point of this slice.
+
+### 14.4 Observer/time/declination — reused, not duplicated
+
+`ArScreen.kt` supplies:
+
+- **Location:** `state.location.latDeg`/`lonDeg` (the same `ArUiState.Ready` field the legacy renderer
+  reads), only when `state.locationResolved` is true — otherwise CAM-2b reports
+  `ObserverLocationUnavailable` rather than silently projecting from the `(0, 0)` default placeholder
+  location.
+- **Time:** `state.instant.toEpochMilli()` — the exact `Instant` the sky-render state (`lstDeg`, the
+  legacy `calculateOverlay`, etc.) is already built from, sourced from `ArViewModel`'s
+  `SystemTimeSource` ticks. CAM-2b never calls `System.currentTimeMillis()` independently.
+- **Magnetic declination:** the exact `declinationDeg` local value `ArScreen.kt` already computes once
+  per `state.location` change for the legacy renderer's own `correctedForTrueNorth(declinationDeg)` call
+  (`android.hardware.GeomagneticField(...).declination`) — read, not recomputed. CAM-2b constructs no
+  second `GeomagneticField` instance. If that value were ever non-finite, the reducer reports
+  `MagneticDeclinationUnavailable` rather than silently substituting `0.0` — see §2.3's own warning
+  against exactly that failure mode.
+
+Degrees are converted to radians exactly once, inside `reducePredictedStarOverlayState`, immediately
+before `StarProjectionContext.of(...)` is called.
+
+### 14.5 Raw-rotation / context-declination ownership (closing §12's own caller-contract note)
+
+`reducePredictedStarOverlayState` (`PredictedStarOverlayReducer.kt`) receives a
+`CameraSessionGeometryResult` exactly as published by `CameraSessionGeometryProvider` — the same
+provider/`observation` `ArScreen` already collects for CAM-1g, reused here rather than re-collected,
+re-paired, or interpolated. `geometryResult.geometry.pairedRotation.rotationMatrix` is passed into
+`projectStars` **unmodified** — never run through `RotationFrame.correctedForTrueNorth` on the mobile
+side — while the declination described in §14.4 is passed as
+`StarProjectionContext.magneticDeclinationRad`. This is the single split CAM-2a's own contract requires
+(§2.3, §4.6, §12's caller-contract note): raw paired rotation **+** context declination, never a
+corrected matrix **+** a non-zero context declination together (which would double-correct true north).
+`reducePredictedStarOverlayState`'s KDoc states this explicitly, and
+`PredictedStarOverlayReducerTest`'s dedicated test cross-checks the reducer's `Ready` output against an
+independently-constructed `projectStars` call over the *same* raw geometry and a
+`StarProjectionContext` built with a non-zero declination, proving no extra correction is silently
+applied before `projectStars` is called.
+
+### 14.6 Diagnostic state and recomputation policy
+
+`PredictedStarOverlayState` (`PredictedStarOverlayState.kt`) is a small, immutable sealed interface —
+`Disabled` / `Waiting(reason)` / `Ready(points, summary, metadata)` / `Unavailable(reason)` — built
+exactly once per coherent recomputation by the pure `reducePredictedStarOverlayState`, called from
+Compose `remember` (`ArScreen.kt`) keyed on the current geometry observation, `state.locationResolved`/
+`state.location`/`state.instant`, `declinationDeg`, and the bounded star subset (itself `remember`ed
+separately, keyed only on the loaded catalog and `state.effectiveMagLimit`, so it is *not* rebuilt every
+frame just because geometry changed). No polling, no timer, no permanently launched coroutine, no
+unbounded queue — the projection itself runs synchronously inside `remember`'s calculation block, which
+CAM-2a's own §1 performance profile (a few hundred stars of pure arithmetic, no I/O) supports without
+moving off the main thread.
+
+Every non-`Ready` `CameraSessionGeometryResult` maps to a `Waiting(WaitingReason.GeometryNotReady(category))`,
+reusing CAM-1g's own `CameraGeometryDiagnosticCategory` mapping (`toDiagnosticCategory()`) rather than a
+second, parallel categorization — including `DISPOSED`, so a disposed or replaced geometry provider (a
+new camera session's first recompute, before its own first coherent geometry) reports `Waiting`, never
+an echo of a previous session's `Ready` points; the reducer is a pure function with no retained state
+across calls, so there is no code path that *could* carry a stale bundle forward.
+`StarPredictionBatchResult.IntrinsicsMappingUnavailable`'s `IntrinsicsMappingUnavailableReason` is
+surfaced as `PredictedStarOverlayState.Unavailable(reason)` directly — reused, not re-wrapped in a
+second enum.
+
+### 14.7 Drawing and diagnostic panel
+
+`toOverlayPoints` (`PredictedStarOverlayReducer.kt`) — the pure mapping from a full CAM-2a batch to
+drawable points — keeps only `PredictedStarClassification.VISIBLE_IN_VIEWPORT` projections, in their
+original batch order, and copies `PredictedStarProjection.displayPoint.x`/`.y` verbatim into
+`PredictedStarOverlayPoint.displayX`/`.displayY` — no additional scale, rotation, crop offset, or
+rounding; CAM-2a already returns final display coordinates. `PredictedStarOverlayMetadata`'s
+`summary`/counts, by contrast, always describe the **full** batch (including `BEHIND_CAMERA`/
+`OUTSIDE_IMAGE`/`INSIDE_IMAGE_OUTSIDE_VIEWPORT` counts), never just the drawn subset.
+
+`PredictedStarMarkersCanvas` (`dev.pointtosky.mobile.ar`) draws each point as a hollow circle plus a
+small cross, radius bounded to a tight magnitude-dependent range, in a fixed cyan
+(`Color(0xFF00E5FF)`) diagnostic color deliberately distinct from the legacy overlay's `BvColor`-toned
+filled dots and white reticle/labels — drawn as an additional layer *on top of* the existing
+`StarPointLayer`/`ConstellationLayer` output within the same `ArUiState.Ready` composition branch, never
+replacing it, so both can be visually compared in the same frame. No star textures, no names, no
+constellation art, no touch interaction. `PredictedStarOverlayPanel` renders a compact, bounded,
+non-interactive status block (input/visible/behind-camera/outside-image/inside-image-outside-viewport
+counts, frame/rotation timestamps, pair delta, `frame.rotationDegrees`, intrinsics source/reference,
+declination, and status/reason) — one block, never one line per star, never logged every frame.
+`PredictedStarOverlayControls` adds two session-local (non-persisted) toggles, "Show predicted stars"
+and "Show CAM-2b panel", defaulting to visible so an `internalDebug` tester sees the overlay
+immediately; both are internal-debug-only and never reachable from a public-facing setting.
+
+### 14.8 Scope confirmation
+
+Exactly the same confirmations §9 already makes for CAM-2a still hold, plus: no `:mobile` **production**
+code path draws CAM-2a output anywhere except this one `internalDebug`-gated overlay; `ArScreen`'s
+`calculateOverlay`/`projectionParams`/legacy star-point/constellation rendering are unmodified (the
+only refactor is extracting the pre-existing `visibleStars` filter into `visibilitySelectedStars`, a
+byte-for-byte-equivalent, shared, tested computation); no new `CameraSessionGeometryProvider`,
+`CameraTimestampSynchronizer`, or intrinsics resolver/coordinator instance was created — CAM-2b reads
+the one `geometryProvider.observation` `ArScreen` already collects for CAM-1g; the catalog asset format,
+`PtskCatalogLoader`, and `AstroCatalog` are untouched; no spatial index, persistence, analytics, or
+network call was added.
+
+### 14.9 Tests
+
+`:mobile` JVM tests (`src/test/java/dev/pointtosky/mobile/ar/camera/prediction/`):
+
+| File | Covers |
+|---|---|
+| `PredictedStarCatalogAdapterTest` | stable catalog index, exactly-once degree→radian conversion, magnitude pass-through, deterministic bounded/brightest-first selection, empty/zero-bound edge cases |
+| `PredictedStarOverlayReducerTest` | gate truth table (§14.2); every non-`Ready` `CameraSessionGeometryResult` → `Waiting`; every `IntrinsicsMappingUnavailableReason` → `Unavailable`; `toOverlayPoints` classification filtering, exact coordinate pass-through, order preservation; full-batch summary counters; raw-rotation/context-declination ownership (§14.5) cross-check; disposal/session-reset statelessness |
+| `PredictedStarOverlayFormatTest` | bounded, deterministic panel text — every required field present, never one line per star |
+
+`:mobile` Compose UI tests (`src/androidTest/java/dev/pointtosky/mobile/ar/PredictedStarOverlayUiTest.kt`,
+not run in this sandbox — no Android SDK/emulator available, see §14.10): waiting-state panel content
+with no markers rendered, `Unavailable`'s categorized reason text, `Ready`'s marker-canvas presence and
+panel counts, and state replacement (`Ready` → `Waiting`) removing stale panel content. Not
+pixel-perfect screenshot tests — this repository does not use those.
+
+### 14.10 Validation status
+
+**Gradle could not run `:mobile` tasks in the authoring sandbox** — no Android SDK is installed (no
+`ANDROID_HOME`, no platform/build-tools), and there is no network path to provision one. `:core:astro-core:test`
+itself was not re-run for this PR since CAM-2b adds no `:core:astro-core` code (nothing in that module
+changed). Every `:mobile` file listed in §14.9, plus `ArScreen.kt`'s integration, was written against
+the real, already-compiling production signatures it calls (`CameraSessionGeometryResult`,
+`CameraGeometryDiagnosticCategory`, `StarRecord`, `ArUiState.Ready`, etc.) and reviewed carefully by
+hand, but its actual compilation is **not** verified — matching CAM-2a's own disclosed limitation (§13,
+end) for the exact same reason. Whoever next has a working Android SDK/Gradle environment should run:
+
+```bash
+./gradlew :mobile:testInternalDebugUnitTest --tests "*PredictedStarOverlay*"
+./gradlew :mobile:testInternalDebugUnitTest --tests "*PredictedStarCatalogAdapterTest"
+./gradlew :mobile:testPublicDebugUnitTest --tests "*PredictedStarOverlay*"
+./gradlew :mobile:testInternalDebugUnitTest
+./gradlew :mobile:testPublicDebugUnitTest
+./gradlew :mobile:lintInternalDebug
+./gradlew :mobile:lintPublicDebug
+./gradlew :mobile:assembleInternalDebug
+./gradlew :mobile:assemblePublicDebug
+```
+
+before treating this gate as closed, and then complete
+`docs/validation/cam_2b_device_validation.md`'s physical checklist. Final status:
+**`CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (and, until the commands above are actually run,
+also gated on JVM/lint/assemble verification — see that file).
