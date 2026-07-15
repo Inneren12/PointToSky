@@ -16,7 +16,9 @@ No" — it is never described as simply "tested," which would misstate what was 
 | CAM-1c–1f | CameraX `Preview`+`ImageAnalysis`, frame metadata, timestamp-paired rotation, crop/rotation/display transform, immutable `CameraSessionGeometry`, session-scoped geometry provider | Yes | Yes | Yes (per that PR's own record) | Yes (per that PR's own record) | No |
 | CAM-1g | `internalDebug`-only camera-geometry diagnostics overlay; observable geometry result + debug counters | Yes | Yes | Yes (per that PR's own record) | Yes (per that PR's own record) | **No — `CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`** |
 | CAM-2a | Pure, Android-free star prediction (`projectStars`): catalog RA/Dec + observer location/time + magnetic declination + `CameraSessionGeometry` → predicted camera/image/display positions, with typed unavailable outcomes | Yes | Yes | Yes (388 tests, `:core:astro-core`, verified via a direct `kotlinc`/JUnit-console invocation — Gradle itself could not run; see `docs/camera_star_prediction_contract.md` §13) | Partial (`:core:astro-core` compilation confirmed this way; `:mobile` not attempted by that PR) | No — not wired into any renderer, no device claim |
-| CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode via a total, exact-copy `CameraSessionGeometry.withIntrinsics` substitution | Yes | Yes | **Yes — real Gradle, not a workaround.** `:core:astro-core:test` 388/388, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 271/271 each (incl. `PredictedStarOverlayReducerTest`/`Format`/`CatalogAdapterTest`), `androidTest` compilation for both flavors (after fixing one pre-existing, CAM-2b-unrelated compile bug — see below); connected instrumentation **not run** (no device/emulator in this environment); see below | **Yes for debug** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 errors), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green. Release: Kotlin/Java compile green for both flavors; APK packaging blocked only by a missing release signing keystore (`storeFile`), not a code defect; see below | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (build gates now sufficiently verified; no physical device or emulator was available in this environment) |
+| CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode via a total, exact-copy `CameraSessionGeometry.withIntrinsics` substitution | Yes | Yes | **Yes — real Gradle, not a workaround.** `:core:astro-core:test` 388/388, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 271/271 each (incl. `PredictedStarOverlayReducerTest`/`Format`/`CatalogAdapterTest`), `androidTest` compilation for both flavors (after fixing one pre-existing, CAM-2b-unrelated compile bug — see below); connected instrumentation attempted on a physical Pixel 9 (Android 16): failed on an AndroidX Test/Espresso
+runtime incompatibility (`espresso-core` stuck at a stale 3.5.0), unrelated to CAM-2b logic; fixed by
+aligning the AndroidX Test stack to one coherent generation — re-run on-device still pending; see below | **Yes for debug** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 errors), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green. Release: Kotlin/Java compile green for both flavors; APK packaging blocked only by a missing release signing keystore (`storeFile`), not a code defect; see below | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (build gates now sufficiently verified; no physical device or emulator was available in this environment) |
 
 ## CAM-2b (this sprint)
 
@@ -101,3 +103,20 @@ No" — it is never described as simply "tested," which would misstate what was 
 lint/debug-assemble gate above is now real-Gradle green (one real, pre-existing bug found and fixed along
 the way); only the physical-device/emulator checklist remains unexecuted, for lack of any device or
 emulator capability in this environment.
+
+**Pixel 9 / Android 16 instrumentation-runtime fix (later pass).** The physical-device rerun was attempted
+on a real Pixel 9 and failed before any assertion ran: `NoSuchMethodException:
+android.hardware.input.InputManager.getInstance []`, entered through `Espresso.onIdle` — an AndroidX
+Test/Espresso runtime incompatibility with Android 16, not a CAM-2b defect (even the pure-fixture test
+case failed identically). `dependencyInsight` traced it to `androidx.test.espresso:espresso-core`
+resolving to a stale 3.5.0 pulled in transitively via Compose's `ui-test-android` and never overridden,
+alongside `androidx.test:core`/`runner`/`rules`/`ext:junit` each declared 2-3× with conflicting hard-coded
+versions. Fixed by centralizing one coherent AndroidX Test generation in the version catalog (`core`/
+`runner`/`rules` 1.7.0, `ext:junit`/`junit-ktx` 1.3.0, `espresso-core` 3.7.0) and referencing it from
+`mobile/build.gradle.kts`; re-verified resolved to the new versions with no stale leftovers, and
+`compileInternalDebugAndroidTestKotlin`/`compilePublicDebugAndroidTestKotlin`/`testInternalDebugUnitTest`
+(271/271)/`lintInternalDebug`/`assembleInternalDebug` all real-Gradle green afterward.
+`PredictedStarOverlayUiTest.kt` was not modified. The on-device rerun to confirm 5/5 passing was not
+performed by the agent in this pass (cloud sandbox, no `adb`/device access) — see
+`docs/validation/cam_2b_device_validation.md` for the full writeup and the still-pending physical
+confirmation.

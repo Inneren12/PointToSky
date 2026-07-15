@@ -38,6 +38,67 @@ physical-device checklist below. This checklist assumes CAM-1g's own device gate
 (`docs/validation/cam_1g_device_validation.md`) is exercised first or alongside — CAM-2b's predicted
 overlay is only as trustworthy as the CAM-1c–1g geometry pipeline feeding it.
 
+## AndroidX Test / Espresso runtime fix (Pixel 9, Android 16)
+
+A later pass attempted the physical-device run this file had been waiting on, on a real device this
+time:
+
+- **Device**: Pixel 9, Android 16 (platform API 36).
+- **Command**: `./gradlew :mobile:connectedInternalDebugAndroidTest
+  -Pandroid.testInstrumentationRunnerArguments.class=dev.pointtosky.mobile.ar.PredictedStarOverlayUiTest`.
+- **Observed failure**: all five `PredictedStarOverlayUiTest` cases — including the pure-fixture case
+  with no Compose assertions at all — failed identically before any assertion executed:
+  `java.lang.NoSuchMethodException: android.hardware.input.InputManager.getInstance []`, entered through
+  `androidx.test.espresso.Espresso.onIdle`. Failing even the fixture-only case proved this was an
+  AndroidX Test/Espresso runtime incompatibility with Android 16, not a CAM-2b marker/reducer/assertion
+  bug.
+- **Root cause, found via `:mobile:dependencyInsight --configuration internalDebugAndroidTestRuntimeClasspath`**:
+  `androidx.test.espresso:espresso-core` resolved to the stale **3.5.0** — pulled in transitively by
+  Compose's `androidx.compose.ui:ui-test-android:1.7.2` and never overridden by any explicit dependency
+  anywhere in the build. Espresso 3.5.0 predates the platform's removal of the static
+  `InputManager.getInstance()` entry point that its motion-event injection path reflects into; later
+  Espresso releases updated that path for current platform APIs. Meanwhile `androidx.test:core`/`core-ktx`
+  (1.5.0 vs 1.6.1), `runner` (1.5.2 vs 1.6.1 vs 1.6.2), `rules` (1.5.0 vs 1.6.1), and `ext:junit`/
+  `junit-ktx` (1.1.5 vs 1.2.1) were each declared two-to-three times in `mobile/build.gradle.kts` with
+  conflicting hard-coded versions — no single coherent AndroidX Test generation existed on the classpath.
+- **Fix**: centralized the AndroidX Test stack in `gradle/libs.versions.toml` as one coherent generation
+  (`androidx-test-core`/`core-ktx`/`runner`/`rules` at **1.7.0**, `androidx-test-ext-junit`/`junit-ktx` at
+  **1.3.0**, and a new `androidx-espresso-core` alias pinned to **3.7.0**) and referenced those aliases
+  from `mobile/build.gradle.kts` in place of the scattered literals — including adding an explicit
+  `espresso-core` dependency where none had existed before, so Gradle's conflict resolution picks 3.7.0
+  over the transitive 3.5.0. No CAM-2a/CAM-2b production code, composables, reducers, or the test file
+  itself (`PredictedStarOverlayUiTest.kt`) were touched; the accepted imports
+  (`androidx.compose.ui.test.assert`, `org.junit.Assert.assertEquals`) and all five test cases (waiting,
+  unavailable, ready marker canvas + counts, Ready→Waiting(DISPOSED) stale-marker removal, plain
+  ready-state point count) are unchanged.
+- **Resolved runtime after the fix** (`:mobile:dependencyInsight` re-run against
+  `internalDebugAndroidTestRuntimeClasspath`): `espresso-core` 3.5.0 → **3.7.0** (by conflict resolution
+  between 3.7.0 and 3.5.0); `core`/`core-ktx` → **1.7.0**; `runner` → **1.7.0**; `rules` → **1.7.0**;
+  `ext:junit`/`junit-ktx` → **1.3.0**; transitive `espresso-idling-resource` and `androidx.test:monitor`
+  auto-aligned to 3.7.0/1.8.0. No stale AndroidX Test version remained selected anywhere in the resolved
+  tree.
+- **Gradle gates re-run after the fix** (real Gradle, this pass's own environment — an Android SDK and a
+  JDK-17 toolchain were provisioned first, same recorded deviation as the validation-closure pass above;
+  preinstalled Gradle 8.14.3 used in place of the unreachable pinned 8.11.1):
+  `:mobile:compileInternalDebugAndroidTestKotlin` / `compilePublicDebugAndroidTestKotlin` — **PASS**
+  (`PredictedStarOverlayUiTest.kt` compiled unchanged); `:mobile:testInternalDebugUnitTest` — **PASS,
+  271/271**; `:mobile:lintInternalDebug` — **PASS, 0 errors**; `:mobile:assembleInternalDebug` — **PASS**.
+- **`:mobile:connectedInternalDebugAndroidTest` itself**: **not executed by the agent** — this pass ran in
+  a cloud sandbox with no `adb`/USB device access and no physical device attached (confirmed: no `adb`
+  binary, no `lsusb`, `ANDROID_HOME` unset before this pass provisioned its own throwaway SDK). The
+  Pixel 9 run described above was reported by the user as the reproduction case, not reproduced by the
+  agent inside this session. **The exact rerun command must still be executed on the actual Pixel 9** (the
+  same command in the reproduction section) to confirm `5 tests started / 5 tests passed / 0 failed`; the
+  dependency-graph fix above is verified at the resolution/compile/lint/assemble level, not by an on-device
+  instrumentation run performed by the agent.
+
+**Verdict for this pass: the AndroidX Test/Espresso version-compatibility defect that caused the reported
+`InputManager.getInstance` failure is fixed and verified (dependency resolution + compilation + unit tests
++ lint + assemble, all real Gradle). Physical re-confirmation on the Pixel 9 is still needed before
+claiming `CAM-2b INSTRUMENTATION PASS` — see the reproduction command above.** This is independent of, and
+does not close, the physical-device checklist below (orientation/true-north/crop/intrinsics/lifecycle),
+which remains a separate, still-unexecuted gate.
+
 ## Build
 
 - Commit: see the commit that introduces this validation-closure pass (`docs/SPRINT_STATUS.md` records
