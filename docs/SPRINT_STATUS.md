@@ -17,6 +17,68 @@ No" — it is never described as simply "tested," which would misstate what was 
 | CAM-1g | `internalDebug`-only camera-geometry diagnostics overlay; observable geometry result + debug counters | Yes | Yes | Yes (per that PR's own record) | Yes (per that PR's own record) | **No — `CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`** |
 | CAM-2a | Pure, Android-free star prediction (`projectStars`): catalog RA/Dec + observer location/time + magnetic declination + `CameraSessionGeometry` → predicted camera/image/display positions, with typed unavailable outcomes | Yes | Yes | Yes (388 tests, `:core:astro-core`, verified via a direct `kotlinc`/JUnit-console invocation — Gradle itself could not run; see `docs/camera_star_prediction_contract.md` §13) | Partial (`:core:astro-core` compilation confirmed this way; `:mobile` not attempted by that PR) | No — not wired into any renderer, no device claim |
 | CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode via a total, exact-copy `CameraSessionGeometry.withIntrinsics` substitution | Yes | Yes | **Yes — real Gradle, not a workaround.** `:core:astro-core:test` 388/388, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 271/271 each (incl. `PredictedStarOverlayReducerTest`/`Format`/`CatalogAdapterTest`), `androidTest` compilation for both flavors (after fixing one pre-existing, CAM-2b-unrelated compile bug — see below); connected instrumentation **not run** (no device/emulator in this environment); see below | **Yes for debug** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 errors), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green. Release: Kotlin/Java compile green for both flavors; APK packaging blocked only by a missing release signing keystore (`storeFile`), not a code defect; see below | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (build gates now sufficiently verified; no physical device or emulator was available in this environment) |
+| CAM-2c | Calibrated Camera2-to-`ImageAnalysis`-buffer pinhole intrinsics: active-array intrinsics (`LENS_INTRINSIC_CALIBRATION` when coordinate-space-verified, else focal-length-derived), mapped through the real `ImageInfo.getSensorToBufferTransformMatrix()` (not `ImageProxy.cropRect`, proven buffer-space/always-identity here), typed `AnalysisBufferIntrinsicsResolution`, `CameraIntrinsics.source=CAMERA_CHARACTERISTICS`+`reference=AnalysisBuffer` now accepted by CAM-2a unchanged, `CameraIntrinsicsQuality`, debug-only calibration diagnostics panel | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 436/436 (incl. new `ActiveArrayIntrinsicsTest`/`AnalysisBufferIntrinsicsMappingTest`/`CalibratedAnalysisBufferProjectionTest`), `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 309/309 each (incl. new `AnalysisBufferIntrinsicsResolverTest`/`CameraFrameMetadataSourceTest` matrix-extraction cases/`CameraCalibrationDiagnosticFormatTest`); see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 new errors/warnings after fixing two genuine `NewApi`/`InlinedApi` findings on `LENS_DISTORTION`/`REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA`, both API-28-gated), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; see below | **No — physical-device validation (task §10) could not be attempted: no physical device or emulator is available in this environment** |
+
+## CAM-2c (this sprint)
+
+- **Scope:** derives real, calibrated pinhole intrinsics (`fx`/`fy`/`cx`/`cy`) over the exact
+  `ImageAnalysis` buffer from Camera2 `CameraCharacteristics`, mapped through the real CameraX
+  sensor-to-buffer transform — replacing CAM-2b's diagnostic-fallback substitution as the normal,
+  non-debug session path. Does not touch astronomy, magnetic declination, raw paired rotation
+  ownership, `CropScaleTransform`, or `displayPoint` drawing; does not tune any FOV constant
+  empirically. See `docs/camera_coordinate_calibration_contract.md` §3.5 for the full design.
+- **Coordinate-space discipline:** `ActiveArrayIntrinsics` (active-array px), `ActiveArraySensorCropRegion`/
+  `SensorToBufferTransform` (active-array → buffer px), `AnalysisBufferIntrinsicsValues` (buffer px)
+  are distinct types, never interchangeable with `CameraFrameMetadata`'s own buffer-space crop-rect
+  fields or `PinholeProjectionModel`'s buffer-space model.
+- **`CameraIntrinsics` invariant relaxation:** `source=CAMERA_CHARACTERISTICS` now accepts
+  `reference=AnalysisBuffer` in addition to `PhysicalSensor` — `PinholeProjectionModel.forGeometry`/
+  `projectStars` were not changed and still gate on `reference` alone, so the `PhysicalSensor`
+  rejection is unweakened.
+- **`LENS_INTRINSIC_CALIBRATION` coordinate-space verification:** used only when
+  `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE` is absent or exactly equals
+  `SENSOR_INFO_ACTIVE_ARRAY_SIZE`; otherwise the principal point falls back to the active-array
+  geometric centre (`CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT` vs `CALIBRATED`).
+- **Logical multi-camera guard:** `UnsupportedLogicalMultiCameraMapping` fires whenever
+  `REQUEST_AVAILABLE_CAPABILITIES` includes `LOGICAL_MULTI_CAMERA`, since this camera ID's static
+  characteristics cannot be trusted to describe whichever physical sensor actually produced a given
+  frame.
+- **`ImageProxy.cropRect` provenance:** confirmed (both from CAM-1c's own existing contract and
+  `CameraPreview.kt`'s no-`ViewPort` binding) to be buffer-space and always the identity crop here —
+  never used as active-array crop metadata. `ImageInfo.getSensorToBufferTransformMatrix()` (stable
+  since `camera-core` `1.1.0-beta01`) is the real source instead.
+- **No new callback wiring:** the sensor-to-buffer transform rides as a new optional field on
+  `CameraFrameMetadata` itself, so `CameraSessionIntrinsicsCoordinator.onFrameMetadata` (already
+  receiving the whole frame) needed no new parameter, and neither did `CameraPreview`/`ArScreen`'s
+  existing callback wiring.
+- **Validation closure pass (this session) — real Gradle.** This environment shipped neither a JDK 17
+  toolchain (only JDK 21) nor an Android SDK; both were provisioned locally for this pass
+  (`apt-get install openjdk-17-jdk-headless`; an Android SDK via `sdkmanager` against the reachable
+  `dl.google.com`, `platform-tools`/`platforms;android-35`/`build-tools;35.0.0`) — a recorded
+  environment deviation, not a silent one.
+  - *`:core:astro-core:test`*: **PASS, 436/436** (0 failures/errors).
+  - *`:mobile:compileInternalDebugKotlin`/`compilePublicDebugKotlin`*: **PASS** (pre-existing warnings
+    only: a deprecated `defaultDisplay` API and a missing `@OptIn` marker, neither touched by CAM-2c).
+  - *`:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest`*: **PASS, 309/309 each** (0
+    failures/errors).
+  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS** (no androidTest source needed changes).
+  - *`:mobile:lintInternalDebug`/`lintPublicDebug`*: **initially FAILED** on two real, reproducible
+    findings, both mine — `LENS_DISTORTION` (`NewApi`, error: requires API 28, this project's minSdk
+    is 26) and `REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA` (`InlinedApi`, warning, same API
+    floor). Fixed by gating both reads behind `Build.VERSION.SDK_INT >= Build.VERSION_CODES.P`; a
+    third self-inflicted `ModifierParameter` warning (`calibrationDiagnostics` placed after
+    `modifier` in `CamDiagnosticTopPanels`) was fixed by moving `modifier` back to be the first
+    optional parameter. Rerun — **PASS, 0 errors/warnings attributable to CAM-2c** for both flavors.
+  - *`:mobile:assembleInternalDebug`/`assemblePublicDebug`*: **PASS**, both debug APKs built.
+  - *Connected instrumentation tests*: **not run** — no physical device and no emulator (no
+    `/dev/kvm`, no hardware-virtualization CPU flags) are available in this environment; `adb devices
+    -l` lists none.
+  - *Physical Pixel 9 validation (task §10 — session mode, centre/mid-field/edge dx-dy comparison)*:
+    **not executed**, for the same reason.
+
+**Overall CAM-2c status: code/test gates above are real-Gradle green; only the physical-device
+checklist (task §10) remains unexecuted, for lack of any device or emulator capability in this
+environment — see the individual verdict in the PR description.**
 
 ## CAM-2b (this sprint)
 

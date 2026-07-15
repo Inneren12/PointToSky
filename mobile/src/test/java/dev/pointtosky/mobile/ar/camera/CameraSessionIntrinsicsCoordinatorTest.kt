@@ -8,6 +8,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult
 import dev.pointtosky.core.astro.projection.camera.FrameRotationPairingResult
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
 import dev.pointtosky.core.astro.projection.camera.TimedRotationSample
 import dev.pointtosky.core.astro.projection.camera.TimestampSyncConfig
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
@@ -78,6 +79,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
             cameraInfo: CameraInfo,
             imageWidthPx: Int?,
             imageHeightPx: Int?,
+            sensorToBufferTransform: SensorToBufferTransform?,
         ): CameraIntrinsicsResolution {
             callCount++
             lastImageWidthPx = imageWidthPx
@@ -92,6 +94,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
                 cameraInfo: CameraInfo,
                 imageWidthPx: Int?,
                 imageHeightPx: Int?,
+                sensorToBufferTransform: SensorToBufferTransform?,
             ): CameraIntrinsicsResolution =
                 CameraIntrinsicsResolution(
                     legacyFallbackCameraIntrinsics(imageWidthPx = imageWidthPx, imageHeightPx = imageHeightPx),
@@ -346,6 +349,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
                         cameraInfo: CameraInfo,
                         imageWidthPx: Int?,
                         imageHeightPx: Int?,
+                        sensorToBufferTransform: SensorToBufferTransform?,
                     ): CameraIntrinsicsResolution {
                         resolveEntered.countDown()
                         allowResolveToFinish.await(5, TimeUnit.SECONDS)

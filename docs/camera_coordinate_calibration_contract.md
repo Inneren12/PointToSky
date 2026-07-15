@@ -443,6 +443,88 @@ sites — no `ArViewModel`/`ArScreen`/`CameraPreview` code constructs or reads a
 `Camera2CameraIntrinsicsProvider` yet. No `ImageAnalysis` use case, frame pipeline, timestamp
 pairing, crop/scale mapping, star matcher, or `VisibleRealStarProvider` wiring was added.
 
+### 3.5 CAM-2c: calibrated `AnalysisBuffer` intrinsics (real-device fix)
+
+CAM-1b's `CAMERA_CHARACTERISTICS` path (§3.4) always produced a `PhysicalSensor`-referenced
+`CameraIntrinsics` — a real per-device FOV, but measured over the physical sensor with no recorded
+mapping to any particular `ImageAnalysis` buffer. CAM-2a's `projectStars` correctly refuses to
+project a `PhysicalSensor`-referenced value (`IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED`),
+so on real hardware the only way to see predicted markers at all was CAM-2b's explicit
+`DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK` mode, which substitutes the legacy fixed-FOV — and Pixel 9
+evidence showed exactly the bug that predicts: the centre marker aligned (any FOV puts an on-axis
+ray at the image centre) but off-axis markers diverged systematically, because the legacy fallback's
+FOV is not the true buffer-space intrinsics. CAM-2c closes this by deriving a real, calibrated
+`AnalysisBuffer`-referenced mapping from Camera2 metadata instead of tuning the fallback FOV.
+
+**Five coordinate spaces, never conflated:**
+
+1. **Physical sensor millimetres** — `SENSOR_INFO_PHYSICAL_SIZE`, `LENS_INFO_AVAILABLE_FOCAL_LENGTHS`.
+2. **Active-array pixels** — `SENSOR_INFO_ACTIVE_ARRAY_SIZE`; `LENS_INTRINSIC_CALIBRATION`/`LENS_DISTORTION`
+   are reported in the closely related but **distinct** `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`
+   space (`ActiveArrayIntrinsics`, `core/astro-core/.../camera/ActiveArrayIntrinsics.kt`).
+3. **CameraX `ImageAnalysis` buffer pixels** — the exact `frame.bufferWidthPx`×`bufferHeightPx` space
+   `PinholeProjectionModel` already projects into (`AnalysisBufferIntrinsicsValues`,
+   `core/astro-core/.../camera/AnalysisBufferIntrinsicsMapping.kt`).
+4. **Display viewport pixels** — unchanged; still owned exclusively by `CropScaleTransform`.
+
+**Cropped-rect provenance (§5 of the task spec) — resolved, not assumed.** `CameraFrameMetadata`'s
+own `cropRectLeftPx`/etc (CAM-1c) are already documented as **buffer**-space (`ImageProxy.cropRect`,
+constrained to lie within the buffer) — and `CameraPreview.kt` binds `Preview`+`ImageAnalysis` with
+no `ViewPort`/`UseCaseGroup`, so that rect is always the identity `(0,0,width,height)` in this app's
+current binding. It therefore cannot answer "which part of the sensor maps into this buffer" and is
+never used for that purpose. The real answer is `ImageInfo.getSensorToBufferTransformMatrix()` — a
+stable, official CameraX API (present in `camera-core` since at least `1.1.0-beta01`, well before
+this project's `1.3.4`) whose own contract documents a mapping "from the value of
+`CameraCharacteristics#SENSOR_INFO_ACTIVE_ARRAY_SIZE` to `(0, 0, image.getWidth, image.getHeight)`" —
+populated with a real, non-default value for every bound `ImageAnalysis`/Camera2 session. CAM-2c
+reads it via `ImageProxyFrameMetadataSource` (`:mobile`), validates it is axis-aligned (Camera2's own
+crop-then-scale pipeline never introduces rotation/skew), and converts it to a plain
+`SensorToBufferTransform` (`core/astro-core/.../camera/AnalysisBufferIntrinsicsMapping.kt`) carried
+as a new optional field on `CameraFrameMetadata` — no new callback wiring through
+`CameraPreview`/`ArScreen` was needed; `CameraSessionIntrinsicsCoordinator.onFrameMetadata` already
+receives the whole frame.
+
+**Principal-point policy (§3 of the task spec).** `LENS_INTRINSIC_CALIBRATION` (`[fx, fy, cx, cy,
+skew]`) is preferred **only** when its coordinate-space contract is verified: if the device also
+reports `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`, it must exactly match
+`SENSOR_INFO_ACTIVE_ARRAY_SIZE` (if the device does not report one at all, the active array *is*
+the pre-correction array, so the spaces are trivially identical). Otherwise the active-array
+intrinsics fall back to `activeArrayIntrinsicsFromFocalLength` with a geometric-centre principal
+point. Either way `fx`/`fy` are real, focal-length-derived numbers — this is a principal-point-only
+fallback, never a fixed-FOV guess. `CameraIntrinsicsQuality` (`CALIBRATED`/`APPROXIMATE_PRINCIPAL_POINT`)
+records which policy applied; it is `null` for every source except `CAMERA_CHARACTERISTICS`.
+
+**A new, deliberate `CameraIntrinsics` invariant relaxation.** `source=CAMERA_CHARACTERISTICS` may
+now carry `reference=AnalysisBuffer` in addition to the existing `reference=PhysicalSensor` — the
+same real Camera2 metadata, but mapped through the exact CameraX transform for one analyzed frame.
+`PinholeProjectionModel.forGeometry`/`projectStars` were **not** touched: they still gate on
+`reference` alone, so a `PhysicalSensor`-referenced value (CAM-1b's own path, or a logical
+multi-camera/missing-transform/invalid-metadata fallback — see below) is rejected exactly as before.
+
+**Typed resolution, no silent fallback** (`mobile/.../ar/camera/AnalysisBufferIntrinsicsResolver.kt`):
+`AnalysisBufferIntrinsicsResolution` is `Resolved` / `MissingActiveArray` / `MissingPhysicalSensorSize`
+/ `MissingFocalLength` / `MissingSensorToBufferTransform` / `UnsupportedLogicalMultiCameraMapping`
+/ `InvalidMetadata(reason)`. `UnsupportedLogicalMultiCameraMapping` fires whenever
+`REQUEST_AVAILABLE_CAPABILITIES` includes `LOGICAL_MULTI_CAMERA` — this camera ID's static
+characteristics cannot be trusted to describe whichever physical sensor actually produced a given
+frame, so no calibrated mapping is attempted at all. `resolveCameraIntrinsicsPreferringCalibration`
+tries this path first and falls back to the **unchanged** CAM-1b `resolveCameraIntrinsics` (still
+`PhysicalSensor`-referenced, or the legacy fallback) for any other outcome — never the reverse.
+
+**Diagnostics only** (`CameraCalibrationDiagnostics`, `internalDebug`-gated `CamDiagnosticTopPanels`
+panel): active array size, sensor physical size, focal length, active-array fx/fy/cx/cy, the
+active-array-space crop region, buffer fx/fy/cx/cy, `quality`, and the sensor-to-buffer mapping
+source. Never persisted externally — on-screen only, in a debug build.
+
+**Validation (this environment).** `:core:astro-core:test` (436 tests, including the new
+`ActiveArrayIntrinsicsTest`/`AnalysisBufferIntrinsicsMappingTest`/`CalibratedAnalysisBufferProjectionTest`)
+and `:mobile:test{Internal,Public}DebugUnitTest` (309 tests each) all pass under a real Gradle build
+(this session provisioned a JDK 17 toolchain and an Android SDK — neither was preinstalled). No
+physical device or emulator is available in this sandboxed environment (no `/dev/kvm`, no
+hardware-virtualization CPU flags, `adb devices -l` lists none), so §10's live Pixel 9
+centre/mid-field/edge-star dx/dy comparison could not be executed here; it remains an open item for
+a session with real hardware access.
+
 ---
 
 ## 4. Timestamp & synchronization

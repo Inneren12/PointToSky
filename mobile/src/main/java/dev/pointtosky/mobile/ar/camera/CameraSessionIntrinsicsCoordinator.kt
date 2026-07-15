@@ -2,6 +2,7 @@ package dev.pointtosky.mobile.ar.camera
 
 import androidx.camera.core.CameraInfo
 import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
 
 /**
@@ -81,6 +82,7 @@ class CameraSessionIntrinsicsCoordinator(
     private var cameraInfo: CameraInfo? = null
     private var frameWidthPx: Int? = null
     private var frameHeightPx: Int? = null
+    private var sensorToBufferTransform: SensorToBufferTransform? = null
     private var resolutionStarted = false
     private var disposed = false
 
@@ -96,9 +98,12 @@ class CameraSessionIntrinsicsCoordinator(
     }
 
     /**
-     * Feeds one analyzed camera frame; only its buffer dimensions matter here. No-op after
-     * [dispose], or once a frame's dimensions have already been accepted — a later frame never
-     * overrides the first.
+     * Feeds one analyzed camera frame; its buffer dimensions and (CAM-2c) real per-frame
+     * `frame.sensorToBufferTransform` matter here — captured together, atomically, from this exact
+     * frame, never mixed with a different frame's transform. No-op after [dispose], or once a
+     * frame's dimensions have already been accepted — a later frame never overrides the first
+     * (including its `sensorToBufferTransform`, even if that first frame's was `null` and a later
+     * one's would not be).
      */
     fun onFrameMetadata(frame: CameraFrameMetadata) {
         val inputs =
@@ -106,6 +111,7 @@ class CameraSessionIntrinsicsCoordinator(
                 if (disposed || frameWidthPx != null) return
                 frameWidthPx = frame.bufferWidthPx
                 frameHeightPx = frame.bufferHeightPx
+                sensorToBufferTransform = frame.sensorToBufferTransform
                 claimIfReadyLocked()
             }
         resolveAndPublish(inputs)
@@ -135,7 +141,7 @@ class CameraSessionIntrinsicsCoordinator(
         val widthPx = frameWidthPx ?: return null
         val heightPx = frameHeightPx ?: return null
         resolutionStarted = true
-        return ResolutionInputs(info, widthPx, heightPx)
+        return ResolutionInputs(info, widthPx, heightPx, sensorToBufferTransform)
     }
 
     /**
@@ -149,7 +155,7 @@ class CameraSessionIntrinsicsCoordinator(
      */
     private fun resolveAndPublish(inputs: ResolutionInputs?) {
         if (inputs == null) return
-        val resolution = resolver.resolveOnce(inputs.cameraInfo, inputs.widthPx, inputs.heightPx)
+        val resolution = resolver.resolveOnce(inputs.cameraInfo, inputs.widthPx, inputs.heightPx, inputs.sensorToBufferTransform)
         synchronized(lock) {
             if (disposed) return
             onResolved(resolution)
@@ -160,5 +166,6 @@ class CameraSessionIntrinsicsCoordinator(
         val cameraInfo: CameraInfo,
         val widthPx: Int,
         val heightPx: Int,
+        val sensorToBufferTransform: SensorToBufferTransform?,
     )
 }

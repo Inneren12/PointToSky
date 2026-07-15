@@ -1,6 +1,7 @@
 package dev.pointtosky.mobile.ar.camera
 
 import androidx.camera.core.CameraInfo
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
 
 /**
@@ -27,6 +28,16 @@ class SessionScopedCameraIntrinsicsResolver(
 ) {
     private val lock = Any()
     private var resolved: CoreCameraIntrinsicsResolution? = null
+    private var calibrationDiagnostics: CameraCalibrationDiagnostics? = null
+
+    /**
+     * (CAM-2c §9) The [CameraCalibrationDiagnostics] this session's resolution produced, when the
+     * calibrated `AnalysisBuffer` mapping actually succeeded — `null` before [resolveOnce] has run,
+     * or whenever this session resolved a `PhysicalSensor`/legacy-fallback result instead. Debug-only;
+     * never read by projection.
+     */
+    val lastCalibrationDiagnostics: CameraCalibrationDiagnostics?
+        get() = synchronized(lock) { calibrationDiagnostics }
 
     /**
      * Returns the cached resolution if this session already resolved one; otherwise resolves via
@@ -42,6 +53,9 @@ class SessionScopedCameraIntrinsicsResolver(
      * must wait for real dimensions themselves; see `CameraSessionIntrinsicsCoordinator`, whose
      * entire purpose is guaranteeing that before calling this method in production.
      *
+     * @param sensorToBufferTransform (CAM-2c) the real per-frame sensor-to-buffer mapping for the
+     *   exact frame [imageWidthPx]/[imageHeightPx] describe, when known. `null` skips the calibrated
+     *   `AnalysisBuffer` path in favor of the CAM-1b path — see [CameraIntrinsicsProvider.resolve].
      * @throws IllegalArgumentException if [imageWidthPx] or [imageHeightPx] is not strictly
      *   positive — a programmer-contract violation at the call site, not an expected runtime
      *   outcome (a real `CameraFrameMetadata` can never carry a non-positive buffer dimension).
@@ -50,11 +64,16 @@ class SessionScopedCameraIntrinsicsResolver(
         cameraInfo: CameraInfo,
         imageWidthPx: Int,
         imageHeightPx: Int,
+        sensorToBufferTransform: SensorToBufferTransform? = null,
     ): CoreCameraIntrinsicsResolution {
         require(imageWidthPx > 0) { "imageWidthPx must be strictly positive; was $imageWidthPx" }
         require(imageHeightPx > 0) { "imageHeightPx must be strictly positive; was $imageHeightPx" }
         return synchronized(lock) {
-            resolved ?: provider.resolve(cameraInfo, imageWidthPx, imageHeightPx).toCore().also { resolved = it }
+            resolved ?: run {
+                val result = provider.resolve(cameraInfo, imageWidthPx, imageHeightPx, sensorToBufferTransform)
+                calibrationDiagnostics = result.calibrationDiagnostics
+                result.toCore().also { resolved = it }
+            }
         }
     }
 

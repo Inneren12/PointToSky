@@ -140,10 +140,10 @@ class CameraIntrinsicsTest {
     }
 
     @Test
-    fun `CAMERA_CHARACTERISTICS with an AnalysisBuffer reference is rejected`() {
-        assertFailsWith<IllegalArgumentException> {
+    fun `CAMERA_CHARACTERISTICS with an AnalysisBuffer reference is accepted (CAM-2c)`() {
+        val intrinsics =
             valid(source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, reference = CameraIntrinsicsReference.AnalysisBuffer(1920, 1080))
-        }
+        assertEquals(CameraIntrinsicsReference.AnalysisBuffer(1920, 1080), intrinsics.reference)
     }
 
     @Test
@@ -184,5 +184,43 @@ class CameraIntrinsicsTest {
     @Test
     fun `AnalysisBuffer with equal widthPx and heightPx values are structurally equal`() {
         assertEquals(CameraIntrinsicsReference.AnalysisBuffer(1000, 500), CameraIntrinsicsReference.AnalysisBuffer(1000, 500))
+    }
+
+    // --- quality: cross-field consistency (CAM-2c) ---
+
+    @Test
+    fun `quality defaults to null when omitted`() {
+        assertEquals(null, valid().quality)
+    }
+
+    @Test
+    fun `quality is accepted for CAMERA_CHARACTERISTICS with either reference`() {
+        val withPhysicalSensor =
+            valid(
+                source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                reference = CameraIntrinsicsReference.PhysicalSensor,
+            ).copy(quality = CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT)
+        assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, withPhysicalSensor.quality)
+
+        val withAnalysisBuffer =
+            valid(
+                source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                reference = CameraIntrinsicsReference.AnalysisBuffer(1920, 1080),
+            ).copy(quality = CameraIntrinsicsQuality.CALIBRATED)
+        assertEquals(CameraIntrinsicsQuality.CALIBRATED, withAnalysisBuffer.quality)
+    }
+
+    @Test
+    fun `non-null quality is rejected for LEGACY_FALLBACK`() {
+        assertFailsWith<IllegalArgumentException> {
+            valid(source = CameraIntrinsicsSource.LEGACY_FALLBACK).copy(quality = CameraIntrinsicsQuality.CALIBRATED)
+        }
+    }
+
+    @Test
+    fun `non-null quality is rejected for CAMERA_INTRINSIC_CALIBRATION`() {
+        assertFailsWith<IllegalArgumentException> {
+            valid(source = CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION).copy(quality = CameraIntrinsicsQuality.CALIBRATED)
+        }
     }
 }
