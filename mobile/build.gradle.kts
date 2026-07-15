@@ -152,15 +152,6 @@ dependencies {
 
     testImplementation(kotlin("test"))           // kotlin.test + JUnit binding
     testImplementation("org.json:json:20240303") // real org.json for JVM unit tests (avoids android.jar stub)
-    // если это инструментальные тесты (androidTest):
-    androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
-// AndroidX Test для инструментальных тестов (ServiceScenario и пр.)
-    androidTestImplementation("androidx.test:core:1.5.0")
-    androidTestImplementation("androidx.test:core-ktx:1.5.0")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.ext:junit-ktx:1.1.5")
-    androidTestImplementation("androidx.test:runner:1.5.2")
-    androidTestImplementation("androidx.test:rules:1.5.0")
     implementation(platform(libs.compose.bom))
 
     // Если используете BOM в других модулях — подключите и здесь:
@@ -214,22 +205,24 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:rules:1.6.1")
+    // AndroidX Test — one coherent generation, centrally managed via the version catalog
+    // (was scattered across three conflicting hard-coded versions per artifact; the mismatch
+    // left androidx.test.espresso:espresso-core resolving to the stale 3.5.0 pulled in
+    // transitively by Compose's ui-test-android, which is incompatible with newer platform
+    // InputManager APIs — see docs/validation/cam_2b_device_validation.md).
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.core.ktx)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.ext.junit.ktx)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.espresso.core)
 
     // Compose UI tests — через BOM, без явной версии у артефактов
-    androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.01"))
+    // (debugImplementation ui-test-manifest is already declared above, next to compose.ui.tooling)
+    androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    // Манифест для Compose-тестов подключаем только в debug
-    debugImplementation(platform("androidx.compose:compose-bom:2024.09.01"))
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
-    androidTestImplementation(libs.compose.ui.test.junit4)
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:core:1.6.1")
-    androidTestImplementation("androidx.test:runner:1.6.1")
-    androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation(libs.kotlinx.coroutines.test)
 }
 
