@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -55,7 +54,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -97,9 +95,7 @@ import dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsCoordinator
 import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
 import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
-import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
 import dev.pointtosky.mobile.ar.camera.nextDebugSessionId
-import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.reducePredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.selectPredictedStarDirections
@@ -329,6 +325,81 @@ fun ArScreen(
         cameraGeometrySessionResult = null
     }
 
+    // Single declination computation point, hoisted above the Box so both the legacy renderer (below,
+    // once Ready) and CAM-2b's derived overlay state (also below) share the exact same
+    // GeomagneticField sample - never a second model instance. Only meaningful once the observer's
+    // location is known (ArUiState.Ready); null otherwise. Hardening task §1: previously this lived
+    // inside the Ready composition branch only, which was fine for the legacy renderer alone, but a
+    // second, independent consumer (CAM-2b) needs the identical value, not a recomputation.
+    val declinationDeg: Double? =
+        if (state is ArUiState.Ready) {
+            remember(state.location) {
+                android.hardware.GeomagneticField(
+                    state.location.latDeg.toFloat(),
+                    state.location.lonDeg.toFloat(),
+                    0f,
+                    System.currentTimeMillis(),
+                ).declination.toDouble()
+            }
+        } else {
+            null
+        }
+
+    // CAM-2b (hardening task §1, keyed to a debug session by hardening task §3): session-scoped debug
+    // toggles/mode and the HUD's own expand/collapse state, hoisted here - before the root Box content -
+    // so a single, stable `predictedStarOverlayState` below can be read identically by both the marker
+    // canvas (inside the Ready branch) and the shared HUD (after it), rather than one composition branch
+    // writing a mutable local (`var predictedStarPanelState: PredictedStarOverlayState? = null`, the
+    // removed anti-pattern) for another branch to read later. Keyed to
+    // `cameraGeometryDiagnosticSessionId` (not unkeyed) so a fresh debug session resets every field to
+    // its documented default rather than carrying over the previous session's fallback-mode/hidden-
+    // overlay/expanded-HUD choices - see `PredictedStarDebugControlsState`'s own KDoc. Harmless
+    // regardless of CameraGeometryDiagnosticsGate.isEnabled: no debug UI ever surfaces to change these in
+    // a release/public build, and the session id stays a constant `0L` there, so behavior is exactly as
+    // if this call were absent.
+    val predictedStarDebugControls = rememberPredictedStarDebugControls(cameraGeometryDiagnosticSessionId)
+
+    // CAM-2b: the single derived overlay-state value both consumers below read directly - never
+    // recomputed per consumer, never smuggled across composition branches via a mutable local. Reuses
+    // cameraGeometrySessionResult (the same raw geometry CAM-1g above observed for this recompute) and
+    // declinationDeg (the same GeomagneticField sample the legacy renderer uses below) - never
+    // re-paired, never a second model instance. null whenever the gate is disabled or the AR state
+    // isn't Ready yet, so a non-Ready state (or a disposed/new session reflected in
+    // cameraGeometrySessionResult) never leaves stale points on screen - both consumers simply see
+    // `null`/`Waiting` and render nothing/the waiting text. See
+    // docs/camera_star_prediction_contract.md §14.
+    val predictedStarOverlayState: PredictedStarOverlayState? =
+        if (CameraGeometryDiagnosticsGate.isEnabled && state is ArUiState.Ready && declinationDeg != null) {
+            val predictedStars =
+                remember(state.catalog, state.effectiveMagLimit) {
+                    selectPredictedStarDirections(visibilitySelectedStars(state))
+                }
+            remember(
+                cameraGeometrySessionResult,
+                state.locationResolved,
+                state.location,
+                state.instant,
+                declinationDeg,
+                predictedStars,
+                predictedStarDebugControls.predictedStarIntrinsicsMode,
+            ) {
+                reducePredictedStarOverlayState(
+                    gateEnabled = true,
+                    geometryResult = requireNotNull(cameraGeometrySessionResult) {
+                        "cameraGeometrySessionResult must be populated whenever the gate is enabled"
+                    },
+                    observerLatitudeDeg = if (state.locationResolved) state.location.latDeg else null,
+                    observerLongitudeDeg = if (state.locationResolved) state.location.lonDeg else null,
+                    utcEpochMillis = state.instant.toEpochMilli(),
+                    magneticDeclinationDeg = declinationDeg,
+                    stars = predictedStars,
+                    intrinsicsMode = predictedStarDebugControls.predictedStarIntrinsicsMode,
+                )
+            }
+        } else {
+            null
+        }
+
     Box(
         modifier =
             modifier
@@ -373,23 +444,20 @@ fun ArScreen(
             }
 
             is ArUiState.Ready -> {
-                val declinationDeg = remember(state.location) {
-                    android.hardware.GeomagneticField(
-                        state.location.latDeg.toFloat(),
-                        state.location.lonDeg.toFloat(),
-                        0f,
-                        System.currentTimeMillis(),
-                    ).declination.toDouble()
-                }
+                // declinationDeg is hoisted above the Box (shared with CAM-2b's derived overlay state)
+                // and is guaranteed non-null here: this branch only runs when `state is
+                // ArUiState.Ready`, the exact condition under which it was computed.
+                val resolvedDeclinationDeg =
+                    requireNotNull(declinationDeg) { "declinationDeg must be computed whenever state is Ready" }
                 val overlay =
-                    remember(state, rotationFrame, overlaySize, declinationDeg) {
+                    remember(state, rotationFrame, overlaySize, resolvedDeclinationDeg) {
                         if (rotationFrame != null && overlaySize != IntSize.Zero) {
                             calculateOverlay(
                                 state = state,
                                 frame = rotationFrame,
                                 viewport = overlaySize,
                                 resolveConstellation = resolveConstellation,
-                                declinationDeg = declinationDeg,
+                                declinationDeg = resolvedDeclinationDeg,
                             )
                         } else {
                             null
@@ -402,7 +470,12 @@ fun ArScreen(
                     }
                 }
 
-                if (state.showStarPoints && !state.reticleTargetOnly) {
+                // internal-debug-only comparison control (task §4): hides only the legacy sky
+                // drawing below (star points + constellation/asterism/art lines) so the CAM-2b cyan
+                // predicted markers can be inspected in isolation, then compared side-by-side by
+                // flipping this back on. showLegacyOverlay lives in predictedStarDebugControls,
+                // hoisted above the Box and reset per debug session (hardening task §1/§3).
+                if (predictedStarDebugControls.showLegacyOverlay && state.showStarPoints && !state.reticleTargetOnly) {
                     overlay?.let {
                         StarPointLayer(
                             overlay = it,
@@ -411,87 +484,25 @@ fun ArScreen(
                     }
                 }
 
-                overlay?.let {
-                    ConstellationLayer(
-                        overlay = it,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-
-                // CAM-2b: internal-debug-only predicted-star overlay - visualizes the accepted CAM-2a
-                // projectStars(...) pipeline purely for diagnosis. Reuses cameraGeometrySessionResult
-                // (the raw, magnetic-north-referenced geometry CAM-1g already observed above - never
-                // re-paired, never corrected via correctedForTrueNorth here), declinationDeg (the
-                // exact same GeomagneticField value the legacy renderer computed above - no second
-                // model instance), and state.instant (the sky-render clock - no independent
-                // System.currentTimeMillis() read). Drawn on top of the legacy star/constellation
-                // layers above so both can be visually compared; never feeds calculateOverlay,
-                // projectionParams, or any production star position. See
-                // docs/camera_star_prediction_contract.md §14.
-                if (CameraGeometryDiagnosticsGate.isEnabled) {
-                    var showPredictedStarMarkers by remember { mutableStateOf(true) }
-                    var showPredictedStarPanel by remember { mutableStateOf(true) }
-                    // Follow-up task §2: SESSION_INTRINSICS is the safest, most explicit default -
-                    // never silently substitutes a diagnostic fallback FOV for the real session
-                    // intrinsics unless the tester explicitly opts in via PredictedStarOverlayControls.
-                    var predictedStarIntrinsicsMode by remember { mutableStateOf(PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS) }
-                    val predictedStars =
-                        remember(state.catalog, state.effectiveMagLimit) {
-                            selectPredictedStarDirections(visibilitySelectedStars(state))
-                        }
-                    val predictedStarOverlayState =
-                        remember(
-                            cameraGeometrySessionResult,
-                            state.locationResolved,
-                            state.location,
-                            state.instant,
-                            declinationDeg,
-                            predictedStars,
-                            predictedStarIntrinsicsMode,
-                        ) {
-                            reducePredictedStarOverlayState(
-                                gateEnabled = true,
-                                geometryResult = requireNotNull(cameraGeometrySessionResult) {
-                                    "cameraGeometrySessionResult must be populated whenever the gate is enabled"
-                                },
-                                observerLatitudeDeg = if (state.locationResolved) state.location.latDeg else null,
-                                observerLongitudeDeg = if (state.locationResolved) state.location.lonDeg else null,
-                                utcEpochMillis = state.instant.toEpochMilli(),
-                                magneticDeclinationDeg = declinationDeg,
-                                stars = predictedStars,
-                                intrinsicsMode = predictedStarIntrinsicsMode,
-                            )
-                        }
-
-                    if (showPredictedStarMarkers && predictedStarOverlayState is PredictedStarOverlayState.Ready) {
-                        PredictedStarMarkersCanvas(
-                            points = predictedStarOverlayState.points,
+                if (predictedStarDebugControls.showLegacyOverlay) {
+                    overlay?.let {
+                        ConstellationLayer(
+                            overlay = it,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
+                }
 
-                    if (showPredictedStarPanel) {
-                        PredictedStarOverlayPanel(
-                            state = predictedStarOverlayState,
-                            modifier =
-                                Modifier
-                                    .align(Alignment.TopEnd)
-                                    .statusBarsPadding()
-                                    .padding(top = 72.dp, start = 16.dp, end = 16.dp),
-                        )
-                    }
-
-                    PredictedStarOverlayControls(
-                        showMarkers = showPredictedStarMarkers,
-                        onShowMarkersChange = { showPredictedStarMarkers = it },
-                        showPanel = showPredictedStarPanel,
-                        onShowPanelChange = { showPredictedStarPanel = it },
-                        intrinsicsMode = predictedStarIntrinsicsMode,
-                        onIntrinsicsModeChange = { predictedStarIntrinsicsMode = it },
-                        modifier =
-                            Modifier
-                                .align(Alignment.CenterEnd)
-                                .padding(end = 16.dp),
+                // CAM-2b: internal-debug-only predicted-star overlay - visualizes the accepted CAM-2a
+                // projectStars(...) pipeline purely for diagnosis. Reads the single hoisted
+                // predictedStarOverlayState computed above the Box (never recomputed here). Drawn on
+                // top of the legacy star/constellation layers above so both can be visually compared;
+                // never feeds calculateOverlay, projectionParams, or any production star position. See
+                // docs/camera_star_prediction_contract.md §14.
+                if (predictedStarDebugControls.showPredictedStarMarkers && predictedStarOverlayState is PredictedStarOverlayState.Ready) {
+                    PredictedStarMarkersCanvas(
+                        points = predictedStarOverlayState.points,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
 
@@ -608,59 +619,44 @@ fun ArScreen(
             }
         }
 
-        // CAM-1g: debug-only camera-geometry diagnostic overlay - see the gate/collection setup
-        // above. Non-interactive (plain Text, no clickable/pointerInput modifier), so it never
-        // intercepts AR gestures or camera interaction, and it never modifies calculateOverlay,
-        // projectionParams, or star positions - it only displays what CameraSessionGeometryProvider
-        // already publishes.
-        if (CameraGeometryDiagnosticsGate.isEnabled && cameraGeometryDiagnosticSnapshot != null) {
-            CameraGeometryDiagnosticOverlay(
-                snapshot = cameraGeometryDiagnosticSnapshot,
-                sessionId = cameraGeometryDiagnosticSessionId,
-                statusTransitionCount = cameraGeometryStatusTransitionCount,
-                observedFrameCount = cameraGeometryObservedFrameCount,
-                readyBundleCount = cameraGeometryReadyBundleCount,
-                modifier =
-                    Modifier
-                        .align(Alignment.TopStart)
-                        .statusBarsPadding()
-                        .padding(top = 72.dp, start = 16.dp, end = 16.dp),
+        // CAM-1g + CAM-2b: debug-only diagnostic HUD - see the gate/collection setup above. Both
+        // panels are stacked in one shared, width/height-bounded column (never two independently
+        // -aligned overlays fighting for the same screen corner) - see `CamDiagnosticTopPanels`'s own
+        // KDoc. Collapsed by default: no scrollable/pointer-capturing container exists until the tester
+        // explicitly expands it, and even then the WHOLE HUD container (header rows included, not just
+        // the scrollable child) stays bounded away from the center reticle (task hardening §2/§3, closed
+        // more precisely by the whole-HUD-bound hardening pass). The CAM-2b controls entry point is
+        // rendered by `CamDiagnosticTopPanels` itself now, not floated separately at `BottomEnd` - see
+        // that composable's KDoc for why. It never modifies calculateOverlay, projectionParams, CAM-2a
+        // projection math, or any displayPoint coordinate - it only displays what
+        // CameraSessionGeometryProvider/the CAM-2b reducer already publish.
+        if (CameraGeometryDiagnosticsGate.isEnabled) {
+            CamDiagnosticTopPanels(
+                cam1gSnapshot = cameraGeometryDiagnosticSnapshot,
+                cam1gSessionId = cameraGeometryDiagnosticSessionId,
+                cam1gStatusTransitionCount = cameraGeometryStatusTransitionCount,
+                cam1gObservedFrameCount = cameraGeometryObservedFrameCount,
+                cam1gReadyBundleCount = cameraGeometryReadyBundleCount,
+                cam2bState = predictedStarOverlayState.takeIf { predictedStarDebugControls.showPredictedStarPanel },
+                detailsExpanded = predictedStarDebugControls.hudDetailsExpanded,
+                onDetailsExpandedChange = { predictedStarDebugControls.hudDetailsExpanded = it },
+                controlsExpanded = predictedStarDebugControls.predictedStarControlsExpanded,
+                onControlsExpandedChange = { predictedStarDebugControls.predictedStarControlsExpanded = it },
+                controlsContent = {
+                    PredictedStarOverlayControlsBody(
+                        showMarkers = predictedStarDebugControls.showPredictedStarMarkers,
+                        onShowMarkersChange = { predictedStarDebugControls.showPredictedStarMarkers = it },
+                        showPanel = predictedStarDebugControls.showPredictedStarPanel,
+                        onShowPanelChange = { predictedStarDebugControls.showPredictedStarPanel = it },
+                        intrinsicsMode = predictedStarDebugControls.predictedStarIntrinsicsMode,
+                        onIntrinsicsModeChange = { predictedStarDebugControls.predictedStarIntrinsicsMode = it },
+                        showLegacyOverlay = predictedStarDebugControls.showLegacyOverlay,
+                        onShowLegacyOverlayChange = { predictedStarDebugControls.showLegacyOverlay = it },
+                    )
+                },
             )
         }
     }
-}
-
-/**
- * CAM-1g compact diagnostic overlay (§5) - translucent, monospace, width-bounded, non-clickable.
- * Purely a display of [CameraGeometryDiagnosticSnapshot]; touches no renderer/matcher/detector state.
- */
-@Composable
-private fun CameraGeometryDiagnosticOverlay(
-    snapshot: CameraGeometryDiagnosticSnapshot,
-    sessionId: Long,
-    statusTransitionCount: Int,
-    observedFrameCount: Long,
-    readyBundleCount: Long,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text =
-            buildCameraGeometryDiagnosticText(
-                snapshot = snapshot,
-                sessionId = sessionId,
-                statusTransitionCount = statusTransitionCount,
-                observedFrameCount = observedFrameCount,
-                readyBundleCount = readyBundleCount,
-            ),
-        color = Color.White,
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-        modifier =
-            modifier
-                .widthIn(max = 280.dp)
-                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
-                .padding(8.dp),
-    )
 }
 
 @Composable
