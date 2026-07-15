@@ -2,22 +2,30 @@
 
 **Status: `CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`**
 
-This PR was authored and tested by a coding agent with no physical Android device, no camera
-hardware, and no rotation sensor available. Only JVM unit tests, static review, and (where the
-sandbox permitted) JVM-level Gradle test runs were performed — see
-`docs/camera_coordinate_calibration_contract.md` §11.9 and the exact command/result log in this PR's
-description. **Every checklist item below is transcribed from the CAM-1g task description,
-unexecuted.** None of the results in this file are fabricated or guessed — the fields are left blank
-intentionally, and must stay blank until someone actually runs the checklist on a physical device.
+Originally authored and tested by a coding agent with no physical Android device, no camera hardware,
+no rotation sensor, and (at the time) no working Gradle/Android SDK — only JVM unit tests and static
+review were performed. A later CAM-2b validation-closure session provisioned an Android SDK and JDK-17
+toolchain and ran the real Gradle build/lint/assemble gates for the whole `:mobile` module (see
+`docs/camera_coordinate_calibration_contract.md` §11.9 and `docs/SPRINT_STATUS.md` for exact commands),
+which compiles and lints CAM-1g's own `CameraGeometryDiagnosticsGate`/`CameraGeometryDiagnostics`/panel
+code as part of `compileInternalDebugKotlin`, `lintInternalDebug`, and `assembleInternalDebug` — all
+passed. **That is real evidence CAM-1g's code still compiles, lints clean, and packages; it is not a
+physical-device pass** — no phone or emulator was available in that session either (no `adb`-visible
+device, no `/dev/kvm`). **Every checklist item below is still transcribed from the CAM-1g task
+description, unexecuted.** None of the results in this file are fabricated or guessed — the fields are
+left blank intentionally, and must stay blank until someone actually runs the checklist on a physical
+device.
 
 Do not treat this file as a completed report. Do not mark the CAM-1g gate as passed based on JVM
-tests, emulator execution, or static review alone.
+tests, real-Gradle compile/lint/assemble results (however real), emulator execution, or static review
+alone.
 
 ## Build
 
-- Commit: _(fill in the commit this build was produced from)_
-- Variant: `internalDebug` (`:mobile:assembleInternalDebug`)
-- Device category: _(not exercised — no physical device available)_
+- Commit: see `docs/SPRINT_STATUS.md` for the exact Gradle commands and results of the validation-closure
+  pass that last exercised this build
+- Variant: `internalDebug` (`:mobile:assembleInternalDebug`) — built successfully via real Gradle
+- Device category: _(not exercised — no physical device or emulator available)_
 - Android version: _(not exercised)_
 
 ## Initial session (Test A)
@@ -95,6 +103,7 @@ exercised)_.
 **`CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`**
 
 The diagnostic overlay, pure mapper, formatting, and center-probe are implemented and covered by JVM
-unit tests (see the PR description for exact commands/results). The physical-device checklist above
-must be executed and this file updated with real, non-fabricated results — and reviewed — before
-CAM-2a (predict-only projection) begins.
+unit tests, and the code compiles/lints/assembles clean under real Gradle (see
+`docs/camera_coordinate_calibration_contract.md` §11.9 and `docs/SPRINT_STATUS.md`). The physical-device
+checklist above must still be executed on a real device or emulator and this file updated with real,
+non-fabricated results — and reviewed — before this gate can close.

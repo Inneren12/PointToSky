@@ -1,13 +1,13 @@
 package dev.pointtosky.mobile
 
 import android.content.Context
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.pointtosky.mobile.settings.MobileSettings
+import dev.pointtosky.mobile.settings.from
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test

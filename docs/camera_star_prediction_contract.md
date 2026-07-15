@@ -1091,99 +1091,82 @@ Not pixel-perfect screenshot tests — this repository does not use those.
 
 ### 14.10 Validation status
 
-**Gradle itself still cannot run in this sandbox** — no Android SDK is installed, and `:core:astro-core`'s
-pinned JDK-17 Gradle toolchain cannot be downloaded (egress-blocked), the identical blocker CAM-2a's own
-authoring sandbox hit (§13, end). Unlike CAM-2a's own disclosure, this revision **did** manage to get
-real, executed (not fabricated) test results for two of the four gates below, by replicating CAM-2a's own
-documented workaround: invoking the Kotlin compiler (`kotlin-compiler-embeddable:2.0.20`, matching this
-project's pinned Kotlin version) directly against JDK 21 with `-jvm-target 17`, and running the compiled
-tests with the JUnit Platform Console Launcher — the same compiler, target bytecode, and test-library
-versions Gradle itself would use, just invoked without Gradle's build graph. Four separate gates, still
-not collapsed into one claim:
+**Superseded — real Gradle now runs.** The paragraphs below (kept for history) described a sandbox where
+neither the Android SDK nor a working JDK-17 Gradle toolchain were available, and only a `kotlinc`/
+JUnit-console workaround could be exercised. A later validation-closure session provisioned an Android
+SDK (`platform-tools`, `platforms;android-35`, `build-tools;35.0.0`) and `openjdk-17-jdk-headless` inside
+its own environment, substituted the preinstalled Gradle 8.14.3 for the project's pinned 8.11.1 (whose
+download is blocked by that environment's egress policy — the redirect target is a `github.com` release
+asset, not `services.gradle.org` itself), and ran the **real** Gradle gates end to end. Every gate is now
+either an executed PASS/FAIL or an explicitly recorded NOT RUN — never collapsed into one claim:
 
-- **`:core:astro-core` main + test compilation, and test execution — ACTUALLY RUN, ALL GREEN.**
-  `core/astro-core/src/main` (including this revision's `LocalSkyDirection.kt`/`CameraStarPredictor.kt`
-  changes and the new `PreparedStarProjectionContext.kt`) compiled cleanly with `kotlinc` against
-  `kotlin-stdlib:2.0.20`. `core/astro-core/src/test` compiled cleanly against that output (`-Xfriend-paths`
-  for `internal` visibility, matching what Gradle's `KotlinCompile` sets up automatically for a same-module
-  test source set) plus `kotlin-test-junit5:2.0.20`/`junit-jupiter:5.10.2`. Running the compiled tests via
-  `junit-platform-console-standalone:1.10.2`:
+- **`:core:astro-core:test`** — **PASS, 388/388**, 0 failures/errors (`CameraSessionGeometryTest` 34,
+  `PreparedStarProjectionContextTest` 3, `CameraStarProjectionTest` 35, each individually re-run via
+  `--tests` too).
+- **`:mobile:compileInternalDebugKotlin` / `compilePublicDebugKotlin`** — **PASS** (two pre-existing
+  warnings only: a deprecated `Display` API and a missing coroutines `@OptIn`, neither in CAM-2b code).
+- **`:mobile:testInternalDebugUnitTest` / `testPublicDebugUnitTest`** — **PASS, 271/271 each**, 0
+  failures/errors (`PredictedStarOverlayReducerTest` 32, `PredictedStarOverlayFormatTest` 6,
+  `PredictedStarCatalogAdapterTest` 10, each individually re-run via `--tests` too). `CameraGeometryDiagnosticsGateTest`
+  is included and passing, confirming the real `BuildConfig`-backed flavor gate (no stand-in object was
+  needed this time — the real AGP-generated `BuildConfig` compiled and ran for both flavors).
+- **`:mobile:compileInternalDebugAndroidTestKotlin` / `compilePublicDebugAndroidTestKotlin`** —
+  **initially FAILED**, a real and reproducible (identical on both flavors) compile error, but **not** in
+  any CAM-2b file: `PredictedStarOverlayUiTest.kt` compiled cleanly on the first attempt, using exactly
+  the imports the task calls for (`androidx.compose.ui.test.assert`, `org.junit.Assert.assertEquals`). The
+  failure was in the pre-existing, unrelated `PreProdSmokeMobileTest.kt`: (1) `import
+  androidx.compose.ui.test.assertExists` does not resolve against the resolved Compose UI Test 1.7.2,
+  where `assertExists` is a member of `SemanticsNodeInteraction`, not a top-level package function; (2)
+  `MobileSettings.from(context)` (an extension function on `MobileSettings.Companion` declared in
+  `MobileSettingsDataStore.kt`) needs its own explicit import — `import
+  dev.pointtosky.mobile.settings.from` — the same way `MainActivity.kt`/`DlReceiverService.kt` already do
+  it, and this file was simply missing it. Fixed with a 2-line import change (delete one, add the other);
+  no CAM-2b file, no production renderer, and no test *behavior* was touched. Rerun: **PASS** for both
+  flavors.
+- **`:mobile:lintInternalDebug` / `lintPublicDebug`** — **PASS, 0 errors** (35 pre-existing warnings, 148
+  errors/54 warnings pre-filtered by the repo's existing `lint-baseline.xml`; none attributable to CAM-2b).
+- **`:mobile:assembleInternalDebug` / `assemblePublicDebug`** — **PASS**, both debug APKs built
+  (`mobile-internal-debug.apk`, `mobile-public-debug.apk`).
+- **`:mobile:assembleInternalRelease` / `assemblePublicRelease`** — **blocked on signing, not code.**
+  `compileInternalReleaseKotlin` / `compilePublicReleaseKotlin` — **PASS**. Full assembly fails at
+  `packageInternalRelease`: `SigningConfig "release" is missing required property "storeFile"` — no
+  release keystore is configured in this environment (`P2S_MOBILE_KEYSTORE_PATH` unset), a
+  credential-provisioning gap, not a defect. One attempt separately hit a non-reproducible
+  `ConcurrentModificationException` inside AGP's *bundled* Lint tool (`GradleDetector`/`TomlUtilities`,
+  during `lintVitalAnalyzeInternalRelease`) that did not recur on retry and does not occur on the
+  debug-variant lint gates against the identical `build.gradle.kts` — recorded as an observed upstream
+  tooling flake, not a CAM-2b defect and out of scope to patch around.
+- **Connected instrumentation tests** (`:mobile:connectedInternalDebugAndroidTest`,
+  `PredictedStarOverlayUiTest`): **NOT RUN** — no physical device and no emulator are available in this
+  environment (`adb devices -l` lists none; the container has neither `/dev/kvm` nor CPU
+  hardware-virtualization flags, so an AVD emulator is not feasible either). The instrumentation source
+  compiles (see above) but its four cases (waiting/unavailable/ready/disposed-transition) have not been
+  observed executing.
 
-  ```text
-  398 tests found, 398 successful, 0 failed
-  ```
+Every file touched by CAM-2b (§14.1–§14.8, §14.11, §14.12) now has real, executed, green Gradle results —
+compilation, unit tests, lint, and debug assembly are no longer "corroborating evidence" from a bare
+compiler invocation but the actual build graph, including dependency resolution, resource merging, and
+manifest merging. The one gate that could not be closed is the physical/emulator-only one: connected
+instrumentation tests and the full device checklist in `docs/validation/cam_2b_device_validation.md`.
+Final status: **`CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** — build gates are now sufficiently
+verified; only a physical device or emulator run remains.
 
-  (388 pre-existing + 3 `PreparedStarProjectionContextTest` cases + 7 follow-up `CameraSessionGeometry.withIntrinsics`
-  preservation/non-mutation/defensive-ownership cases, all passing individually too.) This is real
-  evidence the batched-LST refactor (§14.12) is behavior-preserving and the `withIntrinsics` exact-copy
-  substitution (§14.11) is correct, not a claim about `:mobile` or Android.
-- **`:mobile`'s CAM-2b prediction-package main + test compilation, and test execution — ACTUALLY RUN, ALL
-  GREEN, for the Android-free subset only.** `PredictedStarOverlayState.kt`, `PredictedStarCatalogAdapter.kt`,
-  `PredictedStarOverlayReducer.kt`, `PredictedStarOverlayFormat.kt`,
-  `PredictedStarOverlayIntrinsicsFallback.kt`, plus their two dependencies
-  `CameraGeometryDiagnostics.kt`/`CameraGeometryDiagnosticsGate.kt` and `core/astro`'s catalog
-  `Models.kt` (the file `StarRecord`/`StarId`/`ConstellationId` live in — none of these seven files import
-  any `android.*`/`androidx.*` package), compiled cleanly against the real `:core:astro-core` output above.
-  `CameraGeometryDiagnosticsGate.kt` needed one disclosed stand-in: a minimal `object BuildConfig { const
-  val DEBUG = true; const val FLAVOR = "internal" }` in place of the real AGP-generated class (unavailable
-  without a full Android build) — the code actually exercised
-  (`isDiagnosticsEnabled(debug, flavor)`, a pure function of its explicit parameters) never reads this
-  object; it exists only so the file type-checks as one compilation unit. `PredictedStarCatalogAdapterTest`,
-  `PredictedStarOverlayReducerTest`, and `PredictedStarOverlayFormatTest` compiled cleanly against that
-  output plus `kotlin-test-junit:2.0.20`/`junit:4.13.2`/`junit-vintage-engine:5.10.2` — matching `:mobile`'s
-  own actual Gradle JUnit4 binding (`mobile/build.gradle.kts`'s explicit `junit:junit:4.13.2` +
-  `kotlin("test")`), not the JUnit5 binding used for `:core:astro-core` above. Running the compiled tests:
+<details>
+<summary>Original (superseded) disclosure, kept for history</summary>
 
-  ```text
-  48 tests found, 48 successful, 0 failed
-  ```
+Gradle itself could not run in the original authoring sandbox — no Android SDK was installed, and
+`:core:astro-core`'s pinned JDK-17 Gradle toolchain could not be downloaded (egress-blocked), the
+identical blocker CAM-2a's own authoring sandbox hit (§13, end). That revision got real, executed (not
+fabricated) test results for two of four gates by invoking the Kotlin compiler
+(`kotlin-compiler-embeddable:2.0.20`) directly against JDK 21 with `-jvm-target 17`, and running the
+compiled tests with the JUnit Platform Console Launcher: `:core:astro-core` main+test — 398/398 passing;
+`:mobile`'s CAM-2b prediction-package Android-free subset — 48/48 passing (one disclosed stub
+`BuildConfig` object stood in for the AGP-generated one). `:mobile` Compose/Android compilation,
+`androidTest` compilation, lint, assemble, and connected instrumentation tests were explicitly **not**
+attempted via that workaround. See the real-Gradle results above for the superseding, actually-executed
+numbers for every one of those gates except connected instrumentation.
 
-  across all three classes (verified individually, not just as one aggregate count; 45 pre-existing + 3
-  follow-up `PredictedStarOverlayReducerTest` cases covering diagnostic-fallback synchronization-metadata
-  preservation).
-- **`:mobile` Compose/Android compilation** (`ArScreen.kt`'s integration, `PredictedStarOverlayUi.kt`,
-  `androidTest`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug`):
-  **not run, and not attempted via this workaround** — these require `android.jar`, the Compose K2
-  compiler plugin, and dozens of AndroidX/CameraX AARs with resource merging (AAPT2), which is
-  categorically different from — and not replicable by — a bare `kotlinc` invocation the way a pure-JVM
-  module's compilation is. This is the same boundary CAM-2a's own author drew ("no android.jar/CameraX
-  AAR classpath was assembled either," §13, end); it is not a gap specific to this revision's effort.
-- **Connected instrumentation tests** (`:mobile:connectedInternalDebugAndroidTest`): **not run** — no
-  device or emulator is available in this sandbox.
-
-Every file touched by CAM-2b (§14.1–§14.8, §14.11, §14.12) was written against the real, already-compiling
-production signatures it calls, and the two gates above that *could* be exercised this way now have real,
-executed, green results — not merely "authored and reviewed." The remaining two gates (Compose/Android
-compilation, connected instrumentation) are still genuinely unverified, stated explicitly rather than
-folded into the two green results above. Whoever next has a working Android SDK/JDK-17/Gradle environment
-should still run the full Gradle suite — the `kotlinc` workaround above is corroborating evidence, not a
-replacement for the real build graph (it does not exercise Gradle's own dependency resolution, resource
-processing, ProGuard/R8, or manifest merging) — in this order:
-
-```bash
-./gradlew :core:astro-core:test
-./gradlew :mobile:compileInternalDebugKotlin
-./gradlew :mobile:compilePublicDebugKotlin
-./gradlew :mobile:testInternalDebugUnitTest --tests "*PredictedStarOverlay*"
-./gradlew :mobile:testInternalDebugUnitTest --tests "*PredictedStarCatalogAdapterTest"
-./gradlew :mobile:testPublicDebugUnitTest --tests "*PredictedStarOverlay*"
-./gradlew :mobile:compileInternalDebugAndroidTestKotlin
-./gradlew :mobile:compilePublicDebugAndroidTestKotlin
-./gradlew :mobile:testInternalDebugUnitTest
-./gradlew :mobile:testPublicDebugUnitTest
-./gradlew :mobile:lintInternalDebug
-./gradlew :mobile:lintPublicDebug
-./gradlew :mobile:assembleInternalDebug
-./gradlew :mobile:assemblePublicDebug
-./gradlew :mobile:connectedInternalDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=dev.pointtosky.mobile.ar.PredictedStarOverlayUiTest
-```
-
-before treating any of these gates as closed, and then complete
-`docs/validation/cam_2b_device_validation.md`'s physical checklist. Final status:
-**`CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (and, until the commands above are actually run through
-real Gradle and their results recorded here, also gated on full build/lint/assemble/instrumentation
-verification — see that file).
+</details>
 
 ### 14.11 Explicit intrinsics mode: session vs. diagnostic analysis-buffer fallback
 

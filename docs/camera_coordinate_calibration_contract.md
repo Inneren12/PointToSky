@@ -2118,6 +2118,17 @@ rendering and not represented as device-validated — see §12 below. This statu
 (`CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`) is otherwise **unchanged**: no physical-device pass
 has been run for CAM-1g or CAM-2a.
 
+**Update (CAM-2b validation-closure session):** a later session ran the real Gradle build/lint/
+assemble/unit-test gates for the whole `:mobile` module (see `docs/SPRINT_STATUS.md` and
+`docs/camera_star_prediction_contract.md` §14.10 for the exact commands/results), which compiles and
+lints CAM-1g's own diagnostic-overlay code (`CameraGeometryDiagnosticsGate`,
+`CameraGeometryDiagnostics`, the CAM-1g panel in `ArScreen.kt`) as part of `:mobile:compileInternalDebugKotlin`,
+`lintInternalDebug`, and `assembleInternalDebug`, all of which passed. That is real evidence CAM-1g's
+code still compiles, lints clean, and packages — it is **not** a physical-device pass: no phone or
+emulator was available in that session either (no `adb`-visible device, no `/dev/kvm`). The Test A–I
+checklist in `docs/validation/cam_1g_device_validation.md` remains entirely unexecuted, and this
+status line is otherwise unchanged.
+
 ---
 
 ## 12. CAM-2a predict-only star projection pipeline (this PR)
