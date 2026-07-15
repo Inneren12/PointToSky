@@ -39,6 +39,23 @@ sealed interface PredictedStarOverlayWaitingReason {
 }
 
 /**
+ * A stable, `enum`-like identifier for this reason - `SCREAMING_SNAKE_CASE`, never derived from
+ * [Any.toString] - for the compact one-line diagnostic summary (HUD-visibility follow-up §2/§3), where a
+ * full sentence (see `PredictedStarOverlayFormat.kt`'s own `formatWaitingReason`) would be too long. For
+ * [PredictedStarOverlayWaitingReason.GeometryNotReady] this embeds the specific
+ * [CameraGeometryDiagnosticCategory] directly, since that is itself the actionable detail a physical-
+ * device tester needs - "waiting" alone would hide exactly the information task §3 requires exposing.
+ */
+val PredictedStarOverlayWaitingReason.name: String
+    get() = when (this) {
+        is PredictedStarOverlayWaitingReason.GeometryNotReady -> "GEOMETRY_NOT_READY(${category.name})"
+        PredictedStarOverlayWaitingReason.ObserverLocationUnavailable -> "OBSERVER_LOCATION_UNAVAILABLE"
+        PredictedStarOverlayWaitingReason.ObservationTimeUnavailable -> "OBSERVATION_TIME_UNAVAILABLE"
+        PredictedStarOverlayWaitingReason.MagneticDeclinationUnavailable -> "MAGNETIC_DECLINATION_UNAVAILABLE"
+        PredictedStarOverlayWaitingReason.NoStarsSelected -> "NO_STARS_SELECTED"
+    }
+
+/**
  * CAM-2b: one predicted star, already classified [dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarClassification.VISIBLE_IN_VIEWPORT]
  * and reduced to exactly what the overlay draws. [displayX]/[displayY] are copied verbatim from
  * [dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProjection.displayPoint] — no

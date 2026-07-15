@@ -30,6 +30,7 @@ import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
+import dev.pointtosky.mobile.ar.camera.prediction.name
 
 /**
  * [androidx.compose.ui.platform.testTag] for the CAM-1g geometry-diagnostic overlay's full-text [Text]
@@ -43,13 +44,18 @@ const val CAM_DIAGNOSTIC_HUD_PANELS_TEST_TAG = "cam_diagnostic_hud_panels"
 /** [androidx.compose.ui.platform.testTag] for the always-visible, compact, non-scrolling header row. */
 const val CAM_DIAGNOSTIC_HUD_HEADER_TEST_TAG = "cam_diagnostic_hud_header"
 
-/** [androidx.compose.ui.platform.testTag] for the collapsed one-line CAM-1g/CAM-2b summary column. */
+/** [androidx.compose.ui.platform.testTag] for the collapsed one-line CAM-1g summary column. */
 const val CAM_DIAGNOSTIC_HUD_SUMMARY_TEST_TAG = "cam_diagnostic_hud_summary"
 
 /** [androidx.compose.ui.platform.testTag] for the CAM-1g one-line summary shown while collapsed. */
 const val CAM1G_SUMMARY_TEST_TAG = "cam_diagnostic_hud_cam1g_summary"
 
-/** [androidx.compose.ui.platform.testTag] for the CAM-2b one-line summary shown while collapsed. */
+/**
+ * [androidx.compose.ui.platform.testTag] for the CAM-2b one-line compact status row (HUD-visibility
+ * follow-up §2) - always visible, never gated by the HUD's details-expanded/controls-expanded state:
+ * collapsed, diagnostics expanded, controls expanded, and while the details/controls content is scrolled
+ * all show this same row, so a tester never has to close controls to discover the current CAM-2b state.
+ */
 const val CAM2B_SUMMARY_TEST_TAG = "cam_diagnostic_hud_cam2b_summary"
 
 /**
@@ -103,10 +109,15 @@ object CamDiagnosticHudLayout {
  *   screen space with the bottom altitude/azimuth/target-info card, regardless of that card's actual
  *   measured height on a given device - see task hardening §4 for why the previous `BottomEnd` placement
  *   was only ever an unverified claim, not a proven guarantee.
- * - While collapsed (`!detailsExpanded && !controlsExpanded`): a short, non-scrolling one-line summary
- *   per panel (CAM-1g category, CAM-2b status/intrinsics-mode/visible-count). No
- *   [androidx.compose.foundation.verticalScroll] container exists in this state at all, so it can never
- *   consume a drag gesture over the AR viewport - the previous version's bug.
+ * - A third always-visible, compact, non-scrolling row (HUD-visibility follow-up §2) - the CAM-2b compact
+ *   status line ([CAM2B_SUMMARY_TEST_TAG]) - rendered unconditionally, *outside* both the
+ *   collapsed-only summary block and the expanded/scrollable detail region below. Unlike the CAM-1g
+ *   summary (collapsed-only, see next bullet), this row never disappears while `detailsExpanded` or
+ *   `controlsExpanded` is true: a tester must never have to collapse the controls body or scroll the
+ *   details region merely to discover the current CAM-2b state.
+ * - While collapsed (`!detailsExpanded && !controlsExpanded`): a short, non-scrolling one-line CAM-1g
+ *   category summary. No [androidx.compose.foundation.verticalScroll] container exists in this state at
+ *   all, so it can never consume a drag gesture over the AR viewport - the previous version's bug.
  * - While expanded (`detailsExpanded` and/or `controlsExpanded`): the full CAM-1g/CAM-2b diagnostic text
  *   (gated on [detailsExpanded]) and the CAM-2b interactive controls body (gated on [controlsExpanded],
  *   via [controlsContent]) render inside a scrollable region that fills whatever height remains below
@@ -197,16 +208,33 @@ fun CamDiagnosticTopPanels(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            // CAM-2b (HUD-visibility follow-up §2): always-visible compact status - a direct child of
+            // this Column, never nested inside the collapsed-only summary block or the expanded/
+            // scrollable detail region below, so it renders identically regardless of
+            // detailsExpanded/controlsExpanded/scroll position. See this function's own KDoc.
+            Text(
+                text = cam2bSummaryLine(cam2bState),
+                color = Color.White,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(CAM2B_SUMMARY_TEST_TAG)
+                        .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+
             if (!showDetails) {
-                Column(
-                    modifier =
-                        Modifier
-                            .testTag(CAM_DIAGNOSTIC_HUD_SUMMARY_TEST_TAG)
-                            .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
-                            .padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    if (cam1gSnapshot != null) {
+                if (cam1gSnapshot != null) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .testTag(CAM_DIAGNOSTIC_HUD_SUMMARY_TEST_TAG)
+                                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
+                                .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
                         Text(
                             text = "CAM-1g: ${cam1gSnapshot.category.name}",
                             color = Color.White,
@@ -215,13 +243,6 @@ fun CamDiagnosticTopPanels(
                             modifier = Modifier.testTag(CAM1G_SUMMARY_TEST_TAG),
                         )
                     }
-                    Text(
-                        text = cam2bSummaryLine(cam2bState),
-                        color = Color.White,
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.testTag(CAM2B_SUMMARY_TEST_TAG),
-                    )
                 }
             } else {
                 // weight(1f) - not a second heightIn - fills whatever height the outer Column's own
@@ -259,14 +280,19 @@ fun CamDiagnosticTopPanels(
     }
 }
 
-/** One-line, non-locale-sensitive collapsed summary for the CAM-2b panel (task hardening §2/§5) - never
- * the sealed state's own `toString()`. */
+/**
+ * One-line, non-locale-sensitive, always-visible summary for the CAM-2b panel (task hardening §2/§5,
+ * HUD-visibility follow-up §2/§3) - never the sealed state's own `toString()`. `Waiting` always carries
+ * its exact [PredictedStarOverlayWaitingReason.name] (never a bare "waiting" with no reason - the bug
+ * this follow-up fixes) and `Unavailable` its exact [IntrinsicsMappingUnavailableReason.name], so a
+ * physical-device tester can read *why* CAM-2b hasn't reached Ready without expanding anything.
+ */
 private fun cam2bSummaryLine(state: PredictedStarOverlayState?): String =
     when (state) {
         null -> "CAM-2b: n/a"
         PredictedStarOverlayState.Disabled -> "CAM-2b: disabled"
-        is PredictedStarOverlayState.Waiting -> "CAM-2b: waiting"
-        is PredictedStarOverlayState.Unavailable -> "CAM-2b: unavailable (${state.reason.name})"
+        is PredictedStarOverlayState.Waiting -> "CAM-2b: waiting · ${state.reason.name}"
+        is PredictedStarOverlayState.Unavailable -> "CAM-2b: unavailable · ${state.reason.name}"
         is PredictedStarOverlayState.Ready -> {
             val modeLabel =
                 when (state.metadata.intrinsicsMode) {

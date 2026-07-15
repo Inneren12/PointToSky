@@ -256,6 +256,165 @@ class CamDiagnosticHudLayoutTest {
         assertWholeHudWithinExclusionSafeBounds()
     }
 
+    /**
+     * Regression test for the HUD-visibility bug (task §2): previously, whenever `controlsExpanded` was
+     * true but `detailsExpanded` was false, `showDetails` was true, so the collapsed-only summary block
+     * never rendered - but `detailsExpanded` being false also meant the expanded detail region's own
+     * `if (detailsExpanded)` guard never rendered [PredictedStarOverlayPanel] either. Net result: no
+     * CAM-2b text anywhere on screen, so a tester had to collapse the controls body just to discover
+     * whether CAM-2b was Ready/Waiting/Unavailable. The compact status row must now survive exactly this
+     * state combination.
+     */
+    @Test
+    fun cam2bCompactStatusStaysVisibleWhileOnlyControlsExpanded() {
+        composeTestRule.setContent {
+            BoundedHudHost {
+                CamDiagnosticTopPanels(
+                    cam1gSnapshot = cam1gSnapshot,
+                    cam1gSessionId = 1L,
+                    cam1gStatusTransitionCount = 0,
+                    cam1gObservedFrameCount = 10L,
+                    cam1gReadyBundleCount = 10L,
+                    cam2bState = cam2bReadyState,
+                    detailsExpanded = false,
+                    onDetailsExpandedChange = {},
+                    controlsExpanded = true,
+                    onControlsExpandedChange = {},
+                    controlsContent = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("ready · session · visible: 1", substring = true))
+    }
+
+    @Test
+    fun cam2bCompactStatusStaysVisibleWhileDiagnosticsExpanded() {
+        composeTestRule.setContent {
+            BoundedHudHost {
+                CamDiagnosticTopPanels(
+                    cam1gSnapshot = cam1gSnapshot,
+                    cam1gSessionId = 1L,
+                    cam1gStatusTransitionCount = 0,
+                    cam1gObservedFrameCount = 10L,
+                    cam1gReadyBundleCount = 10L,
+                    cam2bState = cam2bReadyState,
+                    detailsExpanded = true,
+                    onDetailsExpandedChange = {},
+                    controlsExpanded = false,
+                    onControlsExpandedChange = {},
+                    controlsContent = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun cam2bCompactStatusIncludesExactWaitingReason() {
+        composeTestRule.setContent {
+            BoundedHudHost {
+                CamDiagnosticTopPanels(
+                    cam1gSnapshot = null,
+                    cam1gSessionId = 1L,
+                    cam1gStatusTransitionCount = 0,
+                    cam1gObservedFrameCount = 0L,
+                    cam1gReadyBundleCount = 0L,
+                    cam2bState = PredictedStarOverlayState.Waiting(PredictedStarOverlayWaitingReason.ObserverLocationUnavailable),
+                    detailsExpanded = false,
+                    onDetailsExpandedChange = {},
+                    controlsExpanded = false,
+                    onControlsExpandedChange = {},
+                    controlsContent = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: waiting · OBSERVER_LOCATION_UNAVAILABLE", substring = true))
+    }
+
+    @Test
+    fun cam2bCompactStatusIncludesExactGeometryNotReadyReason() {
+        composeTestRule.setContent {
+            BoundedHudHost {
+                CamDiagnosticTopPanels(
+                    cam1gSnapshot = null,
+                    cam1gSessionId = 1L,
+                    cam1gStatusTransitionCount = 0,
+                    cam1gObservedFrameCount = 0L,
+                    cam1gReadyBundleCount = 0L,
+                    cam2bState =
+                        PredictedStarOverlayState.Waiting(
+                            PredictedStarOverlayWaitingReason.GeometryNotReady(CameraGeometryDiagnosticCategory.MISSING_FRAME),
+                        ),
+                    detailsExpanded = false,
+                    onDetailsExpandedChange = {},
+                    controlsExpanded = false,
+                    onControlsExpandedChange = {},
+                    controlsContent = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: waiting · GEOMETRY_NOT_READY(MISSING_FRAME)", substring = true))
+    }
+
+    @Test
+    fun cam2bCompactStatusIncludesExactUnavailableReason() {
+        composeTestRule.setContent {
+            BoundedHudHost {
+                CamDiagnosticTopPanels(
+                    cam1gSnapshot = null,
+                    cam1gSessionId = 1L,
+                    cam1gStatusTransitionCount = 0,
+                    cam1gObservedFrameCount = 0L,
+                    cam1gReadyBundleCount = 0L,
+                    cam2bState =
+                        PredictedStarOverlayState.Unavailable(
+                            IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED,
+                        ),
+                    detailsExpanded = false,
+                    onDetailsExpandedChange = {},
+                    controlsExpanded = false,
+                    onControlsExpandedChange = {},
+                    controlsContent = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: unavailable · PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED", substring = true))
+    }
+
+    @Test
+    fun cam2bCompactStatusIncludesFallbackModeAndVisibleCount() {
+        composeTestRule.setContent {
+            BoundedHudHost {
+                CamDiagnosticTopPanels(
+                    cam1gSnapshot = null,
+                    cam1gSessionId = 1L,
+                    cam1gStatusTransitionCount = 0,
+                    cam1gObservedFrameCount = 0L,
+                    cam1gReadyBundleCount = 0L,
+                    cam2bState = cam2bFallbackReadyState,
+                    detailsExpanded = false,
+                    onDetailsExpandedChange = {},
+                    controlsExpanded = false,
+                    onControlsExpandedChange = {},
+                    controlsContent = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: ready · fallback · visible: 1", substring = true))
+    }
+
     @Test
     fun collapsedHudHasNoScrollContainerAndExpansionTogglesDetailContainer() {
         composeTestRule.setContent {
@@ -621,6 +780,75 @@ class CamDiagnosticHudLayoutTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG)
             .assert(hasText("projection intrinsics: LEGACY_FALLBACK / AnalysisBuffer(640x480)", substring = true))
+    }
+
+    /**
+     * HUD-visibility follow-up §4 state-transition coverage: the always-visible compact status
+     * ([CAM2B_SUMMARY_TEST_TAG], never [PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG] - that one is only proven
+     * stale-free above) must update on every CAM-2b state transition, dropping the previous state's text
+     * entirely rather than accumulating it. Covers Waiting -> Ready, Ready -> Waiting, and a
+     * session-unavailable intrinsics reference reaching Ready only via the diagnostic-fallback mode
+     * ("Session unavailable -> fallback Ready").
+     */
+    @Test
+    fun cam2bCompactStatusUpdatesAcrossWaitingReadyUnavailableAndFallbackReadyTransitions() {
+        var overlayState by
+            mutableStateOf<PredictedStarOverlayState>(
+                PredictedStarOverlayState.Waiting(PredictedStarOverlayWaitingReason.ObserverLocationUnavailable),
+            )
+
+        composeTestRule.setContent {
+            BoundedHudHost {
+                StableStateOwnershipHost(overlayState = overlayState, showMarkers = true, showPanel = true)
+            }
+        }
+
+        // Waiting: exact reason in the compact status, no marker canvas yet.
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: waiting · OBSERVER_LOCATION_UNAVAILABLE", substring = true))
+        composeTestRule.onAllNodesWithTag(PREDICTED_STAR_MARKERS_CANVAS_TEST_TAG).assertCountEquals(0)
+
+        // Waiting -> Ready: compact status flips to ready/session/visible-count; marker canvas appears.
+        composeTestRule.runOnUiThread { overlayState = cam2bReadyState }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: ready · session · visible: 1", substring = true))
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(!hasText("OBSERVER_LOCATION_UNAVAILABLE", substring = true))
+        composeTestRule.onAllNodesWithTag(PREDICTED_STAR_MARKERS_CANVAS_TEST_TAG).assertCountEquals(1)
+
+        // Ready -> Waiting (a new geometry-not-ready reason): stale "ready" text and stale markers must
+        // both disappear, never left over from the previous Ready state.
+        composeTestRule.runOnUiThread {
+            overlayState =
+                PredictedStarOverlayState.Waiting(
+                    PredictedStarOverlayWaitingReason.GeometryNotReady(CameraGeometryDiagnosticCategory.DISPOSED),
+                )
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: waiting · GEOMETRY_NOT_READY(DISPOSED)", substring = true))
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG).assert(!hasText("ready · session", substring = true))
+        composeTestRule.onAllNodesWithTag(PREDICTED_STAR_MARKERS_CANVAS_TEST_TAG).assertCountEquals(0)
+
+        // Session-referenced intrinsics unavailable -> diagnostic-fallback Ready ("Session unavailable ->
+        // fallback Ready"): the compact status must flip straight from "unavailable" to "ready ·
+        // fallback", and markers must reappear.
+        composeTestRule.runOnUiThread {
+            overlayState =
+                PredictedStarOverlayState.Unavailable(IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED)
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: unavailable · PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED", substring = true))
+        composeTestRule.onAllNodesWithTag(PREDICTED_STAR_MARKERS_CANVAS_TEST_TAG).assertCountEquals(0)
+
+        composeTestRule.runOnUiThread { overlayState = cam2bFallbackReadyState }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2b: ready · fallback · visible: 1", substring = true))
+        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG).assert(!hasText("unavailable", substring = true))
+        composeTestRule.onAllNodesWithTag(PREDICTED_STAR_MARKERS_CANVAS_TEST_TAG).assertCountEquals(1)
     }
 
     /**
