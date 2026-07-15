@@ -149,14 +149,20 @@ fun PredictedStarOverlayPanel(
 
 /**
  * CAM-2b (task §11, extended by the follow-up task §2, hardened by the state-ownership/gesture fix
- * task §1/§4): the compact, always-visible entry point for the CAM-2b interactive controls -
- * `internalDebug`-only, session-local, never persisted. [expanded] is hoisted by the caller
- * (`ArScreen`), not owned here, because the same boolean also decides whether
- * [PredictedStarOverlayControlsBody] is hosted inside `CamDiagnosticTopPanels`'s own bounded/scrollable
- * detail region (see that composable's KDoc for why the body no longer floats at `BottomEnd`, where an
- * expanded card risked permanently covering the bottom target-info card). This toggle itself stays
- * `BottomEnd` and stays tiny - a single row, never scrollable, never pointer-capturing beyond its own
- * small tap target.
+ * task §1/§4, relocated by the whole-HUD-bound/session-reset hardening task §4): the compact,
+ * always-visible entry point for the CAM-2b interactive controls - `internalDebug`-only, session-local,
+ * never persisted. [expanded] is hoisted by the caller (`ArScreen`), not owned here, because the same
+ * boolean also decides whether [PredictedStarOverlayControlsBody] is hosted inside
+ * `CamDiagnosticTopPanels`'s own bounded/scrollable detail region.
+ *
+ * `CamDiagnosticTopPanels` renders this composable itself, as a second always-visible row directly below
+ * its own header - never at `BottomEnd`. The previous `BottomEnd` placement was only ever an *unverified
+ * claim* that it would clear the bottom altitude/azimuth/target-info card on a physical device (that
+ * card's real height depends on its own text content and was never measured against this toggle's
+ * position); hosting this toggle inside the top HUD instead makes the two provably unable to share
+ * screen space, by construction, on any viewport size - not merely by an assumption about one device's
+ * layout. This toggle itself stays tiny regardless of where it's placed - a single row, never scrollable,
+ * never pointer-capturing beyond its own small tap target.
  */
 @Composable
 fun PredictedStarOverlayControlsToggle(

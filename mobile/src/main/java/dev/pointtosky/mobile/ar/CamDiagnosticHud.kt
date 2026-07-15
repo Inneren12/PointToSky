@@ -3,6 +3,7 @@ package dev.pointtosky.mobile.ar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,8 +67,8 @@ const val CAM_DIAGNOSTIC_HUD_DETAILS_TEST_TAG = "cam_diagnostic_hud_details"
 object CamDiagnosticHudLayout {
     /**
      * Vertically centered band, as a fraction of the full viewport height, reserved exclusively for
-     * the reticle/central sky content. Neither the top HUD nor the bottom controls entry point may
-     * extend into this band.
+     * the reticle/central sky content. The top HUD - which now also hosts the CAM-2b controls entry
+     * point, see [CamDiagnosticTopPanels]'s own KDoc - may never extend into this band.
      */
     const val CENTER_EXCLUSION_HEIGHT_FRACTION = 0.22f
 
@@ -88,37 +89,39 @@ object CamDiagnosticHudLayout {
     val TOP_HUD_SIDE_PADDING = 12.dp
     val TOP_HUD_MAX_WIDTH = 230.dp
     val TOP_HUD_PANEL_SPACING = 8.dp
-
-    /**
-     * Documentation-only contract upper bound for the bottom-anchored CAM-2b controls entry point: it
-     * must never grow beyond this fraction of the viewport height, measured from the bottom edge. The
-     * entry point itself ([PredictedStarOverlayControlsToggle]) is a single compact row and never
-     * approaches this bound in practice - the constant exists so the bottom region's contract is
-     * explicit and testable, matching the top HUD's.
-     */
-    const val BOTTOM_REGION_MAX_HEIGHT_FRACTION = 0.35f
 }
 
 /**
  * CAM-1g/CAM-2b physical-device diagnostic HUD (debug-layout fix, hardened for gesture/state-ownership
- * correctness). A single parent layout, anchored `TopStart`:
+ * correctness, then hardened again for whole-container height and debug-control placement). A single
+ * parent layout, anchored `TopStart`:
  *
  * - An always-visible, compact header row - never scrollable, never pointer-capturing beyond its own
  *   small tap target - that toggles [detailsExpanded].
+ * - A second always-visible, compact row - [PredictedStarOverlayControlsToggle] - that toggles
+ *   [controlsExpanded]. Hosted *inside* this HUD (never at `BottomEnd`) precisely so it can never share
+ *   screen space with the bottom altitude/azimuth/target-info card, regardless of that card's actual
+ *   measured height on a given device - see task hardening §4 for why the previous `BottomEnd` placement
+ *   was only ever an unverified claim, not a proven guarantee.
  * - While collapsed (`!detailsExpanded && !controlsExpanded`): a short, non-scrolling one-line summary
  *   per panel (CAM-1g category, CAM-2b status/intrinsics-mode/visible-count). No
  *   [androidx.compose.foundation.verticalScroll] container exists in this state at all, so it can never
  *   consume a drag gesture over the AR viewport - the previous version's bug.
- * - While expanded (`detailsExpanded` and/or `controlsExpanded`): a width/height-bounded, scrollable
- *   column holding the full CAM-1g and CAM-2b diagnostic text (gated on [detailsExpanded]) and the
- *   CAM-2b interactive controls body (gated on [controlsExpanded], via [controlsContent] - hosted here,
- *   inside this HUD's own bounded region, rather than floating independently over the reticle or the
- *   bottom target-info card; see [PredictedStarOverlayControlsBody]'s own KDoc). Only in this state does
- *   any part of the HUD intercept pointer input, and only within its own bounded panel.
+ * - While expanded (`detailsExpanded` and/or `controlsExpanded`): the full CAM-1g/CAM-2b diagnostic text
+ *   (gated on [detailsExpanded]) and the CAM-2b interactive controls body (gated on [controlsExpanded],
+ *   via [controlsContent]) render inside a scrollable region that fills whatever height remains below
+ *   the two header rows - never floating independently over the reticle or the bottom target-info card.
+ *   Only in this state does any part of the HUD intercept pointer input, and only within that bounded
+ *   region.
  *
- * The expanded detail region's max height is derived from [CamDiagnosticHudLayout] so it can never reach
- * that layout's center-exclusion band, regardless of viewport size - never a value tuned to one specific
- * device's raw pixel dimensions.
+ * Height containment (task hardening §1, closing the previous gap): [CamDiagnosticHudLayout]'s bound is
+ * applied to the **outer** `Column` - the one holding both header rows *and* the summary/details region
+ * together - via `Modifier.heightIn(max = hudContentMaxHeight)`. The scrollable detail region is then
+ * given `Modifier.weight(1f)`, so Compose's own `Column` measurement policy sizes it to "whatever height
+ * remains after the header rows' *actual measured* height," never a guessed/assumed constant. This means
+ * the complete HUD - header rows included - can never cross into [CamDiagnosticHudLayout]'s center
+ * exclusion band, regardless of how tall the header rows render (e.g. under a larger font scale),
+ * because the bound applies to their shared container, not to the scrollable child alone.
  *
  * Purely a debug display composition: touches no renderer/matcher/detector state, no CAM-2a projection
  * math, and no `displayPoint` coordinate.
@@ -134,13 +137,17 @@ fun CamDiagnosticTopPanels(
     detailsExpanded: Boolean,
     onDetailsExpandedChange: (Boolean) -> Unit,
     controlsExpanded: Boolean,
+    onControlsExpandedChange: (Boolean) -> Unit,
     controlsContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val showDetails = detailsExpanded || controlsExpanded
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val exclusionTop = maxHeight * (0.5f - CamDiagnosticHudLayout.CENTER_EXCLUSION_HEIGHT_FRACTION / 2f)
-        val detailMaxHeight: Dp =
+        // Bounds the WHOLE HUD container below (header rows + summary/details together) - not just the
+        // scrollable detail child - so header height (real or guessed) can never push the total past
+        // exclusionTop. See this function's own KDoc "Height containment" section.
+        val hudContentMaxHeight: Dp =
             maxOf(
                 exclusionTop - CamDiagnosticHudLayout.TOP_HUD_TOP_OFFSET - CamDiagnosticHudLayout.TOP_HUD_SAFETY_MARGIN,
                 0.dp,
@@ -157,7 +164,8 @@ fun CamDiagnosticTopPanels(
                         start = CamDiagnosticHudLayout.TOP_HUD_SIDE_PADDING,
                         end = CamDiagnosticHudLayout.TOP_HUD_SIDE_PADDING,
                     )
-                    .widthIn(max = CamDiagnosticHudLayout.TOP_HUD_MAX_WIDTH),
+                    .widthIn(max = CamDiagnosticHudLayout.TOP_HUD_MAX_WIDTH)
+                    .heightIn(max = hudContentMaxHeight),
             verticalArrangement = Arrangement.spacedBy(CamDiagnosticHudLayout.TOP_HUD_PANEL_SPACING),
         ) {
             Row(
@@ -182,6 +190,12 @@ fun CamDiagnosticTopPanels(
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
+
+            PredictedStarOverlayControlsToggle(
+                expanded = controlsExpanded,
+                onExpandedChange = onControlsExpandedChange,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
             if (!showDetails) {
                 Column(
@@ -210,30 +224,34 @@ fun CamDiagnosticTopPanels(
                     )
                 }
             } else {
-                Column(
+                // weight(1f) - not a second heightIn - fills whatever height the outer Column's own
+                // heightIn(max = hudContentMaxHeight) leaves over after the two header rows above are
+                // measured, so this never relies on a guessed header height (task hardening §1/§2).
+                Box(
                     modifier =
                         Modifier
                             .testTag(CAM_DIAGNOSTIC_HUD_DETAILS_TEST_TAG)
-                            .heightIn(max = detailMaxHeight)
+                            .weight(1f)
                             .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(CamDiagnosticHudLayout.TOP_HUD_PANEL_SPACING),
                 ) {
-                    if (detailsExpanded) {
-                        if (cam1gSnapshot != null) {
-                            CameraGeometryDiagnosticOverlay(
-                                snapshot = cam1gSnapshot,
-                                sessionId = cam1gSessionId,
-                                statusTransitionCount = cam1gStatusTransitionCount,
-                                observedFrameCount = cam1gObservedFrameCount,
-                                readyBundleCount = cam1gReadyBundleCount,
-                            )
+                    Column(verticalArrangement = Arrangement.spacedBy(CamDiagnosticHudLayout.TOP_HUD_PANEL_SPACING)) {
+                        if (detailsExpanded) {
+                            if (cam1gSnapshot != null) {
+                                CameraGeometryDiagnosticOverlay(
+                                    snapshot = cam1gSnapshot,
+                                    sessionId = cam1gSessionId,
+                                    statusTransitionCount = cam1gStatusTransitionCount,
+                                    observedFrameCount = cam1gObservedFrameCount,
+                                    readyBundleCount = cam1gReadyBundleCount,
+                                )
+                            }
+                            if (cam2bState != null) {
+                                PredictedStarOverlayPanel(state = cam2bState)
+                            }
                         }
-                        if (cam2bState != null) {
-                            PredictedStarOverlayPanel(state = cam2bState)
+                        if (controlsExpanded) {
+                            controlsContent()
                         }
-                    }
-                    if (controlsExpanded) {
-                        controlsContent()
                     }
                 }
             }

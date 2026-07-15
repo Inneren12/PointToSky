@@ -4,11 +4,13 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -19,12 +21,14 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.pointtosky.core.astro.projection.camera.CameraGeometryQuality
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.prediction.IntrinsicsMappingUnavailableReason
 import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionSummary
+import dev.pointtosky.mobile.ar.camera.CameraGeometryCenterProbeSnapshot
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticCategory
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
@@ -39,18 +43,16 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Compose UI tests for the physical-device diagnostic-layout fix and its state-ownership/gesture
- * hardening follow-up: the shared CAM-1g/CAM-2b HUD ([CamDiagnosticTopPanels]), its collapsed-summary
- * vs. expanded-scrollable-details gesture policy, the relocated CAM-2b controls
- * ([PredictedStarOverlayControlsToggle]/[PredictedStarOverlayControlsBody]), and the single
- * hoisted-state ownership pattern that replaced the removed mutable-local side channel. Fixture values
- * below (buffer 640x480, viewport 1080x2424, rotationDegrees 90, ~+3.7ms pair delta, `READY_CALIBRATED`/
+ * Compose UI tests for the physical-device diagnostic-layout fix and its two hardening follow-ups:
+ * state-ownership/gesture correctness, then whole-HUD height containment, session-keyed debug-control
+ * reset, and the controls toggle's relocation into the shared HUD. Fixture values below (buffer
+ * 640x480, viewport 1080x2424, rotationDegrees 90, ~+3.7ms pair delta, `READY_CALIBRATED`/
  * `CAMERA_CHARACTERISTICS`, FOV 70.7x56.2, scale 3.788, offset -369,0) mirror the physical Pixel 9
  * observation this fix addresses. Not pixel-perfect screenshot tests - this repository does not use
  * those.
  *
- * [HOST_WIDTH]/[HOST_HEIGHT] approximate a realistic portrait viewport in dp (not the previous 1600dp
- * claim, which the real `ComponentActivity` window could silently clamp).
+ * [HOST_WIDTH]/[HOST_HEIGHT] approximate a realistic portrait viewport in dp (not an exaggerated claim
+ * the real `ComponentActivity` window could silently clamp).
  */
 @RunWith(AndroidJUnit4::class)
 class CamDiagnosticHudLayoutTest {
@@ -79,6 +81,20 @@ class CamDiagnosticHudLayoutTest {
             displayOffsetX = -369.0,
             displayOffsetY = 0.0,
             centerProbe = null,
+        )
+
+    /** Same fixture as [cam1gSnapshot] plus a center-probe pair, so its rendered text is longer -
+     * used to stress the whole-HUD height bound with realistically long CAM-1g content. */
+    private val cam1gSnapshotLong =
+        cam1gSnapshot.copy(
+            centerProbe =
+                CameraGeometryCenterProbeSnapshot(
+                    viewportCenterXPx = 540.0,
+                    viewportCenterYPx = 1212.0,
+                    imagePointXPx = 320.0,
+                    imagePointYPx = 240.0,
+                    roundTripErrorPx = 0.05,
+                ),
         )
 
     private val cam2bReadyState =
@@ -112,6 +128,8 @@ class CamDiagnosticHudLayoutTest {
                 ),
         )
 
+    /** Longer CAM-2b text than [cam2bReadyState] (fallback mode shows both session AND projection
+     * intrinsics lines) - the other half of the "long content" fixture pair. */
     private val cam2bFallbackReadyState =
         PredictedStarOverlayState.Ready.of(
             points =
@@ -145,8 +163,8 @@ class CamDiagnosticHudLayoutTest {
 
     /**
      * A bounded, realistic-portrait-viewport host so [CamDiagnosticTopPanels]'s internal
-     * `BoxWithConstraints` sees plausible (not unbounded, and not an exaggerated 1600dp claim that the
-     * real Activity root could silently clamp) constraints to compute its exclusion-safe bound against.
+     * `BoxWithConstraints` sees plausible (not unbounded, and not an exaggerated claim the real
+     * Activity root could silently clamp) constraints to compute its exclusion-safe bound against.
      */
     @Composable
     private fun BoundedHudHost(content: @Composable () -> Unit) {
@@ -156,6 +174,19 @@ class CamDiagnosticHudLayoutTest {
     }
 
     private fun expectedExclusionTop() = HOST_HEIGHT * (0.5f - CamDiagnosticHudLayout.CENTER_EXCLUSION_HEIGHT_FRACTION / 2f)
+
+    /** [CAM_DIAGNOSTIC_HUD_PANELS_TEST_TAG] is the actual `heightIn`-bounded HUD container (header rows
+     * + summary/details together) - asserting its bottom edge, not just a child's, is what proves the
+     * *whole* HUD stays clear of the center exclusion zone (task hardening §1/§2). */
+    private fun assertWholeHudWithinExclusionSafeBounds() {
+        val hudBounds = composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_PANELS_TEST_TAG).getUnclippedBoundsInRoot()
+        val exclusionTop = expectedExclusionTop()
+        assertTrue(
+            "expected the WHOLE HUD container (header rows included) to stay within the center " +
+                "exclusion zone; hudBounds=$hudBounds exclusionTop=$exclusionTop",
+            hudBounds.bottom <= exclusionTop,
+        )
+    }
 
     @Test
     fun cam1gAndCam2bPanelsBothPresentWithoutSharingAlignmentOrSlot() {
@@ -171,6 +202,7 @@ class CamDiagnosticHudLayoutTest {
                     detailsExpanded = true,
                     onDetailsExpandedChange = {},
                     controlsExpanded = false,
+                    onControlsExpandedChange = {},
                     controlsContent = {},
                 )
             }
@@ -205,6 +237,7 @@ class CamDiagnosticHudLayoutTest {
                     detailsExpanded = false,
                     onDetailsExpandedChange = {},
                     controlsExpanded = false,
+                    onControlsExpandedChange = {},
                     controlsContent = {},
                 )
             }
@@ -220,13 +253,7 @@ class CamDiagnosticHudLayoutTest {
         // no scrollable detail container while collapsed
         composeTestRule.onAllNodesWithTag(CAM_DIAGNOSTIC_HUD_DETAILS_TEST_TAG).assertCountEquals(0)
 
-        val hudBounds = composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_PANELS_TEST_TAG).getUnclippedBoundsInRoot()
-        val exclusionTop = expectedExclusionTop()
-        assertTrue(
-            "expected collapsed HUD to leave the center exclusion zone clear; hudBounds=$hudBounds " +
-                "exclusionTop=$exclusionTop",
-            hudBounds.bottom <= exclusionTop,
-        )
+        assertWholeHudWithinExclusionSafeBounds()
     }
 
     @Test
@@ -244,6 +271,7 @@ class CamDiagnosticHudLayoutTest {
                     detailsExpanded = expanded,
                     onDetailsExpandedChange = { expanded = it },
                     controlsExpanded = false,
+                    onControlsExpandedChange = {},
                     controlsContent = {},
                 )
             }
@@ -257,6 +285,69 @@ class CamDiagnosticHudLayoutTest {
 
         composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_HEADER_TEST_TAG).performClick()
         composeTestRule.onAllNodesWithTag(CAM_DIAGNOSTIC_HUD_DETAILS_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
+    fun expandedDiagnosticsWithLongContentStaysWithinWholeHudBound() {
+        composeTestRule.setContent {
+            BoundedHudHost {
+                CamDiagnosticTopPanels(
+                    cam1gSnapshot = cam1gSnapshotLong,
+                    cam1gSessionId = 1L,
+                    cam1gStatusTransitionCount = 3,
+                    cam1gObservedFrameCount = 500L,
+                    cam1gReadyBundleCount = 480L,
+                    cam2bState = cam2bFallbackReadyState,
+                    detailsExpanded = true,
+                    onDetailsExpandedChange = {},
+                    controlsExpanded = false,
+                    onControlsExpandedChange = {},
+                    controlsContent = {},
+                )
+            }
+        }
+
+        // Header stays visible even though the detail content below it is long enough to scroll.
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_HEADER_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_DETAILS_TEST_TAG).assertExists()
+        // Long CAM-1g/CAM-2b content is present in the semantics tree (may need scrolling to bring
+        // fully into view - assertExists, not assertIsDisplayed, checks presence not current visibility).
+        composeTestRule.onNodeWithTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG).assertExists()
+        composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).assertExists()
+
+        assertWholeHudWithinExclusionSafeBounds()
+    }
+
+    @Test
+    fun wholeHudStaysWithinBoundsUnderLargeFontScale() {
+        composeTestRule.setContent {
+            BoundedHudHost {
+                val inflatedDensity = Density(density = LocalDensity.current.density, fontScale = 2.5f)
+                CompositionLocalProvider(LocalDensity provides inflatedDensity) {
+                    CamDiagnosticTopPanels(
+                        cam1gSnapshot = cam1gSnapshot,
+                        cam1gSessionId = 1L,
+                        cam1gStatusTransitionCount = 0,
+                        cam1gObservedFrameCount = 10L,
+                        cam1gReadyBundleCount = 10L,
+                        cam2bState = cam2bReadyState,
+                        detailsExpanded = true,
+                        onDetailsExpandedChange = {},
+                        controlsExpanded = false,
+                        onControlsExpandedChange = {},
+                        controlsContent = {},
+                    )
+                }
+            }
+        }
+
+        // At 2.5x font scale the two header rows (and the summary/detail text) render noticeably
+        // taller than a hypothetical fixed/guessed header-height constant would assume. The bound must
+        // hold anyway, because it is derived from the outer Column's own `heightIn`, not a constant.
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_HEADER_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_DETAILS_TEST_TAG).assertExists()
+
+        assertWholeHudWithinExclusionSafeBounds()
     }
 
     @Test
@@ -283,6 +374,7 @@ class CamDiagnosticHudLayoutTest {
                     detailsExpanded = false,
                     onDetailsExpandedChange = {},
                     controlsExpanded = true,
+                    onControlsExpandedChange = {},
                     controlsContent = {
                         PredictedStarOverlayControlsBody(
                             showMarkers = true,
@@ -305,7 +397,9 @@ class CamDiagnosticHudLayoutTest {
 
         // Hardening task §4: the expanded body must be hosted inside the top HUD's own bounded
         // region - clear of the center exclusion zone, and nowhere near the bottom target-info card -
-        // rather than floating independently at BottomEnd where it used to risk covering it.
+        // rather than floating independently at BottomEnd where it used to risk covering it. Assert
+        // the WHOLE HUD's bound, not only the controls body's own bottom edge, since a child could sit
+        // inside its own sub-bound while the outer container it belongs to still overflows.
         val controlsBodyBounds =
             composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_CONTROLS_BODY_TEST_TAG).getUnclippedBoundsInRoot()
         val exclusionTop = expectedExclusionTop()
@@ -314,6 +408,7 @@ class CamDiagnosticHudLayoutTest {
                 "center exclusion zone; controlsBodyBounds=$controlsBodyBounds exclusionTop=$exclusionTop",
             controlsBodyBounds.bottom <= exclusionTop,
         )
+        assertWholeHudWithinExclusionSafeBounds()
     }
 
     @Test
@@ -331,6 +426,7 @@ class CamDiagnosticHudLayoutTest {
                     detailsExpanded = false,
                     onDetailsExpandedChange = {},
                     controlsExpanded = true,
+                    onControlsExpandedChange = {},
                     controlsContent = {
                         PredictedStarOverlayControlsBody(
                             showMarkers = true,
@@ -367,6 +463,7 @@ class CamDiagnosticHudLayoutTest {
                     detailsExpanded = false,
                     onDetailsExpandedChange = {},
                     controlsExpanded = expanded,
+                    onControlsExpandedChange = { expanded = it },
                     controlsContent = {
                         PredictedStarOverlayControlsBody(
                             showMarkers = true,
@@ -380,10 +477,11 @@ class CamDiagnosticHudLayoutTest {
                         )
                     },
                 )
-                PredictedStarOverlayControlsToggle(expanded = expanded, onExpandedChange = { expanded = it })
             }
         }
 
+        // The toggle is now rendered by CamDiagnosticTopPanels itself (task hardening §4) - not a
+        // separately-placed composable - so clicking its tag here exercises the real composition shape.
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_CONTROLS_BODY_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_CONTROLS_HEADER_TEST_TAG).performClick()
         composeTestRule.onAllNodesWithTag(PREDICTED_STAR_OVERLAY_CONTROLS_BODY_TEST_TAG).assertCountEquals(0)
@@ -408,6 +506,7 @@ class CamDiagnosticHudLayoutTest {
                     detailsExpanded = true,
                     onDetailsExpandedChange = {},
                     controlsExpanded = false,
+                    onControlsExpandedChange = {},
                     controlsContent = {},
                 )
             }
@@ -435,6 +534,7 @@ class CamDiagnosticHudLayoutTest {
                     detailsExpanded = true,
                     onDetailsExpandedChange = {},
                     controlsExpanded = false,
+                    onControlsExpandedChange = {},
                     controlsContent = {},
                 )
             }
@@ -471,6 +571,7 @@ class CamDiagnosticHudLayoutTest {
             detailsExpanded = true,
             onDetailsExpandedChange = {},
             controlsExpanded = false,
+            onControlsExpandedChange = {},
             controlsContent = {},
         )
     }
@@ -520,6 +621,48 @@ class CamDiagnosticHudLayoutTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG)
             .assert(hasText("projection intrinsics: LEGACY_FALLBACK / AnalysisBuffer(640x480)", substring = true))
+    }
+
+    /**
+     * task hardening §3: simulates a tester customizing session 1 (fallback intrinsics, legacy overlay
+     * hidden, HUD/controls expanded) then the debug session ID changing to 2 - every field must reset
+     * to its documented default, proving the reset policy without needing the full `ArScreen`/camera
+     * stack (impractical to spin up a real CameraX/sensor pipeline in a Compose UI test).
+     */
+    @Test
+    fun sessionKeyedDebugControlsResetOnNewSessionId() {
+        var sessionId by mutableStateOf(1L)
+        lateinit var controls: PredictedStarDebugControlsState
+
+        composeTestRule.setContent {
+            controls = rememberPredictedStarDebugControls(sessionId)
+        }
+
+        // session 1: tester selects fallback intrinsics, hides the legacy overlay, expands the HUD and
+        // its controls.
+        composeTestRule.runOnUiThread {
+            controls.predictedStarIntrinsicsMode = PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK
+            controls.showLegacyOverlay = false
+            controls.hudDetailsExpanded = true
+            controls.predictedStarControlsExpanded = true
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK, controls.predictedStarIntrinsicsMode)
+        assertEquals(false, controls.showLegacyOverlay)
+        assertEquals(true, controls.hudDetailsExpanded)
+        assertEquals(true, controls.predictedStarControlsExpanded)
+
+        // session ID changes to 2 (a fresh CAM-1g/CAM-2b debug session): every field resets to its
+        // documented default, never carrying over session 1's choices.
+        composeTestRule.runOnUiThread { sessionId = 2L }
+        composeTestRule.waitForIdle()
+
+        assertEquals(PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS, controls.predictedStarIntrinsicsMode)
+        assertEquals(true, controls.showLegacyOverlay)
+        assertEquals(false, controls.hudDetailsExpanded)
+        assertEquals(false, controls.predictedStarControlsExpanded)
+        assertEquals(true, controls.showPredictedStarMarkers)
+        assertEquals(true, controls.showPredictedStarPanel)
     }
 
     private companion object {
