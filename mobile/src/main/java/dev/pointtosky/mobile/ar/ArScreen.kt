@@ -13,11 +13,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -55,7 +55,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -97,7 +96,6 @@ import dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsCoordinator
 import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
 import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
-import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
 import dev.pointtosky.mobile.ar.camera.nextDebugSessionId
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
@@ -329,6 +327,12 @@ fun ArScreen(
         cameraGeometrySessionResult = null
     }
 
+    // CAM-2b panel is rendered together with the CAM-1g panel in one shared HUD
+    // (see `CamDiagnosticTopPanels` below) so the two never occupy overlapping corners on a narrow
+    // portrait viewport. This plain (non-Compose-state) local carries whichever state the Ready
+    // branch below computed into that shared HUD call, executed later in this same composition pass.
+    var predictedStarPanelState: PredictedStarOverlayState? = null
+
     Box(
         modifier =
             modifier
@@ -402,7 +406,14 @@ fun ArScreen(
                     }
                 }
 
-                if (state.showStarPoints && !state.reticleTargetOnly) {
+                // internal-debug-only comparison control (task §4): hides only the legacy sky
+                // drawing below (star points + constellation/asterism/art lines) so the CAM-2b cyan
+                // predicted markers can be inspected in isolation, then compared side-by-side by
+                // flipping this back on. Session-local; always true (unchanged legacy behavior) when
+                // there is no debug UI able to change it, so a release/public build never differs.
+                var showLegacyOverlay by remember { mutableStateOf(true) }
+
+                if (showLegacyOverlay && state.showStarPoints && !state.reticleTargetOnly) {
                     overlay?.let {
                         StarPointLayer(
                             overlay = it,
@@ -411,11 +422,13 @@ fun ArScreen(
                     }
                 }
 
-                overlay?.let {
-                    ConstellationLayer(
-                        overlay = it,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                if (showLegacyOverlay) {
+                    overlay?.let {
+                        ConstellationLayer(
+                            overlay = it,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
 
                 // CAM-2b: internal-debug-only predicted-star overlay - visualizes the accepted CAM-2a
@@ -470,16 +483,10 @@ fun ArScreen(
                         )
                     }
 
-                    if (showPredictedStarPanel) {
-                        PredictedStarOverlayPanel(
-                            state = predictedStarOverlayState,
-                            modifier =
-                                Modifier
-                                    .align(Alignment.TopEnd)
-                                    .statusBarsPadding()
-                                    .padding(top = 72.dp, start = 16.dp, end = 16.dp),
-                        )
-                    }
+                    // The CAM-2b panel itself is rendered below, together with the CAM-1g panel, via
+                    // `CamDiagnosticTopPanels` - see the shared-HUD comment near the top of this
+                    // function. Only hand off *what* to render here, never render it twice.
+                    predictedStarPanelState = if (showPredictedStarPanel) predictedStarOverlayState else null
 
                     PredictedStarOverlayControls(
                         showMarkers = showPredictedStarMarkers,
@@ -488,10 +495,13 @@ fun ArScreen(
                         onShowPanelChange = { showPredictedStarPanel = it },
                         intrinsicsMode = predictedStarIntrinsicsMode,
                         onIntrinsicsModeChange = { predictedStarIntrinsicsMode = it },
+                        showLegacyOverlay = showLegacyOverlay,
+                        onShowLegacyOverlayChange = { showLegacyOverlay = it },
                         modifier =
                             Modifier
-                                .align(Alignment.CenterEnd)
-                                .padding(end = 16.dp),
+                                .align(Alignment.BottomEnd)
+                                .navigationBarsPadding()
+                                .padding(end = 16.dp, bottom = 16.dp),
                     )
                 }
 
@@ -608,59 +618,24 @@ fun ArScreen(
             }
         }
 
-        // CAM-1g: debug-only camera-geometry diagnostic overlay - see the gate/collection setup
-        // above. Non-interactive (plain Text, no clickable/pointerInput modifier), so it never
-        // intercepts AR gestures or camera interaction, and it never modifies calculateOverlay,
-        // projectionParams, or star positions - it only displays what CameraSessionGeometryProvider
-        // already publishes.
-        if (CameraGeometryDiagnosticsGate.isEnabled && cameraGeometryDiagnosticSnapshot != null) {
-            CameraGeometryDiagnosticOverlay(
-                snapshot = cameraGeometryDiagnosticSnapshot,
-                sessionId = cameraGeometryDiagnosticSessionId,
-                statusTransitionCount = cameraGeometryStatusTransitionCount,
-                observedFrameCount = cameraGeometryObservedFrameCount,
-                readyBundleCount = cameraGeometryReadyBundleCount,
-                modifier =
-                    Modifier
-                        .align(Alignment.TopStart)
-                        .statusBarsPadding()
-                        .padding(top = 72.dp, start = 16.dp, end = 16.dp),
+        // CAM-1g + CAM-2b: debug-only diagnostic HUD - see the gate/collection setup above. Both
+        // panels are stacked in one shared, width/height-bounded, scrollable column (never two
+        // independently-aligned overlays fighting for the same screen corner) - see
+        // `CamDiagnosticTopPanels`'s own KDoc. Non-interactive (plain Text, no clickable/pointerInput
+        // modifier), so it never intercepts AR gestures or camera interaction, and it never modifies
+        // calculateOverlay, projectionParams, CAM-2a projection math, or any displayPoint coordinate -
+        // it only displays what CameraSessionGeometryProvider/the CAM-2b reducer already publish.
+        if (CameraGeometryDiagnosticsGate.isEnabled) {
+            CamDiagnosticTopPanels(
+                cam1gSnapshot = cameraGeometryDiagnosticSnapshot,
+                cam1gSessionId = cameraGeometryDiagnosticSessionId,
+                cam1gStatusTransitionCount = cameraGeometryStatusTransitionCount,
+                cam1gObservedFrameCount = cameraGeometryObservedFrameCount,
+                cam1gReadyBundleCount = cameraGeometryReadyBundleCount,
+                cam2bState = predictedStarPanelState,
             )
         }
     }
-}
-
-/**
- * CAM-1g compact diagnostic overlay (§5) - translucent, monospace, width-bounded, non-clickable.
- * Purely a display of [CameraGeometryDiagnosticSnapshot]; touches no renderer/matcher/detector state.
- */
-@Composable
-private fun CameraGeometryDiagnosticOverlay(
-    snapshot: CameraGeometryDiagnosticSnapshot,
-    sessionId: Long,
-    statusTransitionCount: Int,
-    observedFrameCount: Long,
-    readyBundleCount: Long,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text =
-            buildCameraGeometryDiagnosticText(
-                snapshot = snapshot,
-                sessionId = sessionId,
-                statusTransitionCount = statusTransitionCount,
-                observedFrameCount = observedFrameCount,
-                readyBundleCount = readyBundleCount,
-            ),
-        color = Color.White,
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-        modifier =
-            modifier
-                .widthIn(max = 280.dp)
-                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
-                .padding(8.dp),
-    )
 }
 
 @Composable

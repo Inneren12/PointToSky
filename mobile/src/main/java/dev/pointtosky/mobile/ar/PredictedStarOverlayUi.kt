@@ -2,9 +2,11 @@ package dev.pointtosky.mobile.ar
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +18,11 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -40,6 +47,24 @@ const val PREDICTED_STAR_MARKERS_CANVAS_TEST_TAG = "predicted_star_markers_canva
  */
 const val PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG = "predicted_star_overlay_panel"
 
+/**
+ * [androidx.compose.ui.platform.testTag] for [PredictedStarOverlayControls]'s always-visible,
+ * collapsed-by-default header row (task §2/§6), for Compose UI tests.
+ */
+const val PREDICTED_STAR_OVERLAY_CONTROLS_HEADER_TEST_TAG = "predicted_star_overlay_controls_header"
+
+/**
+ * [androidx.compose.ui.platform.testTag] for [PredictedStarOverlayControls]'s expandable body -
+ * present only while expanded - for Compose UI tests.
+ */
+const val PREDICTED_STAR_OVERLAY_CONTROLS_BODY_TEST_TAG = "predicted_star_overlay_controls_body"
+
+/**
+ * [androidx.compose.ui.platform.testTag] for the "Show legacy overlay" [Switch] (task §4), for
+ * Compose UI tests.
+ */
+const val PREDICTED_STAR_OVERLAY_SHOW_LEGACY_SWITCH_TEST_TAG = "predicted_star_overlay_show_legacy_switch"
+
 /** Fixed diagnostic marker color — deliberately distinct from [dev.pointtosky.mobile.render.BvColor]'s
  * star-temperature palette and from the legacy overlay's white reticle/label colors, so predicted
  * markers are visually unambiguous during a physical-device side-by-side comparison (task §10). */
@@ -49,6 +74,11 @@ private const val PREDICTED_STAR_MARKER_MAX_RADIUS_DP = 7f
 private const val PREDICTED_STAR_MARKER_MIN_RADIUS_DP = 3f
 private const val PREDICTED_STAR_MAG_BRIGHT = 0.0
 private const val PREDICTED_STAR_MAG_DIM = 6.0
+
+/** Deliberately thicker than a typical hairline (task §5, follow-up diagnostic layout fix) so the
+ * hollow circle/crosshair reads clearly against the legacy overlay's filled dots on a physical device -
+ * cosmetic only, never changes radius scaling, color, or marker position. */
+private const val PREDICTED_STAR_MARKER_STROKE_WIDTH_DP = 2f
 
 /**
  * CAM-2b (task §8): draws only [PredictedStarOverlayPoint]s — every one of which is already classified
@@ -66,7 +96,7 @@ fun PredictedStarMarkersCanvas(
     Canvas(modifier = modifier.testTag(PREDICTED_STAR_MARKERS_CANVAS_TEST_TAG)) {
         val maxRadiusPx = PREDICTED_STAR_MARKER_MAX_RADIUS_DP.dp.toPx()
         val minRadiusPx = PREDICTED_STAR_MARKER_MIN_RADIUS_DP.dp.toPx()
-        val strokeWidthPx = 1.5.dp.toPx()
+        val strokeWidthPx = PREDICTED_STAR_MARKER_STROKE_WIDTH_DP.dp.toPx()
         points.forEach { point ->
             val magnitude = point.magnitude ?: PREDICTED_STAR_MAG_DIM
             val t =
@@ -122,12 +152,19 @@ fun PredictedStarOverlayPanel(
 }
 
 /**
- * CAM-2b (task §11, extended by the follow-up task §2): a minimal, `internalDebug`-only, session-local
- * set of controls — "Show predicted stars", "Show diagnostic panel", and an explicit two-way selector
- * between [PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS] ("Session intrinsics") and
- * [PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK] ("Diagnostic fallback"). All
- * state is owned by the caller (`ArScreen`, via `remember`), never persisted, never a full settings
- * screen.
+ * CAM-2b (task §11, extended by the follow-up task §2, made compact/collapsible by the physical-device
+ * diagnostic-layout fix task §2): a minimal, `internalDebug`-only, session-local set of controls -
+ * "Show predicted stars", "Show diagnostic panel", "Show legacy overlay" (task §4), and an explicit
+ * two-way selector between [PredictedStarOverlayIntrinsicsMode.SESSION_INTRINSICS] ("Session
+ * intrinsics") and [PredictedStarOverlayIntrinsicsMode.DIAGNOSTIC_ANALYSIS_BUFFER_FALLBACK]
+ * ("Diagnostic fallback"). All state is owned by the caller (`ArScreen`, via `remember`), never
+ * persisted, never a full settings screen.
+ *
+ * Collapsed by default to a single compact header row so it never permanently covers the center
+ * reticle or central sky labels - the previous permanently-expanded segmented-button block did exactly
+ * that when centered on-screen. Only the collapse/expand affordance itself ([expanded]) is owned
+ * internally: it is a pure layout concern, unlike the toggles/mode above which affect sibling
+ * composables in `ArScreen` and must stay caller-hoisted for testability.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,42 +175,79 @@ fun PredictedStarOverlayControls(
     onShowPanelChange: (Boolean) -> Unit,
     intrinsicsMode: PredictedStarOverlayIntrinsicsMode,
     onIntrinsicsModeChange: (PredictedStarOverlayIntrinsicsMode) -> Unit,
+    showLegacyOverlay: Boolean,
+    onShowLegacyOverlayChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var expanded by remember { mutableStateOf(false) }
     Column(
         modifier =
             modifier
+                .widthIn(max = 220.dp)
                 .background(color = Color(0xAA003340), shape = RoundedCornerShape(8.dp))
                 .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        PredictedStarOverlayToggleRow(
-            title = "Show predicted stars",
-            checked = showMarkers,
-            onCheckedChange = onShowMarkersChange,
-        )
-        PredictedStarOverlayToggleRow(
-            title = "Show CAM-2b panel",
-            checked = showPanel,
-            onCheckedChange = onShowPanelChange,
-        )
-        Text(
-            text = "Intrinsics",
-            color = Color.White,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        val modes = PredictedStarOverlayIntrinsicsMode.entries
-        val modeLabels = listOf("Session intrinsics", "Diagnostic fallback")
-        SingleChoiceSegmentedButtonRow {
-            modes.forEachIndexed { index, mode ->
-                SegmentedButton(
-                    selected = intrinsicsMode == mode,
-                    onClick = { onIntrinsicsModeChange(mode) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                    label = {
-                        Text(text = modeLabels[index], style = MaterialTheme.typography.labelSmall)
-                    },
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .testTag(PREDICTED_STAR_OVERLAY_CONTROLS_HEADER_TEST_TAG)
+                    .clickable { expanded = !expanded },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "CAM-2b controls",
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Text(
+                text = if (expanded) "▴" else "▾",
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        if (expanded) {
+            Column(
+                modifier = Modifier.testTag(PREDICTED_STAR_OVERLAY_CONTROLS_BODY_TEST_TAG),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                PredictedStarOverlayToggleRow(
+                    title = "Show predicted stars",
+                    checked = showMarkers,
+                    onCheckedChange = onShowMarkersChange,
                 )
+                PredictedStarOverlayToggleRow(
+                    title = "Show CAM-2b panel",
+                    checked = showPanel,
+                    onCheckedChange = onShowPanelChange,
+                )
+                PredictedStarOverlayToggleRow(
+                    title = "Show legacy overlay",
+                    checked = showLegacyOverlay,
+                    onCheckedChange = onShowLegacyOverlayChange,
+                    switchModifier = Modifier.testTag(PREDICTED_STAR_OVERLAY_SHOW_LEGACY_SWITCH_TEST_TAG),
+                )
+                Text(
+                    text = "Intrinsics",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                val modes = PredictedStarOverlayIntrinsicsMode.entries
+                val modeLabels = listOf("Session intrinsics", "Diagnostic fallback")
+                SingleChoiceSegmentedButtonRow {
+                    modes.forEachIndexed { index, mode ->
+                        SegmentedButton(
+                            selected = intrinsicsMode == mode,
+                            onClick = { onIntrinsicsModeChange(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                            label = {
+                                Text(text = modeLabels[index], style = MaterialTheme.typography.labelSmall)
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -184,6 +258,7 @@ private fun PredictedStarOverlayToggleRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    switchModifier: Modifier = Modifier,
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -193,6 +268,6 @@ private fun PredictedStarOverlayToggleRow(
             color = Color.White,
             style = MaterialTheme.typography.bodySmall,
         )
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, modifier = switchModifier)
     }
 }
