@@ -1,11 +1,14 @@
 package dev.pointtosky.mobile.ar.camera
 
+import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.os.Build
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
+import kotlinx.coroutines.CancellationException
 
 /**
  * Thin snapshot of the subset of Camera2 `CameraCharacteristics` [CameraIntrinsicsResolver]/
@@ -42,6 +45,21 @@ import androidx.camera.core.CameraInfo
  * @property isLogicalMultiCamera true when this camera's `REQUEST_AVAILABLE_CAPABILITIES` includes
  *   `REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA` — i.e. this camera ID's characteristics
  *   may not correspond 1:1 to whichever physical sensor actually produced a given analyzed frame.
+ * @property cameraId (CAM-2c fix §5, "Option C") the bound Camera2 ID this snapshot describes —
+ *   always available through CameraX interop (`Camera2CameraInfo.getCameraId()`), regardless of
+ *   whether [context] was supplied. Diagnostics only; never used to select or rebind a camera.
+ * @property physicalCameraIds (CAM-2c fix §5, "Option C") the full set of physical camera IDs
+ *   [isLogicalMultiCamera] declares this logical camera is composed of, when [context] was supplied
+ *   and the raw `android.hardware.camera2.CameraManager.getCameraCharacteristics(cameraId)
+ *   .getPhysicalCameraIds()` read succeeded. `null` when [context] was not supplied, the read failed,
+ *   or the running API level cannot report it (API 28+ only) — **not** the same as an empty set
+ *   (which would mean "queried successfully; this device declares zero physical children", a
+ *   contradiction for a true logical camera, but a valid answer for a non-logical one). This
+ *   codebase's pinned `androidx.camera:camera-camera2:1.3.4` exposes no CameraX-native equivalent —
+ *   `CameraInfo.getPhysicalCameraInfos()` only arrived in `1.4.0-beta01` — so this is a deliberate,
+ *   narrow, read-only bypass through the platform API directly, never used to bind or select a
+ *   physical camera (see [resolveAnalysisBufferIntrinsics]'s KDoc on why CAM-2c still refuses to
+ *   build a calibrated mapping for any logical camera regardless of what this reveals).
  */
 data class CameraCharacteristicsSnapshot(
     val availableFocalLengthsMm: FloatArray?,
@@ -58,6 +76,8 @@ data class CameraCharacteristicsSnapshot(
     val lensIntrinsicCalibration: FloatArray? = null,
     val lensDistortion: FloatArray? = null,
     val isLogicalMultiCamera: Boolean = false,
+    val cameraId: String? = null,
+    val physicalCameraIds: Set<String>? = null,
 )
 
 /**
@@ -87,9 +107,15 @@ fun interface CameraCharacteristicsSource {
  * `kotlin.OptIn` compiles cleanly and even passes plain JVM unit tests, but Android Lint's
  * `UnsafeOptInUsageError` check (which enforces this marker, not the Kotlin compiler) only
  * recognizes `androidx.annotation.OptIn` and fails `:mobile:lintInternalDebug` if it is missing.
+ *
+ * [context], when supplied, is used **only** for [CameraCharacteristicsSnapshot.physicalCameraIds]'s
+ * read-only diagnostic lookup (CAM-2c fix §5) — see that property's KDoc. `null` (safe default) simply
+ * omits that one field; every other snapshot field and this codebase's actual gating behavior
+ * ([CameraCharacteristicsSnapshot.isLogicalMultiCamera]) are entirely unaffected.
  */
 internal class Camera2CharacteristicsSource(
     private val cameraInfo: CameraInfo,
+    private val context: Context? = null,
 ) : CameraCharacteristicsSource {
     @OptIn(ExperimentalCamera2Interop::class)
     override fun snapshot(): CameraCharacteristicsSnapshot {
@@ -99,6 +125,7 @@ internal class Camera2CharacteristicsSource(
         val preCorrectionActiveArray =
             characteristics.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE)
         val capabilities = characteristics.getCameraCharacteristic(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
+        val cameraId = characteristics.cameraId
 
         return CameraCharacteristicsSnapshot(
             availableFocalLengthsMm =
@@ -130,6 +157,29 @@ internal class Camera2CharacteristicsSource(
             isLogicalMultiCamera =
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
                     capabilities?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA) == true,
+            cameraId = cameraId,
+            physicalCameraIds = readPhysicalCameraIds(cameraId),
         )
+    }
+
+    /**
+     * (CAM-2c fix §5, "Option C") Read-only, diagnostics-only bypass through the raw platform
+     * `CameraManager` — never used to bind, select, or reconfigure any camera; only to report, for
+     * the diagnostics panel, which physical camera IDs the *already-bound* logical camera declares.
+     * `null` whenever [context] is absent, the read fails (`CameraAccessException` or any other
+     * exception — e.g. a permission or HAL quirk on some device), or the running API level cannot
+     * report it (`CameraCharacteristics.getPhysicalCameraIds()` requires API 28).
+     */
+    private fun readPhysicalCameraIds(cameraId: String): Set<String>? {
+        val appContext = context ?: return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        return try {
+            val cameraManager = appContext.getSystemService(CameraManager::class.java) ?: return null
+            cameraManager.getCameraCharacteristics(cameraId).physicalCameraIds
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 }

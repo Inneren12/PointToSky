@@ -456,16 +456,22 @@ ray at the image centre) but off-axis markers diverged systematically, because t
 FOV is not the true buffer-space intrinsics. CAM-2c closes this by deriving a real, calibrated
 `AnalysisBuffer`-referenced mapping from Camera2 metadata instead of tuning the fallback FOV.
 
-**Five coordinate spaces, never conflated:**
+**Five coordinate spaces, never conflated** (a first pass at this section numbered five but listed
+only four — corrected below; the genuinely missing fifth is the pre-correction active array, split
+out of what was one bullet into its own):
 
 1. **Physical sensor millimetres** — `SENSOR_INFO_PHYSICAL_SIZE`, `LENS_INFO_AVAILABLE_FOCAL_LENGTHS`.
-2. **Active-array pixels** — `SENSOR_INFO_ACTIVE_ARRAY_SIZE`; `LENS_INTRINSIC_CALIBRATION`/`LENS_DISTORTION`
-   are reported in the closely related but **distinct** `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`
-   space (`ActiveArrayIntrinsics`, `core/astro-core/.../camera/ActiveArrayIntrinsics.kt`).
-3. **CameraX `ImageAnalysis` buffer pixels** — the exact `frame.bufferWidthPx`×`bufferHeightPx` space
+2. **Active-array pixels** — `SENSOR_INFO_ACTIVE_ARRAY_SIZE` (`ActiveArrayIntrinsics`,
+   `core/astro-core/.../camera/ActiveArrayIntrinsics.kt`).
+3. **Pre-correction active-array pixels** — `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`, the space
+   `LENS_INTRINSIC_CALIBRATION`/`LENS_DISTORTION` are actually reported in — closely related to space 2
+   but **not assumed identical**: `resolveAnalysisBufferIntrinsics` compares the full rectangle (all
+   four edges, not just width/height — a same-size-but-shifted-origin pre-correction array is *not*
+   the same rectangle) before trusting `LENS_INTRINSIC_CALIBRATION`'s numbers as space-2 coordinates.
+4. **CameraX `ImageAnalysis` buffer pixels** — the exact `frame.bufferWidthPx`×`bufferHeightPx` space
    `PinholeProjectionModel` already projects into (`AnalysisBufferIntrinsicsValues`,
    `core/astro-core/.../camera/AnalysisBufferIntrinsicsMapping.kt`).
-4. **Display viewport pixels** — unchanged; still owned exclusively by `CropScaleTransform`.
+5. **Display viewport pixels** — unchanged; still owned exclusively by `CropScaleTransform`.
 
 **Cropped-rect provenance (§5 of the task spec) — resolved, not assumed.** `CameraFrameMetadata`'s
 own `cropRectLeftPx`/etc (CAM-1c) are already documented as **buffer**-space (`ImageProxy.cropRect`,
@@ -477,22 +483,55 @@ stable, official CameraX API (present in `camera-core` since at least `1.1.0-bet
 this project's `1.3.4`) whose own contract documents a mapping "from the value of
 `CameraCharacteristics#SENSOR_INFO_ACTIVE_ARRAY_SIZE` to `(0, 0, image.getWidth, image.getHeight)`" —
 populated with a real, non-default value for every bound `ImageAnalysis`/Camera2 session. CAM-2c
-reads it via `ImageProxyFrameMetadataSource` (`:mobile`), validates it is axis-aligned (Camera2's own
-crop-then-scale pipeline never introduces rotation/skew), and converts it to a plain
-`SensorToBufferTransform` (`core/astro-core/.../camera/AnalysisBufferIntrinsicsMapping.kt`) carried
-as a new optional field on `CameraFrameMetadata` — no new callback wiring through
-`CameraPreview`/`ArScreen` was needed; `CameraSessionIntrinsicsCoordinator.onFrameMetadata` already
-receives the whole frame.
+reads it via `ImageProxyFrameMetadataSource` (`:mobile`) and converts it, in full, into a plain
+`SensorToBufferMatrix3` (`core/astro-core/.../camera/SensorToBufferMatrix3.kt`) carried as a new
+optional field on `CameraFrameMetadata` — no new callback wiring through `CameraPreview`/`ArScreen`
+was needed; `CameraSessionIntrinsicsCoordinator.onFrameMetadata` already receives the whole frame.
 
-**Principal-point policy (§3 of the task spec).** `LENS_INTRINSIC_CALIBRATION` (`[fx, fy, cx, cy,
-skew]`) is preferred **only** when its coordinate-space contract is verified: if the device also
-reports `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`, it must exactly match
-`SENSOR_INFO_ACTIVE_ARRAY_SIZE` (if the device does not report one at all, the active array *is*
-the pre-correction array, so the spaces are trivially identical). Otherwise the active-array
-intrinsics fall back to `activeArrayIntrinsicsFromFocalLength` with a geometric-centre principal
-point. Either way `fx`/`fy` are real, focal-length-derived numbers — this is a principal-point-only
-fallback, never a fixed-FOV guess. `CameraIntrinsicsQuality` (`CALIBRATED`/`APPROXIMATE_PRINCIPAL_POINT`)
-records which policy applied; it is `null` for every source except `CAMERA_CHARACTERISTICS`.
+**Correction (post-launch fix): the matrix is not assumed axis-aligned.** CAM-2c's first pass
+asserted "Camera2's own crop-then-scale pipeline never introduces rotation/skew" and rejected (as
+`null`) any reported matrix that was not a pure axis-aligned scale+translate. That assumption is
+empirically well-founded for CameraX's own reference implementation
+(`CameraUseCaseAdapter.calculateSensorToBufferTransformMatrix`, built from `Matrix.setRectToRect(...,
+ScaleToFit.CENTER)` then inverted — provably rotation/skew-free by construction) but is **not**
+something the public `ImageInfo.getSensorToBufferTransformMatrix()` contract itself guarantees for
+every CameraX version or OEM camera HAL, so treating a non-axis-aligned report as "unavailable"
+rather than "possibly a real, different geometric relationship" was a genuine gap. `SensorToBufferMatrix3`
+now preserves all 9 reported values exactly, and `classifySensorToBufferMatrix` (pure, tolerance-only-
+for-float-noise) sorts every matrix into one of eight classes: `AXIS_ALIGNED_0`/`ORTHOGONAL_90`/
+`ORTHOGONAL_180`/`ORTHOGONAL_270` (composable into a valid pinhole model — see below) and `MIRRORED`/
+`GENERAL_AFFINE_UNSUPPORTED`/`PROJECTIVE_UNSUPPORTED`/`SINGULAR` (typed rejections —
+`AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform(transformClass)`, never a
+silent `null`/guess). `mapActiveArrayIntrinsicsThroughMatrix` composes the full active-array pinhole
+matrix `K` (now including a `skewPx` term) with the classified `M` via genuine matrix multiplication
+(`K' = M·K`) rather than independently-derived per-field formulas, deriving buffer-space `fx`/`fy`/
+`cx`/`cy` plus `axisSwapped`/`negateXInput`/`negateYInput` flags for the `ORTHOGONAL_90`/`270`/`180`
+cases. `PinholeProjectionModel` gained matching `axisSwapped`/`negateXInput`/`negateYInput` fields
+(all defaulting `false`, 100% backward compatible) that `project()` consumes to pick which of its two
+normalized-ray inputs drives `focalLengthXPx` vs `focalLengthYPx`, and with which sign — a
+**position**-space operation, resolved once per session from `M`, that cannot double up with the
+separate, untouched, **direction**-space `frame.rotationDegrees`-driven rotation
+(`DisplayAlignedOpticalToBufferOpticalTransform`, applied fresh per star at projection time — see
+that class's own KDoc and `PinholeProjectionModelTest`'s dedicated no-double-rotation proof). In
+practice, on every device this codebase can prove reachable via CameraX's own real implementation,
+the matrix is `AXIS_ALIGNED_0` — the other seven classes exist for robustness against a HAL/CameraX
+version this codebase has not traced, not because they are known to occur.
+
+**Principal-point and skew policy (§3 of the task spec).** `LENS_INTRINSIC_CALIBRATION` (`[fx, fy, cx,
+cy, skew]`) is preferred only when **both** of two independent checks pass: (1) its coordinate-space
+contract is verified — if the device also reports `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`, it
+must exactly match `SENSOR_INFO_ACTIVE_ARRAY_SIZE` on all four edges (space 3 vs space 2 above; if the
+device does not report one at all, the two spaces are trivially identical); and (2) its skew term
+(`calibration[4]`) is within `INTRINSIC_SKEW_TOLERANCE_PX` (0.5px) of zero — a real rectilinear lens
+has zero skew, so anything past that tolerance indicates a genuine non-pinhole-representable lens
+characteristic this codebase's skew-free downstream model cannot represent, and the calibrated `K` is
+rejected outright (`CameraCalibrationDiagnosticReason.NON_ZERO_INTRINSIC_SKEW`) rather than silently
+dropping the skew term and keeping a principal point that looks more precise than it actually is.
+Failing either check falls back to `activeArrayIntrinsicsFromFocalLength` with a geometric-centre
+principal point and zero skew. Either way `fx`/`fy` are real, focal-length-derived numbers — this is
+a principal-point-only fallback, never a fixed-FOV guess. `CameraIntrinsicsQuality`
+(`CALIBRATED`/`APPROXIMATE_PRINCIPAL_POINT`) records which policy applied; it is `null` for every
+source except `CAMERA_CHARACTERISTICS`.
 
 **A new, deliberate `CameraIntrinsics` invariant relaxation.** `source=CAMERA_CHARACTERISTICS` may
 now carry `reference=AnalysisBuffer` in addition to the existing `reference=PhysicalSensor` — the
@@ -503,27 +542,67 @@ multi-camera/missing-transform/invalid-metadata fallback — see below) is rejec
 
 **Typed resolution, no silent fallback** (`mobile/.../ar/camera/AnalysisBufferIntrinsicsResolver.kt`):
 `AnalysisBufferIntrinsicsResolution` is `Resolved` / `MissingActiveArray` / `MissingPhysicalSensorSize`
-/ `MissingFocalLength` / `MissingSensorToBufferTransform` / `UnsupportedLogicalMultiCameraMapping`
-/ `InvalidMetadata(reason)`. `UnsupportedLogicalMultiCameraMapping` fires whenever
-`REQUEST_AVAILABLE_CAPABILITIES` includes `LOGICAL_MULTI_CAMERA` — this camera ID's static
-characteristics cannot be trusted to describe whichever physical sensor actually produced a given
-frame, so no calibrated mapping is attempted at all. `resolveCameraIntrinsicsPreferringCalibration`
-tries this path first and falls back to the **unchanged** CAM-1b `resolveCameraIntrinsics` (still
-`PhysicalSensor`-referenced, or the legacy fallback) for any other outcome — never the reverse.
+/ `MissingFocalLength` / `MissingSensorToBufferTransform` / `UnsupportedSensorToBufferTransform(class)`
+/ `UnsupportedLogicalMultiCameraMapping(cameraId, physicalCameraIdsForDiagnostics)` /
+`InvalidMetadata(reason)`. `resolveCameraIntrinsicsPreferringCalibration` tries this path first and
+falls back to the **unchanged** CAM-1b `resolveCameraIntrinsics` (still `PhysicalSensor`-referenced,
+or the legacy fallback) for any other outcome — never the reverse.
+
+**Logical multi-camera: still blocked, provenance investigated (§1/§5 of the fix task) — this is the
+single biggest reason CAM-2c is not yet a universal "normal session path".** An earlier pass's own
+sprint notes described CAM-2c as "replacing CAM-2b's diagnostic-fallback substitution as the normal,
+non-debug session path" — true only for a camera whose `REQUEST_AVAILABLE_CAPABILITIES` does **not**
+include `LOGICAL_MULTI_CAMERA`. `UnsupportedLogicalMultiCameraMapping` still fires unconditionally
+whenever it does, and this fix investigated — rather than assumed — whether this project's pinned
+`androidx.camera:camera-camera2:1.3.4` could do better: it cannot. Binding a concrete physical camera
+(`CameraSelector.setPhysicalCameraId`) and reading per-frame physical-camera provenance
+(`CameraInfo.getPhysicalCameraInfos()`) both require `1.4.0-beta01` or later — confirmed absent from
+this project's pinned `1.3.4` API surface. `Camera2CharacteristicsSource` now takes an optional
+`Context` and, when supplied, reads the logical camera's declared physical camera IDs via a narrow,
+read-only `android.hardware.camera2.CameraManager.getCameraCharacteristics(id).getPhysicalCameraIds()`
+bypass — **diagnostics only**, never used to bind or select a camera, and never changing this guard's
+outcome. Real Pixel phones (Pixel 4 onward) have used logical multi-camera rear configurations, so
+this almost certainly means **CAM-2c's calibrated path is blocked on a real Pixel 9's actual rear
+camera today** — the honest status is "normal session path on any non-logical-multi-camera device;
+blocked, falling back to the CAM-1b/legacy path exactly as before, on a logical multi-camera device" —
+not an unconditional replacement. Revisiting this is possible only via a CameraX version bump (a
+broader, riskier dependency change, out of this fix's scope) or an experimental capture-callback
+subsystem.
+
+**The coordinator's coherent-input gate (§4 of the fix task).** `CameraSessionIntrinsicsCoordinator`
+previously accepted the *first* analyzed frame's dimensions and `sensorToBufferTransform`
+unconditionally, then permanently ignored every later frame — including when that first frame's
+transform was `null` or (under the pre-fix axis-aligned-only assumption) merely rotated. It now keeps
+accepting frames (bounded, no queue — only the current best candidate and the most recent frame's
+dimensions are retained) until one frame's own transform is both non-`null` and classifies as one of
+the four *supported* classes, using that exact frame's dimensions and transform together, never mixed
+with another frame's. A configurable bound (`maxFramesWaitingForUsableTransform`, default 30 frames —
+~1s at a typical 30fps `ImageAnalysis` rate) gives up and resolves with the most recent frame's
+dimensions and a `null` transform (falling through to the CAM-1b path) if no usable transform ever
+arrives. `CameraSessionIntrinsicsCoordinatorState` (`WAITING_FOR_CAMERA_INFO`/`WAITING_FOR_FRAME`/
+`WAITING_FOR_USABLE_SENSOR_TO_BUFFER_TRANSFORM`/`RESOLVING`/`RESOLVED`/`DISPOSED`) exposes this as an
+observable property for tests/diagnostics.
 
 **Diagnostics only** (`CameraCalibrationDiagnostics`, `internalDebug`-gated `CamDiagnosticTopPanels`
 panel): active array size, sensor physical size, focal length, active-array fx/fy/cx/cy, the
-active-array-space crop region, buffer fx/fy/cx/cy, `quality`, and the sensor-to-buffer mapping
-source. Never persisted externally — on-screen only, in a debug build.
+active-array-space crop region, buffer fx/fy/cx/cy, `quality` (with the skew-rejection reason, when
+applicable), the sensor-to-buffer mapping source and its classified `transformClass`, and the bound
+camera's ID/logical-multi-camera flag/declared physical camera IDs (when available). Never persisted
+externally — on-screen only, in a debug build.
 
-**Validation (this environment).** `:core:astro-core:test` (436 tests, including the new
-`ActiveArrayIntrinsicsTest`/`AnalysisBufferIntrinsicsMappingTest`/`CalibratedAnalysisBufferProjectionTest`)
-and `:mobile:test{Internal,Public}DebugUnitTest` (309 tests each) all pass under a real Gradle build
-(this session provisioned a JDK 17 toolchain and an Android SDK — neither was preinstalled). No
-physical device or emulator is available in this sandboxed environment (no `/dev/kvm`, no
-hardware-virtualization CPU flags, `adb devices -l` lists none), so §10's live Pixel 9
-centre/mid-field/edge-star dx/dy comparison could not be executed here; it remains an open item for
-a session with real hardware access.
+**Validation (this environment).** `:core:astro-core:test` (455 tests, including
+`SensorToBufferMatrix3`/classification tests, the general matrix-composition rewrite of
+`AnalysisBufferIntrinsicsMappingTest`, `PinholeProjectionModelTest`'s axis-swap/no-double-rotation
+tests, and `CalibratedAnalysisBufferProjectionTest`'s four-off-axis-ray and
+all-four-`rotationDegrees` full-pipeline tests) and `:mobile:test{Internal,Public}DebugUnitTest` (326
+tests each, including the rewritten `AnalysisBufferIntrinsicsResolverTest`'s skew-tolerance/
+unsupported-transform-class/non-zero-origin cases and `CameraSessionIntrinsicsCoordinatorTest`'s
+coherent-input-gate cases) all pass under a real Gradle build. No physical device or emulator is
+available in this sandboxed environment (no `/dev/kvm`, no hardware-virtualization CPU flags, `adb
+devices -l` lists none), so §10's live Pixel 9 centre/mid-field/edge-star dx/dy comparison could not
+be executed here; it remains an open item for a session with real hardware access — and, per the
+logical-multi-camera paragraph above, is expected to hit `UnsupportedLogicalMultiCameraMapping` (not
+a calibrated `AnalysisBuffer` result) on a real Pixel 9's actual rear camera regardless.
 
 ---
 

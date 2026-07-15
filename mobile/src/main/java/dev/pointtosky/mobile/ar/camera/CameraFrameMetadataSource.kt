@@ -3,8 +3,7 @@ package dev.pointtosky.mobile.ar.camera
 import android.graphics.Matrix
 import androidx.camera.core.ImageProxy
 import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
-import kotlin.math.abs
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 
 /**
  * Metadata-only view of one analyzed camera frame (CAM-1c), decoupled from `ImageProxy` mechanics
@@ -27,11 +26,14 @@ interface CloseableFrameMetadataSource {
     val cropRectBottomPx: Int?
 
     /**
-     * (CAM-2c) The real per-frame sensor-to-buffer mapping, or `null` when unavailable/not
-     * axis-aligned. See [ImageProxyFrameMetadataSource]'s KDoc for how production code derives this
-     * from `ImageProxy.imageInfo.sensorToBufferTransformMatrix`.
+     * (CAM-2c, fix §1) The real per-frame sensor-to-buffer mapping, preserving all 9 reported matrix
+     * values — or `null` only when entirely unavailable/non-finite. See [ImageProxyFrameMetadataSource]'s
+     * KDoc for how production code derives this from `ImageProxy.imageInfo.sensorToBufferTransformMatrix`.
+     * A present-but-geometrically-unsupported matrix (rotated/mirrored/projective) is still returned
+     * here in full — classification and rejection is
+     * `dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics`'s job, never this source's.
      */
-    val sensorToBufferTransform: SensorToBufferTransform?
+    val sensorToBufferTransform: SensorToBufferMatrix3?
 
     /** Releases the underlying frame. Callers must invoke this exactly once, always in `finally`. */
     fun close()
@@ -56,60 +58,43 @@ fun CloseableFrameMetadataSource.toCameraFrameMetadata(): CameraFrameMetadata =
     )
 
 /**
- * Tolerance for treating an `android.graphics.Matrix`'s skew/perspective components as exactly zero
- * (one, for the perspective-w term) — i.e. a pure axis-aligned scale+translate, matching
- * [SensorToBufferTransform]'s own documented contract. Camera2's crop-then-scale pipeline never
- * introduces rotation/skew/perspective on its own (see [SensorToBufferTransform]'s KDoc); this
- * tolerance only absorbs ordinary floating-point noise in the reported matrix, never a genuinely
- * rotated/skewed one.
- */
-private const val AFFINE_COMPONENT_TOLERANCE = 1e-4f
-
-/**
  * Pure conversion of an `android.graphics.Matrix`'s 9-element `getValues()` output — indices matching
  * `Matrix.MSCALE_X`/`MSKEW_X`/`MTRANS_X`/`MSKEW_Y`/`MSCALE_Y`/`MTRANS_Y`/`MPERSP_0`/`MPERSP_1`/`MPERSP_2`
- * exactly — into a plain, Android-independent [SensorToBufferTransform] (CAM-2c §5). Separated from
+ * exactly — into a plain, Android-independent [SensorToBufferMatrix3] (CAM-2c fix §1). Separated from
  * [androidMatrixToSensorToBufferTransform] so this conversion is unit-testable with a plain
  * `FloatArray`, without a real (non-Robolectric) `android.graphics.Matrix` instance — matching this
  * codebase's existing split-for-testability convention (e.g. [toCameraFrameMetadata] vs
  * [ImageProxyFrameMetadataSource]).
  *
- * Returns `null`, rather than fabricating a value, when [values] is not (within
- * [AFFINE_COMPONENT_TOLERANCE]) a pure axis-aligned scale+translate — i.e. it carries a non-zero
- * skew or perspective component — or when either scale component is non-finite or non-positive.
- * This codebase's mapping math ([SensorToBufferTransform]) has no rotation/skew component of its
- * own by design (see that type's KDoc on rotation ownership); a caller receiving `null` here must
- * treat the sensor-to-buffer mapping as unavailable for this frame
- * ([dev.pointtosky.mobile.ar.camera.AnalysisBufferIntrinsicsResolution.MissingSensorToBufferTransform]),
- * never silently ignore the skew/perspective and use the scale/translate components anyway.
+ * Preserves all 9 values exactly — **no** longer rejects a non-zero skew/perspective component (the
+ * pre-fix behavior assumed, without verifying, that Camera2's crop-then-scale pipeline could only
+ * ever produce an axis-aligned scale+translate; see [SensorToBufferMatrix3]'s KDoc for why that
+ * assumption is no longer baked into the type itself). Classifying whether the resulting matrix is
+ * geometrically usable is entirely
+ * `dev.pointtosky.core.astro.projection.camera.classifySensorToBufferMatrix`'s job, invoked by
+ * `dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics` — never guessed here.
+ *
+ * Returns `null`, rather than fabricating a value, only when any of the 9 values is non-finite (an
+ * `android.graphics.Matrix` should never report one, but this function does not trust that blindly).
  *
  * @throws IllegalArgumentException if [values] does not have exactly 9 elements — a caller-contract
  *   violation ([Matrix.getValues] always fills exactly 9), not an expected runtime outcome.
  */
-internal fun sensorToBufferTransformFromMatrixValues(values: FloatArray): SensorToBufferTransform? {
+internal fun sensorToBufferTransformFromMatrixValues(values: FloatArray): SensorToBufferMatrix3? {
     require(values.size == 9) { "values must have exactly 9 elements (Matrix.getValues() layout); was ${values.size}" }
+    if (values.any { !it.isFinite() }) return null
 
-    val skewX = values[MSKEW_X]
-    val skewY = values[MSKEW_Y]
-    val persp0 = values[MPERSP_0]
-    val persp1 = values[MPERSP_1]
-    val persp2 = values[MPERSP_2]
-    val isAxisAlignedAffine =
-        abs(skewX) < AFFINE_COMPONENT_TOLERANCE &&
-            abs(skewY) < AFFINE_COMPONENT_TOLERANCE &&
-            abs(persp0) < AFFINE_COMPONENT_TOLERANCE &&
-            abs(persp1) < AFFINE_COMPONENT_TOLERANCE &&
-            abs(persp2 - 1f) < AFFINE_COMPONENT_TOLERANCE
-    if (!isAxisAlignedAffine) return null
-
-    val scaleX = values[MSCALE_X].toDouble()
-    val scaleY = values[MSCALE_Y].toDouble()
-    val translateX = values[MTRANS_X].toDouble()
-    val translateY = values[MTRANS_Y].toDouble()
-    if (!scaleX.isFinite() || !scaleY.isFinite() || scaleX <= 0.0 || scaleY <= 0.0) return null
-    if (!translateX.isFinite() || !translateY.isFinite()) return null
-
-    return SensorToBufferTransform(scaleX = scaleX, scaleY = scaleY, translateXPx = translateX, translateYPx = translateY)
+    return SensorToBufferMatrix3(
+        m00 = values[MSCALE_X].toDouble(),
+        m01 = values[MSKEW_X].toDouble(),
+        m02 = values[MTRANS_X].toDouble(),
+        m10 = values[MSKEW_Y].toDouble(),
+        m11 = values[MSCALE_Y].toDouble(),
+        m12 = values[MTRANS_Y].toDouble(),
+        m20 = values[MPERSP_0].toDouble(),
+        m21 = values[MPERSP_1].toDouble(),
+        m22 = values[MPERSP_2].toDouble(),
+    )
 }
 
 // Mirrors android.graphics.Matrix's own MSCALE_X/MSKEW_X/.../MPERSP_2 index constants exactly - not
@@ -127,10 +112,10 @@ private const val MPERSP_2 = 8
 
 /**
  * Converts a real `android.graphics.Matrix` — `ImageProxy.imageInfo.getSensorToBufferTransformMatrix()`
- * — into a plain, Android-independent [SensorToBufferTransform] (CAM-2c §5). Thin wrapper around
+ * — into a plain, Android-independent [SensorToBufferMatrix3] (CAM-2c fix §1). Thin wrapper around
  * [sensorToBufferTransformFromMatrixValues]; see that function's KDoc for the actual conversion rule.
  */
-internal fun androidMatrixToSensorToBufferTransform(matrix: Matrix): SensorToBufferTransform? {
+internal fun androidMatrixToSensorToBufferTransform(matrix: Matrix): SensorToBufferMatrix3? {
     val values = FloatArray(9)
     matrix.getValues(values)
     return sensorToBufferTransformFromMatrixValues(values)
@@ -170,7 +155,7 @@ internal class ImageProxyFrameMetadataSource(
     override val cropRectTopPx: Int get() = imageProxy.cropRect.top
     override val cropRectRightPx: Int get() = imageProxy.cropRect.right
     override val cropRectBottomPx: Int get() = imageProxy.cropRect.bottom
-    override val sensorToBufferTransform: SensorToBufferTransform?
+    override val sensorToBufferTransform: SensorToBufferMatrix3?
         get() = androidMatrixToSensorToBufferTransform(imageProxy.imageInfo.sensorToBufferTransformMatrix)
 
     override fun close() = imageProxy.close()

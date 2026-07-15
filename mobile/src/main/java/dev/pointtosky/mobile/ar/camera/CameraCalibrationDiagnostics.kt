@@ -4,6 +4,7 @@ import dev.pointtosky.core.astro.projection.camera.ActiveArrayIntrinsics
 import dev.pointtosky.core.astro.projection.camera.ActiveArraySensorCropRegion
 import dev.pointtosky.core.astro.projection.camera.AnalysisBufferIntrinsicsValues
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 
 /**
  * Bounded, debug-only snapshot of one successful [resolveAnalysisBufferIntrinsics] mapping (CAM-2c
@@ -34,6 +35,22 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
  *   [SENSOR_TO_BUFFER_MAPPING_SOURCE] for a real [resolveAnalysisBufferIntrinsics] success, since
  *   that is the only path this snapshot is ever built from; carried as an explicit string (not
  *   derived from context at the display layer) so the panel never has to re-guess it.
+ * @property transformClass (CAM-2c fix §1) how the real sensor-to-buffer matrix related active-array
+ *   axes to this buffer's own axes — see
+ *   `dev.pointtosky.core.astro.projection.camera.classifySensorToBufferMatrix`. Always one of the
+ *   four *supported* classes here, since this snapshot is only ever built from a successful mapping.
+ * @property skewDiagnosticReason (CAM-2c fix §3) non-`null` only when `LENS_INTRINSIC_CALIBRATION`
+ *   was otherwise structurally usable but its skew term exceeded [INTRINSIC_SKEW_TOLERANCE_PX], so
+ *   [quality] fell back to [CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT] despite calibration
+ *   metadata being present — see [CameraCalibrationDiagnosticReason.NON_ZERO_INTRINSIC_SKEW].
+ * @property cameraId (CAM-2c fix §5) the bound Camera2 camera ID this resolution described.
+ * @property isLogicalMultiCamera (CAM-2c fix §5) always `false` here — a `true` logical-multi-camera
+ *   snapshot never reaches a successful [resolveAnalysisBufferIntrinsics] mapping in the first place
+ *   (see [AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping]); carried anyway so
+ *   the diagnostics panel's rendering code has one field to check rather than assuming.
+ * @property physicalCameraIds (CAM-2c fix §5, "Option C") this camera's declared physical camera IDs,
+ *   when the read-only `CameraManager` diagnostic lookup succeeded — see
+ *   [CameraCharacteristicsSnapshot.physicalCameraIds]'s KDoc.
  */
 data class CameraCalibrationDiagnostics(
     val activeArrayWidthPx: Int,
@@ -55,6 +72,11 @@ data class CameraCalibrationDiagnostics(
     val bufferCyPx: Double,
     val quality: CameraIntrinsicsQuality,
     val sensorToBufferMappingSource: String,
+    val transformClass: SensorToBufferTransformClass,
+    val skewDiagnosticReason: String? = null,
+    val cameraId: String? = null,
+    val isLogicalMultiCamera: Boolean = false,
+    val physicalCameraIds: Set<String>? = null,
 ) {
     internal companion object {
         /** The one real source this snapshot's crop/mapping numbers ever come from (CAM-2c §5). */
@@ -68,6 +90,11 @@ data class CameraCalibrationDiagnostics(
             sensorHeightMm: Double,
             focalLengthMm: Double,
             quality: CameraIntrinsicsQuality,
+            transformClass: SensorToBufferTransformClass,
+            skewDiagnosticReason: String? = null,
+            cameraId: String? = null,
+            isLogicalMultiCamera: Boolean = false,
+            physicalCameraIds: Set<String>? = null,
         ) = CameraCalibrationDiagnostics(
             activeArrayWidthPx = active.widthPx,
             activeArrayHeightPx = active.heightPx,
@@ -88,6 +115,11 @@ data class CameraCalibrationDiagnostics(
             bufferCyPx = bufferValues.cyPx,
             quality = quality,
             sensorToBufferMappingSource = SENSOR_TO_BUFFER_MAPPING_SOURCE,
+            transformClass = transformClass,
+            skewDiagnosticReason = skewDiagnosticReason,
+            cameraId = cameraId,
+            isLogicalMultiCamera = isLogicalMultiCamera,
+            physicalCameraIds = physicalCameraIds,
         )
     }
 }

@@ -7,15 +7,21 @@ package dev.pointtosky.core.astro.projection.camera
  * [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.forGeometry]
  * requires an [CameraIntrinsicsReference.AnalysisBuffer]-referenced [CameraIntrinsics]; an
  * [ActiveArrayIntrinsics] value must first be mapped through the exact CameraX sensor-to-buffer
- * transform (see `mapActiveArrayIntrinsicsToAnalysisBuffer` in `AnalysisBufferIntrinsicsMapping.kt`)
+ * transform (see `mapActiveArrayIntrinsicsThroughMatrix` in `AnalysisBufferIntrinsicsMapping.kt`)
  * before it describes any particular analyzed buffer.
  *
  * @property fxPx horizontal focal length in active-array pixels. Finite, strictly positive.
  * @property fyPx vertical focal length in active-array pixels. Finite, strictly positive.
  * @property cxPx principal point X in active-array pixels. Finite.
  * @property cyPx principal point Y in active-array pixels. Finite.
- * @property widthPx `SENSOR_INFO_ACTIVE_ARRAY_SIZE` width in pixels. Strictly positive.
- * @property heightPx `SENSOR_INFO_ACTIVE_ARRAY_SIZE` height in pixels. Strictly positive.
+ * @property skewPx the pinhole model's skew term (CAM-2c fix §2/§3) — the full active-array intrinsic
+ *   matrix is `K = [[fxPx, skewPx, cxPx], [0, fyPx, cyPx], [0, 0, 1]]`. `0.0` (the default) means "no
+ *   skew known/assumed", exactly what [activeArrayIntrinsicsFromFocalLength] below always produces —
+ *   that derivation has no skew term to recover. A non-zero value only ever comes from Camera2
+ *   `LENS_INTRINSIC_CALIBRATION`'s own fifth element, and only when
+ *   `dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics` has already decided (against its
+ *   own documented tolerance) that the value is small enough to trust rather than reject the
+ *   calibrated source outright. Finite.
  */
 data class ActiveArrayIntrinsics(
     val fxPx: Double,
@@ -24,6 +30,7 @@ data class ActiveArrayIntrinsics(
     val cyPx: Double,
     val widthPx: Int,
     val heightPx: Int,
+    val skewPx: Double = 0.0,
 ) {
     init {
         require(fxPx.isFinite() && fxPx > 0.0) { "fxPx must be finite and strictly positive; was $fxPx" }
@@ -32,6 +39,7 @@ data class ActiveArrayIntrinsics(
         require(cyPx.isFinite()) { "cyPx must be finite; was $cyPx" }
         require(widthPx > 0) { "widthPx must be strictly positive; was $widthPx" }
         require(heightPx > 0) { "heightPx must be strictly positive; was $heightPx" }
+        require(skewPx.isFinite()) { "skewPx must be finite; was $skewPx" }
     }
 }
 
@@ -46,7 +54,7 @@ data class ActiveArrayIntrinsics(
  * This is the same physical relationship [horizontalFovDeg]/[verticalFovDeg] already encode as an
  * angle (`fov = 2 atan(dim / (2 f))`); expressing it directly in active-array pixels here, rather
  * than converting through degrees, avoids a redundant trig round-trip before the buffer-space
- * mapping in `mapActiveArrayIntrinsicsToAnalysisBuffer`.
+ * mapping in `mapActiveArrayIntrinsicsThroughMatrix`.
  *
  * The principal point defaults to the active array's geometric centre
  * (`activeArrayWidthPx/2`, `activeArrayHeightPx/2`) when [principalPointXPx]/[principalPointYPx] is

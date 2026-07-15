@@ -90,6 +90,7 @@ import dev.pointtosky.core.datalayer.AimTargetKind
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.ar.camera.Camera2CameraIntrinsicsProvider
 import dev.pointtosky.mobile.ar.camera.CameraCalibrationDiagnostics
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticCategory
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
@@ -345,7 +346,10 @@ fun ArScreen(
         remember {
             CameraSessionGeometryProvider(maxAllowedPairDeltaNanos = timestampSynchronizer.maxAllowedDeltaNanos)
         }
-    val intrinsicsResolver = remember { SessionScopedCameraIntrinsicsResolver() }
+    val intrinsicsResolver =
+        remember {
+            SessionScopedCameraIntrinsicsResolver(Camera2CameraIntrinsicsProvider(context.applicationContext))
+        }
     // CAM-1f: resolves intrinsics only once BOTH the bound CameraInfo and the first analyzed
     // frame's real buffer dimensions are known - resolving from CameraInfo alone would cache a
     // wrong (default-aspect) legacy-fallback horizontal FOV, since the fallback path derives it

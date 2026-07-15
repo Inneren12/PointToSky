@@ -218,7 +218,12 @@ class CameraFrameMetadataTest {
 
     @Test
     fun `sensorToBufferTransform is preserved exactly when present`() {
-        val transform = SensorToBufferTransform(scaleX = 0.5, scaleY = 0.5, translateXPx = -100.0, translateYPx = -50.0)
+        val transform =
+            SensorToBufferMatrix3(
+                m00 = 0.5, m01 = 0.0, m02 = -100.0,
+                m10 = 0.0, m11 = 0.5, m12 = -50.0,
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
+            )
         val metadata =
             CameraFrameMetadata(
                 timestampNanos = 0L,

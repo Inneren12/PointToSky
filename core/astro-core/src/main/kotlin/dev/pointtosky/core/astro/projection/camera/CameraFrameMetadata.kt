@@ -30,12 +30,15 @@ package dev.pointtosky.core.astro.projection.camera
  * @property cropRectTopPx `ImageProxy.cropRect.top`, when represented.
  * @property cropRectRightPx `ImageProxy.cropRect.right`, when represented.
  * @property cropRectBottomPx `ImageProxy.cropRect.bottom`, when represented.
- * @property sensorToBufferTransform (CAM-2c) `ImageProxy.imageInfo.getSensorToBufferTransformMatrix()`,
- *   converted to a plain, Android-independent [SensorToBufferTransform] — the real per-frame mapping
+ * @property sensorToBufferTransform (CAM-2c, fix §1) `ImageProxy.imageInfo.getSensorToBufferTransformMatrix()`,
+ *   converted to a plain, Android-independent [SensorToBufferMatrix3] — the real per-frame mapping
  *   from Camera2 `SENSOR_INFO_ACTIVE_ARRAY_SIZE` pixel coordinates to *this exact frame's own*
- *   [bufferWidthPx] × [bufferHeightPx] buffer, when the underlying `android.graphics.Matrix` was
- *   axis-aligned (see `dev.pointtosky.mobile.ar.camera.ImageProxyFrameMetadataSource`). `null` when
- *   unavailable or not axis-aligned — never guessed. **Not** the same coordinate space as
+ *   [bufferWidthPx] × [bufferHeightPx] buffer, preserving all 9 reported values (see
+ *   `dev.pointtosky.mobile.ar.camera.ImageProxyFrameMetadataSource`) — never collapsed to an
+ *   axis-aligned-only approximation. `null` only when the underlying matrix is entirely unavailable.
+ *   A present-but-geometrically-unsupported matrix (see [classifySensorToBufferMatrix]) is still
+ *   carried here in full; it is [dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics]'s
+ *   job to classify and reject it explicitly, never this type's. **Not** the same coordinate space as
  *   [cropRectLeftPx]/etc above, which are already in *this frame's own buffer* pixel coordinates;
  *   see [ActiveArraySensorCropRegion]'s KDoc for why the two must never be conflated.
  */
@@ -48,7 +51,7 @@ data class CameraFrameMetadata(
     val cropRectTopPx: Int? = null,
     val cropRectRightPx: Int? = null,
     val cropRectBottomPx: Int? = null,
-    val sensorToBufferTransform: SensorToBufferTransform? = null,
+    val sensorToBufferTransform: SensorToBufferMatrix3? = null,
 ) {
     init {
         require(timestampNanos >= 0L) { "timestampNanos must be non-negative; was $timestampNanos" }

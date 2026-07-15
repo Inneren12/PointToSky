@@ -1,6 +1,6 @@
 package dev.pointtosky.mobile.ar.camera
 
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 
 /**
  * Plain-value fake [CloseableFrameMetadataSource] (CAM-1c) — has no `planes`/`image`/pixel concept
@@ -16,7 +16,7 @@ class FakeFrameMetadataSource(
     override val cropRectTopPx: Int? = null,
     override val cropRectRightPx: Int? = null,
     override val cropRectBottomPx: Int? = null,
-    override val sensorToBufferTransform: SensorToBufferTransform? = null,
+    override val sensorToBufferTransform: SensorToBufferMatrix3? = null,
 ) : CloseableFrameMetadataSource {
     var closeCount: Int = 0
         private set

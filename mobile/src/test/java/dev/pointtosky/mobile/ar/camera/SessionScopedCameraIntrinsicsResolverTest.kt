@@ -6,7 +6,8 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
 import java.lang.reflect.Proxy
 import kotlin.test.Test
@@ -57,7 +58,7 @@ class SessionScopedCameraIntrinsicsResolverTest {
             cameraInfo: CameraInfo,
             imageWidthPx: Int?,
             imageHeightPx: Int?,
-            sensorToBufferTransform: SensorToBufferTransform?,
+            sensorToBufferTransform: SensorToBufferMatrix3?,
         ): CameraIntrinsicsResolution {
             callCount++
             lastImageWidthPx = imageWidthPx
@@ -143,7 +144,7 @@ class SessionScopedCameraIntrinsicsResolverTest {
                     cameraInfo: CameraInfo,
                     imageWidthPx: Int?,
                     imageHeightPx: Int?,
-                    sensorToBufferTransform: SensorToBufferTransform?,
+                    sensorToBufferTransform: SensorToBufferMatrix3?,
                 ): CameraIntrinsicsResolution = throw CancellationException("cancelled")
             }
         val resolver = SessionScopedCameraIntrinsicsResolver(provider)
@@ -192,6 +193,7 @@ class SessionScopedCameraIntrinsicsResolverTest {
             bufferCyPx = 240.0,
             quality = CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT,
             sensorToBufferMappingSource = CameraCalibrationDiagnostics.SENSOR_TO_BUFFER_MAPPING_SOURCE,
+            transformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
         )
 
     @Test

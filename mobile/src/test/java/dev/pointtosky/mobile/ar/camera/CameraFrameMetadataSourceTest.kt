@@ -1,6 +1,8 @@
 package dev.pointtosky.mobile.ar.camera
 
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
+import dev.pointtosky.core.astro.projection.camera.classifySensorToBufferMatrix
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -93,12 +95,12 @@ class CameraFrameMetadataSourceTest {
 
     @Test
     fun `sensorToBufferTransform maps through when present`() {
-        val transform = SensorToBufferTransform(scaleX = 0.5, scaleY = 0.5, translateXPx = -10.0, translateYPx = -20.0)
+        val transform = SensorToBufferMatrix3(0.5, 0.0, -10.0, 0.0, 0.5, -20.0, 0.0, 0.0, 1.0)
         val metadata = FakeFrameMetadataSource(sensorToBufferTransform = transform).toCameraFrameMetadata()
         assertEquals(transform, metadata.sensorToBufferTransform)
     }
 
-    // --- sensorToBufferTransformFromMatrixValues (CAM-2c) ---
+    // --- sensorToBufferTransformFromMatrixValues (CAM-2c, fix §1) ---
 
     /** `Matrix.getValues()` layout for an identity matrix: scaleX=scaleY=1, persp2=1, everything else 0. */
     private fun identityMatrixValues() = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
@@ -111,42 +113,49 @@ class CameraFrameMetadataSourceTest {
     ) = floatArrayOf(scaleX, 0f, translateX, 0f, scaleY, translateY, 0f, 0f, 1f)
 
     @Test
-    fun `an identity matrix converts to an identity SensorToBufferTransform`() {
+    fun `an identity matrix converts to an identity SensorToBufferMatrix3`() {
         val transform = assertNotNull(sensorToBufferTransformFromMatrixValues(identityMatrixValues()))
-        assertEquals(1.0, transform.scaleX)
-        assertEquals(1.0, transform.scaleY)
-        assertEquals(0.0, transform.translateXPx)
-        assertEquals(0.0, transform.translateYPx)
+        assertEquals(1.0, transform.m00)
+        assertEquals(1.0, transform.m11)
+        assertEquals(0.0, transform.m02)
+        assertEquals(0.0, transform.m12)
+        assertEquals(SensorToBufferTransformClass.AXIS_ALIGNED_0, classifySensorToBufferMatrix(transform))
     }
 
     @Test
     fun `a pure scale-and-translate matrix converts exactly`() {
         val values = scaleTranslateMatrixValues(scaleX = 0.15873f, scaleY = 0.15873f, translateX = -100f, translateY = -50f)
         val transform = assertNotNull(sensorToBufferTransformFromMatrixValues(values))
-        assertEquals(0.15873f.toDouble(), transform.scaleX)
-        assertEquals(0.15873f.toDouble(), transform.scaleY)
-        assertEquals(-100f.toDouble(), transform.translateXPx)
-        assertEquals(-50f.toDouble(), transform.translateYPx)
+        assertEquals(0.15873f.toDouble(), transform.m00)
+        assertEquals(0.15873f.toDouble(), transform.m11)
+        assertEquals(-100f.toDouble(), transform.m02)
+        assertEquals(-50f.toDouble(), transform.m12)
     }
 
     @Test
-    fun `a non-zero skew component is rejected as null (not axis-aligned)`() {
+    fun `a non-zero skew component is preserved, not rejected - it is no longer assumed axis-aligned`() {
         val skewedX = floatArrayOf(1f, 0.2f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
-        val skewedY = floatArrayOf(1f, 0f, 0f, 0.2f, 1f, 0f, 0f, 0f, 1f)
-        assertNull(sensorToBufferTransformFromMatrixValues(skewedX))
-        assertNull(sensorToBufferTransformFromMatrixValues(skewedY))
+        val transform = assertNotNull(sensorToBufferTransformFromMatrixValues(skewedX))
+        assertEquals(0.2f.toDouble(), transform.m01)
+        // A genuine shear like this is not one of the four classes this codebase can compose into a
+        // pinhole model - classification (not this pure conversion) is what rejects it.
+        assertEquals(SensorToBufferTransformClass.GENERAL_AFFINE_UNSUPPORTED, classifySensorToBufferMatrix(transform))
     }
 
     @Test
-    fun `a non-trivial perspective component is rejected as null (not affine)`() {
+    fun `a non-trivial perspective component is preserved and classifies as PROJECTIVE_UNSUPPORTED`() {
         val perspective = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0.001f, 0f, 1f)
-        assertNull(sensorToBufferTransformFromMatrixValues(perspective))
+        val transform = assertNotNull(sensorToBufferTransformFromMatrixValues(perspective))
+        assertEquals(SensorToBufferTransformClass.PROJECTIVE_UNSUPPORTED, classifySensorToBufferMatrix(transform))
     }
 
     @Test
-    fun `zero or negative scale is rejected as null`() {
-        assertNull(sensorToBufferTransformFromMatrixValues(scaleTranslateMatrixValues(0f, 1f, 0f, 0f)))
-        assertNull(sensorToBufferTransformFromMatrixValues(scaleTranslateMatrixValues(1f, -1f, 0f, 0f)))
+    fun `zero or negative scale is preserved and classifies correctly`() {
+        val zeroScale = assertNotNull(sensorToBufferTransformFromMatrixValues(scaleTranslateMatrixValues(0f, 1f, 0f, 0f)))
+        assertEquals(SensorToBufferTransformClass.SINGULAR, classifySensorToBufferMatrix(zeroScale))
+
+        val negativeScale = assertNotNull(sensorToBufferTransformFromMatrixValues(scaleTranslateMatrixValues(1f, -1f, 0f, 0f)))
+        assertEquals(SensorToBufferTransformClass.MIRRORED, classifySensorToBufferMatrix(negativeScale))
     }
 
     @Test
@@ -156,9 +165,10 @@ class CameraFrameMetadataSourceTest {
     }
 
     @Test
-    fun `small skew within tolerance is still accepted (floating-point noise absorption)`() {
-        val nearlyAxisAligned = floatArrayOf(1f, 1e-6f, 0f, 1e-6f, 1f, 0f, 0f, 0f, 1f)
-        assertNotNull(sensorToBufferTransformFromMatrixValues(nearlyAxisAligned))
+    fun `a 90-degree axis permutation is preserved and classifies as ORTHOGONAL_90`() {
+        val rotated90 = floatArrayOf(0f, 1f, 0f, -1f, 0f, 1000f, 0f, 0f, 1f)
+        val transform = assertNotNull(sensorToBufferTransformFromMatrixValues(rotated90))
+        assertEquals(SensorToBufferTransformClass.ORTHOGONAL_90, classifySensorToBufferMatrix(transform))
     }
 
     @Test

@@ -1,10 +1,11 @@
 package dev.pointtosky.mobile.ar.camera
 
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-/** Pure JVM tests for [buildCameraCalibrationDiagnosticText] (CAM-2c §9). */
+/** Pure JVM tests for [buildCameraCalibrationDiagnosticText] (CAM-2c §9, fix §1/§3/§5). */
 class CameraCalibrationDiagnosticFormatTest {
     private val diagnostics =
         CameraCalibrationDiagnostics(
@@ -27,6 +28,10 @@ class CameraCalibrationDiagnosticFormatTest {
             bufferCyPx = 240.0,
             quality = CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT,
             sensorToBufferMappingSource = CameraCalibrationDiagnostics.SENSOR_TO_BUFFER_MAPPING_SOURCE,
+            transformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
+            cameraId = "0",
+            isLogicalMultiCamera = false,
+            physicalCameraIds = null,
         )
 
     @Test
@@ -46,6 +51,10 @@ class CameraCalibrationDiagnosticFormatTest {
         assertTrue(text.contains("240.0"))
         assertTrue(text.contains("APPROXIMATE_PRINCIPAL_POINT"))
         assertTrue(text.contains(CameraCalibrationDiagnostics.SENSOR_TO_BUFFER_MAPPING_SOURCE))
+        assertTrue(text.contains("AXIS_ALIGNED_0"))
+        assertTrue(text.contains("camera id: 0"))
+        assertTrue(text.contains("logical: false"))
+        assertTrue(text.contains("unavailable"))
     }
 
     @Test

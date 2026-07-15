@@ -1,14 +1,15 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
-import dev.pointtosky.core.astro.projection.camera.ActiveArraySensorCropRegion
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
+import dev.pointtosky.core.astro.projection.camera.MatrixIntrinsicsMappingResult
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.activeArrayIntrinsicsFromFocalLength
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
-import dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsToAnalysisBuffer
+import dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix
 import dev.pointtosky.core.astro.projection.camera.toCameraIntrinsics
 import java.time.Instant
 import kotlin.math.abs
@@ -53,8 +54,14 @@ class CalibratedAnalysisBufferProjectionTest {
                     activeArrayWidthPx = 4032,
                     activeArrayHeightPx = 3024,
                 )
-            val cropRegion = ActiveArraySensorCropRegion(0.0, 0.0, 4032.0, 3024.0)
-            val bufferValues = mapActiveArrayIntrinsicsToAnalysisBuffer(active, cropRegion, bufferWidthPx, bufferHeightPx)
+            val noCropMatrix =
+                SensorToBufferMatrix3(
+                    m00 = bufferWidthPx / 4032.0, m01 = 0.0, m02 = 0.0,
+                    m10 = 0.0, m11 = bufferHeightPx / 3024.0, m12 = 0.0,
+                    m20 = 0.0, m21 = 0.0, m22 = 1.0,
+                )
+            val mapping = mapActiveArrayIntrinsicsThroughMatrix(active, noCropMatrix, bufferWidthPx, bufferHeightPx)
+            val bufferValues = (mapping as MatrixIntrinsicsMappingResult.Mapped).values
             bufferValues.toCameraIntrinsics(
                 focalLengthMm = 3.6,
                 sensorWidthMm = 6.4,
@@ -170,5 +177,54 @@ class CalibratedAnalysisBufferProjectionTest {
         assertEquals(CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, calibratedIntrinsics.source)
         assertEquals(CameraIntrinsicsReference.AnalysisBuffer(bufferWidthPx, bufferHeightPx), calibratedIntrinsics.reference)
         assertNotNull(calibratedIntrinsics.quality)
+    }
+
+    // --- CAM-2c fix §7: at least four off-axis rays land at the exact expected buffer position ---
+
+    @Test
+    fun `four distinct off-axis rays all land at the exact tangent-formula-predicted buffer position`() {
+        val pinhole = pinholeFor(calibratedIntrinsics)
+        // East (positive azimuth offset) and west (negative) by two different amounts each - four
+        // genuinely distinct off-axis rays, all checked against the exact closed-form pinhole formula
+        // (fx*tan(angle)), not merely "roughly bigger" bounds.
+        listOf(-10.0, -5.0, 5.0, 10.0).forEach { azimuthOffsetDeg ->
+            val ray = rayAt(azimuthOffsetDeg)
+            val point = pinhole.project(ray.normalizedX, ray.normalizedY)
+            val expectedOffsetPx = pinhole.focalLengthXPx * tan(Math.toRadians(azimuthOffsetDeg))
+            assertEquals(bufferWidthPx / 2.0 + expectedOffsetPx, point.x, eps, "azimuthOffsetDeg=$azimuthOffsetDeg")
+            assertEquals(bufferHeightPx / 2.0, point.y, eps, "azimuthOffsetDeg=$azimuthOffsetDeg (no vertical offset expected)")
+        }
+    }
+
+    // --- CAM-2c fix §7: rotationDegrees 0/90/180/270 all preserve the same physical scene mapping ---
+
+    @Test
+    fun `rotationDegrees 0, 90, 180, and 270 all project the forward-axis star to the viewport centre`() {
+        val (star, context) = forwardAxisStar()
+        // The camera's own analyzed buffer is never swapped for rotationDegrees (CameraFrameMetadata's
+        // own contract), but the viewport (physical screen) genuinely does swap between landscape and
+        // portrait - this is exactly the real CameraPreview.kt binding shape.
+        listOf(0, 90, 180, 270).forEach { rotationDegrees ->
+            val (viewportWidthPx, viewportHeightPx) =
+                if (rotationDegrees == 90 || rotationDegrees == 270) bufferHeightPx to bufferWidthPx else bufferWidthPx to bufferHeightPx
+            val geometry =
+                buildTestGeometry(
+                    bufferWidthPx = bufferWidthPx,
+                    bufferHeightPx = bufferHeightPx,
+                    rotationDegrees = rotationDegrees,
+                    viewportWidthPx = viewportWidthPx,
+                    viewportHeightPx = viewportHeightPx,
+                    rotationMatrix = NORTH_UPRIGHT_ROTATION_MATRIX,
+                    intrinsicsResolution = CameraIntrinsicsResolution.Resolved(calibratedIntrinsics),
+                )
+
+            val result = assertIs<StarPredictionBatchResult.Ready>(projectStars(listOf(star), context, geometry))
+            val projection = result.projections.single()
+
+            assertEquals(PredictedStarClassification.VISIBLE_IN_VIEWPORT, projection.classification, "rotationDegrees=$rotationDegrees")
+            val displayPoint = assertNotNull(projection.displayPoint, "rotationDegrees=$rotationDegrees")
+            assertEquals(viewportWidthPx / 2.0, displayPoint.x, eps, "rotationDegrees=$rotationDegrees")
+            assertEquals(viewportHeightPx / 2.0, displayPoint.y, eps, "rotationDegrees=$rotationDegrees")
+        }
     }
 }

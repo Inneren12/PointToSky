@@ -8,7 +8,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult
 import dev.pointtosky.core.astro.projection.camera.FrameRotationPairingResult
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.TimedRotationSample
 import dev.pointtosky.core.astro.projection.camera.TimestampSyncConfig
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
@@ -26,8 +26,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * JVM tests for [CameraSessionIntrinsicsCoordinator] (CAM-1f): order-independent
- * CameraInfo/first-frame coordination, once-per-session resolution, fallback aspect-ratio
+ * JVM tests for [CameraSessionIntrinsicsCoordinator] (CAM-1f; CAM-2c fix §4): order-independent
+ * CameraInfo/first-frame coordination, the coherent-input gate (a usable sensor-to-buffer transform
+ * from the SAME frame as the dimensions used), once-per-session resolution, fallback aspect-ratio
  * correctness, and disposal races. Uses a real [SessionScopedCameraIntrinsicsResolver] backed by a
  * fake [CameraIntrinsicsProvider], and a `java.lang.reflect.Proxy`-backed [CameraInfo] whose
  * methods are never actually invoked — no CameraX mocking framework, no real camera.
@@ -41,15 +42,23 @@ class CameraSessionIntrinsicsCoordinatorTest {
             error("CameraInfo methods must never be invoked by a fake CameraIntrinsicsProvider")
         } as CameraInfo
 
+    /** A plain axis-aligned, always-usable sensor-to-buffer matrix - the default for most tests below. */
+    private fun usableTransform() = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+
+    /** A single-axis mirror - classifies as MIRRORED, one of the four *unsupported* classes. */
+    private fun unsupportedTransform() = SensorToBufferMatrix3(-1.0, 0.0, 100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+
     private fun frame(
         widthPx: Int,
         heightPx: Int,
         timestampNanos: Long = 1_000L,
+        sensorToBufferTransform: SensorToBufferMatrix3? = usableTransform(),
     ) = CameraFrameMetadata(
         timestampNanos = timestampNanos,
         bufferWidthPx = widthPx,
         bufferHeightPx = heightPx,
         rotationDegrees = 0,
+        sensorToBufferTransform = sensorToBufferTransform,
     )
 
     private val calibrated =
@@ -74,16 +83,19 @@ class CameraSessionIntrinsicsCoordinatorTest {
             private set
         var lastImageHeightPx: Int? = null
             private set
+        var lastSensorToBufferTransform: SensorToBufferMatrix3? = null
+            private set
 
         override fun resolve(
             cameraInfo: CameraInfo,
             imageWidthPx: Int?,
             imageHeightPx: Int?,
-            sensorToBufferTransform: SensorToBufferTransform?,
+            sensorToBufferTransform: SensorToBufferMatrix3?,
         ): CameraIntrinsicsResolution {
             callCount++
             lastImageWidthPx = imageWidthPx
             lastImageHeightPx = imageHeightPx
+            lastSensorToBufferTransform = sensorToBufferTransform
             return result()
         }
     }
@@ -94,7 +106,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
                 cameraInfo: CameraInfo,
                 imageWidthPx: Int?,
                 imageHeightPx: Int?,
-                sensorToBufferTransform: SensorToBufferTransform?,
+                sensorToBufferTransform: SensorToBufferMatrix3?,
             ): CameraIntrinsicsResolution =
                 CameraIntrinsicsResolution(
                     legacyFallbackCameraIntrinsics(imageWidthPx = imageWidthPx, imageHeightPx = imageHeightPx),
@@ -114,6 +126,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
         coordinator.onCameraInfo(fakeCameraInfo())
         assertEquals(0, provider.callCount)
         assertNull(published)
+        assertEquals(CameraSessionIntrinsicsCoordinatorState.WAITING_FOR_FRAME, coordinator.state)
 
         coordinator.onFrameMetadata(frame(1920, 1080))
 
@@ -121,6 +134,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
         assertEquals(1920, provider.lastImageWidthPx)
         assertEquals(1080, provider.lastImageHeightPx)
         assertIs<CoreCameraIntrinsicsResolution.Resolved>(published)
+        assertEquals(CameraSessionIntrinsicsCoordinatorState.RESOLVED, coordinator.state)
     }
 
     @Test
@@ -133,6 +147,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
         coordinator.onFrameMetadata(frame(1280, 720))
         assertEquals(0, provider.callCount)
         assertNull(published)
+        assertEquals(CameraSessionIntrinsicsCoordinatorState.WAITING_FOR_CAMERA_INFO, coordinator.state)
 
         coordinator.onCameraInfo(fakeCameraInfo())
 
@@ -149,7 +164,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
         val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
 
         coordinator.onFrameMetadata(frame(1920, 1080))
-        coordinator.onFrameMetadata(frame(1280, 720)) // must not override the first
+        coordinator.onFrameMetadata(frame(1280, 720)) // must not override the first usable frame
         coordinator.onFrameMetadata(frame(640, 480))
         coordinator.onCameraInfo(fakeCameraInfo())
         coordinator.onFrameMetadata(frame(100, 100)) // after resolution already claimed - must not re-trigger
@@ -233,7 +248,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
     fun `the fallback resolution published to CameraSessionGeometryProvider reflects the real frame dimensions`() {
         val resolver = SessionScopedCameraIntrinsicsResolver(fallbackProvider)
         val geometryProvider = CameraSessionGeometryProvider()
-        val coordinator = CameraSessionIntrinsicsCoordinator(resolver, geometryProvider::onIntrinsicsResolved)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver, onResolved = geometryProvider::onIntrinsicsResolved)
         val f = frame(1920, 1080)
 
         geometryProvider.onViewportChanged(1080, 1920)
@@ -255,6 +270,94 @@ class CameraSessionIntrinsicsCoordinatorTest {
         val ready = assertIs<CameraSessionGeometryResult.Ready>(geometryProvider.state.value)
         val expected16x9 = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = 1080)
         assertEquals(expected16x9.horizontalFovDeg, ready.geometry.intrinsics.intrinsics.horizontalFovDeg, 1e-9)
+    }
+
+    // --- CAM-2c fix §4: the coherent-input gate ------------------------------------------------
+
+    @Test
+    fun `a null transform on the first frame does not resolve - a usable transform on the second frame does, using that frame's own dimensions`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080, sensorToBufferTransform = null))
+        assertEquals(0, provider.callCount)
+        assertEquals(CameraSessionIntrinsicsCoordinatorState.WAITING_FOR_USABLE_SENSOR_TO_BUFFER_TRANSFORM, coordinator.state)
+
+        coordinator.onFrameMetadata(frame(1280, 720, sensorToBufferTransform = usableTransform()))
+
+        assertEquals(1, provider.callCount)
+        assertEquals(1280, provider.lastImageWidthPx)
+        assertEquals(720, provider.lastImageHeightPx)
+        assertEquals(usableTransform(), provider.lastSensorToBufferTransform)
+    }
+
+    @Test
+    fun `an unsupported-class transform on the first frame is skipped - a supported transform on the second frame is used`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080, sensorToBufferTransform = unsupportedTransform()))
+        assertEquals(0, provider.callCount)
+
+        coordinator.onFrameMetadata(frame(1280, 720, sensorToBufferTransform = usableTransform()))
+
+        assertEquals(1, provider.callCount)
+        assertEquals(1280, provider.lastImageWidthPx)
+        assertEquals(720, provider.lastImageHeightPx)
+    }
+
+    @Test
+    fun `no usable transform before the bound falls back to publishing with a null transform, using the most recent frame's dimensions`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver, maxFramesWaitingForUsableTransform = 2) {}
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080, sensorToBufferTransform = null))
+        assertEquals(0, provider.callCount)
+
+        coordinator.onFrameMetadata(frame(1280, 720, sensorToBufferTransform = unsupportedTransform()))
+
+        // The bound (2 frames) is reached with no usable transform ever found - resolves with the
+        // most recent frame's dimensions and a null transform, exactly like the pre-CAM-2c CAM-1b path.
+        assertEquals(1, provider.callCount)
+        assertEquals(1280, provider.lastImageWidthPx)
+        assertEquals(720, provider.lastImageHeightPx)
+        assertNull(provider.lastSensorToBufferTransform)
+    }
+
+    @Test
+    fun `dispose while waiting for a usable transform prevents any later publication`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        var published: CoreCameraIntrinsicsResolution? = null
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver, maxFramesWaitingForUsableTransform = 10) { published = it }
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080, sensorToBufferTransform = null))
+        coordinator.onFrameMetadata(frame(1280, 720, sensorToBufferTransform = unsupportedTransform()))
+        assertEquals(0, provider.callCount)
+
+        coordinator.dispose()
+        // A later, usable frame arriving after dispose() must never resolve or publish.
+        coordinator.onFrameMetadata(frame(640, 480, sensorToBufferTransform = usableTransform()))
+
+        assertEquals(0, provider.callCount)
+        assertNull(published)
+        assertEquals(CameraSessionIntrinsicsCoordinatorState.DISPOSED, coordinator.state)
+    }
+
+    // --- Observable state -----------------------------------------------------------------------
+
+    @Test
+    fun `state reflects WAITING_FOR_CAMERA_INFO before anything arrives`() {
+        val resolver = SessionScopedCameraIntrinsicsResolver(CountingFakeProvider { CameraIntrinsicsResolution(calibrated) })
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+        assertEquals(CameraSessionIntrinsicsCoordinatorState.WAITING_FOR_CAMERA_INFO, coordinator.state)
     }
 
     // --- Disposal / races ----------------------------------------------------------------------
@@ -349,7 +452,7 @@ class CameraSessionIntrinsicsCoordinatorTest {
                         cameraInfo: CameraInfo,
                         imageWidthPx: Int?,
                         imageHeightPx: Int?,
-                        sensorToBufferTransform: SensorToBufferTransform?,
+                        sensorToBufferTransform: SensorToBufferMatrix3?,
                     ): CameraIntrinsicsResolution {
                         resolveEntered.countDown()
                         allowResolveToFinish.await(5, TimeUnit.SECONDS)

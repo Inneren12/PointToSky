@@ -29,7 +29,9 @@ fun buildCameraCalibrationDiagnosticText(diagnostics: CameraCalibrationDiagnosti
             "${formatPx(diagnostics.cropRightPx)},${formatPx(diagnostics.cropBottomPx)}]"
     lines += "buffer fx/fy: ${formatPx(diagnostics.bufferFxPx)}, ${formatPx(diagnostics.bufferFyPx)}"
     lines += "buffer cx/cy: ${formatPx(diagnostics.bufferCxPx)}, ${formatPx(diagnostics.bufferCyPx)}"
-    lines += "quality: ${diagnostics.quality.name}"
-    lines += "sensor→buffer: ${diagnostics.sensorToBufferMappingSource}"
+    lines += "quality: ${diagnostics.quality.name}" + (diagnostics.skewDiagnosticReason?.let { " ($it)" } ?: "")
+    lines += "sensor→buffer: ${diagnostics.sensorToBufferMappingSource} (${diagnostics.transformClass.name})"
+    lines += "camera id: ${diagnostics.cameraId ?: "unknown"}, logical: ${diagnostics.isLogicalMultiCamera}"
+    lines += "physical camera ids: ${diagnostics.physicalCameraIds?.sorted()?.joinToString() ?: "unavailable"}"
     return lines.joinToString(separator = "\n")
 }

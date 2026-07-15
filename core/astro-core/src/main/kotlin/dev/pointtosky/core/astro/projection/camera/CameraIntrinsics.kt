@@ -147,6 +147,20 @@ enum class CameraIntrinsicsQuality {
  * [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS] (either [reference] variant), `null` for every
  * other source — see [CameraIntrinsicsQuality]'s KDoc.
  *
+ * [axisSwapped]/[negateXInput]/[negateYInput] (CAM-2c fix §1/§2) record how the real Camera2
+ * `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-to-buffer position mapping (a
+ * `dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3`, classified by
+ * `classifySensorToBufferMatrix`) related active-array pixel axes to this buffer's own pixel axes,
+ * whenever that relationship was anything other than the identity-like `AXIS_ALIGNED_0` case. All
+ * three default to `false` (the [CameraIntrinsicsSource.LEGACY_FALLBACK]/pre-CAM-2c-fix behavior) and
+ * are only ever non-default for [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS] values referencing
+ * [CameraIntrinsicsReference.AnalysisBuffer] — see
+ * `dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel`'s KDoc for exactly
+ * how [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.forGeometry] wires
+ * these into [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.project],
+ * and for the proof that this can never double up with the separate, untouched
+ * `frame.rotationDegrees`-driven ray-direction rotation.
+ *
  * @property horizontalFovDeg full horizontal field of view, degrees, `0 < fov < 180`.
  * @property verticalFovDeg full vertical field of view, degrees, `0 < fov < 180`.
  * @property focalLengthMm physical focal length in millimetres, when known. Finite and strictly
@@ -165,6 +179,16 @@ enum class CameraIntrinsicsQuality {
  * @property reference which pixel region the FOV was measured over; see [CameraIntrinsicsReference].
  * @property quality how confidently the numbers were measured, when meaningful; see
  *   [CameraIntrinsicsQuality]. Always `null` except for [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS].
+ * @property axisSwapped `true` when the sensor-to-buffer position map swapped which active-array axis
+ *   drives which buffer axis (an `ORTHOGONAL_90`/`ORTHOGONAL_270` classification). `false` (the
+ *   default) for every other case, including every [CameraIntrinsicsSource] other than
+ *   [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS].
+ * @property negateXInput `true` when the coefficient driving this value's buffer-X pinhole equation
+ *   came out negative before sign-normalization (see
+ *   `dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix`), meaning the
+ *   normalized ray input that feeds it must be negated at projection time to keep
+ *   [horizontalFovDeg]/the stored focal length meaningfully positive.
+ * @property negateYInput the buffer-Y analogue of [negateXInput].
  */
 data class CameraIntrinsics(
     val horizontalFovDeg: Double,
@@ -177,6 +201,9 @@ data class CameraIntrinsics(
     val source: CameraIntrinsicsSource,
     val reference: CameraIntrinsicsReference,
     val quality: CameraIntrinsicsQuality? = null,
+    val axisSwapped: Boolean = false,
+    val negateXInput: Boolean = false,
+    val negateYInput: Boolean = false,
 ) {
     init {
         requireValidFovDeg(horizontalFovDeg, "horizontalFovDeg")
@@ -210,6 +237,10 @@ data class CameraIntrinsics(
         }
         require(quality == null || source == CameraIntrinsicsSource.CAMERA_CHARACTERISTICS) {
             "quality must be null unless source=CAMERA_CHARACTERISTICS; was quality=$quality, source=$source"
+        }
+        require(!axisSwapped && !negateXInput && !negateYInput || reference is CameraIntrinsicsReference.AnalysisBuffer) {
+            "axisSwapped/negateXInput/negateYInput must be false unless reference=AnalysisBuffer; was " +
+                "axisSwapped=$axisSwapped, negateXInput=$negateXInput, negateYInput=$negateYInput, reference=$reference"
         }
     }
 

@@ -3,12 +3,14 @@ package dev.pointtosky.mobile.ar.camera
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -25,11 +27,10 @@ class AnalysisBufferIntrinsicsResolverTest {
 
     /** Maps the full 4032x3024 active array onto the 640x480 buffer: a pure uniform 0.15873x downscale, no crop. */
     private val fullFrameTransform =
-        SensorToBufferTransform(
-            scaleX = bufferWidthPx / 4032.0,
-            scaleY = bufferHeightPx / 3024.0,
-            translateXPx = 0.0,
-            translateYPx = 0.0,
+        SensorToBufferMatrix3(
+            m00 = bufferWidthPx / 4032.0, m01 = 0.0, m02 = 0.0,
+            m10 = 0.0, m11 = bufferHeightPx / 3024.0, m12 = 0.0,
+            m20 = 0.0, m21 = 0.0, m22 = 1.0,
         )
 
     private fun sourceOf(
@@ -46,6 +47,8 @@ class AnalysisBufferIntrinsicsResolverTest {
         preCorrectionActiveArrayBottomPx: Int? = null,
         lensIntrinsicCalibration: FloatArray? = null,
         isLogicalMultiCamera: Boolean = false,
+        cameraId: String? = null,
+        physicalCameraIds: Set<String>? = null,
     ) = CameraCharacteristicsSource {
         CameraCharacteristicsSnapshot(
             availableFocalLengthsMm = focalLengthsMm,
@@ -61,12 +64,14 @@ class AnalysisBufferIntrinsicsResolverTest {
             preCorrectionActiveArrayBottomPx = preCorrectionActiveArrayBottomPx,
             lensIntrinsicCalibration = lensIntrinsicCalibration,
             isLogicalMultiCamera = isLogicalMultiCamera,
+            cameraId = cameraId,
+            physicalCameraIds = physicalCameraIds,
         )
     }
 
     private fun resolve(
         source: CameraCharacteristicsSource,
-        transform: SensorToBufferTransform? = fullFrameTransform,
+        transform: SensorToBufferMatrix3? = fullFrameTransform,
     ) = resolveAnalysisBufferIntrinsics(source, transform, bufferWidthPx, bufferHeightPx)
 
     // --- Resolved path (no LENS_INTRINSIC_CALIBRATION - focal-length derived) ---
@@ -86,12 +91,13 @@ class AnalysisBufferIntrinsicsResolverTest {
     @Test
     fun `an asymmetric crop shifts the resolved principal point off the buffer centre`() {
         // Crop the right/bottom half of the active array (2016..4032, 1512..3024) onto the same buffer.
+        val sx = bufferWidthPx / 2016.0
+        val sy = bufferHeightPx / 1512.0
         val croppedTransform =
-            SensorToBufferTransform(
-                scaleX = bufferWidthPx / 2016.0,
-                scaleY = bufferHeightPx / 1512.0,
-                translateXPx = -(2016.0 * (bufferWidthPx / 2016.0)),
-                translateYPx = -(1512.0 * (bufferHeightPx / 1512.0)),
+            SensorToBufferMatrix3(
+                m00 = sx, m01 = 0.0, m02 = -(2016.0 * sx),
+                m10 = 0.0, m11 = sy, m12 = -(1512.0 * sy),
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
             )
 
         val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(sourceOf(), croppedTransform))
@@ -109,8 +115,8 @@ class AnalysisBufferIntrinsicsResolverTest {
         val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(sourceOf(lensIntrinsicCalibration = calibration)))
 
         assertEquals(CameraIntrinsicsQuality.CALIBRATED, resolved.intrinsics.quality)
-        val expectedCx = 2100.0 * fullFrameTransform.scaleX
-        val expectedCy = 1400.0 * fullFrameTransform.scaleY
+        val expectedCx = 2100.0 * fullFrameTransform.m00
+        val expectedCy = 1400.0 * fullFrameTransform.m11
         assertEquals(expectedCx, resolved.intrinsics.principalPointXPx!!, eps)
         assertEquals(expectedCy, resolved.intrinsics.principalPointYPx!!, eps)
     }
@@ -168,8 +174,20 @@ class AnalysisBufferIntrinsicsResolverTest {
     @Test
     fun `a logical multi-camera is rejected outright, before any other metadata is trusted`() {
         assertEquals(
-            AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping,
+            AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping(null, null),
             resolve(sourceOf(isLogicalMultiCamera = true)),
+        )
+    }
+
+    @Test
+    fun `a logical multi-camera rejection carries the camera id and physical camera ids for diagnostics`() {
+        val result =
+            resolve(
+                sourceOf(isLogicalMultiCamera = true, cameraId = "0", physicalCameraIds = setOf("2", "3")),
+            )
+        assertEquals(
+            AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping("0", setOf("2", "3")),
+            result,
         )
     }
 
@@ -229,9 +247,150 @@ class AnalysisBufferIntrinsicsResolverTest {
     @Test
     fun `a crop region outside the active array bounds is reported as InvalidMetadata`() {
         // A transform whose inverted crop region extends past the 4032-wide active array.
-        val badTransform = SensorToBufferTransform(scaleX = bufferWidthPx / 5000.0, scaleY = bufferHeightPx / 3024.0, translateXPx = 0.0, translateYPx = 0.0)
+        val badTransform =
+            SensorToBufferMatrix3(
+                m00 = bufferWidthPx / 5000.0, m01 = 0.0, m02 = 0.0,
+                m10 = 0.0, m11 = bufferHeightPx / 3024.0, m12 = 0.0,
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
+            )
         val result = assertIs<AnalysisBufferIntrinsicsResolution.InvalidMetadata>(resolve(sourceOf(), badTransform))
         assertEquals(AnalysisBufferIntrinsicsInvalidMetadataReason.CROP_REGION_INVALID, result.reason)
+    }
+
+    // --- CAM-2c fix §1: unsupported sensor-to-buffer transform classes ---
+
+    @Test
+    fun `a mirrored sensor-to-buffer matrix is reported as UnsupportedSensorToBufferTransform`() {
+        val mirrored =
+            SensorToBufferMatrix3(
+                m00 = -(bufferWidthPx / 4032.0), m01 = 0.0, m02 = bufferWidthPx.toDouble(),
+                m10 = 0.0, m11 = bufferHeightPx / 3024.0, m12 = 0.0,
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
+            )
+        val result = assertIs<AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform>(resolve(sourceOf(), mirrored))
+        assertEquals(SensorToBufferTransformClass.MIRRORED, result.transformClass)
+    }
+
+    @Test
+    fun `a general-affine (sheared) sensor-to-buffer matrix is reported as UnsupportedSensorToBufferTransform`() {
+        val sheared = SensorToBufferMatrix3(2.0, 1.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 1.0)
+        val result = assertIs<AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform>(resolve(sourceOf(), sheared))
+        assertEquals(SensorToBufferTransformClass.GENERAL_AFFINE_UNSUPPORTED, result.transformClass)
+    }
+
+    @Test
+    fun `a projective sensor-to-buffer matrix is reported as UnsupportedSensorToBufferTransform`() {
+        val projective = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.01, 0.0, 1.0)
+        val result = assertIs<AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform>(resolve(sourceOf(), projective))
+        assertEquals(SensorToBufferTransformClass.PROJECTIVE_UNSUPPORTED, result.transformClass)
+    }
+
+    // --- CAM-2c fix §6: non-zero active-array / pre-correction-active-array origins ---
+
+    @Test
+    fun `a non-zero active array origin with a matching non-zero pre-correction origin still yields CALIBRATED quality`() {
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, 0f)
+        val source =
+            sourceOf(
+                activeArrayLeftPx = 100,
+                activeArrayTopPx = 50,
+                activeArrayRightPx = 4132,
+                activeArrayBottomPx = 3074,
+                lensIntrinsicCalibration = calibration,
+                preCorrectionActiveArrayLeftPx = 100,
+                preCorrectionActiveArrayTopPx = 50,
+                preCorrectionActiveArrayRightPx = 4132,
+                preCorrectionActiveArrayBottomPx = 3074,
+            )
+
+        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(source))
+        assertEquals(CameraIntrinsicsQuality.CALIBRATED, resolved.intrinsics.quality)
+    }
+
+    @Test
+    fun `a non-zero active array origin with a differently-offset pre-correction origin rejects calibration - same size is not enough`() {
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, 0f)
+        val source =
+            sourceOf(
+                activeArrayLeftPx = 100,
+                activeArrayTopPx = 50,
+                activeArrayRightPx = 4132,
+                activeArrayBottomPx = 3074,
+                lensIntrinsicCalibration = calibration,
+                // Same width/height (4032x3024) as the active array above, but a different origin.
+                preCorrectionActiveArrayLeftPx = 90,
+                preCorrectionActiveArrayTopPx = 40,
+                preCorrectionActiveArrayRightPx = 4122,
+                preCorrectionActiveArrayBottomPx = 3064,
+            )
+
+        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(source))
+        assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
+    }
+
+    @Test
+    fun `a 90-degree axis-permuted sensor-to-buffer matrix still resolves - rotation alone is not rejected`() {
+        // bufferX = activeY * sy', bufferY = (4032 - activeX) * sx' - a genuine 90-degree position
+        // rotation mapping the full 4032x3024 active array, with no crop, onto a 480x640 (portrait)
+        // buffer. Note this portrait buffer's own width/height (480x640) - not this class's
+        // landscape bufferWidthPx/bufferHeightPx (640x480) fields - drive the matrix below; mixing
+        // the two up is exactly the kind of bug a genuinely swapped-axis matrix needs distinct
+        // width/height scale factors to catch.
+        val portraitBufferWidthPx = 480
+        val portraitBufferHeightPx = 640
+        val matrix =
+            SensorToBufferMatrix3(
+                m00 = 0.0, m01 = portraitBufferWidthPx / 3024.0, m02 = 0.0,
+                m10 = -(portraitBufferHeightPx / 4032.0), m11 = 0.0, m12 = portraitBufferHeightPx.toDouble(),
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
+            )
+        val result =
+            resolveAnalysisBufferIntrinsics(sourceOf(), matrix, portraitBufferWidthPx, portraitBufferHeightPx)
+        assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(result)
+    }
+
+    // --- CAM-2c fix §3: LENS_INTRINSIC_CALIBRATION skew tolerance ---
+
+    @Test
+    fun `calibration skew within tolerance is used as CALIBRATED`() {
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, 0.1f)
+        assertTrue(kotlin.math.abs(calibration[4]) <= INTRINSIC_SKEW_TOLERANCE_PX)
+
+        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(sourceOf(lensIntrinsicCalibration = calibration)))
+        assertEquals(CameraIntrinsicsQuality.CALIBRATED, resolved.intrinsics.quality)
+        assertNull(resolved.diagnostics.skewDiagnosticReason)
+    }
+
+    @Test
+    fun `calibration skew exceeding tolerance rejects the calibrated K and records a diagnostic reason`() {
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, 5.0f)
+        assertTrue(kotlin.math.abs(calibration[4]) > INTRINSIC_SKEW_TOLERANCE_PX)
+
+        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(sourceOf(lensIntrinsicCalibration = calibration)))
+        assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
+        assertEquals(CameraCalibrationDiagnosticReason.NON_ZERO_INTRINSIC_SKEW, resolved.diagnostics.skewDiagnosticReason)
+        assertEquals(bufferWidthPx / 2.0, resolved.intrinsics.principalPointXPx!!, eps)
+    }
+
+    @Test
+    fun `negative calibration skew exceeding tolerance is also rejected`() {
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, -5.0f)
+        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(sourceOf(lensIntrinsicCalibration = calibration)))
+        assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
+    }
+
+    @Test
+    fun `zero calibration skew is used as CALIBRATED`() {
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, 0.0f)
+        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(sourceOf(lensIntrinsicCalibration = calibration)))
+        assertEquals(CameraIntrinsicsQuality.CALIBRATED, resolved.intrinsics.quality)
+    }
+
+    @Test
+    fun `tiny float-noise calibration skew is still used as CALIBRATED`() {
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, 1e-4f)
+        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(sourceOf(lensIntrinsicCalibration = calibration)))
+        assertEquals(CameraIntrinsicsQuality.CALIBRATED, resolved.intrinsics.quality)
     }
 
     // --- resolveCameraIntrinsicsPreferringCalibration: calibrated-first orchestration ---

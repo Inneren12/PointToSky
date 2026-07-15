@@ -1,8 +1,9 @@
 package dev.pointtosky.mobile.ar.camera
 
+import android.content.Context
 import androidx.camera.core.CameraInfo
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 
 /**
  * Result of resolving [CameraIntrinsics] for a bound camera (CAM-1b).
@@ -38,7 +39,7 @@ interface CameraIntrinsicsProvider {
         cameraInfo: CameraInfo,
         imageWidthPx: Int?,
         imageHeightPx: Int?,
-        sensorToBufferTransform: SensorToBufferTransform? = null,
+        sensorToBufferTransform: SensorToBufferMatrix3? = null,
     ): CameraIntrinsicsResolution
 }
 
@@ -49,16 +50,26 @@ interface CameraIntrinsicsProvider {
  * `AnalysisBuffer` mapping ([resolveAnalysisBufferIntrinsics]) before falling back to the unchanged
  * CAM-1b [resolveCameraIntrinsics] — both take a [CameraCharacteristicsSource] so they can be
  * unit-tested without a real camera.
+ *
+ * [context] is used only for the read-only, diagnostics-only logical-camera provenance lookup (CAM-2c
+ * fix §5 "Option C") — a raw `android.hardware.camera2.CameraManager.getCameraCharacteristics(id)
+ * .getPhysicalCameraIds()` call [Camera2CharacteristicsSource] makes for the *already-bound* camera
+ * ID, never used to bind, select, or reconfigure any camera. `null` (the default) simply omits that
+ * one diagnostic field; every other CAM-2c behavior — including the [AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping]
+ * guard itself — is unaffected either way, since that guard depends only on
+ * `REQUEST_AVAILABLE_CAPABILITIES`, which is always available through the CameraX interop.
  */
-class Camera2CameraIntrinsicsProvider : CameraIntrinsicsProvider {
+class Camera2CameraIntrinsicsProvider(
+    private val context: Context? = null,
+) : CameraIntrinsicsProvider {
     override fun resolve(
         cameraInfo: CameraInfo,
         imageWidthPx: Int?,
         imageHeightPx: Int?,
-        sensorToBufferTransform: SensorToBufferTransform?,
+        sensorToBufferTransform: SensorToBufferMatrix3?,
     ): CameraIntrinsicsResolution =
         resolveCameraIntrinsicsPreferringCalibration(
-            Camera2CharacteristicsSource(cameraInfo),
+            Camera2CharacteristicsSource(cameraInfo, context),
             sensorToBufferTransform,
             imageWidthPx,
             imageHeightPx,

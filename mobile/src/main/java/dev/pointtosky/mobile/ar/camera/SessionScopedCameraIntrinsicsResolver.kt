@@ -1,7 +1,7 @@
 package dev.pointtosky.mobile.ar.camera
 
 import androidx.camera.core.CameraInfo
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransform
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
 
 /**
@@ -64,7 +64,7 @@ class SessionScopedCameraIntrinsicsResolver(
         cameraInfo: CameraInfo,
         imageWidthPx: Int,
         imageHeightPx: Int,
-        sensorToBufferTransform: SensorToBufferTransform? = null,
+        sensorToBufferTransform: SensorToBufferMatrix3? = null,
     ): CoreCameraIntrinsicsResolution {
         require(imageWidthPx > 0) { "imageWidthPx must be strictly positive; was $imageWidthPx" }
         require(imageHeightPx > 0) { "imageHeightPx must be strictly positive; was $imageHeightPx" }
