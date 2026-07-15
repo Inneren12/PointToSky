@@ -2,8 +2,10 @@ package dev.pointtosky.mobile.ar
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
@@ -44,37 +46,54 @@ private const val FAKE_LEGACY_CONTENT_TEST_TAG = "fake_legacy_content"
  * source set, see `ArOverlayScenarioTest`). [LegacySkyOverlay] is deliberately generic (a plain content
  * lambda, no `OverlayData` in its own signature) precisely so the *gating mechanism itself* - the thing
  * this test proves - is directly testable here regardless.
+ *
+ * All layers share one root `Box(Modifier.fillMaxSize())`, exactly like `ArScreen`'s own root `Box` -
+ * never several independently-sized top-level composables. [PredictedStarMarkersCanvas] and
+ * [LegacySkyOverlay] are each given `Modifier.fillMaxSize()` (as `ArScreen` itself passes), since neither
+ * assigns its own dimensions - an unsized `Canvas`/`Box` measures to 0x0 inside `ComponentActivity`'s
+ * root and would fail `assertIsDisplayed` (a real, non-zero layout bounds check) even though the node
+ * still exists in the semantics tree. [Reticle] is centered the same way `ArScreen` centers it.
  */
 @Composable
 private fun ArLegacyOverlayIsolationTestHost(
     showLegacyOverlay: Boolean,
     cam2bState: PredictedStarOverlayState,
 ) {
-    if (showLegacyOverlay) {
-        LegacySkyOverlay {
-            Box(Modifier.testTag(FAKE_LEGACY_CONTENT_TEST_TAG).size(4.dp))
+    Box(Modifier.fillMaxSize()) {
+        if (showLegacyOverlay) {
+            LegacySkyOverlay(modifier = Modifier.fillMaxSize()) {
+                Box(Modifier.testTag(FAKE_LEGACY_CONTENT_TEST_TAG).size(4.dp))
+            }
         }
+
+        if (cam2bState is PredictedStarOverlayState.Ready) {
+            PredictedStarMarkersCanvas(
+                points = cam2bState.points,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        Reticle(
+            modifier =
+                Modifier
+                    .align(Alignment.Center)
+                    .testTag(AR_RETICLE_TEST_TAG),
+        )
+
+        CamDiagnosticTopPanels(
+            cam1gSnapshot = null,
+            cam1gSessionId = 1L,
+            cam1gStatusTransitionCount = 0,
+            cam1gObservedFrameCount = 0L,
+            cam1gReadyBundleCount = 0L,
+            cam2bState = cam2bState,
+            detailsExpanded = false,
+            onDetailsExpandedChange = {},
+            controlsExpanded = false,
+            onControlsExpandedChange = {},
+            controlsContent = {},
+        )
     }
-
-    if (cam2bState is PredictedStarOverlayState.Ready) {
-        PredictedStarMarkersCanvas(points = cam2bState.points)
-    }
-
-    Reticle(modifier = Modifier.testTag(AR_RETICLE_TEST_TAG))
-
-    CamDiagnosticTopPanels(
-        cam1gSnapshot = null,
-        cam1gSessionId = 1L,
-        cam1gStatusTransitionCount = 0,
-        cam1gObservedFrameCount = 0L,
-        cam1gReadyBundleCount = 0L,
-        cam2bState = cam2bState,
-        detailsExpanded = false,
-        onDetailsExpandedChange = {},
-        controlsExpanded = false,
-        onControlsExpandedChange = {},
-        controlsContent = {},
-    )
 }
 
 /**
