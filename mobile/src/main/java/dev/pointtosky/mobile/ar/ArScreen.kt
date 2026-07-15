@@ -223,9 +223,9 @@ const val AR_RETICLE_TEST_TAG = "ar_reticle"
  * ([PredictedStarMarkersCanvas]), system nav/back/settings controls, the central aiming [Reticle], and
  * the bottom [InfoPanel]'s alt/az/ra-dec content. [InfoPanel]'s "nearest object" line *and* its
  * legacy-target watch-action button are both legacy-object-identifying content and are gated the same
- * way, separately, via [infoPanelVisibility] - see that function's own KDoc for why a button that still
- * names and can still act on a hidden legacy object is not full isolation (the legacy-target-identity-
- * leak fix).
+ * way, separately, via [infoPanelVisibility] - see that function's own KDoc for why a button whose
+ * rendered label still names a hidden legacy object (and whose click still sends that name as the
+ * outgoing target's label) is not full isolation (the legacy-target-identity-leak fix).
  */
 @VisibleForTesting
 @Composable
@@ -259,8 +259,10 @@ const val AR_INFO_PANEL_NEAREST_OBJECT_TEST_TAG = "ar_info_panel_nearest_object"
 /**
  * [androidx.compose.ui.platform.testTag] for [InfoPanel]'s watch-target action [Button] - present only
  * while [InfoPanelVisibility.showTargetAction] is true (see [infoPanelVisibility]). Legacy-target-
- * identity-leak fix: this button names a specific legacy-catalog object (`targetLabel`) and can act on
- * it via `onSetTarget` - both must disappear together with the nearest-object text, not just the text.
+ * identity-leak fix: this button's rendered label names a specific legacy-catalog object (`targetLabel`),
+ * and clicking it sends that same label - as `ArTarget.label`, alongside the reticle's own aim
+ * coordinates, never the object's actual position - via `onSetTarget`. Both the button and the
+ * nearest-object text above it must disappear together, not just the text.
  */
 const val AR_INFO_PANEL_TARGET_ACTION_TEST_TAG = "ar_info_panel_target_action"
 
@@ -270,11 +272,17 @@ const val AR_INFO_PANEL_TARGET_ACTION_TEST_TAG = "ar_info_panel_target_action"
  * action button (`targetLabel` + `onSetTarget`). Both are driven by the exact same [showLegacyOverlay]
  * flag [LegacySkyOverlay] itself is gated by, expressed as one small pure function rather than two
  * independent `if` checks scattered at the call site - the bug this fix closes: the nearest-object text
- * was gated, but the watch-target button (which also names the hidden legacy object, e.g. "Set 32
- * Persei as watch target", and still fires `onSetTarget` for it) was not.
+ * was gated, but the watch-target button (whose rendered label also names the hidden legacy object, e.g.
+ * "Set 32 Persei as watch target", and whose click still sends that name as the outgoing target's label)
+ * was not. The button's *coordinates* (`ArTarget.raDeg`/`decDeg`) are always the reticle's own aim
+ * direction regardless of `showLegacyOverlay` - it is specifically the *label* that is legacy-derived
+ * content, which is why both presentation flags below are driven by the same input rather than treating
+ * the button as legacy-independent.
  *
  * `@VisibleForTesting internal` (not `private`): exercised directly by a plain JVM test
- * (`InfoPanelVisibilityTest`) without needing a Compose host or the internal `OverlayData` type.
+ * (`InfoPanelVisibilityTest`) without needing a Compose host or the internal `OverlayData` type. Not
+ * called from `androidTest` (`InfoPanelPresentationTest` uses this function's documented output as
+ * literals instead) - see that test class's own KDoc for why.
  */
 internal data class InfoPanelVisibility(
     val showNearestObject: Boolean,
@@ -848,7 +856,8 @@ fun Reticle(modifier: Modifier = Modifier) {
  * button to watch-target it. [showNearestObject]/[showTargetAction] are computed by [infoPanelVisibility]
  * - see that function's own KDoc for why both are driven by the same flag (the legacy-target-identity-
  * leak fix: a hidden nearest-object *text* line is not full isolation if the watch-target *button* right
- * below it still names and can still act on that same hidden object).
+ * below it still renders that same hidden object's name and still sends it, as the outgoing target's
+ * label, on click).
  *
  * Deliberately takes plain public types ([Horizontal], [Equatorial], nullable `String`/`Double`) rather
  * than the internal `OverlayData`/`OverlayObject` `ArScreen` itself uses - keeps this composable directly
@@ -918,12 +927,14 @@ fun InfoPanel(
                 modifier = Modifier.padding(top = 8.dp).testTag(AR_INFO_PANEL_NEAREST_OBJECT_TEST_TAG),
             )
         }
-        // Gated by showTargetAction (legacy-target-identity-leak fix): this button both names a
-        // specific legacy-catalog object (targetLabel) and, on click, acts on it via onSetTarget - a
-        // hidden nearest-object text line alone does not isolate that identity if this button still
-        // renders "Set <legacy star> as watch target" and still fires onSetTarget for it. Never merely
-        // reworded to generic text and never merely disabled while still showing the legacy name - the
-        // button itself must not exist while legacy content is hidden.
+        // Gated by showTargetAction (legacy-target-identity-leak fix): this button's rendered label
+        // names a specific legacy-catalog object (targetLabel), and on click sends that same label -
+        // never the object's actual position, onSetTarget's ArTarget always carries the reticle's own
+        // aim coordinates - via onSetTarget. A hidden nearest-object text line alone does not isolate
+        // that identity if this button still renders "Set <legacy star> as watch target" and still fires
+        // onSetTarget carrying that name. Never merely reworded to generic text and never merely
+        // disabled while still showing the legacy name - the button itself must not exist while legacy
+        // content is hidden.
         if (showTargetAction) {
             Button(
                 onClick = onSetTarget,

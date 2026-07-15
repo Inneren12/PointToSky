@@ -25,6 +25,16 @@ import org.junit.runner.RunWith
  * Calls [InfoPanel] directly with plain [Horizontal]/[Equatorial] literals - never the internal
  * `OverlayData`/`OverlayObject` types, which are not exposed publicly solely for testing (see
  * [InfoPanel]'s own KDoc for why its signature was refactored to make this possible).
+ *
+ * Deliberately does **not** call `infoPanelVisibility(showLegacyOverlay)` (the production presentation
+ * policy, `internal` in `main`): this `androidTest` source set is compiled as a separate Kotlin module
+ * per build variant and is not guaranteed friend-module access to `main`'s `internal` declarations -
+ * unlike the JVM `test` source set, which the Kotlin Gradle plugin does associate with `main` as a friend
+ * compilation by default. `infoPanelVisibility`'s own two-case truth table (`showLegacyOverlay` -> both
+ * `showNearestObject` and `showTargetAction`) is exercised directly, with no Compose host needed, by
+ * `InfoPanelVisibilityTest` in the `test` source set instead. Here, the two presentation values are
+ * passed as the explicit literals that policy is documented to produce, so this file proves [InfoPanel]'s
+ * own rendering decision without depending on `main`'s internal API surface at all.
  */
 @RunWith(AndroidJUnit4::class)
 class InfoPanelPresentationTest {
@@ -36,8 +46,6 @@ class InfoPanelPresentationTest {
 
     @Test
     fun legacyOverlayOffHidesNearestObjectAndTargetActionButKeepsAltAzAndRaDec() {
-        val visibility = infoPanelVisibility(showLegacyOverlay = false)
-
         composeTestRule.setContent {
             InfoPanel(
                 reticleHorizontal = reticleHorizontal,
@@ -45,8 +53,11 @@ class InfoPanelPresentationTest {
                 nearestObjectTitle = "32 Persei",
                 nearestObjectSeparationDeg = 1.5,
                 targetLabel = "32 Persei",
-                showNearestObject = visibility.showNearestObject,
-                showTargetAction = visibility.showTargetAction,
+                // Explicit literals mirroring infoPanelVisibility(showLegacyOverlay = false) - see this
+                // class's own KDoc for why this file calls that function's documented output directly
+                // rather than the function itself.
+                showNearestObject = false,
+                showTargetAction = false,
                 onSetTarget = {},
             )
         }
@@ -59,8 +70,6 @@ class InfoPanelPresentationTest {
 
     @Test
     fun legacyOverlayOnShowsNearestObjectAndTargetActionAlongsideAltAzAndRaDec() {
-        val visibility = infoPanelVisibility(showLegacyOverlay = true)
-
         composeTestRule.setContent {
             InfoPanel(
                 reticleHorizontal = reticleHorizontal,
@@ -68,8 +77,9 @@ class InfoPanelPresentationTest {
                 nearestObjectTitle = "32 Persei",
                 nearestObjectSeparationDeg = 1.5,
                 targetLabel = "32 Persei",
-                showNearestObject = visibility.showNearestObject,
-                showTargetAction = visibility.showTargetAction,
+                // Explicit literals mirroring infoPanelVisibility(showLegacyOverlay = true).
+                showNearestObject = true,
+                showTargetAction = true,
                 onSetTarget = {},
             )
         }
@@ -119,8 +129,15 @@ class InfoPanelPresentationTest {
         }
 
         composeTestRule.onAllNodesWithTag(AR_INFO_PANEL_NEAREST_OBJECT_TEST_TAG).assertCountEquals(0)
-        // The target action itself is independent of whether a nearest object exists - it always
-        // targets the reticle's own aim direction (see ArScreen's `target`/`ArTarget` construction).
+        // The target action's underlying coordinates (ArScreen's `target`/`ArTarget.raDeg`/`decDeg`) are
+        // always the reticle's own aim direction, independent of nearestLabel - a `null` nearest object
+        // never blocks the button from existing (it falls back to a generic label, see ArScreen's own
+        // `targetLabel` computation). But in the current legacy AR presentation the button's rendered
+        // label/action is still legacy-derived content by construction (targetLabel defaults to
+        // `overlay?.nearestLabel?.title` whenever a nearest object *does* exist), so this component
+        // renders it here only because showTargetAction was passed true directly - production code always
+        // hides it whenever legacy isolation is enabled, regardless of whether a nearest object exists
+        // (see infoPanelVisibility - both showNearestObject and showTargetAction come from the same flag).
         composeTestRule.onNodeWithTag(AR_INFO_PANEL_TARGET_ACTION_TEST_TAG).assertIsDisplayed()
     }
 }
