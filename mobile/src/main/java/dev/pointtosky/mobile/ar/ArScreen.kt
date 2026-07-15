@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,6 +54,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -188,6 +190,51 @@ data class ArTarget(
     val decDeg: Double,
     val label: String,
 )
+
+/**
+ * [androidx.compose.ui.platform.testTag] for [LegacySkyOverlay]'s own wrapper [Box] - present exactly
+ * when the legacy sky overlay is composed at all, for Compose UI tests (HUD-visibility follow-up §4).
+ * One node for the whole group, never one per star/label - see [LegacySkyOverlay]'s own KDoc.
+ */
+const val LEGACY_SKY_OVERLAY_TEST_TAG = "legacy_sky_overlay"
+
+/**
+ * [androidx.compose.ui.platform.testTag] for the central aiming [Reticle] - present unconditionally,
+ * independent of [PredictedStarDebugControlsState.showLegacyOverlay] (HUD-visibility follow-up §4).
+ */
+const val AR_RETICLE_TEST_TAG = "ar_reticle"
+
+/**
+ * CAM-2b (HUD-visibility follow-up §1): the single conditional boundary for every legacy sky-render
+ * visual that can be confused with CAM-2b's predicted markers - star points, constellation/asterism/art
+ * lines, the legacy nearest-star target highlight, and every on-sky star/asterism label. [content] is
+ * composed inside one [Box] carrying [LEGACY_SKY_OVERLAY_TEST_TAG], so a future new legacy visual added
+ * to a caller's [content] is automatically covered by the same `if (showLegacyOverlay)` gate the caller
+ * applies around this whole function - never an independent, easy-to-forget per-layer check (the bug
+ * this follow-up fixes: only two of six legacy visual kinds were previously gated).
+ *
+ * Deliberately generic - no `OverlayData` or other `ArScreen`-internal type appears in this function's
+ * own signature - so the gating mechanism itself is directly Compose-UI-testable from `androidTest`
+ * (which cannot see `internal` declarations in this module), independent of the real legacy content
+ * `ArScreen` composes inside it.
+ *
+ * Explicitly outside this boundary (see `ArScreen`'s call site and [InfoPanel]'s own KDoc): the camera
+ * preview, the CAM-1g/CAM-2b HUD and controls, the CAM-2b predicted-marker canvas
+ * ([PredictedStarMarkersCanvas]), system nav/back/settings controls, the central aiming [Reticle], and
+ * the bottom [InfoPanel]'s alt/az/ra-dec/set-target content - its own "nearest object" line is gated the
+ * same way, separately, since it names a specific legacy-catalog star.
+ */
+@VisibleForTesting
+@Composable
+fun LegacySkyOverlay(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier = modifier.fillMaxSize().testTag(LEGACY_SKY_OVERLAY_TEST_TAG),
+        content = content,
+    )
+}
 
 @Composable
 fun ArScreen(
@@ -470,35 +517,80 @@ fun ArScreen(
                     }
                 }
 
-                // internal-debug-only comparison control (task §4): hides only the legacy sky
-                // drawing below (star points + constellation/asterism/art lines) so the CAM-2b cyan
-                // predicted markers can be inspected in isolation, then compared side-by-side by
-                // flipping this back on. showLegacyOverlay lives in predictedStarDebugControls,
-                // hoisted above the Box and reset per debug session (hardening task §1/§3).
-                if (predictedStarDebugControls.showLegacyOverlay && state.showStarPoints && !state.reticleTargetOnly) {
-                    overlay?.let {
-                        StarPointLayer(
-                            overlay = it,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
+                // Counter-rotate overlay labels so they stay upright relative to the real horizon
+                // while the projected constellation rotates with device roll (portrait-locked UI).
+                // Hoisted above the legacy overlay group below (it needs this value); computing it
+                // here vs. its old position after Reticle() changes nothing about its value.
+                val labelRoll = rotationFrame?.let { deviceRollDegrees(it.rotationMatrix) } ?: 0f
 
+                // CAM-2b (HUD-visibility follow-up §1): every legacy sky-render visual that can be
+                // confused with CAM-2b's predicted markers, gated behind exactly one flag -
+                // `predictedStarDebugControls.showLegacyOverlay` - rather than several independently
+                // -checked layers (the previous bug: only StarPointLayer/ConstellationLayer were
+                // gated, so star labels, asterism labels, and the legacy nearest-star target highlight
+                // stayed on screen even with the toggle off). showLegacyOverlay lives in
+                // predictedStarDebugControls, hoisted above the Box and reset per debug session
+                // (hardening task §1/§3). See LegacySkyOverlay's own KDoc for exactly what is/isn't
+                // covered.
                 if (predictedStarDebugControls.showLegacyOverlay) {
-                    overlay?.let {
-                        ConstellationLayer(
-                            overlay = it,
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                    LegacySkyOverlay(modifier = Modifier.fillMaxSize()) {
+                        if (state.showStarPoints && !state.reticleTargetOnly) {
+                            overlay?.let {
+                                StarPointLayer(
+                                    overlay = it,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+
+                        overlay?.let {
+                            ConstellationLayer(
+                                overlay = it,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        if (state.reticleTargetOnly) {
+                            overlay?.let {
+                                ReticleTargetHighlight(
+                                    overlay = it,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+
+                        val labelsToShow = when {
+                            state.reticleTargetOnly -> overlay?.nearestLabel?.let { listOf(it) }.orEmpty()
+                            state.showStarLabels -> overlay?.labels.orEmpty()
+                            else -> emptyList()
+                        }
+                        labelsToShow.forEach { label ->
+                            ArObjectLabel(
+                                data = label,
+                                modifier = Modifier.align(Alignment.TopStart),
+                                rollDegrees = labelRoll,
+                            )
+                        }
+
+                        if (!state.reticleTargetOnly) {
+                            overlay?.asterismLabels?.forEach { label ->
+                                AsterismLabel(
+                                    data = label,
+                                    modifier = Modifier.align(Alignment.TopStart),
+                                    rollDegrees = labelRoll,
+                                )
+                            }
+                        }
                     }
                 }
 
                 // CAM-2b: internal-debug-only predicted-star overlay - visualizes the accepted CAM-2a
                 // projectStars(...) pipeline purely for diagnosis. Reads the single hoisted
                 // predictedStarOverlayState computed above the Box (never recomputed here). Drawn on
-                // top of the legacy star/constellation layers above so both can be visually compared;
+                // top of the legacy overlay group above (when shown) so both can be visually compared;
                 // never feeds calculateOverlay, projectionParams, or any production star position. See
-                // docs/camera_star_prediction_contract.md §14.
+                // docs/camera_star_prediction_contract.md §14. Never gated by showLegacyOverlay - this
+                // is the CAM-2b content the toggle exists to isolate, not legacy content itself.
                 if (predictedStarDebugControls.showPredictedStarMarkers && predictedStarOverlayState is PredictedStarOverlayState.Ready) {
                     PredictedStarMarkersCanvas(
                         points = predictedStarOverlayState.points,
@@ -506,43 +598,11 @@ fun ArScreen(
                     )
                 }
 
-                if (state.reticleTargetOnly) {
-                    overlay?.let {
-                        ReticleTargetHighlight(
-                            overlay = it,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
-
-                Reticle(modifier = Modifier.align(Alignment.Center))
-
-                // Counter-rotate overlay labels so they stay upright relative to the real horizon
-                // while the projected constellation rotates with device roll (portrait-locked UI).
-                val labelRoll = rotationFrame?.let { deviceRollDegrees(it.rotationMatrix) } ?: 0f
-
-                val labelsToShow = when {
-                    state.reticleTargetOnly -> overlay?.nearestLabel?.let { listOf(it) }.orEmpty()
-                    state.showStarLabels -> overlay?.labels.orEmpty()
-                    else -> emptyList()
-                }
-                labelsToShow.forEach { label ->
-                    ArObjectLabel(
-                        data = label,
-                        modifier = Modifier.align(Alignment.TopStart),
-                        rollDegrees = labelRoll,
-                    )
-                }
-
-                if (!state.reticleTargetOnly) {
-                    overlay?.asterismLabels?.forEach { label ->
-                        AsterismLabel(
-                            data = label,
-                            modifier = Modifier.align(Alignment.TopStart),
-                            rollDegrees = labelRoll,
-                        )
-                    }
-                }
+                // The central aiming reticle is an independent aiming reference, never part of the
+                // legacy sky overlay (see LegacySkyOverlay's own KDoc) - always visible regardless of
+                // showLegacyOverlay, unlike ReticleTargetHighlight (the legacy yellow nearest-star ring
+                // above, which *is* legacy sky-render content and is gated accordingly).
+                Reticle(modifier = Modifier.align(Alignment.Center).testTag(AR_RETICLE_TEST_TAG))
 
                 var settingsVisible by remember { mutableStateOf(false) }
                 IconButton(
@@ -609,6 +669,13 @@ fun ArScreen(
                     InfoPanel(
                         overlay = overlay,
                         targetLabel = targetLabel,
+                        // The bottom info panel itself is retained as non-overlay UI regardless of
+                        // showLegacyOverlay (it's the reticle's own aim readout, not a sky-position
+                        // visual) - but its "nearest object" line names a specific legacy-catalog star,
+                        // the same "nearest-object label/card" content LegacySkyOverlay isolates, so it
+                        // is gated the same way rather than leaking a legacy star name through a panel
+                        // that is otherwise exempt from the toggle.
+                        showNearestObject = predictedStarDebugControls.showLegacyOverlay,
                         onSetTarget = { target?.let(onSetTarget) },
                         modifier =
                             Modifier
@@ -686,8 +753,15 @@ private fun PermissionRequest(onRequest: () -> Unit) {
     }
 }
 
+/**
+ * The central aiming reticle - a static crosshair, no `OverlayData` or other `ArScreen`-internal type
+ * dependency. `@VisibleForTesting`, not `private` (HUD-visibility follow-up §4): tests need to compose
+ * this directly, independent of `showLegacyOverlay`, to prove it is never gated by that toggle (see
+ * [LegacySkyOverlay]'s own KDoc for why it's excluded from that boundary).
+ */
+@VisibleForTesting
 @Composable
-private fun Reticle(modifier: Modifier = Modifier) {
+fun Reticle(modifier: Modifier = Modifier) {
     val strokeWidth = 2.dp
     Canvas(
         modifier =
@@ -718,6 +792,7 @@ private fun Reticle(modifier: Modifier = Modifier) {
 private fun InfoPanel(
     overlay: OverlayData,
     targetLabel: String,
+    showNearestObject: Boolean,
     onSetTarget: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -750,18 +825,24 @@ private fun InfoPanel(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 4.dp),
         )
-        overlay.nearestLabel?.let { nearest ->
-            Text(
-                text =
-                    stringResource(
-                        id = R.string.ar_nearest_object,
-                        nearest.title ?: stringResource(id = R.string.ar_unknown_object),
-                        formatAngle(locale, nearest.separationDeg),
-                    ),
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+        // Gated by showNearestObject (task hardening, HUD-visibility follow-up §1): this line names a
+        // specific legacy-catalog star, the same "nearest-object label/card" content LegacySkyOverlay
+        // isolates elsewhere - never shown while a tester has legacy content hidden for a CAM-2b
+        // comparison, even though the rest of this panel (alt/az, ra/dec, set-target) is retained.
+        if (showNearestObject) {
+            overlay.nearestLabel?.let { nearest ->
+                Text(
+                    text =
+                        stringResource(
+                            id = R.string.ar_nearest_object,
+                            nearest.title ?: stringResource(id = R.string.ar_unknown_object),
+                            formatAngle(locale, nearest.separationDeg),
+                        ),
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         }
         Button(
             onClick = onSetTarget,
