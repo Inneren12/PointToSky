@@ -221,8 +221,11 @@ const val AR_RETICLE_TEST_TAG = "ar_reticle"
  * Explicitly outside this boundary (see `ArScreen`'s call site and [InfoPanel]'s own KDoc): the camera
  * preview, the CAM-1g/CAM-2b HUD and controls, the CAM-2b predicted-marker canvas
  * ([PredictedStarMarkersCanvas]), system nav/back/settings controls, the central aiming [Reticle], and
- * the bottom [InfoPanel]'s alt/az/ra-dec/set-target content - its own "nearest object" line is gated the
- * same way, separately, since it names a specific legacy-catalog star.
+ * the bottom [InfoPanel]'s alt/az/ra-dec content. [InfoPanel]'s "nearest object" line *and* its
+ * legacy-target watch-action button are both legacy-object-identifying content and are gated the same
+ * way, separately, via [infoPanelVisibility] - see that function's own KDoc for why a button that still
+ * names and can still act on a hidden legacy object is not full isolation (the legacy-target-identity-
+ * leak fix).
  */
 @VisibleForTesting
 @Composable
@@ -235,6 +238,52 @@ fun LegacySkyOverlay(
         content = content,
     )
 }
+
+/**
+ * [androidx.compose.ui.platform.testTag] for [InfoPanel]'s Altitude/Azimuth [Text] - present
+ * unconditionally, regardless of [PredictedStarDebugControlsState.showLegacyOverlay]: it is the
+ * reticle's own aim readout, not a legacy sky-position visual.
+ */
+const val AR_INFO_PANEL_ALT_AZ_TEST_TAG = "ar_info_panel_alt_az"
+
+/** [androidx.compose.ui.platform.testTag] for [InfoPanel]'s RA/Dec [Text] - present unconditionally,
+ * for the same reason as [AR_INFO_PANEL_ALT_AZ_TEST_TAG]. */
+const val AR_INFO_PANEL_RA_DEC_TEST_TAG = "ar_info_panel_ra_dec"
+
+/**
+ * [androidx.compose.ui.platform.testTag] for [InfoPanel]'s nearest-legacy-object [Text] - present only
+ * while [InfoPanelVisibility.showNearestObject] is true (see [infoPanelVisibility]).
+ */
+const val AR_INFO_PANEL_NEAREST_OBJECT_TEST_TAG = "ar_info_panel_nearest_object"
+
+/**
+ * [androidx.compose.ui.platform.testTag] for [InfoPanel]'s watch-target action [Button] - present only
+ * while [InfoPanelVisibility.showTargetAction] is true (see [infoPanelVisibility]). Legacy-target-
+ * identity-leak fix: this button names a specific legacy-catalog object (`targetLabel`) and can act on
+ * it via `onSetTarget` - both must disappear together with the nearest-object text, not just the text.
+ */
+const val AR_INFO_PANEL_TARGET_ACTION_TEST_TAG = "ar_info_panel_target_action"
+
+/**
+ * CAM-2b (legacy-target-identity-leak fix): the pure presentation policy for [InfoPanel]'s two
+ * legacy-object-identifying pieces of content - the nearest-object text line and the watch-target
+ * action button (`targetLabel` + `onSetTarget`). Both are driven by the exact same [showLegacyOverlay]
+ * flag [LegacySkyOverlay] itself is gated by, expressed as one small pure function rather than two
+ * independent `if` checks scattered at the call site - the bug this fix closes: the nearest-object text
+ * was gated, but the watch-target button (which also names the hidden legacy object, e.g. "Set 32
+ * Persei as watch target", and still fires `onSetTarget` for it) was not.
+ *
+ * `@VisibleForTesting internal` (not `private`): exercised directly by a plain JVM test
+ * (`InfoPanelVisibilityTest`) without needing a Compose host or the internal `OverlayData` type.
+ */
+internal data class InfoPanelVisibility(
+    val showNearestObject: Boolean,
+    val showTargetAction: Boolean,
+)
+
+@VisibleForTesting
+internal fun infoPanelVisibility(showLegacyOverlay: Boolean): InfoPanelVisibility =
+    InfoPanelVisibility(showNearestObject = showLegacyOverlay, showTargetAction = showLegacyOverlay)
 
 @Composable
 fun ArScreen(
@@ -666,16 +715,21 @@ fun ArScreen(
                     }
 
                 if (overlay != null) {
+                    // The bottom info panel itself is retained as non-overlay UI regardless of
+                    // showLegacyOverlay (it's the reticle's own aim readout, not a sky-position visual)
+                    // - but its nearest-object text AND its watch-target button both name a specific
+                    // legacy-catalog star, so both are gated together via infoPanelVisibility rather
+                    // than leaking that identity through a panel that is otherwise exempt from the
+                    // toggle (legacy-target-identity-leak fix).
+                    val visibility = infoPanelVisibility(showLegacyOverlay = predictedStarDebugControls.showLegacyOverlay)
                     InfoPanel(
-                        overlay = overlay,
+                        reticleHorizontal = overlay.reticleHorizontal,
+                        reticleEquatorial = overlay.reticleEquatorial,
+                        nearestObjectTitle = overlay.nearestLabel?.title,
+                        nearestObjectSeparationDeg = overlay.nearestLabel?.separationDeg,
                         targetLabel = targetLabel,
-                        // The bottom info panel itself is retained as non-overlay UI regardless of
-                        // showLegacyOverlay (it's the reticle's own aim readout, not a sky-position
-                        // visual) - but its "nearest object" line names a specific legacy-catalog star,
-                        // the same "nearest-object label/card" content LegacySkyOverlay isolates, so it
-                        // is gated the same way rather than leaking a legacy star name through a panel
-                        // that is otherwise exempt from the toggle.
-                        showNearestObject = predictedStarDebugControls.showLegacyOverlay,
+                        showNearestObject = visibility.showNearestObject,
+                        showTargetAction = visibility.showTargetAction,
                         onSetTarget = { target?.let(onSetTarget) },
                         modifier =
                             Modifier
@@ -788,11 +842,32 @@ fun Reticle(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * The bottom altitude/azimuth + RA/Dec readout for the reticle's own aim direction, plus (when
+ * [showNearestObject]/[showTargetAction] allow it) the nearest legacy-catalog object's name and a
+ * button to watch-target it. [showNearestObject]/[showTargetAction] are computed by [infoPanelVisibility]
+ * - see that function's own KDoc for why both are driven by the same flag (the legacy-target-identity-
+ * leak fix: a hidden nearest-object *text* line is not full isolation if the watch-target *button* right
+ * below it still names and can still act on that same hidden object).
+ *
+ * Deliberately takes plain public types ([Horizontal], [Equatorial], nullable `String`/`Double`) rather
+ * than the internal `OverlayData`/`OverlayObject` `ArScreen` itself uses - keeps this composable directly
+ * Compose-UI-testable from `androidTest` (`InfoPanelPresentationTest`) without exposing those internal
+ * types publicly solely for testing. [nearestObjectSeparationDeg] is the presence signal for "is there a
+ * nearest object at all" (mirrors `OverlayData.nearestLabel` being null vs. non-null);
+ * [nearestObjectTitle] may still be null even when a nearest object exists, falling back to
+ * [R.string.ar_unknown_object] exactly as before this refactor.
+ */
+@VisibleForTesting
 @Composable
-private fun InfoPanel(
-    overlay: OverlayData,
+fun InfoPanel(
+    reticleHorizontal: Horizontal,
+    reticleEquatorial: Equatorial,
+    nearestObjectTitle: String?,
+    nearestObjectSeparationDeg: Double?,
     targetLabel: String,
     showNearestObject: Boolean,
+    showTargetAction: Boolean,
     onSetTarget: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -808,50 +883,58 @@ private fun InfoPanel(
             text =
                 stringResource(
                     id = R.string.ar_reticle_alt_az,
-                    formatAngle(locale, overlay.reticleHorizontal.altDeg),
-                    formatAngle(locale, overlay.reticleHorizontal.azDeg),
+                    formatAngle(locale, reticleHorizontal.altDeg),
+                    formatAngle(locale, reticleHorizontal.azDeg),
                 ),
             color = Color.White,
             style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.testTag(AR_INFO_PANEL_ALT_AZ_TEST_TAG),
         )
         Text(
             text =
                 stringResource(
                     id = R.string.ar_reticle_ra_dec,
-                    formatAngle(locale, overlay.reticleEquatorial.raDeg),
-                    formatAngle(locale, overlay.reticleEquatorial.decDeg),
+                    formatAngle(locale, reticleEquatorial.raDeg),
+                    formatAngle(locale, reticleEquatorial.decDeg),
                 ),
             color = Color.White,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(top = 4.dp).testTag(AR_INFO_PANEL_RA_DEC_TEST_TAG),
         )
-        // Gated by showNearestObject (task hardening, HUD-visibility follow-up §1): this line names a
-        // specific legacy-catalog star, the same "nearest-object label/card" content LegacySkyOverlay
-        // isolates elsewhere - never shown while a tester has legacy content hidden for a CAM-2b
-        // comparison, even though the rest of this panel (alt/az, ra/dec, set-target) is retained.
-        if (showNearestObject) {
-            overlay.nearestLabel?.let { nearest ->
-                Text(
-                    text =
-                        stringResource(
-                            id = R.string.ar_nearest_object,
-                            nearest.title ?: stringResource(id = R.string.ar_unknown_object),
-                            formatAngle(locale, nearest.separationDeg),
-                        ),
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
+        // Gated by showNearestObject: this line names a specific legacy-catalog star, the same
+        // "nearest-object label/card" content LegacySkyOverlay isolates elsewhere - never shown while a
+        // tester has legacy content hidden for a CAM-2b comparison, even though the rest of this panel
+        // (alt/az, ra/dec) is retained.
+        if (showNearestObject && nearestObjectSeparationDeg != null) {
+            Text(
+                text =
+                    stringResource(
+                        id = R.string.ar_nearest_object,
+                        nearestObjectTitle ?: stringResource(id = R.string.ar_unknown_object),
+                        formatAngle(locale, nearestObjectSeparationDeg),
+                    ),
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp).testTag(AR_INFO_PANEL_NEAREST_OBJECT_TEST_TAG),
+            )
         }
-        Button(
-            onClick = onSetTarget,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-        ) {
-            Text(text = stringResource(id = R.string.ar_set_target_button, targetLabel))
+        // Gated by showTargetAction (legacy-target-identity-leak fix): this button both names a
+        // specific legacy-catalog object (targetLabel) and, on click, acts on it via onSetTarget - a
+        // hidden nearest-object text line alone does not isolate that identity if this button still
+        // renders "Set <legacy star> as watch target" and still fires onSetTarget for it. Never merely
+        // reworded to generic text and never merely disabled while still showing the legacy name - the
+        // button itself must not exist while legacy content is hidden.
+        if (showTargetAction) {
+            Button(
+                onClick = onSetTarget,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp)
+                        .testTag(AR_INFO_PANEL_TARGET_ACTION_TEST_TAG),
+            ) {
+                Text(text = stringResource(id = R.string.ar_set_target_button, targetLabel))
+            }
         }
     }
 }
