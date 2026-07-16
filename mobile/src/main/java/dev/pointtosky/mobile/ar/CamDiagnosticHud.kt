@@ -28,8 +28,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.pointtosky.mobile.ar.camera.CameraCalibrationDiagnostics
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
+import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsDiagnosticState
 import dev.pointtosky.mobile.ar.camera.buildCameraCalibrationDiagnosticText
 import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
+import dev.pointtosky.mobile.ar.camera.buildCameraSessionIntrinsicsDiagnosticText
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.name
@@ -46,6 +48,16 @@ const val CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG = "camera_geometry_diagnos
  * resolved for this session).
  */
 const val CAMERA_CALIBRATION_DIAGNOSTIC_OVERLAY_TEST_TAG = "camera_calibration_diagnostic_overlay"
+
+/**
+ * [androidx.compose.ui.platform.testTag] for the CAM-2c runtime-integration diagnostic overlay's
+ * full-text [Text] (CAM-2c runtime integration fix §5) — shown only while the HUD's details are
+ * expanded, but unlike [CAMERA_CALIBRATION_DIAGNOSTIC_OVERLAY_TEST_TAG] above, rendered whenever a
+ * CAM-2c attempt has been made at all, whether it succeeded or failed. This is the overlay that
+ * closes the "screen shows only PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED with no CAM-2c attempt"
+ * gap.
+ */
+const val CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG = "camera_session_intrinsics_diagnostic_overlay"
 
 /** [androidx.compose.ui.platform.testTag] for the outer HUD container (header + summary/details). */
 const val CAM_DIAGNOSTIC_HUD_PANELS_TEST_TAG = "cam_diagnostic_hud_panels"
@@ -161,6 +173,7 @@ fun CamDiagnosticTopPanels(
     controlsContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     calibrationDiagnostics: CameraCalibrationDiagnostics? = null,
+    intrinsicsDiagnosticState: CameraSessionIntrinsicsDiagnosticState? = null,
 ) {
     val showDetails = detailsExpanded || controlsExpanded
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -276,6 +289,9 @@ fun CamDiagnosticTopPanels(
                                     readyBundleCount = cam1gReadyBundleCount,
                                 )
                             }
+                            if (intrinsicsDiagnosticState != null) {
+                                CameraSessionIntrinsicsDiagnosticOverlay(intrinsicsDiagnosticState)
+                            }
                             if (calibrationDiagnostics != null) {
                                 CameraCalibrationDiagnosticOverlay(calibrationDiagnostics)
                             }
@@ -370,6 +386,32 @@ private fun CameraCalibrationDiagnosticOverlay(
         modifier =
             modifier
                 .testTag(CAMERA_CALIBRATION_DIAGNOSTIC_OVERLAY_TEST_TAG)
+                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
+                .padding(8.dp),
+    )
+}
+
+/**
+ * CAM-2c runtime-integration diagnostic overlay (fix §5) - translucent, monospace, non-clickable.
+ * Purely a display of [CameraSessionIntrinsicsDiagnosticState]; touches no renderer/matcher/detector
+ * state, no CAM-2a projection math. Unlike [CameraCalibrationDiagnosticOverlay] above, rendered
+ * whenever a CAM-2c attempt has been made at all - it is the one place a physical-device tester can
+ * see the CAM-2c root cause (e.g. `UnsupportedLogicalMultiCameraMapping`) even when this session
+ * published a CAM-1b `PhysicalSensor` fallback instead.
+ */
+@Composable
+private fun CameraSessionIntrinsicsDiagnosticOverlay(
+    state: CameraSessionIntrinsicsDiagnosticState,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = buildCameraSessionIntrinsicsDiagnosticText(state),
+        color = Color.White,
+        fontFamily = FontFamily.Monospace,
+        style = MaterialTheme.typography.bodySmall,
+        modifier =
+            modifier
+                .testTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
                 .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
                 .padding(8.dp),
     )

@@ -37,6 +37,67 @@ enum class CameraSessionIntrinsicsCoordinatorState {
 }
 
 /**
+ * Bounded, cheap, session-scoped snapshot of every [CameraSessionIntrinsicsCoordinator.onFrameMetadata]
+ * call this coordinator has received (CAM-2c runtime integration fix §3) — unlike the coordinator's
+ * own internal "first usable candidate" bookkeeping (which stops mattering once resolution is
+ * claimed), these counters keep advancing for the lifetime of the session, so the diagnostics panel
+ * can show real per-frame transform transport health even long after intrinsics resolved.
+ *
+ * @property framesAnalyzed every [CameraFrameMetadata] this coordinator has received, regardless of
+ *   whether resolution had already started.
+ * @property framesWithTransform the subset of [framesAnalyzed] whose [CameraFrameMetadata.sensorToBufferTransform]
+ *   was non-`null`.
+ * @property framesWithNullTransform the complementary subset — `sensorToBufferTransform == null`.
+ * @property framesWithUsableTransform the subset of [framesWithTransform] that additionally
+ *   classified as [SensorToBufferTransformClass.AXIS_ALIGNED_0] — the only class this codebase's
+ *   calibrated mapping actually resolves (see [CameraSessionIntrinsicsCoordinator]'s own KDoc).
+ * @property coordinatorFramesWaited how many frames the coordinator's own coherent-input gate
+ *   actually counted against [CameraSessionIntrinsicsCoordinator]'s `maxFramesWaitingForUsableTransform`
+ *   bound before resolution was claimed (frozen once resolution starts) — distinct from
+ *   [framesAnalyzed], which never stops counting.
+ * @property latestFrameTransform the most recently received frame's raw [SensorToBufferMatrix3], or
+ *   `null` if that frame carried none — always the *latest* frame, even after resolution.
+ * @property latestFrameTransformClass [latestFrameTransform]'s own [SensorToBufferTransformClass],
+ *   or `null` when [latestFrameTransform] itself is `null`.
+ */
+data class CameraSessionIntrinsicsFrameCounters(
+    val framesAnalyzed: Long,
+    val framesWithTransform: Long,
+    val framesWithNullTransform: Long,
+    val framesWithUsableTransform: Long,
+    val coordinatorFramesWaited: Int,
+    val latestFrameTransform: SensorToBufferMatrix3?,
+    val latestFrameTransformClass: SensorToBufferTransformClass?,
+)
+
+/**
+ * (CAM-2c runtime integration fix §2) A session's full CAM-2c picture in one bounded, immutable
+ * snapshot — never collapsing the calibrated-mapping *attempt* into whichever result was ultimately
+ * published. See [SessionScopedCameraIntrinsicsResolver.lastAnalysisBufferAttempt]'s KDoc for why the
+ * two must stay distinguishable: a real Pixel 9 session can legitimately publish a `PhysicalSensor`
+ * CAM-1b fallback while [analysisBufferAttempt] still carries the exact reason
+ * (`UnsupportedLogicalMultiCameraMapping`, `MissingSensorToBufferTransform`, ...) the calibrated
+ * mapping itself was rejected for.
+ *
+ * @property analysisBufferAttempt the exact CAM-2c outcome this session's resolution attempt
+ *   produced — `null` only when no calibrated attempt was ever made (no analyzed frame known yet).
+ * @property publishedIntrinsicsResolution the final resolution this session actually published to
+ *   `CameraSessionGeometryProvider` — `null` before resolution has completed.
+ * @property coordinatorState this coordinator's own [CameraSessionIntrinsicsCoordinatorState] as of
+ *   this snapshot.
+ * @property cameraCharacteristicsSnapshot the raw Camera2 metadata this attempt actually read,
+ *   regardless of outcome.
+ * @property frameCounters this coordinator's running per-frame transform-transport counters.
+ */
+data class CameraSessionIntrinsicsDiagnosticState(
+    val analysisBufferAttempt: AnalysisBufferIntrinsicsResolution?,
+    val publishedIntrinsicsResolution: CoreCameraIntrinsicsResolution?,
+    val coordinatorState: CameraSessionIntrinsicsCoordinatorState,
+    val cameraCharacteristicsSnapshot: CameraCharacteristicsSnapshot?,
+    val frameCounters: CameraSessionIntrinsicsFrameCounters,
+)
+
+/**
  * Coordinates CAM-1f intrinsics resolution so it only ever runs once **real, coherent** inputs are
  * known: the bound [CameraInfo] (from `CameraPreview.onCameraInfo`) and one analyzed
  * [CameraFrameMetadata] frame (from `CameraPreview.onFrameMetadata`) whose own buffer dimensions
@@ -141,9 +202,49 @@ class CameraSessionIntrinsicsCoordinator(
     private var resolved = false
     private var disposed = false
 
+    // CAM-2c runtime integration fix §3 - running per-frame transport counters. Unlike framesSeen/
+    // usableTransform above (which freeze once resolution starts, since they only exist to drive the
+    // coherent-input gate), these keep advancing for the coordinator's whole lifetime.
+    private var framesAnalyzed = 0L
+    private var framesWithTransform = 0L
+    private var framesWithNullTransform = 0L
+    private var framesWithUsableTransform = 0L
+    private var latestFrameTransform: SensorToBufferMatrix3? = null
+    private var latestFrameTransformClass: SensorToBufferTransformClass? = null
+
     /** (CAM-2c fix §4) This coordinator's current observable state — see [CameraSessionIntrinsicsCoordinatorState]. */
     val state: CameraSessionIntrinsicsCoordinatorState
         get() = synchronized(lock) { stateLocked() }
+
+    /** (CAM-2c runtime integration fix §3) This coordinator's running per-frame transport counters. */
+    val frameCounters: CameraSessionIntrinsicsFrameCounters
+        get() =
+            synchronized(lock) {
+                CameraSessionIntrinsicsFrameCounters(
+                    framesAnalyzed = framesAnalyzed,
+                    framesWithTransform = framesWithTransform,
+                    framesWithNullTransform = framesWithNullTransform,
+                    framesWithUsableTransform = framesWithUsableTransform,
+                    coordinatorFramesWaited = framesSeen,
+                    latestFrameTransform = latestFrameTransform,
+                    latestFrameTransformClass = latestFrameTransformClass,
+                )
+            }
+
+    /**
+     * (CAM-2c runtime integration fix §2) This session's full CAM-2c picture — the resolver's typed
+     * attempt and the value it actually published, together with this coordinator's own state and
+     * frame counters. See [CameraSessionIntrinsicsDiagnosticState]'s KDoc.
+     */
+    val diagnosticState: CameraSessionIntrinsicsDiagnosticState
+        get() =
+            CameraSessionIntrinsicsDiagnosticState(
+                analysisBufferAttempt = resolver.lastAnalysisBufferAttempt,
+                publishedIntrinsicsResolution = resolver.lastPublishedResolution,
+                coordinatorState = state,
+                cameraCharacteristicsSnapshot = resolver.lastCameraCharacteristicsSnapshot,
+                frameCounters = frameCounters,
+            )
 
     private fun stateLocked(): CameraSessionIntrinsicsCoordinatorState =
         when {
@@ -176,11 +277,26 @@ class CameraSessionIntrinsicsCoordinator(
     fun onFrameMetadata(frame: CameraFrameMetadata) {
         val inputs =
             synchronized(lock) {
-                if (disposed || resolutionStarted) return
+                if (disposed) return
+                // CAM-2c runtime integration fix §3: these counters keep advancing for the whole
+                // session, even once resolutionStarted below would otherwise make this call a no-op -
+                // a diagnostics panel needs to see live per-frame transport health long after
+                // intrinsics resolved, not just during the coherent-input gate's own bounded wait.
+                framesAnalyzed += 1
+                val transform = frame.sensorToBufferTransform
+                latestFrameTransform = transform
+                latestFrameTransformClass = transform?.let { classifySensorToBufferMatrix(it) }
+                if (transform == null) {
+                    framesWithNullTransform += 1
+                } else {
+                    framesWithTransform += 1
+                    if (isSupportedTransformClass(transform)) framesWithUsableTransform += 1
+                }
+
+                if (resolutionStarted) return
                 framesSeen += 1
                 lastFrameWidthPx = frame.bufferWidthPx
                 lastFrameHeightPx = frame.bufferHeightPx
-                val transform = frame.sensorToBufferTransform
                 if (usableTransform == null && transform != null && isSupportedTransformClass(transform)) {
                     usableWidthPx = frame.bufferWidthPx
                     usableHeightPx = frame.bufferHeightPx

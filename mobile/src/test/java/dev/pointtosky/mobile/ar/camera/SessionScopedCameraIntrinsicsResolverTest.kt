@@ -204,6 +204,23 @@ class SessionScopedCameraIntrinsicsResolverTest {
             transformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
         )
 
+    private val calibratedAnalysisBufferIntrinsics =
+        CameraIntrinsics(
+            horizontalFovDeg = 60.0,
+            verticalFovDeg = 45.0,
+            focalLengthMm = 3.6,
+            sensorWidthMm = 6.4,
+            sensorHeightMm = 4.8,
+            principalPointXPx = 320.0,
+            principalPointYPx = 240.0,
+            source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+            reference = CameraIntrinsicsReference.AnalysisBuffer(640, 480),
+            quality = CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT,
+        )
+
+    private val resolvedAttempt =
+        AnalysisBufferIntrinsicsResolution.Resolved(calibratedAnalysisBufferIntrinsics, calibrationDiagnostics)
+
     @Test
     fun `lastCalibrationDiagnostics is null before any resolution`() {
         val resolver = SessionScopedCameraIntrinsicsResolver(CountingFakeProvider { CameraIntrinsicsResolution(calibrated) })
@@ -212,7 +229,10 @@ class SessionScopedCameraIntrinsicsResolverTest {
 
     @Test
     fun `lastCalibrationDiagnostics reflects a successful calibrated resolution`() {
-        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated, calibrationDiagnostics = calibrationDiagnostics) }
+        val provider =
+            CountingFakeProvider {
+                CameraIntrinsicsResolution(calibratedAnalysisBufferIntrinsics, analysisBufferAttempt = resolvedAttempt)
+            }
         val resolver = SessionScopedCameraIntrinsicsResolver(provider)
 
         resolver.resolveOnce(fakeCameraInfo(), 1920, 1080)
@@ -228,5 +248,58 @@ class SessionScopedCameraIntrinsicsResolverTest {
         resolver.resolveOnce(fakeCameraInfo(), 1920, 1080)
 
         assertEquals(null, resolver.lastCalibrationDiagnostics)
+    }
+
+    // --- lastAnalysisBufferAttempt / lastCameraCharacteristicsSnapshot / lastPublishedResolution
+    // (CAM-2c runtime integration fix) ---
+
+    @Test
+    fun `lastAnalysisBufferAttempt, lastCameraCharacteristicsSnapshot and lastPublishedResolution are null before any resolution`() {
+        val resolver = SessionScopedCameraIntrinsicsResolver(CountingFakeProvider { CameraIntrinsicsResolution(calibrated) })
+
+        assertEquals(null, resolver.lastAnalysisBufferAttempt)
+        assertEquals(null, resolver.lastCameraCharacteristicsSnapshot)
+        assertEquals(null, resolver.lastPublishedResolution)
+    }
+
+    @Test
+    fun `lastAnalysisBufferAttempt preserves a CAM-2c failure reason even when the published result is a PhysicalSensor fallback`() {
+        val attempt =
+            AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping(
+                cameraId = "0",
+                physicalCameraIdsForDiagnostics = setOf("1", "2"),
+            )
+        val provider =
+            CountingFakeProvider {
+                CameraIntrinsicsResolution(calibrated, analysisBufferAttempt = attempt)
+            }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+
+        resolver.resolveOnce(fakeCameraInfo(), 1920, 1080)
+
+        assertEquals(attempt, resolver.lastAnalysisBufferAttempt)
+        // The published result is still the CAM-1b PhysicalSensor fallback - the two are independent.
+        val published = assertIs<CoreCameraIntrinsicsResolution.Resolved>(resolver.lastPublishedResolution)
+        assertEquals(calibrated, published.intrinsics)
+    }
+
+    @Test
+    fun `lastCameraCharacteristicsSnapshot reflects the snapshot the provider actually read`() {
+        val snapshot =
+            CameraCharacteristicsSnapshot(
+                availableFocalLengthsMm = floatArrayOf(3.6f),
+                sensorPhysicalWidthMm = 6.4f,
+                sensorPhysicalHeightMm = 4.8f,
+                cameraId = "0",
+            )
+        val provider =
+            CountingFakeProvider {
+                CameraIntrinsicsResolution(calibrated, cameraCharacteristicsSnapshot = snapshot)
+            }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+
+        resolver.resolveOnce(fakeCameraInfo(), 1920, 1080)
+
+        assertEquals(snapshot, resolver.lastCameraCharacteristicsSnapshot)
     }
 }

@@ -516,7 +516,18 @@ internal fun resolveAnalysisBufferIntrinsics(
  *
  * [imageWidthPx]/[imageHeightPx] `null` or non-positive (no analyzed frame known yet) skips straight
  * to [resolveCameraIntrinsics], since [resolveAnalysisBufferIntrinsics] requires concrete buffer
- * dimensions to map into.
+ * dimensions to map into — [CameraIntrinsicsResolution.analysisBufferAttempt] is `null` in that case,
+ * since no calibrated attempt was made at all (distinct from an attempt that ran and failed).
+ *
+ * (CAM-2c runtime integration fix) Whatever [resolveAnalysisBufferIntrinsics] actually returned —
+ * `Resolved` or one of its explicit failure variants — is always carried on the returned
+ * [CameraIntrinsicsResolution.analysisBufferAttempt], even when this function falls through to the
+ * CAM-1b path below. A prior revision only ever attached [CameraCalibrationDiagnostics] to a
+ * successful result, silently discarding the *reason* a calibrated mapping failed the moment the
+ * CAM-1b fallback took over — collapsing e.g. `UnsupportedLogicalMultiCameraMapping` into an
+ * indistinguishable "no calibration diagnostics" `null`. [CameraCharacteristicsSnapshot] is captured
+ * the same way, independent of outcome, so a diagnostics panel can show the camera metadata behind a
+ * rejection too.
  */
 internal fun resolveCameraIntrinsicsPreferringCalibration(
     source: CameraCharacteristicsSource,
@@ -524,15 +535,28 @@ internal fun resolveCameraIntrinsicsPreferringCalibration(
     imageWidthPx: Int?,
     imageHeightPx: Int?,
 ): CameraIntrinsicsResolution {
-    if (imageWidthPx != null && imageHeightPx != null && imageWidthPx > 0 && imageHeightPx > 0) {
-        val calibrated = resolveAnalysisBufferIntrinsics(source, sensorToBufferTransform, imageWidthPx, imageHeightPx)
-        if (calibrated is AnalysisBufferIntrinsicsResolution.Resolved) {
-            return CameraIntrinsicsResolution(
-                intrinsics = calibrated.intrinsics,
-                fallbackReason = null,
-                calibrationDiagnostics = calibrated.diagnostics,
-            )
+    val attempt: AnalysisBufferIntrinsicsResolution? =
+        if (imageWidthPx != null && imageHeightPx != null && imageWidthPx > 0 && imageHeightPx > 0) {
+            resolveAnalysisBufferIntrinsics(source, sensorToBufferTransform, imageWidthPx, imageHeightPx)
+        } else {
+            null
         }
+    val snapshot =
+        try {
+            source.snapshot()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    if (attempt is AnalysisBufferIntrinsicsResolution.Resolved) {
+        return CameraIntrinsicsResolution(
+            intrinsics = attempt.intrinsics,
+            fallbackReason = null,
+            analysisBufferAttempt = attempt,
+            cameraCharacteristicsSnapshot = snapshot,
+        )
     }
     return resolveCameraIntrinsics(source, imageWidthPx, imageHeightPx)
+        .copy(analysisBufferAttempt = attempt, cameraCharacteristicsSnapshot = snapshot)
 }

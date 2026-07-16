@@ -28,7 +28,18 @@ class SessionScopedCameraIntrinsicsResolver(
 ) {
     private val lock = Any()
     private var resolved: CoreCameraIntrinsicsResolution? = null
-    private var calibrationDiagnostics: CameraCalibrationDiagnostics? = null
+    private var analysisBufferAttempt: AnalysisBufferIntrinsicsResolution? = null
+    private var cameraCharacteristicsSnapshot: CameraCharacteristicsSnapshot? = null
+
+    /**
+     * (CAM-2c runtime integration fix) This session's exact, typed CAM-2c attempt — `Resolved` when
+     * the calibrated `AnalysisBuffer` mapping succeeded, one of its explicit failure variants when it
+     * did not, or `null` before [resolveOnce] has run. Unlike [lastCalibrationDiagnostics], this is
+     * populated for **every** outcome, not only a successful one — see
+     * [resolveCameraIntrinsicsPreferringCalibration]'s KDoc. Debug-only; never read by projection.
+     */
+    val lastAnalysisBufferAttempt: AnalysisBufferIntrinsicsResolution?
+        get() = synchronized(lock) { analysisBufferAttempt }
 
     /**
      * (CAM-2c §9) The [CameraCalibrationDiagnostics] this session's resolution produced, when the
@@ -37,7 +48,25 @@ class SessionScopedCameraIntrinsicsResolver(
      * never read by projection.
      */
     val lastCalibrationDiagnostics: CameraCalibrationDiagnostics?
-        get() = synchronized(lock) { calibrationDiagnostics }
+        get() = synchronized(lock) { (analysisBufferAttempt as? AnalysisBufferIntrinsicsResolution.Resolved)?.diagnostics }
+
+    /**
+     * (CAM-2c runtime integration fix) The raw [CameraCharacteristicsSnapshot] this session's
+     * resolution attempt actually read from the bound camera — captured regardless of
+     * [lastAnalysisBufferAttempt]'s outcome. `null` before [resolveOnce] has run, or if
+     * characteristics could not be read at all. Debug-only; never read by projection.
+     */
+    val lastCameraCharacteristicsSnapshot: CameraCharacteristicsSnapshot?
+        get() = synchronized(lock) { cameraCharacteristicsSnapshot }
+
+    /**
+     * (CAM-2c runtime integration fix) The exact [CoreCameraIntrinsicsResolution] this session
+     * published (the same value returned by [resolveOnce] and handed to `onResolved`) — `null`
+     * before [resolveOnce] has run. Debug-only convenience so a diagnostics consumer does not need to
+     * separately cache [resolveOnce]'s return value itself.
+     */
+    val lastPublishedResolution: CoreCameraIntrinsicsResolution?
+        get() = synchronized(lock) { resolved }
 
     /**
      * Returns the cached resolution if this session already resolved one; otherwise resolves via
@@ -71,7 +100,8 @@ class SessionScopedCameraIntrinsicsResolver(
         return synchronized(lock) {
             resolved ?: run {
                 val result = provider.resolve(cameraInfo, imageWidthPx, imageHeightPx, sensorToBufferTransform)
-                calibrationDiagnostics = result.calibrationDiagnostics
+                analysisBufferAttempt = result.analysisBufferAttempt
+                cameraCharacteristicsSnapshot = result.cameraCharacteristicsSnapshot
                 result.toCore().also { resolved = it }
             }
         }

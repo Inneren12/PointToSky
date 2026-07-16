@@ -778,4 +778,67 @@ class AnalysisBufferIntrinsicsResolverTest {
         // AnalysisBuffer reference built from a logical camera's possibly-wrong-physical-sensor metadata.
         assertEquals(CameraIntrinsicsReference.PhysicalSensor, result.intrinsics.reference)
     }
+
+    // --- CAM-2c runtime integration fix: the CAM-2c attempt must survive a CAM-1b fallback ---
+
+    @Test
+    fun `a resolved calibration also carries its own attempt as Resolved`() {
+        val result = resolveCameraIntrinsicsPreferringCalibration(sourceOf(), fullFrameTransform, bufferWidthPx, bufferHeightPx)
+
+        val attempt = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(result.analysisBufferAttempt)
+        assertEquals(result.intrinsics, attempt.intrinsics)
+        assertEquals(attempt.diagnostics, result.calibrationDiagnostics)
+    }
+
+    @Test
+    fun `a logical multi-camera rejection is preserved on the fallback result, not collapsed to null`() {
+        val result =
+            resolveCameraIntrinsicsPreferringCalibration(
+                sourceOf(isLogicalMultiCamera = true, cameraId = "0", physicalCameraIds = setOf("1", "2")),
+                fullFrameTransform,
+                bufferWidthPx,
+                bufferHeightPx,
+            )
+
+        // The published value fell back to CAM-1b PhysicalSensor (already asserted above), but the
+        // exact CAM-2c rejection reason must still be visible - this is the runtime-integration fix's
+        // central requirement (§2/§6): never collapse the attempt into the published fallback.
+        val attempt =
+            assertIs<AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping>(result.analysisBufferAttempt)
+        assertEquals("0", attempt.cameraId)
+        assertEquals(setOf("1", "2"), attempt.physicalCameraIdsForDiagnostics)
+        assertNull(result.calibrationDiagnostics)
+    }
+
+    @Test
+    fun `a missing sensor-to-buffer transform is preserved on the fallback result`() {
+        val result = resolveCameraIntrinsicsPreferringCalibration(sourceOf(), null, bufferWidthPx, bufferHeightPx)
+
+        assertEquals(AnalysisBufferIntrinsicsResolution.MissingSensorToBufferTransform, result.analysisBufferAttempt)
+    }
+
+    @Test
+    fun `no attempt is recorded at all when buffer dimensions are unknown yet`() {
+        val result = resolveCameraIntrinsicsPreferringCalibration(sourceOf(), fullFrameTransform, null, null)
+
+        // Distinct from an attempt that ran and failed (e.g. MissingSensorToBufferTransform above):
+        // here CAM-2c was never even tried, since no analyzed frame dimensions were known yet.
+        assertNull(result.analysisBufferAttempt)
+    }
+
+    @Test
+    fun `the raw camera characteristics snapshot is captured regardless of outcome`() {
+        val resolvedResult = resolveCameraIntrinsicsPreferringCalibration(sourceOf(cameraId = "0"), fullFrameTransform, bufferWidthPx, bufferHeightPx)
+        assertEquals("0", resolvedResult.cameraCharacteristicsSnapshot?.cameraId)
+
+        val fallbackResult =
+            resolveCameraIntrinsicsPreferringCalibration(
+                sourceOf(isLogicalMultiCamera = true, cameraId = "0"),
+                fullFrameTransform,
+                bufferWidthPx,
+                bufferHeightPx,
+            )
+        assertEquals("0", fallbackResult.cameraCharacteristicsSnapshot?.cameraId)
+        assertEquals(true, fallbackResult.cameraCharacteristicsSnapshot?.isLogicalMultiCamera)
+    }
 }

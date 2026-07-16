@@ -9,6 +9,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult
 import dev.pointtosky.core.astro.projection.camera.FrameRotationPairingResult
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import dev.pointtosky.core.astro.projection.camera.TimedRotationSample
 import dev.pointtosky.core.astro.projection.camera.TimestampSyncConfig
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
@@ -527,5 +528,94 @@ class CameraSessionIntrinsicsCoordinatorTest {
         } finally {
             executor.shutdown()
         }
+    }
+
+    // --- CAM-2c runtime integration fix §2/§3: diagnosticState and frame counters ---------------
+
+    @Test
+    fun `frameCounters tracks analyzed, transform-present, transform-null and usable-transform frames, even after resolution`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080, sensorToBufferTransform = null))
+        coordinator.onFrameMetadata(frame(1920, 1080, sensorToBufferTransform = unsupportedTransform()))
+        coordinator.onFrameMetadata(frame(1920, 1080, sensorToBufferTransform = usableTransform()))
+        // Resolution has now been claimed by the usable-transform frame above - a further frame must
+        // still advance the running counters (unlike coordinatorFramesWaited, which freezes).
+        coordinator.onFrameMetadata(frame(1280, 720, sensorToBufferTransform = usableTransform()))
+
+        val counters = coordinator.frameCounters
+        assertEquals(4L, counters.framesAnalyzed)
+        assertEquals(3L, counters.framesWithTransform)
+        assertEquals(1L, counters.framesWithNullTransform)
+        assertEquals(2L, counters.framesWithUsableTransform)
+        assertEquals(3, counters.coordinatorFramesWaited) // frozen at the frame that claimed resolution
+        assertEquals(usableTransform(), counters.latestFrameTransform)
+        assertEquals(SensorToBufferTransformClass.AXIS_ALIGNED_0, counters.latestFrameTransformClass)
+    }
+
+    @Test
+    fun `frameCounters stop advancing after dispose`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080))
+        coordinator.dispose()
+        coordinator.onFrameMetadata(frame(1280, 720))
+
+        assertEquals(1L, coordinator.frameCounters.framesAnalyzed)
+    }
+
+    @Test
+    fun `diagnosticState preserves the CAM-2c attempt reason even when a CAM-1b fallback is published`() {
+        val attempt =
+            AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping(
+                cameraId = "0",
+                physicalCameraIdsForDiagnostics = setOf("1", "2"),
+            )
+        val snapshot = CameraCharacteristicsSnapshot(availableFocalLengthsMm = floatArrayOf(3.6f), sensorPhysicalWidthMm = 6.4f, sensorPhysicalHeightMm = 4.8f, cameraId = "0")
+        val provider =
+            object : CameraIntrinsicsProvider {
+                override fun resolve(
+                    cameraInfo: CameraInfo,
+                    imageWidthPx: Int?,
+                    imageHeightPx: Int?,
+                    sensorToBufferTransform: SensorToBufferMatrix3?,
+                ): CameraIntrinsicsResolution =
+                    CameraIntrinsicsResolution(
+                        calibrated,
+                        analysisBufferAttempt = attempt,
+                        cameraCharacteristicsSnapshot = snapshot,
+                    )
+            }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        coordinator.onCameraInfo(fakeCameraInfo())
+        coordinator.onFrameMetadata(frame(1920, 1080))
+
+        val diagnosticState = coordinator.diagnosticState
+        assertEquals(attempt, diagnosticState.analysisBufferAttempt)
+        assertEquals(snapshot, diagnosticState.cameraCharacteristicsSnapshot)
+        assertEquals(CameraSessionIntrinsicsCoordinatorState.RESOLVED, diagnosticState.coordinatorState)
+        val published = assertIs<CoreCameraIntrinsicsResolution.Resolved>(diagnosticState.publishedIntrinsicsResolution)
+        assertEquals(calibrated, published.intrinsics)
+    }
+
+    @Test
+    fun `diagnosticState reflects an unresolved coordinator with a null attempt and no published resolution`() {
+        val provider = CountingFakeProvider { CameraIntrinsicsResolution(calibrated) }
+        val resolver = SessionScopedCameraIntrinsicsResolver(provider)
+        val coordinator = CameraSessionIntrinsicsCoordinator(resolver) {}
+
+        val diagnosticState = coordinator.diagnosticState
+
+        assertNull(diagnosticState.analysisBufferAttempt)
+        assertNull(diagnosticState.publishedIntrinsicsResolution)
+        assertEquals(CameraSessionIntrinsicsCoordinatorState.WAITING_FOR_CAMERA_INFO, diagnosticState.coordinatorState)
     }
 }
