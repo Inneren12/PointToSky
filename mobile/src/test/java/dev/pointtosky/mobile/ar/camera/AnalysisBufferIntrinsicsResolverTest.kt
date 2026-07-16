@@ -282,28 +282,38 @@ class AnalysisBufferIntrinsicsResolverTest {
 
     @Test
     fun `a non-zero active array origin still resolves the pixel-array-derived focal length with cx-cy remaining active-array-local`() {
-        // Same non-zero-origin active array [100,50]-[4132,3074] as the coordinate-origin fixture
-        // below, combined with a pixel array larger than the active array - the two corrections
-        // (CAM-2c fix round 3 §P1 and fix §P2) compose independently.
+        // Same non-zero-origin active array [100,50]-[4132,3074] and pixel array (4100x3100) as the
+        // standalone pixel-array-larger-than-active-array test above - combined here to prove §P1
+        // (coordinate-origin) and §P2 (pixel-pitch) compose independently: pixel-array dimensions
+        // affect fx/fy only, active-array-local dimensions affect cx/cy only, and activeLeft/activeTop
+        // affect neither.
         val source =
             sourceOf(
                 activeArrayLeftPx = 100,
                 activeArrayTopPx = 50,
                 activeArrayRightPx = 4132,
                 activeArrayBottomPx = 3074,
-                pixelArrayWidthPx = 4200,
-                pixelArrayHeightPx = 3200,
+                pixelArrayWidthPx = 4100,
+                pixelArrayHeightPx = 3100,
             )
         val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(source, fullFrameTransform))
 
-        val expectedActiveFx = 3.6f.toDouble() / 6.4f.toDouble() * 4200
-        val expectedActiveFy = 3.6f.toDouble() / 4.8f.toDouble() * 3200
+        val expectedActiveFx = 3.6f.toDouble() / 6.4f.toDouble() * 4100
+        val expectedActiveFy = 3.6f.toDouble() / 4.8f.toDouble() * 3100
         assertEquals(expectedActiveFx, resolved.diagnostics.activeFxPx, eps)
         assertEquals(expectedActiveFy, resolved.diagnostics.activeFyPx, eps)
         // cx/cy remain the active array's own local centre (4032/2, 3024/2) - never activeLeft/Top
         // translated, and unaffected by the pixel array's own, larger size.
         assertEquals(2016.0, resolved.diagnostics.activeCxPx, eps)
         assertEquals(1512.0, resolved.diagnostics.activeCyPx, eps)
+        assertEquals(
+            CameraCalibrationDiagnostics.PRINCIPAL_POINT_BASIS_ACTIVE_ARRAY_LOCAL,
+            resolved.diagnostics.principalPointBasis,
+        )
+        assertEquals(
+            CameraCalibrationDiagnostics.FOCAL_DERIVATION_BASIS_PIXEL_ARRAY,
+            resolved.diagnostics.focalDerivationBasis,
+        )
     }
 
     // --- Typed failure outcomes ---

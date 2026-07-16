@@ -3,6 +3,7 @@ package dev.pointtosky.mobile.ar.camera
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Pure JVM tests for [buildCameraCalibrationDiagnosticText] (CAM-2c §9, fix §1/§3/§5). */
@@ -22,8 +23,12 @@ class CameraCalibrationDiagnosticFormatTest {
             focalLengthMm = 3.6,
             activeFxPx = 2268.0,
             activeFyPx = 2268.0,
-            activeCxPx = 2116.0,
-            activeCyPx = 1562.0,
+            // Active-array-local (matching principalPointBasis below): the rectangle's own centre,
+            // (activeArrayWidthPx/2, activeArrayHeightPx/2) = (2016, 1512) - NOT activeArrayLeftPx/TopPx
+            // added in (2116, 1562), which would be the full-pixel-array-relative equivalent and would
+            // silently re-encode the +activeLeft/+activeTop regression CAM-2c fix round 3 removed.
+            activeCxPx = 2016.0,
+            activeCyPx = 1512.0,
             principalPointBasis = CameraCalibrationDiagnostics.PRINCIPAL_POINT_BASIS_ACTIVE_ARRAY_LOCAL,
             focalDerivationBasis = CameraCalibrationDiagnostics.FOCAL_DERIVATION_BASIS_PIXEL_ARRAY,
             // Active-array-local (CAM-2c fix round 3 §P1): a full-frame, no-subcrop mapping starts
@@ -66,8 +71,11 @@ class CameraCalibrationDiagnosticFormatTest {
         assertTrue(text.contains("unavailable"))
         assertTrue(text.contains("active rect (full pixel array): [100.0,50.0 — 4132.0,3074.0]"))
         assertTrue(text.contains("ACTIVE_ARRAY_LOCAL"))
-        assertTrue(text.contains("2116.0"))
-        assertTrue(text.contains("1562.0"))
+        // The rendered active principal point must be the active-array-LOCAL centre (2016.0, 1512.0),
+        // never the full-pixel-array-relative equivalent (2116.0, 1562.0) - see the fixture's own
+        // comment above for why displaying that value here would be wrong.
+        assertTrue(text.contains("2016.0"))
+        assertTrue(text.contains("1512.0"))
         assertTrue(text.contains("crop (active-array-local): [0.0,0.0 — 4032.0,3024.0]"))
         assertTrue(text.contains("pixel array: 4100×3100"))
         assertTrue(text.contains("pixel-array vs active-array delta: Δw=68, Δh=76"))
@@ -94,5 +102,38 @@ class CameraCalibrationDiagnosticFormatTest {
         assertTrue(text.contains("pixel array: unavailable"))
         assertTrue(text.contains("pixel-array vs active-array delta: unavailable"))
         assertTrue(text.contains("focal derivation basis: LENS_INTRINSIC_CALIBRATION"))
+    }
+
+    @Test
+    fun `the active principal point is the active-array-local centre, never activeLeft-activeTop translated`() {
+        val activeWidth = diagnostics.activeArrayWidthPx
+        val activeHeight = diagnostics.activeArrayHeightPx
+        val activeLeft = diagnostics.activeArrayLeftPx
+        val activeTop = diagnostics.activeArrayTopPx
+
+        assertEquals(activeWidth / 2.0, diagnostics.activeCxPx)
+        assertEquals(activeHeight / 2.0, diagnostics.activeCyPx)
+        // A non-zero active-array origin (activeLeft=100.0, activeTop=50.0) must never be folded into
+        // the active-array-local principal point - re-adding it is exactly the regression CAM-2c fix
+        // round 3 removed.
+        assertTrue(diagnostics.activeCxPx != activeLeft + activeWidth / 2.0)
+        assertTrue(diagnostics.activeCyPx != activeTop + activeHeight / 2.0)
+    }
+
+    @Test
+    fun `the full-pixel-array-relative principal point is a separate, explicitly labelled conversion, never the displayed active intrinsic`() {
+        // activeArrayLeftPx/TopPx + the active-array-local centre gives the same physical point's
+        // full-pixel-array coordinate (2116.0, 1562.0) - a documented conversion for cross-referencing
+        // against raw Camera2 debug dumps (CAM-2c fix §P1/§P2), computed here explicitly rather than
+        // ever being what buildCameraCalibrationDiagnosticText renders as the active principal point.
+        val fullArrayCx = diagnostics.activeArrayLeftPx + diagnostics.activeCxPx
+        val fullArrayCy = diagnostics.activeArrayTopPx + diagnostics.activeCyPx
+
+        assertEquals(2116.0, fullArrayCx)
+        assertEquals(1562.0, fullArrayCy)
+
+        val text = buildCameraCalibrationDiagnosticText(diagnostics)
+        assertTrue(!text.contains("2116.0"))
+        assertTrue(!text.contains("1562.0"))
     }
 }

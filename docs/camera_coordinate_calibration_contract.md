@@ -548,9 +548,11 @@ multi-camera/missing-transform/invalid-metadata fallback — see below) is rejec
 `AnalysisBufferIntrinsicsResolution` is `Resolved` / `MissingActiveArray` / `MissingPhysicalSensorSize`
 / `MissingFocalLength` / `MissingSensorToBufferTransform` / `UnsupportedSensorToBufferTransform(class)`
 / `UnsupportedLogicalMultiCameraMapping(cameraId, physicalCameraIdsForDiagnostics)` /
-`InvalidMetadata(reason)`. `resolveCameraIntrinsicsPreferringCalibration` tries this path first and
-falls back to the **unchanged** CAM-1b `resolveCameraIntrinsics` (still `PhysicalSensor`-referenced,
-or the legacy fallback) for any other outcome — never the reverse.
+`InvalidMetadata(reason)` — extended by later fixes to also include
+`RotationOwnershipUnproven(transformClass)` (fix round 2 §4, §3.6) and `MissingPixelArraySize` (fix
+§P2, §3.8); see those subsections for what each means. `resolveCameraIntrinsicsPreferringCalibration`
+tries this path first and falls back to the **unchanged** CAM-1b `resolveCameraIntrinsics` (still
+`PhysicalSensor`-referenced, or the legacy fallback) for any other outcome — never the reverse.
 
 **Logical multi-camera: still blocked, provenance investigated (§1/§5 of the fix task) — this is the
 single biggest reason CAM-2c is not yet a universal "normal session path".** An earlier pass's own
@@ -890,9 +892,25 @@ resolving despite a missing pixel array; and a non-zero active-array origin comb
 larger-than-active pixel array, confirming the two corrections (§3.7 and this one) compose
 independently — `cx`/`cy` remain active-array-local while `fx`/`fy` reflect the pixel array alone.
 
-**Validation (this environment, fourth fix pass).** `:core:astro-core:test` (468 tests, up from 465 —
-four new `activeArrayIntrinsicsFromFocalLength` tests) and `:mobile:test{Internal,Public}DebugUnitTest`
-(339 tests each, up from 333 — six new resolver tests plus one new diagnostics-format test) all pass
+**Test-contract correction (same fix, immediately after landing).** `CameraCalibrationDiagnosticFormatTest`'s
+own fixture initially set `activeCxPx`/`activeCyPx` to `(2116.0, 1562.0)` — the full-pixel-array-relative
+equivalent of the active-array-local centre `(2016.0, 1512.0)` — while declaring
+`principalPointBasis = ACTIVE_ARRAY_LOCAL`, silently re-encoding the exact `+activeLeft`/`+activeTop`
+regression §3.7 removed, in a test fixture rather than production code. Corrected to `(2016.0, 1512.0)`;
+the full-array equivalent is now tested only as an explicitly separate, labelled conversion
+(`activeArrayLeftPx + activeCxPx == 2116.0`) that the rendered diagnostic text never contains. A new
+regression test asserts `activeCxPx == activeArrayWidthPx/2` and `activeCxPx != activeArrayLeftPx +
+activeArrayWidthPx/2` directly (the `Y` analogues likewise); the non-zero-origin-plus-larger-pixel-array
+resolver test (previous paragraph) now also asserts `principalPointBasis`/`focalDerivationBasis`
+explicitly, using the same canonical `4100×3100` pixel array as the standalone pixel-array test above
+(previously an unrelated `4200×3200`). No production code changed — `resolveAnalysisBufferIntrinsics`,
+`CameraCalibrationDiagnostics.of`, and `buildCameraCalibrationDiagnosticText` were already correct; only
+the test fixture's own hardcoded numbers were wrong.
+
+**Validation (this environment, fourth fix pass, including the test-contract correction).**
+`:core:astro-core:test` (468 tests, up from 465 — four new `activeArrayIntrinsicsFromFocalLength`
+tests) and `:mobile:test{Internal,Public}DebugUnitTest` (341 tests each, up from 333 — six new resolver
+tests, one new diagnostics-format test, and two more from the test-contract correction) all pass
 under a real Gradle build, alongside `compileInternalDebugAndroidTestKotlin`,
 `lintInternalDebug`/`lintPublicDebug` (0 errors, 30 pre-existing warnings, unchanged), and
 `assembleInternalDebug`/`assemblePublicDebug`. Skew handling (§3.4/§3.5's `INTRINSIC_SKEW_TOLERANCE_PX`
