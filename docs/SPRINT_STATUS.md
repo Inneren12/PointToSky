@@ -393,8 +393,10 @@ description.**
   implementation moved to a genuine `internalDebug`-only Gradle source set (a no-op
   `CamDiagnosticsExportUi` implementation is compiled into `publicDebug`/`internalRelease`/
   `publicRelease` instead - no reflection, no reliance on R8), the snapshot became a deep-copied,
-  fully immutable DTO tree (mutable `FloatArray`/`Set` inputs are normalized into fresh `List`s at
-  capture time, verified by mutation-regression tests), the share `Intent` is now built by a pure,
+  read-only export DTO tree (mutable `FloatArray`/`Set` inputs are normalized into fresh `List`s at
+  capture time, verified by mutation-regression tests; Kotlin's `List` is a read-only interface, not a
+  JVM-enforced immutability guarantee, so no field retains a reference to a caller-owned mutable
+  collection in the first place), the share `Intent` is now built by a pure,
   independently testable function, the live snapshot's timestamp is throttled (recomputed only on an
   actual input change or dialog-open, never every recomposition, never a timer), and the full-report
   scroll/large-font tests now prove the scrollable container reaches a real end marker and each action
@@ -418,6 +420,43 @@ description.**
     **not executed** — no physical device or emulator is available in this environment. See
     `docs/validation/cam_2c_pixel9_evidence.md` §3 for exactly what remains to be confirmed there;
     this is distinct from the original, already-confirmed Pixel 9 evidence in that file's §1.
+
+- **Follow-up hardening pass (this session, round 3) — real Gradle**, same provisioned JDK 17 + Android
+  SDK. Fixes four defects found in the prior pass: (1) the `internalDebug` instrumented-test source set
+  was at the wrong path (`mobile/src/internalDebugAndroidTest` — a directory AGP silently never
+  compiled) and is now at AGP's real name, `mobile/src/androidTestInternalDebug` (component prefix
+  first); this move surfaced a real, previously-hidden compile error (two missing cross-package test-tag
+  imports) in `CamDiagnosticExportUiTest.kt`, now fixed — direct evidence the wrong path had been masking
+  a genuine bug. (2) "Copy all"/"Share log"/"Share JSON" now dispatch through an injectable
+  `CamDiagnosticActions` interface (`copy(label, text)`/`share(subject, text)`), defaulting to the real
+  `AndroidCamDiagnosticActions` (clipboard/chooser) in production; new Compose tests inject a recording
+  fake and assert the *exact* label/subject/payload each button sends — including a frozen-snapshot case
+  (freeze, advance the live input, then confirm Share log/Share JSON still describe the frozen values,
+  not the newer live ones) — closing a gap where a payload-swapping regression could have passed
+  unnoticed. (3) KDoc/docs wording that overclaimed the snapshot as "fully immutable" is corrected to
+  "deep-copied, read-only export DTO tree", noting explicitly that Kotlin's `List` is a read-only
+  interface, not a JVM-enforced immutability guarantee (Option A: wording fix only, no new
+  immutable-collections dependency). (4) removed the unused `openState` parameter from the test-only
+  `ReticleAndExportUiHost` composable and its call site.
+  - *`:core:astro-core:test`*: **PASS, 468/468.**
+  - *`:mobile:testInternalDebugUnitTest`*: **PASS, 394/394** (unchanged — this round's new tests are
+    instrumented, not JVM unit tests).
+  - *`:mobile:testPublicDebugUnitTest`*: **PASS, 369/369** (unchanged).
+  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS** — confirmed via `:mobile:sourceSets`
+    that `androidTestInternalDebug` is AGP-registered (Kotlin/Java sources under
+    `mobile/src/androidTestInternalDebug/java`), and via the compiled `kotlin-classes` output that both
+    `CamDiagnosticActionsTest.class` and `CamDiagnosticExportUiTest.class` (plus the two new payload
+    tests' synthetic lambda classes) were actually produced.
+  - *`:mobile:lintInternalDebug`/`lintPublicDebug`*: **PASS**, 0 errors, 30 warnings each (identical
+    count to the prior pass; same baseline).
+  - *`:mobile:assembleInternalDebug`/`assemblePublicDebug`*: **PASS**, both debug APKs built.
+  - *Confirmed unchanged:* `git diff --stat` against the prior pass touches only this diagnostics-export
+    feature's own files plus two doc-comment path corrections in shared `androidTest`/`main` files - no
+    CAM-2a projection math, CAM-2c intrinsics math, logical-multi-camera policy, camera binding,
+    renderer, detector, matcher, or catalog code changed.
+  - *Physical device/emulator execution*: **not run** — no physical device or emulator is available in
+    this environment; this round's proofs are compile/lint/JVM-test/instrumented-test-*compile*
+    evidence only, never a claim of connected/device execution.
 
 ## CAM-2b (this sprint)
 

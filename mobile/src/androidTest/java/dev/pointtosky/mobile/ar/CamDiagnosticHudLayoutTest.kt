@@ -211,7 +211,7 @@ class CamDiagnosticHudLayoutTest {
         // CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG is the variant-independent container the export UI
         // renders into (architecture fix §1) - shared androidTest sources can assert its presence and
         // position without depending on internalDebug-only content; see
-        // mobile/src/internalDebugAndroidTest for the export UI's own content assertions.
+        // mobile/src/androidTestInternalDebug for the export UI's own content assertions.
         composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG).assertExists()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).assertExists()
 
@@ -396,7 +396,7 @@ class CamDiagnosticHudLayoutTest {
     }
 
     // The CAM-2c-specific "compact summary surfaces the root cause / full report opens on tap" scenario
-    // now lives in mobile/src/internalDebugAndroidTest/.../CamDiagnosticExportUiTest.kt (architecture
+    // now lives in mobile/src/androidTestInternalDebug/.../CamDiagnosticExportUiTest.kt (architecture
     // fix §1/§7) - CamDiagnosticsExportUiProvider's real content is internalDebug-only, so shared
     // androidTest sources (compiled for every flavor) can no longer assert on it directly.
 
@@ -481,7 +481,7 @@ class CamDiagnosticHudLayoutTest {
         // Long CAM-2b content is present in the semantics tree (may need scrolling to bring fully into
         // view - assertExists, not assertIsDisplayed, checks presence not current visibility). The CAM
         // diagnostics export slot is variant-independent (architecture fix §1) - its internalDebug-only
-        // content is asserted separately in mobile/src/internalDebugAndroidTest.
+        // content is asserted separately in mobile/src/androidTestInternalDebug.
         composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG).assertExists()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).assertExists()
 

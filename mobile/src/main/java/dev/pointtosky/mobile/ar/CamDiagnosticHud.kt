@@ -41,7 +41,7 @@ import dev.pointtosky.mobile.ar.camera.prediction.name
  * variant (defined in `main`) even though the *content* inside it is variant-specific: `internalDebug`
  * renders the compact summary + "Open diagnostics"; every other variant renders nothing at all (the
  * no-op implementation). Shared, variant-independent tests assert on this slot's presence/position;
- * variant-specific content assertions live in `mobile/src/internalDebugAndroidTest`.
+ * variant-specific content assertions live in `mobile/src/androidTestInternalDebug`.
  */
 const val CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG = "cam_diagnostic_export_slot"
 

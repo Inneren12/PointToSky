@@ -29,10 +29,13 @@ data class Cam2bDiagnosticSnapshot(
 )
 
 /**
- * `internalDebug`-only. Raw Camera2 metadata, normalized to immutable value types at capture time
+ * `internalDebug`-only. Raw Camera2 metadata, deep-copied into a read-only export DTO at capture time
  * (architecture fix §2) - [physicalCameraIds] is a freshly sorted `List`, never the original
  * (possibly mutable) `Set`; [availableFocalLengthsMm] is a freshly built `List<Double>`, never the
- * original (definitely mutable) `FloatArray`.
+ * original (definitely mutable) `FloatArray`. Note Kotlin's `List` is a read-only *interface*, not an
+ * absolute immutability guarantee on the JVM - what this deep-copy actually rules out is retaining any
+ * reference to a caller-owned mutable collection, so mutating the caller's own original array/set after
+ * capture can never affect this snapshot (see `CamDiagnosticSnapshotTest`'s mutation-regression tests).
  */
 data class CameraMetadataExportSnapshot(
     val cameraId: String?,
@@ -167,15 +170,22 @@ data class CameraCalibrationExportSnapshot(
 )
 
 /**
- * `internalDebug`-only. A bounded, **fully** immutable snapshot of one CAM diagnostics moment
- * (architecture fix §2) - every field, at every level of nesting, is a plain value (`String`, `Int`,
- * `Long`, `Double`, `Boolean`, an immutable-by-convention `List` of one of those, or a nested `data
+ * `internalDebug`-only. A bounded, **deep-copied, read-only export DTO tree** capturing one CAM
+ * diagnostics moment (architecture fix §2) - every field, at every level of nesting, is a plain value
+ * (`String`, `Int`, `Long`, `Double`, `Boolean`, a read-only `List` of one of those, or a nested `data
  * class` built from the same). No field anywhere in this tree is a runtime provider/coordinator
  * reference, a mutable array, a mutable-backed collection, a
  * [dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState] (or its `points`/`summary`
  * catalog-derived payload), a [CameraSessionIntrinsicsDiagnosticState], a [CameraCharacteristicsSnapshot],
  * or a [CameraCalibrationDiagnostics]. See [captureCamDiagnosticSnapshot]'s own KDoc for the
  * deep-copy/normalization every field is built through exactly once, at capture time.
+ *
+ * Note Kotlin's `List` is a read-only *interface*, not a JVM-enforced immutability guarantee - nothing
+ * here prevents an unsafe downcast to `MutableList` from mutating a backing array in principle. What
+ * this type actually guarantees is that no field is, or ever wraps, a reference to a caller-owned
+ * mutable collection: every `List` here was freshly built at capture time from already-copied elements
+ * (see [captureCamDiagnosticSnapshot]), so mutating the *original* source array/set/state afterward can
+ * never change an already-captured [CamDiagnosticSnapshot].
  */
 data class CamDiagnosticSnapshot(
     val capturedAtEpochMillis: Long,

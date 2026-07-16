@@ -120,11 +120,16 @@ fun CamDiagnosticFullReportDialog(
     liveSnapshot: CamDiagnosticSnapshot,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
+    actions: CamDiagnosticActions? = null,
 ) {
     var frozenSnapshot by remember { mutableStateOf<CamDiagnosticSnapshot?>(null) }
     val liveness = if (frozenSnapshot != null) CamDiagnosticLiveness.FROZEN else CamDiagnosticLiveness.LIVE
     val displayedSnapshot = frozenSnapshot ?: liveSnapshot
     val context = LocalContext.current
+    // Defaults to the real Android clipboard/chooser implementation; tests inject a recording fake here
+    // instead (share-wiring test fix) so payload wiring is asserted directly rather than only inferred
+    // from buildCamDiagnosticShareIntent()'s own independent unit test.
+    val effectiveActions = actions ?: remember(context) { AndroidCamDiagnosticActions(context) }
     val reportText = remember(displayedSnapshot, liveness) { buildCamDiagnosticReportText(displayedSnapshot, liveness) }
 
     Dialog(
@@ -188,19 +193,19 @@ fun CamDiagnosticFullReportDialog(
                     )
                     CamDiagnosticActionChip(
                         label = "Copy all",
-                        onClick = { copyCamDiagnosticTextToClipboard(context, "PointToSky CAM diagnostics", reportText) },
+                        onClick = { effectiveActions.copy("PointToSky CAM diagnostics", reportText) },
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_COPY_ALL_BUTTON_TEST_TAG),
                     )
                     CamDiagnosticActionChip(
                         label = "Share log",
-                        onClick = { shareCamDiagnosticText(context, "PointToSky CAM diagnostics", reportText) },
+                        onClick = { effectiveActions.share("PointToSky CAM diagnostics", reportText) },
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_SHARE_LOG_BUTTON_TEST_TAG),
                     )
                     CamDiagnosticActionChip(
                         label = "Share JSON",
                         onClick = {
                             val jsonText = buildCamDiagnosticJson(displayedSnapshot, liveness)
-                            shareCamDiagnosticText(context, "PointToSky CAM diagnostics (JSON)", jsonText)
+                            effectiveActions.share("PointToSky CAM diagnostics (JSON)", jsonText)
                         },
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_SHARE_JSON_BUTTON_TEST_TAG),
                     )

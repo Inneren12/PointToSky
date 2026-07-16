@@ -35,12 +35,19 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import dev.pointtosky.mobile.ar.camera.AnalysisBufferIntrinsicsResolution
+import dev.pointtosky.mobile.ar.camera.CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG
+import dev.pointtosky.mobile.ar.camera.CAM_DIAGNOSTIC_OPEN_BUTTON_TEST_TAG
+import dev.pointtosky.mobile.ar.camera.CamDiagnosticLiveness
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticsExportInput
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticsExportUiProvider
 import dev.pointtosky.mobile.ar.camera.CameraCharacteristicsSnapshot
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsCoordinatorState
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsDiagnosticState
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsFrameCounters
+import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticJson
+import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticReportText
+import dev.pointtosky.mobile.ar.camera.captureCamDiagnosticSnapshot
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -197,6 +204,98 @@ class CamDiagnosticExportUiTest {
         assertTrue(clippedText.contains("attempt: UnsupportedLogicalMultiCameraMapping"))
     }
 
+    /** Records every dispatched Copy/Share call verbatim (share-wiring test fix) - injected in place of
+     * [AndroidCamDiagnosticActions] so a payload-wiring regression (e.g. two buttons swapping their
+     * payloads) fails a test instead of only being detectable by manually reading the real clipboard or
+     * a real chooser Activity, neither of which distinguishes *which* button sent *which* payload. */
+    private class RecordingCamDiagnosticActions : CamDiagnosticActions {
+        data class Copy(val label: String, val text: String)
+
+        data class Share(val subject: String, val text: String)
+
+        val copies = mutableListOf<Copy>()
+        val shares = mutableListOf<Share>()
+
+        override fun copy(
+            label: String,
+            text: String,
+        ) {
+            copies += Copy(label, text)
+        }
+
+        override fun share(
+            subject: String,
+            text: String,
+        ) {
+            shares += Share(subject, text)
+        }
+    }
+
+    @Test
+    fun copyAllShareLogAndShareJsonDispatchTheExactExpectedLabelSubjectAndPayloadThroughTheInjectedActions() {
+        val snapshot = captureCamDiagnosticSnapshot(input = pixel9Input(), capturedAtEpochMillis = 1_700_000_000_000L)
+        val actions = RecordingCamDiagnosticActions()
+        composeTestRule.setContent {
+            CamDiagnosticFullReportDialog(liveSnapshot = snapshot, onDismissRequest = {}, actions = actions)
+        }
+
+        val expectedReportText = buildCamDiagnosticReportText(snapshot, CamDiagnosticLiveness.LIVE)
+        val expectedJsonText = buildCamDiagnosticJson(snapshot, CamDiagnosticLiveness.LIVE)
+
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COPY_ALL_BUTTON_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_SHARE_LOG_BUTTON_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_SHARE_JSON_BUTTON_TEST_TAG).performClick()
+
+        assertEquals(1, actions.copies.size)
+        assertEquals("PointToSky CAM diagnostics", actions.copies[0].label)
+        assertEquals(expectedReportText, actions.copies[0].text)
+
+        assertEquals(2, actions.shares.size)
+        assertEquals("PointToSky CAM diagnostics", actions.shares[0].subject)
+        assertEquals(expectedReportText, actions.shares[0].text)
+        assertEquals("PointToSky CAM diagnostics (JSON)", actions.shares[1].subject)
+        assertEquals(expectedJsonText, actions.shares[1].text)
+    }
+
+    @Test
+    fun frozenSnapshotShareLogAndShareJsonPayloadsDescribeTheFrozenSnapshotNotNewerLiveInput() {
+        var observedFrameCount by mutableStateOf(10L)
+        val actions = RecordingCamDiagnosticActions()
+        composeTestRule.setContent {
+            val snapshot =
+                remember(observedFrameCount) {
+                    captureCamDiagnosticSnapshot(
+                        input = pixel9Input(observedFrameCount),
+                        capturedAtEpochMillis = 1_700_000_000_000L,
+                    )
+                }
+            CamDiagnosticFullReportDialog(liveSnapshot = snapshot, onDismissRequest = {}, actions = actions)
+        }
+
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_FREEZE_RESUME_BUTTON_TEST_TAG).performClick()
+
+        composeTestRule.runOnUiThread { observedFrameCount = 99L }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_SHARE_LOG_BUTTON_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_SHARE_JSON_BUTTON_TEST_TAG).performClick()
+
+        val frozenSnapshot =
+            captureCamDiagnosticSnapshot(input = pixel9Input(10L), capturedAtEpochMillis = 1_700_000_000_000L)
+        val expectedFrozenReportText = buildCamDiagnosticReportText(frozenSnapshot, CamDiagnosticLiveness.FROZEN)
+        val expectedFrozenJsonText = buildCamDiagnosticJson(frozenSnapshot, CamDiagnosticLiveness.FROZEN)
+
+        assertEquals(1, actions.shares.count { it.subject == "PointToSky CAM diagnostics" })
+        val shareLogText = actions.shares.first { it.subject == "PointToSky CAM diagnostics" }.text
+        assertEquals(expectedFrozenReportText, shareLogText)
+        assertTrue(shareLogText.contains("geometry observed frames: 10"))
+        assertTrue(!shareLogText.contains("geometry observed frames: 99"))
+
+        val shareJsonText = actions.shares.first { it.subject == "PointToSky CAM diagnostics (JSON)" }.text
+        assertEquals(expectedFrozenJsonText, shareJsonText)
+        assertTrue(!shareJsonText.contains("\"observedFrameCount\":99"))
+    }
+
     @Test
     fun theFullReportScrollsAllTheWayToItsOwnEndMarker() {
         composeTestRule.setContent {
@@ -250,10 +349,7 @@ class CamDiagnosticExportUiTest {
     /** Mirrors `ArScreen`'s real composition shape: the reticle and the CAM diagnostics export UI are
      * independent siblings under one root [Box]. */
     @Composable
-    private fun ReticleAndExportUiHost(
-        openState: androidx.compose.runtime.MutableState<Boolean>,
-        input: CamDiagnosticsExportInput,
-    ) {
+    private fun ReticleAndExportUiHost(input: CamDiagnosticsExportInput) {
         Box(Modifier.size(400.dp, 850.dp)) {
             Box(
                 modifier =
@@ -269,8 +365,7 @@ class CamDiagnosticExportUiTest {
     @Test
     fun reticleIsNotPermanentlyObscuredAfterTheFullReportIsClosed() {
         composeTestRule.setContent {
-            val openState = remember { mutableStateOf(false) }
-            ReticleAndExportUiHost(openState = openState, input = pixel9Input())
+            ReticleAndExportUiHost(input = pixel9Input())
         }
 
         composeTestRule.onNodeWithTag(AR_RETICLE_TEST_TAG).assertIsDisplayed()

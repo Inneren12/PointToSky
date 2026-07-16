@@ -59,3 +59,39 @@ fun shareCamDiagnosticText(
         }
     context.startActivity(chooser)
 }
+
+/**
+ * `internalDebug`-only. The seam [CamDiagnosticFullReportDialog] dispatches its "Copy all"/"Share
+ * log"/"Share JSON" actions through, instead of calling [copyCamDiagnosticTextToClipboard] /
+ * [shareCamDiagnosticText] directly (share-wiring test fix) - so a Compose test can substitute a
+ * recording fake and assert exactly which `label`/`text` or `subject`/`text` each button actually
+ * dispatched, without ever launching a real chooser `Activity`. [AndroidCamDiagnosticActions] is the
+ * only production implementation.
+ */
+interface CamDiagnosticActions {
+    fun copy(
+        label: String,
+        text: String,
+    )
+
+    fun share(
+        subject: String,
+        text: String,
+    )
+}
+
+/**
+ * `internalDebug`-only. The real [CamDiagnosticActions] used in production - forwards to the real
+ * Android [copyCamDiagnosticTextToClipboard]/[shareCamDiagnosticText] functions above, unchanged.
+ */
+class AndroidCamDiagnosticActions(private val context: Context) : CamDiagnosticActions {
+    override fun copy(
+        label: String,
+        text: String,
+    ) = copyCamDiagnosticTextToClipboard(context, label, text)
+
+    override fun share(
+        subject: String,
+        text: String,
+    ) = shareCamDiagnosticText(context, subject, text)
+}

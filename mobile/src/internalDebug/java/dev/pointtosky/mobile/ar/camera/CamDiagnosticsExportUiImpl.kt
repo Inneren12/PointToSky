@@ -25,7 +25,7 @@ import dev.pointtosky.mobile.ar.CamDiagnosticFullReportDialog
  * the highest-value few-line root-cause summary shown while the HUD's details are expanded, replacing
  * the previous giant per-domain text blocks. `internalDebug`-only, matching [CamDiagnosticsExportUi]'s
  * own gate - never referenced by shared (`main`) test sources, only by
- * `mobile/src/internalDebugAndroidTest`. */
+ * `mobile/src/androidTestInternalDebug`. */
 const val CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG = "cam_diagnostic_compact_summary"
 
 /** [androidx.compose.ui.platform.testTag] for the "Open diagnostics" affordance that opens

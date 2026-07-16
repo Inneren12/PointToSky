@@ -105,7 +105,7 @@ the `internalDebug` variant in the first place, not merely hidden behind a runti
   `CamDiagnosticsPublicVariantBoundaryTest`/`CamDiagnosticsInternalDebugVariantBoundaryTest`
   (`mobile/src/testPublicDebug`/`mobile/src/testInternalDebug`) for the classpath-presence proof.
 - **`CamDiagnosticSnapshot`** (`dev.pointtosky.mobile.ar.camera.CamDiagnosticSnapshot`, `internalDebug`
-  only) — a bounded, **deep-copied** immutable value snapshot of one CAM diagnostics moment: `cam2b`
+  only) — a bounded, **deep-copied, read-only export DTO tree** of one CAM diagnostics moment: `cam2b`
   (status/reason scalars only — never the overlay `points`/`summary` payload), `cam2c` (coordinator
   state, typed attempt, published intrinsics, camera metadata, frame transform - all 9 sensor-to-buffer
   matrix values as a plain `List<Double>`, resolved buffer `K` when available), `geometry` (CAM-1g's
@@ -113,8 +113,11 @@ the `internalDebug` variant in the first place, not merely hidden behind a runti
   runtime types it is captured from is normalized into a freshly built, sorted `List` at capture time
   (`source?.toList()?.sorted()`, `source?.map(Float::toDouble)`) - mutating the original array/set
   afterward cannot change an already-captured snapshot (see `CamDiagnosticSnapshotTest`'s
-  mutation-regression tests). Never a live provider/coordinator reference, never star catalog contents,
-  never image pixels.
+  mutation-regression tests). Kotlin's `List` is a read-only *interface*, not a JVM-enforced
+  immutability guarantee, so this document deliberately avoids claiming no caller can ever mutate a
+  backing collection through an unsafe cast; what is guaranteed is that no field retains a reference to
+  a caller-owned mutable collection in the first place. Never a live provider/coordinator reference,
+  never star catalog contents, never image pixels.
 - **Compact HUD summary** — the expanded HUD now shows only the highest-value root-cause summary (camera,
   physical IDs, matrix class/health, published reference, and a short reason phrase when blocked), not
   the previous giant per-domain text blocks. "Open diagnostics" opens the full surface.
@@ -147,7 +150,7 @@ Pure JVM formatting/JSON/snapshot/mutation tests: `dev.pointtosky.mobile.ar.came
 (`:mobile:testInternalDebugUnitTest` / `:mobile:testPublicDebugUnitTest`). Compose/instrumentation tests
 (compiled, not run on-device in this authoring environment - see section 3):
 `dev.pointtosky.mobile.ar.CamDiagnosticExportUiTest`, `CamDiagnosticActionsTest`
-(`mobile/src/internalDebugAndroidTest`) and the shared, variant-independent `CamDiagnosticHudLayoutTest`
+(`mobile/src/androidTestInternalDebug`) and the shared, variant-independent `CamDiagnosticHudLayoutTest`
 (`mobile/src/androidTest`). See `docs/SPRINT_STATUS.md`'s CAM-2c row for the exact Gradle commands and
 results this pass actually ran.
 
