@@ -1,6 +1,7 @@
 package dev.pointtosky.mobile.ar.camera
 
 import dev.pointtosky.core.astro.projection.camera.ActiveArrayIntrinsics
+import dev.pointtosky.core.astro.projection.camera.ActiveArrayRect
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
@@ -10,7 +11,7 @@ import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import dev.pointtosky.core.astro.projection.camera.activeArrayIntrinsicsFromFocalLength
 import dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix
-import dev.pointtosky.core.astro.projection.camera.toActiveArraySensorCropRegion
+import dev.pointtosky.core.astro.projection.camera.toActiveArrayRect
 import dev.pointtosky.core.astro.projection.camera.toCameraIntrinsics
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
@@ -75,6 +76,30 @@ sealed interface AnalysisBufferIntrinsicsResolution {
      * codebase can safely use — never silently approximated as axis-aligned.
      */
     data class UnsupportedSensorToBufferTransform(
+        val transformClass: SensorToBufferTransformClass,
+    ) : AnalysisBufferIntrinsicsResolution
+
+    /**
+     * The sensor-to-buffer matrix classified as [transformClass] — one of
+     * [SensorToBufferTransformClass.ORTHOGONAL_90]/`ORTHOGONAL_180`/`ORTHOGONAL_270` — which
+     * [dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix] is
+     * algebraically willing to compose into a pinhole model (CAM-2c fix §1/§2), but which this
+     * resolver refuses to use anyway (CAM-2c fix round 2 §4): neither the public CameraX contract
+     * (`ImageInfo.getSensorToBufferTransformMatrix()`) nor Camera2's own documentation states how a
+     * rotated/permuted sensor-to-buffer matrix should combine with a given
+     * `CameraFrameMetadata.rotationDegrees` value for a real device — that combination has never been
+     * observed or documented, only reasoned about algebraically. Distinct from
+     * [UnsupportedSensorToBufferTransform]: here the *math* is available and tested
+     * (`AnalysisBufferIntrinsicsMappingTest`); what is missing is *proof* that using it is physically
+     * correct, not a formula. Shipping an elegant-but-unproven composition would trade safety for
+     * appearance of completeness — this codebase chooses safety. Falls through to the unchanged CAM-1b
+     * path exactly like any other non-`Resolved` outcome (see [resolveCameraIntrinsicsPreferringCalibration]).
+     * In real CameraX usage this is expected to be unreachable in practice, since CameraX's own
+     * reference implementation (`CameraUseCaseAdapter.calculateSensorToBufferTransformMatrix`) is
+     * provably `AXIS_ALIGNED_0`-only by construction — this guard exists for whichever OEM HAL or
+     * CameraX version this codebase has not traced, not because it is known to occur.
+     */
+    data class RotationOwnershipUnproven(
         val transformClass: SensorToBufferTransformClass,
     ) : AnalysisBufferIntrinsicsResolution
 
@@ -214,16 +239,25 @@ private fun preCorrectionActiveArrayMatchesActiveArray(snapshot: CameraCharacter
  *     (`quality = `[CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT] — with
  *     [CameraCalibrationDiagnosticReason.NON_ZERO_INTRINSIC_SKEW] recorded when the *only* reason
  *     calibration was rejected is the skew tolerance, so the diagnostics panel can distinguish that
- *     from "no calibration reported at all").
+ *     from "no calibration reported at all"). **Either way, the resulting principal point is translated
+ *     into sensor matrix space** by adding `activeLeft`/`activeTop` (CAM-2c fix round 2 §1) — never
+ *     assumed to already be there, since `SENSOR_INFO_ACTIVE_ARRAY_SIZE.left`/`.top` need not be zero.
  *  6. Map through [sensorToBufferTransform] via [mapActiveArrayIntrinsicsThroughMatrix] — full 3x3
  *     matrix composition, not an independent per-field formula (CAM-2c fix §1/§2). A
  *     [MatrixIntrinsicsMappingResult.Unsupported] outcome here returns
- *     [AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform].
- *  7. Convert to [CameraIntrinsics] ([toCameraIntrinsics]) with
+ *     [AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform]; a
+ *     [MatrixIntrinsicsMappingResult.Mapped] whose `transformClass` is anything other than
+ *     [SensorToBufferTransformClass.AXIS_ALIGNED_0] returns
+ *     [AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven] instead of using it (CAM-2c fix
+ *     round 2 §4 — see that variant's KDoc).
+ *  7. Validate the matrix-inferred crop region lies within the **actual** active array rectangle in
+ *     sensor matrix space (CAM-2c fix round 2 §2) — never a `[0, width) x [0, height)` range, which is
+ *     only correct when that rectangle happens to start at sensor matrix space's own origin.
+ *  8. Convert to [CameraIntrinsics] ([toCameraIntrinsics]) with
  *     `source = `[CameraIntrinsicsSource.CAMERA_CHARACTERISTICS]`, `reference =
  *     AnalysisBuffer(`[bufferWidthPx]`, `[bufferHeightPx]`)`.
  *
- * Any [IllegalArgumentException] thrown by the pure `:core:astro-core` math in steps 5-7 is caught
+ * Any [IllegalArgumentException] thrown by the pure `:core:astro-core` math in steps 5-8 is caught
  * and reported as [AnalysisBufferIntrinsicsResolution.InvalidMetadata] — defensive, since the checks
  * above should already rule out the inputs that would cause one.
  */
@@ -261,6 +295,16 @@ internal fun resolveAnalysisBufferIntrinsics(
     if (activeArrayWidthPx <= 0 || activeArrayHeightPx <= 0) {
         return AnalysisBufferIntrinsicsResolution.MissingActiveArray
     }
+    // The actual, ground-truth SENSOR_INFO_ACTIVE_ARRAY_SIZE rectangle in sensor matrix space (CAM-2c
+    // fix round 2 §1/§2) - never assumed to start at (0,0). Used both to translate the principal
+    // point into that same space below, and to validate the matrix-inferred crop region against it.
+    val activeArrayRect =
+        ActiveArrayRect(
+            leftPx = activeLeft.toDouble(),
+            topPx = activeTop.toDouble(),
+            rightPx = activeRight.toDouble(),
+            bottomPx = activeBottom.toDouble(),
+        )
 
     val sensorWidthMm = snapshot.sensorPhysicalWidthMm
     val sensorHeightMm = snapshot.sensorPhysicalHeightMm
@@ -295,23 +339,42 @@ internal fun resolveAnalysisBufferIntrinsics(
             null
         }
 
+    val originXPx = activeLeft.toDouble()
+    val originYPx = activeTop.toDouble()
+
     val active: ActiveArrayIntrinsics
     val quality: CameraIntrinsicsQuality
+    // "Before origin translation" - the raw, rectangle-local number this resolution actually read,
+    // shown alongside active.cxPx/cyPx ("after") in diagnostics so a reviewer can verify the
+    // translation happened, rather than trusting an implicit convention (CAM-2c fix round 2 §6).
+    val principalPointBeforeTranslationXPx: Double
+    val principalPointBeforeTranslationYPx: Double
     try {
         if (useLensIntrinsicCalibration) {
             checkNotNull(calibration)
+            // LENS_INTRINSIC_CALIBRATION's cx/cy are local to the pre-correction active-array
+            // rectangle's own top-left (CAM-2c fix round 2 §1) - preCorrectionActiveArrayMatchesActiveArray
+            // already guarantees that rectangle's left/top exactly equal activeLeft/activeTop
+            // whenever it holds (an exact-all-four-edges match), so translating by activeLeft/activeTop
+            // is correct here without separately tracking the pre-correction rectangle's own origin.
+            principalPointBeforeTranslationXPx = calibration[2].toDouble()
+            principalPointBeforeTranslationYPx = calibration[3].toDouble()
             active =
                 ActiveArrayIntrinsics(
                     fxPx = calibration[0].toDouble(),
                     fyPx = calibration[1].toDouble(),
-                    cxPx = calibration[2].toDouble(),
-                    cyPx = calibration[3].toDouble(),
+                    cxPx = originXPx + principalPointBeforeTranslationXPx,
+                    cyPx = originYPx + principalPointBeforeTranslationYPx,
                     widthPx = activeArrayWidthPx,
                     heightPx = activeArrayHeightPx,
                     skewPx = calibration[4].toDouble(),
+                    coordinateOriginXPx = originXPx,
+                    coordinateOriginYPx = originYPx,
                 )
             quality = CameraIntrinsicsQuality.CALIBRATED
         } else {
+            principalPointBeforeTranslationXPx = activeArrayWidthPx / 2.0
+            principalPointBeforeTranslationYPx = activeArrayHeightPx / 2.0
             active =
                 activeArrayIntrinsicsFromFocalLength(
                     focalLengthMm = focalLengthMm,
@@ -319,6 +382,8 @@ internal fun resolveAnalysisBufferIntrinsics(
                     sensorHeightMm = sensorHeightMm.toDouble(),
                     activeArrayWidthPx = activeArrayWidthPx,
                     activeArrayHeightPx = activeArrayHeightPx,
+                    coordinateOriginXPx = originXPx,
+                    coordinateOriginYPx = originYPx,
                 )
             quality = CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT
         }
@@ -336,11 +401,20 @@ internal fun resolveAnalysisBufferIntrinsics(
         when (mapping) {
             is MatrixIntrinsicsMappingResult.Unsupported ->
                 return AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform(mapping.transformClass)
-            is MatrixIntrinsicsMappingResult.Mapped -> mapping.values
+            is MatrixIntrinsicsMappingResult.Mapped ->
+                // CAM-2c fix round 2 §4: only AXIS_ALIGNED_0 is proven correct in combination with
+                // CameraFrameMetadata.rotationDegrees - the core math can compose ORTHOGONAL_90/180/270
+                // too (see mapActiveArrayIntrinsicsThroughMatrix's own KDoc), but this resolver, which
+                // makes a real production/device claim, refuses that unproven combination.
+                if (mapping.transformClass != SensorToBufferTransformClass.AXIS_ALIGNED_0) {
+                    return AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven(mapping.transformClass)
+                } else {
+                    mapping.values
+                }
         }
     val cropRegion =
         try {
-            sensorToBufferTransform.toActiveArraySensorCropRegion(bufferWidthPx, bufferHeightPx)
+            sensorToBufferTransform.toActiveArrayRect(bufferWidthPx, bufferHeightPx)
         } catch (_: IllegalArgumentException) {
             return AnalysisBufferIntrinsicsResolution.InvalidMetadata(AnalysisBufferIntrinsicsInvalidMetadataReason.CROP_REGION_INVALID)
         }
@@ -348,10 +422,15 @@ internal fun resolveAnalysisBufferIntrinsics(
     // computed as bufferWidthPx/activeArrayWidthPx, then inverted back) - never a physically
     // meaningful margin. Pixel counts here are always at least tens of pixels, so 1e-6px is many
     // orders of magnitude below any real crop discrepancy.
+    //
+    // CAM-2c fix round 2 §2: validated against the ACTUAL active array rectangle (sensor matrix
+    // space, e.g. [100,50]-[4132,3074]) - never against a [0,width]x[0,height] range, which is only
+    // correct when the active array happens to start at sensor matrix space's own origin.
     val cropBoundsTolerancePx = 1e-6
-    if (cropRegion.leftPx < -cropBoundsTolerancePx || cropRegion.topPx < -cropBoundsTolerancePx ||
-        cropRegion.rightPx > activeArrayWidthPx + cropBoundsTolerancePx ||
-        cropRegion.bottomPx > activeArrayHeightPx + cropBoundsTolerancePx
+    if (cropRegion.leftPx < activeArrayRect.leftPx - cropBoundsTolerancePx ||
+        cropRegion.topPx < activeArrayRect.topPx - cropBoundsTolerancePx ||
+        cropRegion.rightPx > activeArrayRect.rightPx + cropBoundsTolerancePx ||
+        cropRegion.bottomPx > activeArrayRect.bottomPx + cropBoundsTolerancePx
     ) {
         // The matrix is mathematically valid but physically inconsistent with the reported active
         // array: it implies reading sensor pixels outside SENSOR_INFO_ACTIVE_ARRAY_SIZE entirely.
@@ -369,6 +448,7 @@ internal fun resolveAnalysisBufferIntrinsics(
         val diagnostics =
             CameraCalibrationDiagnostics.of(
                 active = active,
+                activeArrayRect = activeArrayRect,
                 cropRegion = cropRegion,
                 bufferValues = bufferValues,
                 sensorWidthMm = sensorWidthMm.toDouble(),
@@ -380,6 +460,8 @@ internal fun resolveAnalysisBufferIntrinsics(
                 cameraId = snapshot.cameraId,
                 isLogicalMultiCamera = snapshot.isLogicalMultiCamera,
                 physicalCameraIds = snapshot.physicalCameraIds,
+                principalPointBeforeTranslationXPx = principalPointBeforeTranslationXPx,
+                principalPointBeforeTranslationYPx = principalPointBeforeTranslationYPx,
             )
         AnalysisBufferIntrinsicsResolution.Resolved(intrinsics, diagnostics)
     } catch (_: IllegalArgumentException) {

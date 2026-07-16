@@ -161,9 +161,6 @@ internal fun analysisBufferIntrinsics(
     verticalFovDeg: Double = 90.0,
     principalPointXPx: Double? = null,
     principalPointYPx: Double? = null,
-    axisSwapped: Boolean = false,
-    negateXInput: Boolean = false,
-    negateYInput: Boolean = false,
 ): CameraIntrinsicsResolution.LegacyFallback =
     CameraIntrinsicsResolution.LegacyFallback(
         CameraIntrinsics(
@@ -176,9 +173,10 @@ internal fun analysisBufferIntrinsics(
             principalPointYPx = principalPointYPx,
             source = CameraIntrinsicsSource.LEGACY_FALLBACK,
             reference = CameraIntrinsicsReference.AnalysisBuffer(referenceWidthPx, referenceHeightPx),
-            axisSwapped = axisSwapped,
-            negateXInput = negateXInput,
-            negateYInput = negateYInput,
+            // axisSwapped/negateXInput/negateYInput are never non-default here (CAM-2c fix round 2
+            // §5): this fixture's source is always LEGACY_FALLBACK, and the tightened CameraIntrinsics
+            // invariant only allows those flags for source=CAMERA_CHARACTERISTICS - a legacy fixture
+            // must never be able to construct a matrix-remapped value at all.
         ),
         reason = "test_fixture",
     )

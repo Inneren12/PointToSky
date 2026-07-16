@@ -20,10 +20,17 @@ private fun formatMm(value: Double): String = String.format(Locale.ROOT, "%.2f m
 fun buildCameraCalibrationDiagnosticText(diagnostics: CameraCalibrationDiagnostics): String {
     val lines = mutableListOf("CAM-2c calibration")
     lines += "active array: ${diagnostics.activeArrayWidthPx}×${diagnostics.activeArrayHeightPx}"
+    lines +=
+        "active rect: [${formatPx(diagnostics.activeArrayLeftPx)},${formatPx(diagnostics.activeArrayTopPx)} — " +
+            "${formatPx(diagnostics.activeArrayRightPx)},${formatPx(diagnostics.activeArrayBottomPx)}]"
     lines += "sensor: ${formatMm(diagnostics.sensorWidthMm)} × ${formatMm(diagnostics.sensorHeightMm)}"
     lines += "focal length: ${formatMm(diagnostics.focalLengthMm)}"
     lines += "active fx/fy: ${formatPx(diagnostics.activeFxPx)}, ${formatPx(diagnostics.activeFyPx)}"
-    lines += "active cx/cy: ${formatPx(diagnostics.activeCxPx)}, ${formatPx(diagnostics.activeCyPx)}"
+    lines += "principal point basis: ${diagnostics.principalPointBasis}"
+    lines +=
+        "active cx/cy before origin translation: ${formatPx(diagnostics.principalPointBeforeTranslationXPx)}, " +
+            formatPx(diagnostics.principalPointBeforeTranslationYPx)
+    lines += "active cx/cy after origin translation: ${formatPx(diagnostics.activeCxPx)}, ${formatPx(diagnostics.activeCyPx)}"
     lines +=
         "crop: [${formatPx(diagnostics.cropLeftPx)},${formatPx(diagnostics.cropTopPx)} — " +
             "${formatPx(diagnostics.cropRightPx)},${formatPx(diagnostics.cropBottomPx)}]"

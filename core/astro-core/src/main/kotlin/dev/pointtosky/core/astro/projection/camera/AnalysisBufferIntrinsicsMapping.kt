@@ -3,8 +3,14 @@ package dev.pointtosky.core.astro.projection.camera
 import kotlin.math.abs
 
 /**
- * A crop region expressed in Camera2 `SENSOR_INFO_ACTIVE_ARRAY_SIZE` pixel coordinates (CAM-2c §4)
- * — e.g. the region a [SensorToBufferMatrix3] maps onto one analysis buffer.
+ * A general-purpose rectangle expressed in "sensor matrix space" — Camera2's own, possibly
+ * non-zero-origin `SENSOR_INFO_ACTIVE_ARRAY_SIZE` pixel coordinate system (CAM-2c §4, fix round 2
+ * §1/§2), the same coordinate system [SensorToBufferMatrix3] itself operates in. Used for two
+ * distinct purposes that share this exact shape: (1) the actual, ground-truth
+ * `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rectangle Camera2 reports (`left`/`top` **not** assumed zero — see
+ * [ActiveArrayIntrinsics]'s KDoc), used to validate that a matrix-inferred region stays within it
+ * (`dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics`); and (2) the region
+ * [toActiveArrayRect] infers a buffer maps onto, by inverting a [SensorToBufferMatrix3].
  *
  * **Not** the same coordinate space as [CameraFrameMetadata]'s own `cropRectLeftPx`/`cropRectTopPx`/
  * `cropRectRightPx`/`cropRectBottomPx` fields, which are already in that frame's own *buffer* pixel
@@ -14,15 +20,16 @@ import kotlin.math.abs
  * `dev.pointtosky.mobile.ar.camera.ImageProxyFrameMetadataSource`'s KDoc for why `ImageProxy.cropRect`
  * is never used as this type's source in this codebase's current CameraX binding path.
  *
- * Diagnostics-only (CAM-2c fix §1): never fed back into [mapActiveArrayIntrinsicsThroughMatrix],
- * which composes matrices directly rather than round-tripping through a crop rectangle.
+ * Purpose (2) is diagnostics/validation-only (CAM-2c fix §1): never fed back into
+ * [mapActiveArrayIntrinsicsThroughMatrix], which composes matrices directly rather than
+ * round-tripping through a crop rectangle.
  *
- * @property leftPx inclusive left edge (smaller x), active-array pixels.
- * @property topPx inclusive top edge (smaller y), active-array pixels.
- * @property rightPx exclusive-by-convention right edge (larger x), active-array pixels.
- * @property bottomPx exclusive-by-convention bottom edge (larger y), active-array pixels.
+ * @property leftPx inclusive left edge (smaller x), sensor matrix space pixels.
+ * @property topPx inclusive top edge (smaller y), sensor matrix space pixels.
+ * @property rightPx exclusive-by-convention right edge (larger x), sensor matrix space pixels.
+ * @property bottomPx exclusive-by-convention bottom edge (larger y), sensor matrix space pixels.
  */
-data class ActiveArraySensorCropRegion(
+data class ActiveArrayRect(
     val leftPx: Double,
     val topPx: Double,
     val rightPx: Double,
@@ -30,41 +37,42 @@ data class ActiveArraySensorCropRegion(
 ) {
     init {
         require(leftPx.isFinite() && topPx.isFinite() && rightPx.isFinite() && bottomPx.isFinite()) {
-            "all crop-region edges must be finite; was ($leftPx, $topPx, $rightPx, $bottomPx)"
+            "all rectangle edges must be finite; was ($leftPx, $topPx, $rightPx, $bottomPx)"
         }
         require(leftPx < rightPx) {
-            "crop region must be ordered horizontally (leftPx < rightPx); was leftPx=$leftPx, rightPx=$rightPx"
+            "rectangle must be ordered horizontally (leftPx < rightPx); was leftPx=$leftPx, rightPx=$rightPx"
         }
         require(topPx < bottomPx) {
-            "crop region must be ordered vertically (topPx < bottomPx); was topPx=$topPx, bottomPx=$bottomPx"
+            "rectangle must be ordered vertically (topPx < bottomPx); was topPx=$topPx, bottomPx=$bottomPx"
         }
     }
 
-    /** Width in active-array pixels, always strictly positive by the ordering invariant. */
+    /** Width in sensor matrix space pixels, always strictly positive by the ordering invariant. */
     val widthPx: Double get() = rightPx - leftPx
 
-    /** Height in active-array pixels, always strictly positive by the ordering invariant. */
+    /** Height in sensor matrix space pixels, always strictly positive by the ordering invariant. */
     val heightPx: Double get() = bottomPx - topPx
 }
 
 /**
- * Inverts this (non-singular, affine) [SensorToBufferMatrix3] into the [ActiveArraySensorCropRegion]
+ * Inverts this (non-singular, affine) [SensorToBufferMatrix3] into the [ActiveArrayRect]
  * it maps onto a buffer of exactly [bufferWidthPx] × [bufferHeightPx] pixels (CAM-2c fix §1):
- * transforms the buffer rectangle's four corners back into active-array space via the matrix inverse,
- * then takes their bounding box. **Exact** (a tight fit, not an over-approximation) for
- * [SensorToBufferTransformClass.AXIS_ALIGNED_0]/`ORTHOGONAL_90`/`ORTHOGONAL_180`/`ORTHOGONAL_270` — the
- * only classes this is ever invoked for in production (see [mapActiveArrayIntrinsicsThroughMatrix]) —
- * since each of those maps a rectangle onto a rectangle exactly. Diagnostics-only; never itself fed
- * back into any intrinsics computation.
+ * transforms the buffer rectangle's four corners back into sensor matrix space via the matrix
+ * inverse, then takes their bounding box. **Exact** (a tight fit, not an over-approximation) for
+ * [SensorToBufferTransformClass.AXIS_ALIGNED_0]/`ORTHOGONAL_90`/`ORTHOGONAL_180`/`ORTHOGONAL_270` —
+ * since each of those maps a rectangle onto a rectangle exactly — though only `AXIS_ALIGNED_0` is
+ * ever composed by [mapActiveArrayIntrinsicsThroughMatrix] into a production pinhole model as of
+ * CAM-2c fix round 2 §4 (see that function's KDoc on rotation-ownership proof scope). Diagnostics/
+ * validation-only; never itself fed back into any intrinsics computation.
  *
  * @throws IllegalArgumentException if [bufferWidthPx]/[bufferHeightPx] is not strictly positive, the
  *   matrix is not affine (see [classifySensorToBufferMatrix]), or the matrix's linear part is singular
  *   (not invertible).
  */
-fun SensorToBufferMatrix3.toActiveArraySensorCropRegion(
+fun SensorToBufferMatrix3.toActiveArrayRect(
     bufferWidthPx: Int,
     bufferHeightPx: Int,
-): ActiveArraySensorCropRegion {
+): ActiveArrayRect {
     require(bufferWidthPx > 0) { "bufferWidthPx must be strictly positive; was $bufferWidthPx" }
     require(bufferHeightPx > 0) { "bufferHeightPx must be strictly positive; was $bufferHeightPx" }
     require(abs(m20) <= DEFAULT_SENSOR_TO_BUFFER_CLASSIFICATION_TOLERANCE &&
@@ -98,7 +106,7 @@ fun SensorToBufferMatrix3.toActiveArraySensorCropRegion(
             activeYOf(0.0, bufferHeight),
             activeYOf(bufferWidth, bufferHeight),
         )
-    return ActiveArraySensorCropRegion(
+    return ActiveArrayRect(
         leftPx = cornerXs.min(),
         topPx = cornerYs.min(),
         rightPx = cornerXs.max(),
@@ -229,6 +237,21 @@ sealed interface MatrixIntrinsicsMappingResult {
  * + cx` for any real `fxRaw`, `cx` itself is never affected by this — only the sign applied to the
  * normalized input at projection time (see `PinholeProjectionModel.project`'s KDoc for the exact
  * consumption of these flags, and the proof this can never double up with `rotationDegrees`).
+ *
+ * ## Scope note (CAM-2c fix round 2 §4) — this function is pure algebra, not a production-support claim
+ * The four-class composition above is algebraically correct and independently tested
+ * (`AnalysisBufferIntrinsicsMappingTest`) for any matrix that classifies into one of those buckets.
+ * It does **not**, by itself, prove that composing an `ORTHOGONAL_90`/`180`/`270` buffer-space K′ is
+ * the physically correct thing to do *in combination with* a given `CameraFrameMetadata.rotationDegrees`
+ * value for a real device — the public CameraX/Camera2 contract documents the two independently and
+ * never states how a rotated sensor-to-buffer matrix and a given `rotationDegrees` should combine.
+ * `dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics` — the one call site that makes a
+ * real-world, production claim — therefore only ever accepts an `AXIS_ALIGNED_0` result from this
+ * function; it treats `ORTHOGONAL_90`/`180`/`270` as `RotationOwnershipUnproven` even though this
+ * function itself is willing to compose them. This function stays general (rather than being narrowed
+ * to `AXIS_ALIGNED_0` itself) so the algebra remains available, tested, and honestly documented as
+ * exactly what it is — safe math, not a proven device-level contract — should a future CameraX version
+ * or device survey ever supply the missing evidence.
  *
  * @throws IllegalArgumentException if [bufferWidthPx]/[bufferHeightPx] is not strictly positive.
  */

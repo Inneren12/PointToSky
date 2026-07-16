@@ -9,6 +9,7 @@ import dev.pointtosky.core.astro.projection.camera.MatrixIntrinsicsMappingResult
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.activeArrayIntrinsicsFromFocalLength
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.PixelPoint
 import dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix
 import dev.pointtosky.core.astro.projection.camera.toCameraIntrinsics
 import java.time.Instant
@@ -226,5 +227,84 @@ class CalibratedAnalysisBufferProjectionTest {
             assertEquals(viewportWidthPx / 2.0, displayPoint.x, eps, "rotationDegrees=$rotationDegrees")
             assertEquals(viewportHeightPx / 2.0, displayPoint.y, eps, "rotationDegrees=$rotationDegrees")
         }
+    }
+
+    // --- CAM-2c fix round 2 §4: a real, independently hand-derived end-to-end no-double-rotation proof ---
+    //
+    // An earlier "no double rotation" test exercised PinholeProjectionModel.project's axisSwapped
+    // mechanism directly (proving the mechanism's own algebra is self-consistent), but that mechanism
+    // is unreachable from production as of this fix (see AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven)
+    // - it proved the code does what the code does, not that the code is physically correct. This
+    // test instead chains the REAL production functions (DisplayAlignedOpticalToBufferOpticalTransform,
+    // PinholeProjectionModel.forGeometry/.project, CropScaleTransform.imageToDisplay) for the one
+    // combination this codebase actually ships (AXIS_ALIGNED_0 intrinsics + rotationDegrees 0/90), and
+    // compares the result against an expected display pixel computed by hand, directly from each
+    // component's own documented formula - never by calling those same functions to produce the
+    // expected value.
+
+    /**
+     * Hand-derivation for both cases below, from first principles:
+     *
+     * Buffer-space intrinsics (this file's own `calibratedIntrinsics`, AXIS_ALIGNED_0, no crop):
+     * `fx = fy = 360.0`, `cx = 320.0`, `cy = 240.0` over the 640x480 buffer.
+     *
+     * Input ray, in the **display-aligned** optical frame (i.e. *before*
+     * [DisplayAlignedOpticalToBufferOpticalTransform] is applied): `(dx, dy, dz) = (0.20, 0.07, 1.0)`
+     * - deliberately distinct, non-zero X and Y components.
+     *
+     * [DisplayAlignedOpticalToBufferOpticalTransform]'s own documented mapping table:
+     * ```text
+     * rotationDegrees   bufferX   bufferY
+     *         0            dx        dy
+     *        90            dy       −dx
+     * ```
+     *
+     * `rotationDegrees = 0`: `bufferOptical = (0.20, 0.07, 1.0)`, so `normalizedX = 0.20`,
+     * `normalizedY = 0.07`. Pinhole: `u = 360·0.20 + 320 = 392.0`, `v = 360·0.07 + 240 = 265.2`. With
+     * no crop and a `640x480` viewport exactly matching the buffer, `CropScaleTransform.imageToDisplay`
+     * is the identity beyond that (scale `1`, offset `0`): **expected display point `(392.0, 265.2)`**.
+     *
+     * `rotationDegrees = 90`: `bufferOptical = (dy, −dx, dz) = (0.07, −0.20, 1.0)`, so
+     * `normalizedX = 0.07`, `normalizedY = −0.20`. Pinhole: `u = 360·0.07 + 320 = 345.2`,
+     * `v = 360·(−0.20) + 240 = 168.0`. The rotated buffer swaps to a `480x640` viewport (matching
+     * `rotatedSourceSize` exactly, so scale is again `1`, offset `0`); `CropScaleTransform`'s own
+     * documented 90° rotation is `(xr, yr) = (h − y, x)` with unrotated crop size `(w, h) = (640,
+     * 480)`: `xr = 480 − 168.0 = 312.0`, `yr = 345.2`. **Expected display point `(312.0, 345.2)`**.
+     */
+    private val displayAlignedRay = OpticalCameraVector(x = 0.20, y = 0.07, z = 1.0)
+
+    private fun endToEndDisplayPoint(
+        rotationDegrees: Int,
+        viewportWidthPx: Int,
+        viewportHeightPx: Int,
+    ): PixelPoint {
+        val bufferOptical = DisplayAlignedOpticalToBufferOpticalTransform.apply(displayAlignedRay, rotationDegrees)
+        val projection = assertIs<CameraDirectionProjection.InFront>(projectBufferOpticalDirection(bufferOptical))
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = bufferWidthPx,
+                bufferHeightPx = bufferHeightPx,
+                rotationDegrees = rotationDegrees,
+                viewportWidthPx = viewportWidthPx,
+                viewportHeightPx = viewportHeightPx,
+                intrinsicsResolution = CameraIntrinsicsResolution.Resolved(calibratedIntrinsics),
+            )
+        val model = PinholeProjectionModel.forGeometry(geometry)
+        val bufferPoint = model.project(projection.normalizedX, projection.normalizedY)
+        return geometry.cropScaleTransform.imageToDisplay(bufferPoint)
+    }
+
+    @Test
+    fun `AXIS_ALIGNED_0 combined with rotationDegrees 0 matches the independently hand-derived display pixel`() {
+        val displayPoint = endToEndDisplayPoint(rotationDegrees = 0, viewportWidthPx = 640, viewportHeightPx = 480)
+        assertEquals(392.0, displayPoint.x, eps)
+        assertEquals(265.2, displayPoint.y, eps)
+    }
+
+    @Test
+    fun `AXIS_ALIGNED_0 combined with rotationDegrees 90 matches the independently hand-derived display pixel`() {
+        val displayPoint = endToEndDisplayPoint(rotationDegrees = 90, viewportWidthPx = 480, viewportHeightPx = 640)
+        assertEquals(312.0, displayPoint.x, eps)
+        assertEquals(345.2, displayPoint.y, eps)
     }
 }

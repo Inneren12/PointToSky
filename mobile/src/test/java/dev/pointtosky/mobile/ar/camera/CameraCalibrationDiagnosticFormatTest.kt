@@ -11,17 +11,24 @@ class CameraCalibrationDiagnosticFormatTest {
         CameraCalibrationDiagnostics(
             activeArrayWidthPx = 4032,
             activeArrayHeightPx = 3024,
+            activeArrayLeftPx = 100.0,
+            activeArrayTopPx = 50.0,
+            activeArrayRightPx = 4132.0,
+            activeArrayBottomPx = 3074.0,
             sensorWidthMm = 6.4,
             sensorHeightMm = 4.8,
             focalLengthMm = 3.6,
             activeFxPx = 2268.0,
             activeFyPx = 2268.0,
-            activeCxPx = 2016.0,
-            activeCyPx = 1512.0,
-            cropLeftPx = 0.0,
-            cropTopPx = 0.0,
-            cropRightPx = 4032.0,
-            cropBottomPx = 3024.0,
+            activeCxPx = 2116.0,
+            activeCyPx = 1562.0,
+            principalPointBasis = CameraCalibrationDiagnostics.PRINCIPAL_POINT_BASIS_SENSOR_MATRIX_SPACE,
+            principalPointBeforeTranslationXPx = 2016.0,
+            principalPointBeforeTranslationYPx = 1512.0,
+            cropLeftPx = 100.0,
+            cropTopPx = 50.0,
+            cropRightPx = 4132.0,
+            cropBottomPx = 3074.0,
             bufferFxPx = 360.0,
             bufferFyPx = 360.0,
             bufferCxPx = 320.0,
@@ -55,6 +62,10 @@ class CameraCalibrationDiagnosticFormatTest {
         assertTrue(text.contains("camera id: 0"))
         assertTrue(text.contains("logical: false"))
         assertTrue(text.contains("unavailable"))
+        assertTrue(text.contains("active rect: [100.0,50.0 — 4132.0,3074.0]"))
+        assertTrue(text.contains("SENSOR_MATRIX_SPACE"))
+        assertTrue(text.contains("2016.0"))
+        assertTrue(text.contains("2116.0"))
     }
 
     @Test

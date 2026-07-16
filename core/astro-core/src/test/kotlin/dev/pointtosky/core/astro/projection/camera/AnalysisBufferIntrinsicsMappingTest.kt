@@ -11,7 +11,7 @@ private const val EPS = 1e-6
 
 /**
  * Pure JVM tests for [SensorToBufferMatrix3], [classifySensorToBufferMatrix],
- * [ActiveArraySensorCropRegion], and [mapActiveArrayIntrinsicsThroughMatrix] (CAM-2c §4/§5/§8, fix
+ * [ActiveArrayRect], and [mapActiveArrayIntrinsicsThroughMatrix] (CAM-2c §4/§5/§8, fix
  * §1/§2/§7).
  */
 class AnalysisBufferIntrinsicsMappingTest {
@@ -101,15 +101,15 @@ class AnalysisBufferIntrinsicsMappingTest {
         assertEquals(SensorToBufferTransformClass.SINGULAR, classifySensorToBufferMatrix(matrix))
     }
 
-    // --- ActiveArraySensorCropRegion / toActiveArraySensorCropRegion ---
+    // --- ActiveArrayRect / toActiveArrayRect ---
 
     @Test
-    fun `toActiveArraySensorCropRegion inverts a centered-crop-then-scale transform`() {
+    fun `toActiveArrayRect inverts a centered-crop-then-scale transform`() {
         // Active array region (1008,756)-(3024,2268) - a centered 2016x1512 crop of a 4032x3024
         // active array - mapped onto a 1008x756 buffer (scale 0.5).
         val transform = axisAlignedMatrix(0.5, 0.5, -504.0, -378.0)
 
-        val region = transform.toActiveArraySensorCropRegion(bufferWidthPx = 1008, bufferHeightPx = 756)
+        val region = transform.toActiveArrayRect(bufferWidthPx = 1008, bufferHeightPx = 756)
 
         assertEquals(1008.0, region.leftPx, EPS)
         assertEquals(756.0, region.topPx, EPS)
@@ -118,13 +118,13 @@ class AnalysisBufferIntrinsicsMappingTest {
     }
 
     @Test
-    fun `toActiveArraySensorCropRegion is exact for a 90-degree axis permutation`() {
+    fun `toActiveArrayRect is exact for a 90-degree axis permutation`() {
         // W=4032 active array, mapped 90-degrees onto a 3024x4032 buffer (no crop, no extra scale
         // beyond the axis swap itself): bufferX = activeY, bufferY = 4032 - activeX.
         val matrix = SensorToBufferMatrix3(0.0, 1.0, 0.0, -1.0, 0.0, 4032.0, 0.0, 0.0, 1.0)
         assertEquals(SensorToBufferTransformClass.ORTHOGONAL_90, classifySensorToBufferMatrix(matrix))
 
-        val region = matrix.toActiveArraySensorCropRegion(bufferWidthPx = 3024, bufferHeightPx = 4032)
+        val region = matrix.toActiveArrayRect(bufferWidthPx = 3024, bufferHeightPx = 4032)
 
         // Active array is 4032 wide x 3024 tall; the 90-degree swap maps it exactly onto the
         // 3024x4032 buffer with no crop, so inverting recovers that full active-array rectangle.
@@ -135,28 +135,28 @@ class AnalysisBufferIntrinsicsMappingTest {
     }
 
     @Test
-    fun `toActiveArraySensorCropRegion rejects non-positive buffer dimensions`() {
+    fun `toActiveArrayRect rejects non-positive buffer dimensions`() {
         val transform = axisAlignedMatrix(1.0, 1.0, 0.0, 0.0)
-        assertFailsWith<IllegalArgumentException> { transform.toActiveArraySensorCropRegion(0, 100) }
-        assertFailsWith<IllegalArgumentException> { transform.toActiveArraySensorCropRegion(100, -1) }
+        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayRect(0, 100) }
+        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayRect(100, -1) }
     }
 
     @Test
-    fun `toActiveArraySensorCropRegion rejects a singular matrix`() {
+    fun `toActiveArrayRect rejects a singular matrix`() {
         val transform = axisAlignedMatrix(0.0, 0.0, 0.0, 0.0)
-        assertFailsWith<IllegalArgumentException> { transform.toActiveArraySensorCropRegion(100, 100) }
+        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayRect(100, 100) }
     }
 
     @Test
-    fun `ActiveArraySensorCropRegion rejects a degenerate or unordered region`() {
-        assertFailsWith<IllegalArgumentException> { ActiveArraySensorCropRegion(100.0, 0.0, 100.0, 100.0) }
-        assertFailsWith<IllegalArgumentException> { ActiveArraySensorCropRegion(0.0, 100.0, 100.0, 100.0) }
-        assertFailsWith<IllegalArgumentException> { ActiveArraySensorCropRegion(100.0, 0.0, 0.0, 100.0) }
+    fun `ActiveArrayRect rejects a degenerate or unordered region`() {
+        assertFailsWith<IllegalArgumentException> { ActiveArrayRect(100.0, 0.0, 100.0, 100.0) }
+        assertFailsWith<IllegalArgumentException> { ActiveArrayRect(0.0, 100.0, 100.0, 100.0) }
+        assertFailsWith<IllegalArgumentException> { ActiveArrayRect(100.0, 0.0, 0.0, 100.0) }
     }
 
     @Test
-    fun `ActiveArraySensorCropRegion computes width and height`() {
-        val region = ActiveArraySensorCropRegion(100.0, 200.0, 500.0, 800.0)
+    fun `ActiveArrayRect computes width and height`() {
+        val region = ActiveArrayRect(100.0, 200.0, 500.0, 800.0)
         assertEquals(400.0, region.widthPx)
         assertEquals(600.0, region.heightPx)
     }

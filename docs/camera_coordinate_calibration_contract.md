@@ -604,6 +604,105 @@ be executed here; it remains an open item for a session with real hardware acces
 logical-multi-camera paragraph above, is expected to hit `UnsupportedLogicalMultiCameraMapping` (not
 a calibrated `AnalysisBuffer` result) on a real Pixel 9's actual rear camera regardless.
 
+### 3.6 CAM-2c fix round 2: coordinate-origin ownership and a real rotation proof
+
+A review of §3.5's fix identified two further gaps, both real correctness bugs on any device whose
+`SENSOR_INFO_ACTIVE_ARRAY_SIZE` rectangle does not start at `(0, 0)` — a shifted active array is a
+documented, real Camera2 possibility (not every sensor's usable pixels begin at the readout origin) —
+and one test-quality gap. This subsection documents the second fix pass; §3.5 above is otherwise
+unchanged and still accurate.
+
+**§1/§2: active-array coordinate-origin ownership, enforced by a distinct type, not a convention
+readers must remember.** `ActiveArrayIntrinsics` (`core/astro-core/.../camera/ActiveArrayIntrinsics.kt`)
+previously read `SENSOR_INFO_ACTIVE_ARRAY_SIZE`'s `left`/`top` only to compute `widthPx`/`heightPx`,
+then discarded them — so `cxPx`/`cyPx` were composed through the sensor-to-buffer matrix with no
+declared coordinate origin, silently correct only for the `activeLeft == activeTop == 0` case. Two new
+fields, `coordinateOriginXPx`/`coordinateOriginYPx: Double` (both defaulting to `0.0`, so every
+existing named-argument call site is unaffected), now make that origin an explicit, required part of
+the value: `cxPx`/`cyPx` are documented to always be in **sensor matrix space** — the same space
+`ImageInfo.getSensorToBufferTransformMatrix()` consumes — never rectangle-local, unless both origin
+fields happen to be `0.0`. `resolveAnalysisBufferIntrinsics` (`:mobile`) now translates explicitly
+before composing through the matrix: the focal-length-derived centre is
+`activeLeft + activeWidth/2, activeTop + activeHeight/2`
+(`activeArrayIntrinsicsFromFocalLength`'s own `coordinateOriginXPx`/`coordinateOriginYPx` parameters);
+a calibrated `LENS_INTRINSIC_CALIBRATION` cx/cy — read as local to the pre-correction active-array
+rectangle's own top-left, the fix task's prescribed convention — is translated as
+`activeLeft + calibrationCx, activeTop + calibrationCy`. This uniformly uses `activeLeft`/`activeTop`
+for both paths because `preCorrectionActiveArrayMatchesActiveArray` (§3.5, unchanged) already requires
+an exact four-edge match whenever a pre-correction rectangle is reported, so
+`preCorrectionLeft == activeLeft` is guaranteed in the only case the calibrated path is actually used.
+
+**§2: crop-region bounds validated against the real rectangle, not an assumed `[0, width) x [0,
+height)` range.** `ActiveArraySensorCropRegion` is renamed `ActiveArrayRect` and now serves two roles:
+the ground-truth `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rectangle (`leftPx`/`topPx`/`rightPx`/`bottomPx`, all
+in sensor matrix space) and the region a buffer's inverse-mapped matrix infers
+(`SensorToBufferMatrix3.toActiveArrayRect`, renamed from `toActiveArraySensorCropRegion`).
+`resolveAnalysisBufferIntrinsics` validates the inferred crop against the actual reported rectangle's
+four edges (`left >= activeLeft`, `top >= activeTop`, `right <= activeRight`, `bottom <= activeBottom`,
+with the existing `1e-6`px float tolerance) — previously it validated against `0 until
+activeArrayWidthPx`/`0 until activeArrayHeightPx`, which only happens to be correct when the active
+array starts at the origin, and would have silently accepted a crop shifted by exactly the missing
+offset.
+
+**§4: rotation ownership beyond `AXIS_ALIGNED_0` is unproven, not proven-then-assumed — the resolver
+now says so explicitly instead of composing it.** The prior fix's own no-double-rotation proof exercised
+an `axisSwapped` pinhole model and `DisplayAlignedOpticalToBufferOpticalTransform`'s rotation
+independently and checked each ran — it never actually combined them end-to-end against an
+independently hand-derived expected pixel, so it could not have caught a sign or ordering error in
+their composition. Two problems followed from treating that as sufficient proof: (1) the test itself
+was not a real proof, and (2) no public CameraX/Camera2 contract this codebase has found states how an
+`ORTHOGONAL_90`/`180`/`270`-classified sensor-to-buffer matrix should combine with
+`CameraFrameMetadata.rotationDegrees` on a real device — composing them was algebraically elegant but
+unproven. The fix applies the task's own escape hatch: `mapActiveArrayIntrinsicsThroughMatrix`
+(`:core:astro-core`) is unchanged and stays fully general (pure algebra, independently tested,
+explicitly documented as *not* a production-support claim), but `resolveAnalysisBufferIntrinsics`
+(`:mobile`) now accepts only `AXIS_ALIGNED_0` from it — any other classified-but-composable class
+(`ORTHOGONAL_90`/`180`/`270`) returns a new typed outcome,
+`AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven(transformClass)`, instead of a `Resolved`
+value. `CameraSessionIntrinsicsCoordinator.isSupportedTransformClass` was narrowed to match (only
+`AXIS_ALIGNED_0` is "usable"), so the coherent-input gate does not spend its one-candidate-frame slot on
+a frame the resolver would reject anyway. In place of the old mechanism-only test,
+`CalibratedAnalysisBufferProjectionTest` now chains the real production functions
+(`DisplayAlignedOpticalToBufferOpticalTransform.apply` → `projectBufferOpticalDirection` →
+`PinholeProjectionModel.forGeometry`/`.project` → `CropScaleTransform.imageToDisplay`) end-to-end for
+an off-axis ray (`normalizedX=0.20, normalizedY=0.07`) at `rotationDegrees` 0 and 90, asserting against
+pixel values computed entirely by hand from the documented per-stage formulas (never by calling the
+functions under test) — `(392.0, 265.2)` and `(312.0, 345.2)` respectively, both confirmed by a real
+Gradle test run. `AnalysisBufferIntrinsicsResolverTest` separately proves `ORTHOGONAL_90`/`180`/`270`
+each now yield `RotationOwnershipUnproven`, not `Resolved`.
+
+**§5: the `axisSwapped`/`negateXInput`/`negateYInput` invariant now checks both fields it depends on.**
+`CameraIntrinsics.init` previously allowed non-default axis-remapping flags whenever `reference is
+AnalysisBuffer`, regardless of `source` — so a `LEGACY_FALLBACK`/`AnalysisBuffer` value (which never
+goes through any sensor-to-buffer matrix composition) could in principle carry a stale or fabricated
+flag. The check now requires **both** `source == CAMERA_CHARACTERISTICS` **and** `reference is
+AnalysisBuffer`. `CameraIntrinsicsTest` adds constructor-rejection cases for `LEGACY_FALLBACK`,
+`CAMERA_INTRINSIC_CALIBRATION`, and `CAMERA_CHARACTERISTICS`+`PhysicalSensor`, alongside the existing
+`CAMERA_CHARACTERISTICS`+`AnalysisBuffer` acceptance case. The shared `analysisBufferIntrinsics` test
+fixture (`:core:astro-core` `TestGeometryFixtures.kt`), which is `LEGACY_FALLBACK`-sourced, had its
+now-invalid `axisSwapped`/`negateXInput`/`negateYInput` parameters removed rather than kept as dead
+optional arguments — no test fixture should be able to construct the invalid combination the production
+invariant exists to reject.
+
+**§6: diagnostics gain active-rect and principal-point-basis fields.** `CameraCalibrationDiagnostics`
+adds `activeArrayLeftPx`/`TopPx`/`RightPx`/`BottomPx`, `principalPointBasis` (currently always
+`"SENSOR_MATRIX_SPACE"`), and `principalPointBeforeTranslationXPx`/`YPx` — all internal-debug-only, per
+the existing convention, surfaced in the `CamDiagnosticTopPanels` text via
+`buildCameraCalibrationDiagnosticText` as an `[left,top — right,bottom]` rect line, the basis label, and
+the pre-/post-translation principal point pair.
+
+**Validation (this environment, second fix pass).** `:core:astro-core:test` (462 tests: the CAM-2c fix
+round 2 additions are five new `CameraIntrinsicsTest` axis-flag cases and
+`CalibratedAnalysisBufferProjectionTest`'s two hand-derived end-to-end rotation tests) and
+`:mobile:test{Internal,Public}DebugUnitTest` (332 tests each, growing by the non-zero-origin precise
+tests, the inverse-crop-recovers-the-real-rectangle test, and the `ORTHOGONAL_90`/`180`/`270` →
+`RotationOwnershipUnproven` tests in `AnalysisBufferIntrinsicsResolverTest`) all pass under a real
+Gradle build. As before, no physical device or emulator is available in this sandboxed environment, so
+live Pixel 9 validation of the origin-translation and `AXIS_ALIGNED_0`-only restriction remains an open
+item for a session with real hardware access — and a real Pixel 9's rear camera is still expected to
+hit `UnsupportedLogicalMultiCameraMapping` before any of this round's fixes would even be exercised, per
+§3.5's logical-multi-camera paragraph, unchanged by this fix.
+
 ---
 
 ## 4. Timestamp & synchronization

@@ -1,5 +1,9 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import kotlin.math.abs
 import kotlin.math.tan
 import kotlin.test.Test
@@ -395,17 +399,30 @@ class PinholeProjectionModelTest {
 
     @Test
     fun `forGeometry wires axisSwapped and negate flags straight through from the resolved intrinsics`() {
+        // axisSwapped/negateXInput/negateYInput are only ever allowed non-default for
+        // source=CAMERA_CHARACTERISTICS + reference=AnalysisBuffer (CAM-2c fix round 2 §5) - built
+        // directly here rather than via the analysisBufferIntrinsics fixture, which is
+        // LEGACY_FALLBACK-sourced and would now correctly reject these flags.
         val geometry =
             buildTestGeometry(
                 bufferWidthPx = 1000,
                 bufferHeightPx = 500,
                 intrinsicsResolution =
-                    analysisBufferIntrinsics(
-                        referenceWidthPx = 1000,
-                        referenceHeightPx = 500,
-                        axisSwapped = true,
-                        negateXInput = false,
-                        negateYInput = true,
+                    CameraIntrinsicsResolution.Resolved(
+                        CameraIntrinsics(
+                            horizontalFovDeg = 90.0,
+                            verticalFovDeg = 90.0,
+                            focalLengthMm = null,
+                            sensorWidthMm = null,
+                            sensorHeightMm = null,
+                            principalPointXPx = null,
+                            principalPointYPx = null,
+                            source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                            reference = CameraIntrinsicsReference.AnalysisBuffer(1000, 500),
+                            axisSwapped = true,
+                            negateXInput = false,
+                            negateYInput = true,
+                        ),
                     ),
             )
         val model = PinholeProjectionModel.forGeometry(geometry)

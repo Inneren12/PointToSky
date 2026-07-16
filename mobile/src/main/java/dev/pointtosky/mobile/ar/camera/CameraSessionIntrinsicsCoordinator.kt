@@ -21,7 +21,7 @@ enum class CameraSessionIntrinsicsCoordinatorState {
 
     /**
      * At least one frame has arrived, but none yet supplied a *usable* sensor-to-buffer transform
-     * (non-`null` and one of [SensorToBufferTransformClass]'s four supported classes) — see
+     * (non-`null` and [SensorToBufferTransformClass.AXIS_ALIGNED_0] — CAM-2c fix round 2 §4) — see
      * [CameraSessionIntrinsicsCoordinator]'s KDoc on the coherent-input gate and its bounded fallback.
      */
     WAITING_FOR_USABLE_SENSOR_TO_BUFFER_TRANSFORM,
@@ -55,10 +55,12 @@ enum class CameraSessionIntrinsicsCoordinatorState {
  * ## The coherent-input gate
  * [onFrameMetadata] now keeps accepting frames (while resolution has not yet started) and classifies
  * each one's own `frame.sensorToBufferTransform` via [classifySensorToBufferMatrix]. The **first**
- * frame whose transform is non-`null` and classifies as one of the four supported classes
- * ([SensorToBufferTransformClass.AXIS_ALIGNED_0]/`ORTHOGONAL_90`/`ORTHOGONAL_180`/`ORTHOGONAL_270`) has
- * its dimensions *and* transform captured together, atomically, as the one pair ever used — never
- * mixed with any other frame's data.
+ * frame whose transform is non-`null` and classifies as [SensorToBufferTransformClass.AXIS_ALIGNED_0]
+ * — the only class `dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics` will actually
+ * resolve into a calibrated result as of CAM-2c fix round 2 §4 (`ORTHOGONAL_90`/`180`/`270` are
+ * algebraically composable but not proven correct in combination with `rotationDegrees`, so the
+ * resolver rejects them too) — has its dimensions *and* transform captured together, atomically, as
+ * the one pair ever used — never mixed with any other frame's data.
  *
  * ## Bounded wait, not an unbounded queue
  * No frame is ever queued or buffered — only the running "first usable" candidate (if any) and the
@@ -262,18 +264,17 @@ class CameraSessionIntrinsicsCoordinator(
          */
         const val MAX_FRAMES_WAITING_FOR_USABLE_TRANSFORM = 30
 
+        /**
+         * (CAM-2c fix round 2 §4) Only [SensorToBufferTransformClass.AXIS_ALIGNED_0] is usable — the
+         * only class `dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics` will actually
+         * resolve into a calibrated result. `ORTHOGONAL_90`/`180`/`270` are algebraically composable
+         * (see `dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix`) but
+         * not proven correct in combination with `CameraFrameMetadata.rotationDegrees`, so the resolver
+         * rejects them as `RotationOwnershipUnproven` — this coordinator must not "claim" one of those
+         * frames as its usable candidate and then stop looking, since the resolver would immediately
+         * reject it anyway, wasting the one candidate slot this bounded gate keeps.
+         */
         fun isSupportedTransformClass(matrix: SensorToBufferMatrix3): Boolean =
-            when (classifySensorToBufferMatrix(matrix)) {
-                SensorToBufferTransformClass.AXIS_ALIGNED_0,
-                SensorToBufferTransformClass.ORTHOGONAL_90,
-                SensorToBufferTransformClass.ORTHOGONAL_180,
-                SensorToBufferTransformClass.ORTHOGONAL_270,
-                -> true
-                SensorToBufferTransformClass.MIRRORED,
-                SensorToBufferTransformClass.GENERAL_AFFINE_UNSUPPORTED,
-                SensorToBufferTransformClass.PROJECTIVE_UNSUPPORTED,
-                SensorToBufferTransformClass.SINGULAR,
-                -> false
-            }
+            classifySensorToBufferMatrix(matrix) == SensorToBufferTransformClass.AXIS_ALIGNED_0
     }
 }

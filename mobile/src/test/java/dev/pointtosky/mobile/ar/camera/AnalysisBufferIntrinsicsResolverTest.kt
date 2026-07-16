@@ -285,26 +285,136 @@ class AnalysisBufferIntrinsicsResolverTest {
         assertEquals(SensorToBufferTransformClass.PROJECTIVE_UNSUPPORTED, result.transformClass)
     }
 
-    // --- CAM-2c fix §6: non-zero active-array / pre-correction-active-array origins ---
+    // --- CAM-2c fix round 2 §1/§2/§3: non-zero active-array origin, exact principal-point values ---
+
+    /**
+     * A non-zero-origin active array [100,50]-[4132,3074] (4032x3024, same size as the zero-origin
+     * fixture above, shifted) mapped onto the 640x480 buffer with no crop beyond the origin shift
+     * itself: `bufferX = (activeX − 100) · sx`, `bufferY = (activeY − 50) · sy`. Used to prove the
+     * principal point is translated into this matrix's own (sensor matrix space, i.e. *not*
+     * rectangle-local) coordinates before composition (CAM-2c fix round 2 §1) — omitting that
+     * translation would silently reuse `activeLeft`/`activeTop` as if they were `0`.
+     */
+    private val originSx = bufferWidthPx / 4032.0
+    private val originSy = bufferHeightPx / 3024.0
+    private val nonZeroOriginTransform =
+        SensorToBufferMatrix3(
+            m00 = originSx, m01 = 0.0, m02 = -(100.0 * originSx),
+            m10 = 0.0, m11 = originSy, m12 = -(50.0 * originSy),
+            m20 = 0.0, m21 = 0.0, m22 = 1.0,
+        )
+
+    private fun nonZeroOriginSourceOf(lensIntrinsicCalibration: FloatArray? = null) =
+        sourceOf(
+            activeArrayLeftPx = 100,
+            activeArrayTopPx = 50,
+            activeArrayRightPx = 4132,
+            activeArrayBottomPx = 3074,
+            lensIntrinsicCalibration = lensIntrinsicCalibration,
+            preCorrectionActiveArrayLeftPx = if (lensIntrinsicCalibration != null) 100 else null,
+            preCorrectionActiveArrayTopPx = if (lensIntrinsicCalibration != null) 50 else null,
+            preCorrectionActiveArrayRightPx = if (lensIntrinsicCalibration != null) 4132 else null,
+            preCorrectionActiveArrayBottomPx = if (lensIntrinsicCalibration != null) 3074 else null,
+        )
 
     @Test
-    fun `a non-zero active array origin with a matching non-zero pre-correction origin still yields CALIBRATED quality`() {
-        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, 0f)
-        val source =
-            sourceOf(
-                activeArrayLeftPx = 100,
-                activeArrayTopPx = 50,
-                activeArrayRightPx = 4132,
-                activeArrayBottomPx = 3074,
-                lensIntrinsicCalibration = calibration,
-                preCorrectionActiveArrayLeftPx = 100,
-                preCorrectionActiveArrayTopPx = 50,
-                preCorrectionActiveArrayRightPx = 4132,
-                preCorrectionActiveArrayBottomPx = 3074,
+    fun `a non-zero-origin active array with no calibration resolves the focal-length-derived centre to the exact buffer centre`() {
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolveAnalysisBufferIntrinsics(nonZeroOriginSourceOf(), nonZeroOriginTransform, bufferWidthPx, bufferHeightPx),
             )
 
-        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(source))
+        assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
+        // Active-array centre in sensor matrix space is (100 + 4032/2, 50 + 3024/2) = (2116, 1562);
+        // (2116-100)*sx = 2016*sx = 320.0 exactly, (1562-50)*sy = 1512*sy = 240.0 exactly.
+        assertEquals(320.0, resolved.intrinsics.principalPointXPx!!, eps)
+        assertEquals(240.0, resolved.intrinsics.principalPointYPx!!, eps)
+    }
+
+    @Test
+    fun `a non-zero active array origin with a matching non-zero pre-correction origin yields CALIBRATED quality and the exact translated centre`() {
+        // Calibration cx/cy = the pre-correction rectangle's own local centre (2016, 1512).
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2016.0f, 1512.0f, 0f)
+
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolveAnalysisBufferIntrinsics(
+                    nonZeroOriginSourceOf(calibration),
+                    nonZeroOriginTransform,
+                    bufferWidthPx,
+                    bufferHeightPx,
+                ),
+            )
+
         assertEquals(CameraIntrinsicsQuality.CALIBRATED, resolved.intrinsics.quality)
+        // Same absolute centre as the focal-derived case above: (100+2016, 50+1512) = (2116, 1562).
+        assertEquals(320.0, resolved.intrinsics.principalPointXPx!!, eps)
+        assertEquals(240.0, resolved.intrinsics.principalPointYPx!!, eps)
+    }
+
+    @Test
+    fun `an off-centre calibrated principal point translates to the exact expected buffer point`() {
+        // Local (rectangle-relative) calibration cx/cy = (1000, 800), not the centre.
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 1000.0f, 800.0f, 0f)
+
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolveAnalysisBufferIntrinsics(
+                    nonZeroOriginSourceOf(calibration),
+                    nonZeroOriginTransform,
+                    bufferWidthPx,
+                    bufferHeightPx,
+                ),
+            )
+
+        // Absolute (sensor-matrix-space) centre: (100+1000, 50+800) = (1100, 850).
+        // Buffer point: (1100-100)*sx = 1000*sx, (850-50)*sy = 800*sy.
+        assertEquals(1000.0 * originSx, resolved.intrinsics.principalPointXPx!!, eps)
+        assertEquals(800.0 * originSy, resolved.intrinsics.principalPointYPx!!, eps)
+    }
+
+    @Test
+    fun `omitting the active array origin would silently produce a different, wrong principal point - the fix is not a no-op`() {
+        // Same fixture as "an off-centre calibrated principal point translates to the exact expected
+        // buffer point" above: local calibration cx = 1000.0, active array left = 100.0.
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 1000.0f, 800.0f, 0f)
+
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolveAnalysisBufferIntrinsics(
+                    nonZeroOriginSourceOf(calibration),
+                    nonZeroOriginTransform,
+                    bufferWidthPx,
+                    bufferHeightPx,
+                ),
+            )
+
+        // The pre-fix defect read calibration[2] (1000.0) directly as cxPx, without adding
+        // activeLeft (100.0) first, then composed it through the SAME matrix: bufferCx = m00*1000.0 +
+        // m02 = originSx*1000.0 - originSx*100.0 = originSx*900.0 - a different, wrong buffer point.
+        val preFixWrongBufferCx = originSx * (1000.0 - 100.0)
+        // The fixed result instead translates to the absolute (1000+100=1100) point first: bufferCx =
+        // originSx*(1100.0-100.0) = originSx*1000.0.
+        val fixedBufferCx = originSx * 1000.0
+        assertEquals(fixedBufferCx, resolved.intrinsics.principalPointXPx!!, eps)
+        assertTrue(
+            kotlin.math.abs(preFixWrongBufferCx - resolved.intrinsics.principalPointXPx!!) > 1.0,
+            "the pre-fix (un-translated) computation ($preFixWrongBufferCx) must differ measurably " +
+                "from the fixed one (${resolved.intrinsics.principalPointXPx})",
+        )
+    }
+
+    @Test
+    fun `the inverse-crop region recovers the exact non-zero-origin active array rectangle, not a zero-based one`() {
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolveAnalysisBufferIntrinsics(nonZeroOriginSourceOf(), nonZeroOriginTransform, bufferWidthPx, bufferHeightPx),
+            )
+
+        assertEquals(100.0, resolved.diagnostics.cropLeftPx, eps)
+        assertEquals(50.0, resolved.diagnostics.cropTopPx, eps)
+        assertEquals(4132.0, resolved.diagnostics.cropRightPx, eps)
+        assertEquals(3074.0, resolved.diagnostics.cropBottomPx, eps)
     }
 
     @Test
@@ -324,12 +434,17 @@ class AnalysisBufferIntrinsicsResolverTest {
                 preCorrectionActiveArrayBottomPx = 3064,
             )
 
-        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(source))
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolveAnalysisBufferIntrinsics(source, nonZeroOriginTransform, bufferWidthPx, bufferHeightPx),
+            )
         assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
     }
 
+    // --- CAM-2c fix round 2 §4: rotation ownership is unproven for anything but AXIS_ALIGNED_0 ---
+
     @Test
-    fun `a 90-degree axis-permuted sensor-to-buffer matrix still resolves - rotation alone is not rejected`() {
+    fun `a 90-degree axis-permuted sensor-to-buffer matrix is reported as RotationOwnershipUnproven, not resolved`() {
         // bufferX = activeY * sy', bufferY = (4032 - activeX) * sx' - a genuine 90-degree position
         // rotation mapping the full 4032x3024 active array, with no crop, onto a 480x640 (portrait)
         // buffer. Note this portrait buffer's own width/height (480x640) - not this class's
@@ -346,7 +461,41 @@ class AnalysisBufferIntrinsicsResolverTest {
             )
         val result =
             resolveAnalysisBufferIntrinsics(sourceOf(), matrix, portraitBufferWidthPx, portraitBufferHeightPx)
-        assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(result)
+        val unproven = assertIs<AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven>(result)
+        assertEquals(SensorToBufferTransformClass.ORTHOGONAL_90, unproven.transformClass)
+    }
+
+    @Test
+    fun `a 180-degree sensor-to-buffer matrix is also reported as RotationOwnershipUnproven`() {
+        val matrix =
+            SensorToBufferMatrix3(
+                m00 = -(bufferWidthPx / 4032.0), m01 = 0.0, m02 = bufferWidthPx.toDouble(),
+                m10 = 0.0, m11 = -(bufferHeightPx / 3024.0), m12 = bufferHeightPx.toDouble(),
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
+            )
+        val result = resolve(sourceOf(), matrix)
+        val unproven = assertIs<AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven>(result)
+        assertEquals(SensorToBufferTransformClass.ORTHOGONAL_180, unproven.transformClass)
+    }
+
+    @Test
+    fun `a 270-degree axis-permuted sensor-to-buffer matrix is also reported as RotationOwnershipUnproven`() {
+        // The other 90-degree-like permutation (m01 less than 0, m10 greater than 0 - see
+        // classifySensorToBufferMatrix's own worked example) mapping the full 4032x3024 active array
+        // onto a 480x640 (portrait) buffer. As with the ORTHOGONAL_90 case, this portrait buffer's own
+        // width/height (480x640) drive the matrix, not this class's landscape bufferWidthPx/bufferHeightPx.
+        val portraitBufferWidthPx = 480
+        val portraitBufferHeightPx = 640
+        val matrix =
+            SensorToBufferMatrix3(
+                m00 = 0.0, m01 = -(portraitBufferWidthPx / 3024.0), m02 = portraitBufferWidthPx.toDouble(),
+                m10 = portraitBufferHeightPx / 4032.0, m11 = 0.0, m12 = 0.0,
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
+            )
+        val result =
+            resolveAnalysisBufferIntrinsics(sourceOf(), matrix, portraitBufferWidthPx, portraitBufferHeightPx)
+        val unproven = assertIs<AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven>(result)
+        assertEquals(SensorToBufferTransformClass.ORTHOGONAL_270, unproven.transformClass)
     }
 
     // --- CAM-2c fix §3: LENS_INTRINSIC_CALIBRATION skew tolerance ---

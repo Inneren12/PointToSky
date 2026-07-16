@@ -223,4 +223,50 @@ class CameraIntrinsicsTest {
             valid(source = CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION).copy(quality = CameraIntrinsicsQuality.CALIBRATED)
         }
     }
+
+    // --- axisSwapped/negateXInput/negateYInput: cross-field consistency (CAM-2c fix round 2 §5) ---
+
+    @Test
+    fun `axisSwapped, negateXInput, and negateYInput are accepted for CAMERA_CHARACTERISTICS with an AnalysisBuffer reference`() {
+        val intrinsics =
+            valid(
+                source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                reference = CameraIntrinsicsReference.AnalysisBuffer(1920, 1080),
+            ).copy(axisSwapped = true, negateXInput = true, negateYInput = true)
+        assertEquals(true, intrinsics.axisSwapped)
+        assertEquals(true, intrinsics.negateXInput)
+        assertEquals(true, intrinsics.negateYInput)
+    }
+
+    @Test
+    fun `a non-default axisSwapped, negateXInput, or negateYInput is rejected for CAMERA_CHARACTERISTICS with a PhysicalSensor reference`() {
+        val base = valid(source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, reference = CameraIntrinsicsReference.PhysicalSensor)
+        assertFailsWith<IllegalArgumentException> { base.copy(axisSwapped = true) }
+        assertFailsWith<IllegalArgumentException> { base.copy(negateXInput = true) }
+        assertFailsWith<IllegalArgumentException> { base.copy(negateYInput = true) }
+    }
+
+    @Test
+    fun `a non-default axisSwapped, negateXInput, or negateYInput is rejected for LEGACY_FALLBACK`() {
+        val base = valid(source = CameraIntrinsicsSource.LEGACY_FALLBACK, reference = CameraIntrinsicsReference.AnalysisBuffer(1000, 500))
+        assertFailsWith<IllegalArgumentException> { base.copy(axisSwapped = true) }
+        assertFailsWith<IllegalArgumentException> { base.copy(negateXInput = true) }
+        assertFailsWith<IllegalArgumentException> { base.copy(negateYInput = true) }
+    }
+
+    @Test
+    fun `a non-default axisSwapped, negateXInput, or negateYInput is rejected for CAMERA_INTRINSIC_CALIBRATION`() {
+        val base = valid(source = CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION, reference = CameraIntrinsicsReference.PhysicalSensor)
+        assertFailsWith<IllegalArgumentException> { base.copy(axisSwapped = true) }
+        assertFailsWith<IllegalArgumentException> { base.copy(negateXInput = true) }
+        assertFailsWith<IllegalArgumentException> { base.copy(negateYInput = true) }
+    }
+
+    @Test
+    fun `axisSwapped, negateXInput, and negateYInput default to false`() {
+        val intrinsics = valid()
+        assertEquals(false, intrinsics.axisSwapped)
+        assertEquals(false, intrinsics.negateXInput)
+        assertEquals(false, intrinsics.negateYInput)
+    }
 }

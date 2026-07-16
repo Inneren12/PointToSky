@@ -153,8 +153,11 @@ enum class CameraIntrinsicsQuality {
  * `classifySensorToBufferMatrix`) related active-array pixel axes to this buffer's own pixel axes,
  * whenever that relationship was anything other than the identity-like `AXIS_ALIGNED_0` case. All
  * three default to `false` (the [CameraIntrinsicsSource.LEGACY_FALLBACK]/pre-CAM-2c-fix behavior) and
- * are only ever non-default for [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS] values referencing
- * [CameraIntrinsicsReference.AnalysisBuffer] — see
+ * are only ever allowed to be non-default when **both** `source =`
+ * [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS] **and** `reference is`
+ * [CameraIntrinsicsReference.AnalysisBuffer] (an earlier revision of this invariant checked only
+ * `reference`, which would have let e.g. a `LEGACY_FALLBACK`/`AnalysisBuffer` value carry a non-default
+ * flag despite never having gone through any sensor-to-buffer matrix composition at all) — see
  * `dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel`'s KDoc for exactly
  * how [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.forGeometry] wires
  * these into [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.project],
@@ -238,9 +241,12 @@ data class CameraIntrinsics(
         require(quality == null || source == CameraIntrinsicsSource.CAMERA_CHARACTERISTICS) {
             "quality must be null unless source=CAMERA_CHARACTERISTICS; was quality=$quality, source=$source"
         }
-        require(!axisSwapped && !negateXInput && !negateYInput || reference is CameraIntrinsicsReference.AnalysisBuffer) {
-            "axisSwapped/negateXInput/negateYInput must be false unless reference=AnalysisBuffer; was " +
-                "axisSwapped=$axisSwapped, negateXInput=$negateXInput, negateYInput=$negateYInput, reference=$reference"
+        val axisFlagsAllowed =
+            source == CameraIntrinsicsSource.CAMERA_CHARACTERISTICS && reference is CameraIntrinsicsReference.AnalysisBuffer
+        require(axisFlagsAllowed || (!axisSwapped && !negateXInput && !negateYInput)) {
+            "axisSwapped/negateXInput/negateYInput must be false unless source=CAMERA_CHARACTERISTICS " +
+                "and reference=AnalysisBuffer; was axisSwapped=$axisSwapped, negateXInput=$negateXInput, " +
+                "negateYInput=$negateYInput, source=$source, reference=$reference"
         }
     }
 
