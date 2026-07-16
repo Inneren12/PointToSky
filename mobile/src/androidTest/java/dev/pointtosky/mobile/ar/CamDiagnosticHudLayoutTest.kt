@@ -216,10 +216,10 @@ class CamDiagnosticHudLayoutTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG).assertExists()
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG).assertExists()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).assertExists()
 
-        val cam1gBounds = composeTestRule.onNodeWithTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG).getUnclippedBoundsInRoot()
+        val cam1gBounds = composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG).getUnclippedBoundsInRoot()
         val cam2bBounds = composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).getUnclippedBoundsInRoot()
 
         // Stacked vertically in one shared column - never two independently-aligned overlays
@@ -472,16 +472,32 @@ class CamDiagnosticHudLayoutTest {
 
         composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
             .assert(hasText("CAM-2b: unavailable · PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED", substring = true))
-        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
-            .assert(hasText("CAM-2c attempt: UnsupportedLogicalMultiCameraMapping", substring = true))
-        // Publication status ("Resolved" - CAM-1b successfully published a PhysicalSensor value) and
-        // intrinsic calibration quality are distinct, separately-labelled fields (CAM-2c runtime
-        // integration fix P2) - "Resolved" must never be read as if it were a calibration quality.
-        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
+        // The compact summary (HUD redesign §6) surfaces the CAM-2c root cause directly - never just the
+        // CAM-2b downstream symptom above - without needing to open the full diagnostics dialog.
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG)
+            .assert(hasText("CAM-2c: BLOCKED", substring = true))
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG)
+            .assert(hasText("reason: logical multi-camera", substring = true))
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG)
+            .assert(hasText("camera: 0", substring = true))
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG)
+            .assert(hasText("physical: 1,2", substring = true))
+        // The published reference ("PhysicalSensor" - CAM-1b successfully published a fallback value
+        // despite CAM-2c's calibrated mapping being blocked) is shown too, not just the block reason.
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG)
+            .assert(hasText("published: PhysicalSensor", substring = true))
+
+        // The full multi-section report (including the CAM-2c publication/source/reference/quality
+        // breakdown the old inline overlay used to show) is one tap away, not shown inline by default.
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_OPEN_BUTTON_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_FULL_REPORT_DIALOG_TEST_TAG).assertExists()
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_FULL_REPORT_TEXT_TEST_TAG)
+            .assert(hasText("attempt: UnsupportedLogicalMultiCameraMapping", substring = true))
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_FULL_REPORT_TEXT_TEST_TAG)
             .assert(hasText("publication: Resolved", substring = true))
-        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_FULL_REPORT_TEXT_TEST_TAG)
             .assert(hasText("reference: PhysicalSensor", substring = true))
-        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_FULL_REPORT_TEXT_TEST_TAG)
             .assert(hasText("intrinsics quality: unavailable", substring = true))
     }
 
@@ -563,9 +579,11 @@ class CamDiagnosticHudLayoutTest {
         // Header stays visible even though the detail content below it is long enough to scroll.
         composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_HEADER_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_DETAILS_TEST_TAG).assertExists()
-        // Long CAM-1g/CAM-2b content is present in the semantics tree (may need scrolling to bring
-        // fully into view - assertExists, not assertIsDisplayed, checks presence not current visibility).
-        composeTestRule.onNodeWithTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG).assertExists()
+        // Long CAM-2b content is present in the semantics tree (may need scrolling to bring fully into
+        // view - assertExists, not assertIsDisplayed, checks presence not current visibility). The CAM
+        // diagnostics side is now the bounded compact summary (HUD redesign §6), not the previous giant
+        // per-domain text blocks.
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG).assertExists()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).assertExists()
 
         assertWholeHudWithinExclusionSafeBounds()
