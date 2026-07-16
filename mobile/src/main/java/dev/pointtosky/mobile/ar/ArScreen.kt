@@ -90,6 +90,8 @@ import dev.pointtosky.core.datalayer.AimTargetKind
 import dev.pointtosky.core.datalayer.JsonCodec
 import dev.pointtosky.core.location.prefs.LocationPrefs
 import dev.pointtosky.mobile.R
+import dev.pointtosky.mobile.ar.camera.Camera2CameraIntrinsicsProvider
+import dev.pointtosky.mobile.ar.camera.CameraCalibrationDiagnostics
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticCategory
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticsGate
@@ -344,7 +346,10 @@ fun ArScreen(
         remember {
             CameraSessionGeometryProvider(maxAllowedPairDeltaNanos = timestampSynchronizer.maxAllowedDeltaNanos)
         }
-    val intrinsicsResolver = remember { SessionScopedCameraIntrinsicsResolver() }
+    val intrinsicsResolver =
+        remember {
+            SessionScopedCameraIntrinsicsResolver(Camera2CameraIntrinsicsProvider(context.applicationContext))
+        }
     // CAM-1f: resolves intrinsics only once BOTH the bound CameraInfo and the first analyzed
     // frame's real buffer dimensions are known - resolving from CameraInfo alone would cache a
     // wrong (default-aspect) legacy-fallback horizontal FOV, since the fallback path derives it
@@ -397,6 +402,12 @@ fun ArScreen(
     // provider's observation a second time (docs/camera_star_prediction_contract.md §14 "no second
     // camera/session provider, no re-pairing timestamps").
     val cameraGeometrySessionResult: CameraSessionGeometryResult?
+    // CAM-2c §9: the calibrated-mapping diagnostics intrinsicsResolver captured (at most once per
+    // session) the moment its calibrated AnalysisBuffer resolution succeeded - null before that, or
+    // whenever this session resolved a PhysicalSensor/legacy-fallback result instead. Read alongside
+    // the observation above so the panel updates as soon as a later recompute reflects a since-
+    // completed resolution; debug-only, never consumed by projection.
+    val cameraCalibrationDiagnostics: CameraCalibrationDiagnostics?
     if (CameraGeometryDiagnosticsGate.isEnabled) {
         val geometryObservation by geometryProvider.observation.collectAsStateWithLifecycle()
         val sessionId = remember { nextDebugSessionId() }
@@ -420,6 +431,7 @@ fun ArScreen(
         cameraGeometryObservedFrameCount = debugState.observedFrameCount
         cameraGeometryReadyBundleCount = debugState.readyBundleCount
         cameraGeometrySessionResult = geometryObservation.result
+        cameraCalibrationDiagnostics = intrinsicsResolver.lastCalibrationDiagnostics
     } else {
         cameraGeometryDiagnosticSnapshot = null
         cameraGeometryDiagnosticSessionId = 0L
@@ -427,6 +439,7 @@ fun ArScreen(
         cameraGeometryObservedFrameCount = 0L
         cameraGeometryReadyBundleCount = 0L
         cameraGeometrySessionResult = null
+        cameraCalibrationDiagnostics = null
     }
 
     // Single declination computation point, hoisted above the Box so both the legacy renderer (below,
@@ -766,6 +779,7 @@ fun ArScreen(
                 cam1gStatusTransitionCount = cameraGeometryStatusTransitionCount,
                 cam1gObservedFrameCount = cameraGeometryObservedFrameCount,
                 cam1gReadyBundleCount = cameraGeometryReadyBundleCount,
+                calibrationDiagnostics = cameraCalibrationDiagnostics,
                 cam2bState = predictedStarOverlayState.takeIf { predictedStarDebugControls.showPredictedStarPanel },
                 detailsExpanded = predictedStarDebugControls.hudDetailsExpanded,
                 onDetailsExpandedChange = { predictedStarDebugControls.hudDetailsExpanded = it },

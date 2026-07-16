@@ -81,6 +81,31 @@ sealed interface CameraIntrinsicsReference {
 }
 
 /**
+ * How confidently a [CameraIntrinsics] value's numbers were actually measured, as opposed to
+ * assumed (CAM-2c). Meaningful only for [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS] — see
+ * [CameraIntrinsics.quality]'s cross-field rule — since [CameraIntrinsicsSource.LEGACY_FALLBACK]
+ * never claims any calibration quality at all (`null`), and
+ * [CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION] is reserved/unused.
+ *
+ * Both tiers apply to a **real** per-device measurement — this is not a calibrated-vs-fallback
+ * distinction (that is [CameraIntrinsicsSource] itself). [focalLengthMm]/[sensorWidthMm]/
+ * [sensorHeightMm]-derived `fx`/`fy` are real in both cases; only the principal point's provenance
+ * differs:
+ *  - [CALIBRATED]: the principal point ([CameraIntrinsics.principalPointXPx]/`principalPointYPx`)
+ *    was itself read from real per-device calibration metadata (Camera2 `LENS_INTRINSIC_CALIBRATION`,
+ *    with its coordinate-space contract verified against the active array — see
+ *    `dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics`'s KDoc in `:mobile`).
+ *  - [APPROXIMATE_PRINCIPAL_POINT]: the principal point is an explicit geometric-center assumption
+ *    (buffer or active-array center), not a measurement. Never conflate this with
+ *    [CameraIntrinsicsSource.LEGACY_FALLBACK] — `fx`/`fy` here are still real, focal-length-derived
+ *    values, unlike the legacy fallback's fixed-FOV guess.
+ */
+enum class CameraIntrinsicsQuality {
+    CALIBRATED,
+    APPROXIMATE_PRINCIPAL_POINT,
+}
+
+/**
  * A plain, Android-independent camera intrinsics contract.
  *
  * This is a data contract only — CAM-1b introduces it and a resolver in `:mobile` capable of
@@ -101,14 +126,43 @@ sealed interface CameraIntrinsicsReference {
  * [reference] and [source] are independent fields describing different things (see
  * [CameraIntrinsicsReference]'s KDoc) but are not independently *free*: `init` below re-validates
  * the one cross-field consistency rule production code must uphold (defense in depth, matching this
- * codebase's convention of checking even provably-true invariants) — [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS]/
- * [CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION] must carry [CameraIntrinsicsReference.PhysicalSensor],
- * and [CameraIntrinsicsSource.LEGACY_FALLBACK] must carry [CameraIntrinsicsReference.AnalysisBuffer] or
+ * codebase's convention of checking even provably-true invariants) — [CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION]
+ * must carry [CameraIntrinsicsReference.PhysicalSensor]; [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS]
+ * may carry **either** [CameraIntrinsicsReference.PhysicalSensor] (the CAM-1b sensor-level FOV, with
+ * no recorded crop/scale mapping to any buffer — still rejected exactly as before by
+ * [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.forGeometry]/
+ * `projectStars`, which gate on [reference] alone and were not changed) **or**
+ * [CameraIntrinsicsReference.AnalysisBuffer] (CAM-2c: the same real Camera2 metadata, but mapped
+ * through the exact CameraX sensor-to-buffer transform for one analyzed frame — see
+ * `dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics`); and
+ * [CameraIntrinsicsSource.LEGACY_FALLBACK] must carry [CameraIntrinsicsReference.AnalysisBuffer] or
  * [CameraIntrinsicsReference.Unspecified]. This does **not** mean [reference] is derived from
  * [source] — an [CameraIntrinsicsReference.AnalysisBuffer]'s [CameraIntrinsicsReference.AnalysisBuffer.widthPx]/
  * `heightPx` are still caller-supplied data with no relationship to `source` at all; the rule above
- * only rules out the specific mislabeling this hardening exists to prevent (a physical-sensor
- * measurement claiming to be analysis-buffer-safe).
+ * only rules out the specific mislabelings this hardening exists to prevent (a physical-sensor-only
+ * measurement — [CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION] — claiming to be
+ * analysis-buffer-safe, or a legacy fallback claiming to be physical-sensor-referenced).
+ *
+ * [quality] is a third, also-independent field: non-`null` only for
+ * [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS] (either [reference] variant), `null` for every
+ * other source — see [CameraIntrinsicsQuality]'s KDoc.
+ *
+ * [axisSwapped]/[negateXInput]/[negateYInput] (CAM-2c fix §1/§2) record how the real Camera2
+ * `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-to-buffer position mapping (a
+ * `dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3`, classified by
+ * `classifySensorToBufferMatrix`) related active-array pixel axes to this buffer's own pixel axes,
+ * whenever that relationship was anything other than the identity-like `AXIS_ALIGNED_0` case. All
+ * three default to `false` (the [CameraIntrinsicsSource.LEGACY_FALLBACK]/pre-CAM-2c-fix behavior) and
+ * are only ever allowed to be non-default when **both** `source =`
+ * [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS] **and** `reference is`
+ * [CameraIntrinsicsReference.AnalysisBuffer] (an earlier revision of this invariant checked only
+ * `reference`, which would have let e.g. a `LEGACY_FALLBACK`/`AnalysisBuffer` value carry a non-default
+ * flag despite never having gone through any sensor-to-buffer matrix composition at all) — see
+ * `dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel`'s KDoc for exactly
+ * how [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.forGeometry] wires
+ * these into [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.project],
+ * and for the proof that this can never double up with the separate, untouched
+ * `frame.rotationDegrees`-driven ray-direction rotation.
  *
  * @property horizontalFovDeg full horizontal field of view, degrees, `0 < fov < 180`.
  * @property verticalFovDeg full vertical field of view, degrees, `0 < fov < 180`.
@@ -126,6 +180,18 @@ sealed interface CameraIntrinsicsReference {
  *   non-negative when present.
  * @property source where this value's numbers came from; see [CameraIntrinsicsSource].
  * @property reference which pixel region the FOV was measured over; see [CameraIntrinsicsReference].
+ * @property quality how confidently the numbers were measured, when meaningful; see
+ *   [CameraIntrinsicsQuality]. Always `null` except for [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS].
+ * @property axisSwapped `true` when the sensor-to-buffer position map swapped which active-array axis
+ *   drives which buffer axis (an `ORTHOGONAL_90`/`ORTHOGONAL_270` classification). `false` (the
+ *   default) for every other case, including every [CameraIntrinsicsSource] other than
+ *   [CameraIntrinsicsSource.CAMERA_CHARACTERISTICS].
+ * @property negateXInput `true` when the coefficient driving this value's buffer-X pinhole equation
+ *   came out negative before sign-normalization (see
+ *   `dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix`), meaning the
+ *   normalized ray input that feeds it must be negated at projection time to keep
+ *   [horizontalFovDeg]/the stored focal length meaningfully positive.
+ * @property negateYInput the buffer-Y analogue of [negateXInput].
  */
 data class CameraIntrinsics(
     val horizontalFovDeg: Double,
@@ -137,6 +203,10 @@ data class CameraIntrinsics(
     val principalPointYPx: Double?,
     val source: CameraIntrinsicsSource,
     val reference: CameraIntrinsicsReference,
+    val quality: CameraIntrinsicsQuality? = null,
+    val axisSwapped: Boolean = false,
+    val negateXInput: Boolean = false,
+    val negateYInput: Boolean = false,
 ) {
     init {
         requireValidFovDeg(horizontalFovDeg, "horizontalFovDeg")
@@ -147,7 +217,15 @@ data class CameraIntrinsics(
         requireFiniteAndNonNegativeIfPresent(principalPointXPx, "principalPointXPx")
         requireFiniteAndNonNegativeIfPresent(principalPointYPx, "principalPointYPx")
         when (source) {
-            CameraIntrinsicsSource.CAMERA_CHARACTERISTICS, CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION ->
+            CameraIntrinsicsSource.CAMERA_CHARACTERISTICS ->
+                require(
+                    reference is CameraIntrinsicsReference.PhysicalSensor ||
+                        reference is CameraIntrinsicsReference.AnalysisBuffer,
+                ) {
+                    "source=CAMERA_CHARACTERISTICS must carry reference=PhysicalSensor or AnalysisBuffer; " +
+                        "was $reference"
+                }
+            CameraIntrinsicsSource.CAMERA_INTRINSIC_CALIBRATION ->
                 require(reference is CameraIntrinsicsReference.PhysicalSensor) {
                     "source=$source must carry reference=PhysicalSensor (no analysis-buffer mapping is " +
                         "known for it); was $reference"
@@ -159,6 +237,16 @@ data class CameraIntrinsics(
                 ) {
                     "source=LEGACY_FALLBACK must carry reference=AnalysisBuffer or Unspecified; was $reference"
                 }
+        }
+        require(quality == null || source == CameraIntrinsicsSource.CAMERA_CHARACTERISTICS) {
+            "quality must be null unless source=CAMERA_CHARACTERISTICS; was quality=$quality, source=$source"
+        }
+        val axisFlagsAllowed =
+            source == CameraIntrinsicsSource.CAMERA_CHARACTERISTICS && reference is CameraIntrinsicsReference.AnalysisBuffer
+        require(axisFlagsAllowed || (!axisSwapped && !negateXInput && !negateYInput)) {
+            "axisSwapped/negateXInput/negateYInput must be false unless source=CAMERA_CHARACTERISTICS " +
+                "and reference=AnalysisBuffer; was axisSwapped=$axisSwapped, negateXInput=$negateXInput, " +
+                "negateYInput=$negateYInput, source=$source, reference=$reference"
         }
     }
 

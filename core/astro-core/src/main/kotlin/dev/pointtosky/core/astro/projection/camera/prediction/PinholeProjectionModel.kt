@@ -25,12 +25,48 @@ import kotlin.math.tan
  * `frame.rotationDegrees` again here, on top of what `imageToDisplay` already does, would rotate the
  * point twice.
  *
+ * ## `axisSwapped`/`negateXInput`/`negateYInput`: a second, independent position-space remapping
+ * (CAM-2c fix §1/§2)
+ * These three flags carry a **completely different** correction than the paragraph above. They exist
+ * because the real Camera2-to-CameraX-buffer *position* map
+ * (`dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3`, classified by
+ * `classifySensorToBufferMatrix`) is not guaranteed to be the simple axis-aligned scale+translate this
+ * codebase's CAM-2c analysis originally assumed — it may, in principle, permute which active-array
+ * axis drives which buffer axis (`ORTHOGONAL_90`/`ORTHOGONAL_270`) and/or require a buffer-space
+ * pinhole coefficient that came out algebraically negative before sign-normalization (see
+ * `dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix`, which derives
+ * these three flags alongside [focalLengthXPx]/[focalLengthYPx]/[principalPointXPx]/[principalPointYPx]
+ * themselves — never independently of them).
+ *
+ * **Why this can never double up with `rotationDegrees`.** The sensor-to-buffer matrix is a
+ * **position** map (Camera2 active-array pixel → this exact buffer's pixel), resolved once per camera
+ * session, before any star is projected. `rotationDegrees` (via
+ * [dev.pointtosky.core.astro.projection.camera.CropScaleTransform]/
+ * `dev.pointtosky.core.astro.projection.camera.prediction.DisplayAlignedOpticalToBufferOpticalTransform`)
+ * instead rotates a **ray direction** — [dev.pointtosky.core.astro.projection.camera.prediction.BufferOpticalCameraVector]'s
+ * `x`/`y`, already expressed "relative to the buffer's own, un-rotated row/column axes" per that class's
+ * own KDoc — applied fresh for every star, at projection time. [project] receives that
+ * already-buffer-relative `normalizedX`/`normalizedY` and only ever decides, once, at construction time
+ * (via these three flags), *which* of the two incoming numbers is multiplied by [focalLengthXPx] vs
+ * [focalLengthYPx], and with which sign. It never rotates anything a second time; it relabels which
+ * already-buffer-relative axis is "X" and which is "Y", and never touches `rotationDegrees` at all.
+ *
+ * All three default to `false`, exactly reproducing the original, pre-CAM-2c-fix formula
+ * (`x = focalLengthXPx·normalizedX + principalPointXPx`, `y = focalLengthYPx·normalizedY +
+ * principalPointYPx`) — 100% backward compatible for every caller that never sets them.
+ *
  * @property focalLengthXPx horizontal focal length in buffer pixels. Finite, strictly positive.
  * @property focalLengthYPx vertical focal length in buffer pixels. Finite, strictly positive.
  * @property principalPointXPx principal point X in buffer pixels. Finite.
  * @property principalPointYPx principal point Y in buffer pixels. Finite.
  * @property imageWidthPx full analyzed-buffer width in pixels. Finite, strictly positive.
  * @property imageHeightPx full analyzed-buffer height in pixels. Finite, strictly positive.
+ * @property axisSwapped when `true`, [project] multiplies [focalLengthXPx] by the incoming
+ *   `normalizedY` (not `normalizedX`) and [focalLengthYPx] by the incoming `normalizedX` — see the
+ *   class KDoc section above.
+ * @property negateXInput when `true`, [project] negates whichever normalized input feeds
+ *   [focalLengthXPx] (see [axisSwapped]) before multiplying.
+ * @property negateYInput the [focalLengthYPx] analogue of [negateXInput].
  */
 data class PinholeProjectionModel(
     val focalLengthXPx: Double,
@@ -39,6 +75,9 @@ data class PinholeProjectionModel(
     val principalPointYPx: Double,
     val imageWidthPx: Double,
     val imageHeightPx: Double,
+    val axisSwapped: Boolean = false,
+    val negateXInput: Boolean = false,
+    val negateYInput: Boolean = false,
 ) {
     init {
         require(focalLengthXPx.isFinite() && focalLengthXPx > 0.0) {
@@ -59,19 +98,27 @@ data class PinholeProjectionModel(
 
     /**
      * Projects normalized camera-plane coordinates ([CameraDirectionProjection.InFront.normalizedX]/
-     * `normalizedY`) into buffer-space pixels: `u = fx·normalizedX + cx`, `v = fy·normalizedY + cy`.
-     * Never clamped to [imageWidthPx]/[imageHeightPx] — a point outside the image is a valid,
-     * meaningful result (see [dev.pointtosky.core.astro.projection.camera.PixelRect.contains] for the
-     * separate classification step).
+     * `normalizedY`) into buffer-space pixels. With every flag at its default `false`: `u =
+     * fx·normalizedX + cx`, `v = fy·normalizedY + cy`. See the class KDoc for what [axisSwapped]/
+     * [negateXInput]/[negateYInput] change and why that can never double up with the separate,
+     * untouched `rotationDegrees`-driven ray rotation. Never clamped to [imageWidthPx]/[imageHeightPx]
+     * — a point outside the image is a valid, meaningful result (see
+     * [dev.pointtosky.core.astro.projection.camera.PixelRect.contains] for the separate classification
+     * step).
      */
     fun project(
         normalizedX: Double,
         normalizedY: Double,
-    ): PixelPoint =
-        PixelPoint(
-            x = focalLengthXPx * normalizedX + principalPointXPx,
-            y = focalLengthYPx * normalizedY + principalPointYPx,
+    ): PixelPoint {
+        val xInput = if (axisSwapped) normalizedY else normalizedX
+        val yInput = if (axisSwapped) normalizedX else normalizedY
+        val signedXInput = if (negateXInput) -xInput else xInput
+        val signedYInput = if (negateYInput) -yInput else yInput
+        return PixelPoint(
+            x = focalLengthXPx * signedXInput + principalPointXPx,
+            y = focalLengthYPx * signedYInput + principalPointYPx,
         )
+    }
 
     companion object {
         /**
@@ -136,6 +183,9 @@ data class PinholeProjectionModel(
                 principalPointYPx = cy,
                 imageWidthPx = widthPx,
                 imageHeightPx = heightPx,
+                axisSwapped = intrinsics.axisSwapped,
+                negateXInput = intrinsics.negateXInput,
+                negateYInput = intrinsics.negateYInput,
             )
         }
     }

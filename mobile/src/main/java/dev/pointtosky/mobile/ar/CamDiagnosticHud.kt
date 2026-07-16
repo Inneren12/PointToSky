@@ -26,7 +26,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.pointtosky.mobile.ar.camera.CameraCalibrationDiagnostics
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
+import dev.pointtosky.mobile.ar.camera.buildCameraCalibrationDiagnosticText
 import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
@@ -37,6 +39,13 @@ import dev.pointtosky.mobile.ar.camera.prediction.name
  * (shown only while the HUD's details are expanded), for Compose UI tests.
  */
 const val CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG = "camera_geometry_diagnostic_overlay"
+
+/**
+ * [androidx.compose.ui.platform.testTag] for the CAM-2c calibration-diagnostic overlay's full-text
+ * [Text] (shown only while the HUD's details are expanded, and only once a calibrated mapping has
+ * resolved for this session).
+ */
+const val CAMERA_CALIBRATION_DIAGNOSTIC_OVERLAY_TEST_TAG = "camera_calibration_diagnostic_overlay"
 
 /** [androidx.compose.ui.platform.testTag] for the outer HUD container (header + summary/details). */
 const val CAM_DIAGNOSTIC_HUD_PANELS_TEST_TAG = "cam_diagnostic_hud_panels"
@@ -151,6 +160,7 @@ fun CamDiagnosticTopPanels(
     onControlsExpandedChange: (Boolean) -> Unit,
     controlsContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    calibrationDiagnostics: CameraCalibrationDiagnostics? = null,
 ) {
     val showDetails = detailsExpanded || controlsExpanded
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -266,6 +276,9 @@ fun CamDiagnosticTopPanels(
                                     readyBundleCount = cam1gReadyBundleCount,
                                 )
                             }
+                            if (calibrationDiagnostics != null) {
+                                CameraCalibrationDiagnosticOverlay(calibrationDiagnostics)
+                            }
                             if (cam2bState != null) {
                                 PredictedStarOverlayPanel(state = cam2bState)
                             }
@@ -332,6 +345,31 @@ private fun CameraGeometryDiagnosticOverlay(
         modifier =
             modifier
                 .testTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG)
+                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
+                .padding(8.dp),
+    )
+}
+
+/**
+ * CAM-2c §9 compact diagnostic overlay - translucent, monospace, non-clickable. Purely a display of
+ * [CameraCalibrationDiagnostics]; touches no renderer/matcher/detector state, no CAM-2a projection
+ * math. Only rendered while this session's calibrated `AnalysisBuffer` mapping has actually
+ * succeeded (`calibrationDiagnostics != null` at the call site) - never shown for a
+ * `PhysicalSensor`/legacy-fallback session.
+ */
+@Composable
+private fun CameraCalibrationDiagnosticOverlay(
+    diagnostics: CameraCalibrationDiagnostics,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = buildCameraCalibrationDiagnosticText(diagnostics),
+        color = Color.White,
+        fontFamily = FontFamily.Monospace,
+        style = MaterialTheme.typography.bodySmall,
+        modifier =
+            modifier
+                .testTag(CAMERA_CALIBRATION_DIAGNOSTIC_OVERLAY_TEST_TAG)
                 .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
                 .padding(8.dp),
     )

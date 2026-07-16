@@ -208,4 +208,30 @@ class CameraFrameMetadataTest {
             )
         }
     }
+
+    // --- sensorToBufferTransform (CAM-2c) ---
+
+    @Test
+    fun `sensorToBufferTransform defaults to null`() {
+        assertEquals(null, valid().sensorToBufferTransform)
+    }
+
+    @Test
+    fun `sensorToBufferTransform is preserved exactly when present`() {
+        val transform =
+            SensorToBufferMatrix3(
+                m00 = 0.5, m01 = 0.0, m02 = -100.0,
+                m10 = 0.0, m11 = 0.5, m12 = -50.0,
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
+            )
+        val metadata =
+            CameraFrameMetadata(
+                timestampNanos = 0L,
+                bufferWidthPx = 1920,
+                bufferHeightPx = 1080,
+                rotationDegrees = 0,
+                sensorToBufferTransform = transform,
+            )
+        assertEquals(transform, metadata.sensorToBufferTransform)
+    }
 }

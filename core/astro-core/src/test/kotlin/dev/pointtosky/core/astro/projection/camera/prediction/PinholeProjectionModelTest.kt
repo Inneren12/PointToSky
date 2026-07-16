@@ -1,5 +1,9 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import kotlin.math.abs
 import kotlin.math.tan
 import kotlin.test.Test
@@ -342,5 +346,139 @@ class PinholeProjectionModelTest {
         tolerance: Double,
     ) {
         assertTrue(abs(expected - actual) < tolerance, "expected $expected but was $actual")
+    }
+
+    // --- axisSwapped/negateXInput/negateYInput (CAM-2c fix §1/§2/§7) --------------------------------
+
+    @Test
+    fun `axisSwapped false is the exact pre-CAM-2c-fix formula - full backward compatibility`() {
+        val model = workedExampleModel()
+        val point = model.project(0.5, -0.5)
+        assertEquals(750.0, point.x, eps) // fx*0.5 + cx
+        assertEquals(125.0, point.y, eps) // fy*-0.5 + cy
+    }
+
+    @Test
+    fun `axisSwapped true multiplies focalLengthXPx by normalizedY and focalLengthYPx by normalizedX`() {
+        val model =
+            PinholeProjectionModel(
+                focalLengthXPx = 500.0,
+                focalLengthYPx = 250.0,
+                principalPointXPx = 500.0,
+                principalPointYPx = 250.0,
+                imageWidthPx = 1000.0,
+                imageHeightPx = 500.0,
+                axisSwapped = true,
+            )
+        val point = model.project(normalizedX = 0.1, normalizedY = 0.5)
+        assertEquals(500.0 * 0.5 + 500.0, point.x, eps) // fx * normalizedY (not normalizedX)
+        assertEquals(250.0 * 0.1 + 250.0, point.y, eps) // fy * normalizedX (not normalizedY)
+    }
+
+    @Test
+    fun `negateXInput and negateYInput each independently flip the sign of their own input`() {
+        val negateXOnly =
+            PinholeProjectionModel(500.0, 250.0, 500.0, 250.0, 1000.0, 500.0, negateXInput = true)
+        val negateYOnly =
+            PinholeProjectionModel(500.0, 250.0, 500.0, 250.0, 1000.0, 500.0, negateYInput = true)
+        val negateBoth =
+            PinholeProjectionModel(500.0, 250.0, 500.0, 250.0, 1000.0, 500.0, negateXInput = true, negateYInput = true)
+
+        val plain = workedExampleModel().project(0.3, 0.4)
+        val flippedX = negateXOnly.project(0.3, 0.4)
+        val flippedY = negateYOnly.project(0.3, 0.4)
+        val flippedBoth = negateBoth.project(0.3, 0.4)
+
+        assertEquals(2.0 * 500.0 - plain.x, flippedX.x, eps) // mirrored around principal point X
+        assertEquals(plain.y, flippedX.y, eps) // Y untouched
+        assertEquals(plain.x, flippedY.x, eps) // X untouched
+        assertEquals(2.0 * 250.0 - plain.y, flippedY.y, eps) // mirrored around principal point Y
+        assertEquals(2.0 * 500.0 - plain.x, flippedBoth.x, eps)
+        assertEquals(2.0 * 250.0 - plain.y, flippedBoth.y, eps)
+    }
+
+    @Test
+    fun `forGeometry wires axisSwapped and negate flags straight through from the resolved intrinsics`() {
+        // axisSwapped/negateXInput/negateYInput are only ever allowed non-default for
+        // source=CAMERA_CHARACTERISTICS + reference=AnalysisBuffer (CAM-2c fix round 2 §5) - built
+        // directly here rather than via the analysisBufferIntrinsics fixture, which is
+        // LEGACY_FALLBACK-sourced and would now correctly reject these flags.
+        val geometry =
+            buildTestGeometry(
+                bufferWidthPx = 1000,
+                bufferHeightPx = 500,
+                intrinsicsResolution =
+                    CameraIntrinsicsResolution.Resolved(
+                        CameraIntrinsics(
+                            horizontalFovDeg = 90.0,
+                            verticalFovDeg = 90.0,
+                            focalLengthMm = null,
+                            sensorWidthMm = null,
+                            sensorHeightMm = null,
+                            principalPointXPx = null,
+                            principalPointYPx = null,
+                            source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                            reference = CameraIntrinsicsReference.AnalysisBuffer(1000, 500),
+                            axisSwapped = true,
+                            negateXInput = false,
+                            negateYInput = true,
+                        ),
+                    ),
+            )
+        val model = PinholeProjectionModel.forGeometry(geometry)
+        assertTrue(model.axisSwapped)
+        assertTrue(!model.negateXInput)
+        assertTrue(model.negateYInput)
+    }
+
+    // --- No double rotation (CAM-2c fix §1/§2/§7): axisSwapped's position-space swap is independent
+    // of DisplayAlignedOpticalToBufferOpticalTransform's direction-space rotation --------------------
+
+    @Test
+    fun `an axisSwapped model and DisplayAlignedOpticalToBufferOpticalTransform rotation never compound into a double transform`() {
+        // A ray whose display-aligned optical direction is (dx, dy, dz) = (0.2, 0.05, -1.0).
+        val displayOptical = OpticalCameraVector(x = 0.2, y = 0.05, z = -1.0)
+
+        // DisplayAlignedOpticalToBufferOpticalTransform's OWN 90-degree case (untouched by this fix):
+        // bufferOptical.x = dy, bufferOptical.y = -dx (see that object's own mapping table).
+        val bufferOptical = DisplayAlignedOpticalToBufferOpticalTransform.apply(displayOptical, rotationDegrees = 90)
+        assertEquals(displayOptical.y, bufferOptical.x, eps)
+        assertEquals(-displayOptical.x, bufferOptical.y, eps)
+
+        // A pinhole model with axisSwapped=true, independently, swaps which of project()'s own two
+        // *inputs* drives fx vs fy - a completely different operation, applied to whatever
+        // normalizedX/normalizedY it is handed, with no awareness of rotationDegrees at all.
+        val swappedModel =
+            PinholeProjectionModel(
+                focalLengthXPx = 400.0,
+                focalLengthYPx = 300.0,
+                principalPointXPx = 320.0,
+                principalPointYPx = 240.0,
+                imageWidthPx = 640.0,
+                imageHeightPx = 480.0,
+                axisSwapped = true,
+            )
+        val unswappedModel = swappedModel.copy(axisSwapped = false)
+
+        // Feeding the SAME already-rotated (bufferOptical) ray through both models: the swapped
+        // model's result is exactly the unswapped model's result with x/y's *contributions* swapped
+        // (fx now multiplies bufferOptical.y, fy now multiplies bufferOptical.x) - never an extra
+        // rotation of the (dx, dy) pair itself, and never dependent on rotationDegrees=90 having been
+        // applied one line above.
+        val swappedPoint = swappedModel.project(bufferOptical.x, bufferOptical.y)
+        assertEquals(swappedModel.focalLengthXPx * bufferOptical.y + swappedModel.principalPointXPx, swappedPoint.x, eps)
+        assertEquals(swappedModel.focalLengthYPx * bufferOptical.x + swappedModel.principalPointYPx, swappedPoint.y, eps)
+
+        // Changing rotationDegrees (0 vs 90 vs 180 vs 270) changes bufferOptical; changing
+        // axisSwapped changes how project() consumes whatever bufferOptical it is given. The two
+        // never both apply to the same quantity - proven by these two computations using entirely
+        // disjoint formulas (one only ever touches displayOptical -> bufferOptical, the other only
+        // ever touches bufferOptical -> pixel).
+        val unswappedPoint = unswappedModel.project(bufferOptical.x, bufferOptical.y)
+        assertEquals(unswappedModel.focalLengthXPx * bufferOptical.x + unswappedModel.principalPointXPx, unswappedPoint.x, eps)
+        assertTrue(
+            abs(swappedPoint.x - unswappedPoint.x) > 1.0,
+            "swapped and unswapped projections of the same ray must genuinely differ, not coincidentally match",
+        )
     }
 }
