@@ -841,4 +841,114 @@ class AnalysisBufferIntrinsicsResolverTest {
         assertEquals("0", fallbackResult.cameraCharacteristicsSnapshot?.cameraId)
         assertEquals(true, fallbackResult.cameraCharacteristicsSnapshot?.isLogicalMultiCamera)
     }
+
+    // --- CAM-2c runtime integration fix P1: exactly one CameraCharacteristicsSource.snapshot() read
+    // per resolveCameraIntrinsicsPreferringCalibration call --------------------------------------
+
+    /**
+     * A [CameraCharacteristicsSource] whose [snapshot] both counts every call and returns a
+     * *different* value on each successive call - so a resolver that (incorrectly) reads more than
+     * once cannot coincidentally "get away with it" by returning equal snapshots. Any test asserting
+     * a result derives from `snapshots.first()` fails immediately if a second read (returning
+     * `snapshots[1]`, a different camera ID/focal length) is what actually produced it.
+     */
+    private class CountingCameraCharacteristicsSource(
+        private val snapshots: List<CameraCharacteristicsSnapshot>,
+    ) : CameraCharacteristicsSource {
+        var callCount: Int = 0
+            private set
+
+        override fun snapshot(): CameraCharacteristicsSnapshot {
+            val snapshot = snapshots.getOrElse(callCount) { snapshots.last() }
+            callCount++
+            return snapshot
+        }
+    }
+
+    private class ThrowingCameraCharacteristicsSource(
+        private val exception: () -> Throwable,
+    ) : CameraCharacteristicsSource {
+        var callCount: Int = 0
+            private set
+
+        override fun snapshot(): CameraCharacteristicsSnapshot {
+            callCount++
+            throw exception()
+        }
+    }
+
+    @Test
+    fun `preferring calibration reads the source exactly once for a successful CAM-2c resolution`() {
+        val snapshotA = sourceOf(cameraId = "A").snapshot()
+        val snapshotB = sourceOf(cameraId = "B", focalLengthsMm = floatArrayOf(9.9f)).snapshot()
+        val source = CountingCameraCharacteristicsSource(listOf(snapshotA, snapshotB))
+
+        val result = resolveCameraIntrinsicsPreferringCalibration(source, fullFrameTransform, bufferWidthPx, bufferHeightPx)
+
+        assertEquals(1, source.callCount)
+        val attempt = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(result.analysisBufferAttempt)
+        assertEquals("A", attempt.diagnostics.cameraId)
+        assertEquals(3.6, attempt.diagnostics.focalLengthMm, eps) // snapshotA's focal length, never snapshotB's 9.9
+        assertEquals("A", result.cameraCharacteristicsSnapshot?.cameraId)
+        assertEquals(3.6, result.intrinsics.focalLengthMm!!, eps)
+    }
+
+    @Test
+    fun `preferring calibration reads the source exactly once for a CAM-2c failure with a CAM-1b PhysicalSensor fallback`() {
+        val snapshotA = sourceOf(isLogicalMultiCamera = true, cameraId = "A").snapshot()
+        val snapshotB = sourceOf(cameraId = "B", focalLengthsMm = floatArrayOf(9.9f)).snapshot()
+        val source = CountingCameraCharacteristicsSource(listOf(snapshotA, snapshotB))
+
+        val result = resolveCameraIntrinsicsPreferringCalibration(source, fullFrameTransform, bufferWidthPx, bufferHeightPx)
+
+        assertEquals(1, source.callCount)
+        val attempt = assertIs<AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping>(result.analysisBufferAttempt)
+        assertEquals("A", attempt.cameraId) // never snapshotB's "B"
+        assertEquals("A", result.cameraCharacteristicsSnapshot?.cameraId)
+        assertEquals(CameraIntrinsicsReference.PhysicalSensor, result.intrinsics.reference)
+        // The published PhysicalSensor fallback's focal length is snapshotA's (3.6mm), never
+        // snapshotB's (9.9mm) - proof CAM-1b used the same read, not a second one.
+        assertEquals(3.6, result.intrinsics.focalLengthMm!!, eps)
+    }
+
+    @Test
+    fun `preferring calibration reads the source exactly once when it falls all the way through to the legacy fallback`() {
+        val snapshotA = sourceOf(focalLengthsMm = null).snapshot()
+        val snapshotB = sourceOf(cameraId = "B", focalLengthsMm = floatArrayOf(9.9f)).snapshot()
+        val source = CountingCameraCharacteristicsSource(listOf(snapshotA, snapshotB))
+
+        val result = resolveCameraIntrinsicsPreferringCalibration(source, null, bufferWidthPx, bufferHeightPx)
+
+        assertEquals(1, source.callCount)
+        assertEquals(AnalysisBufferIntrinsicsResolution.MissingFocalLength, result.analysisBufferAttempt)
+        assertEquals(CameraIntrinsicsFallbackReason.NO_VALID_FOCAL_LENGTH, result.fallbackReason)
+        assertEquals(CameraIntrinsicsSource.LEGACY_FALLBACK, result.intrinsics.source)
+        // The displayed snapshot corresponds to the same (only) read - snapshotA, never snapshotB.
+        assertNull(result.cameraCharacteristicsSnapshot?.cameraId)
+    }
+
+    @Test
+    fun `preferring calibration reads the source exactly once even when the read throws`() {
+        val source = ThrowingCameraCharacteristicsSource { RuntimeException("boom") }
+
+        val result = resolveCameraIntrinsicsPreferringCalibration(source, fullFrameTransform, bufferWidthPx, bufferHeightPx)
+
+        assertEquals(1, source.callCount)
+        assertEquals(
+            AnalysisBufferIntrinsicsResolution.InvalidMetadata(AnalysisBufferIntrinsicsInvalidMetadataReason.CHARACTERISTICS_UNAVAILABLE),
+            result.analysisBufferAttempt,
+        )
+        assertEquals(CameraIntrinsicsFallbackReason.CHARACTERISTICS_UNAVAILABLE, result.fallbackReason)
+        assertNull(result.cameraCharacteristicsSnapshot)
+    }
+
+    @Test
+    fun `preferring calibration propagates CancellationException from the single read, without any retry`() {
+        val source = ThrowingCameraCharacteristicsSource { CancellationException("cancelled") }
+
+        assertFailsWith<CancellationException> {
+            resolveCameraIntrinsicsPreferringCalibration(source, fullFrameTransform, bufferWidthPx, bufferHeightPx)
+        }
+        assertEquals(1, source.callCount)
+    }
 }

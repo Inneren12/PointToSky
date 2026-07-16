@@ -49,21 +49,41 @@ private fun formatReference(reference: CameraIntrinsicsReference): String =
         CameraIntrinsicsReference.Unspecified -> "Unspecified"
     }
 
+/**
+ * Renders the *publication* status (whether/why this session's [CoreCameraIntrinsicsResolution]
+ * resolved directly or fell back to the legacy fixed-FOV default) and the *intrinsic calibration
+ * quality* ([dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality]) as distinct,
+ * separately-labelled fields (CAM-2c runtime integration fix P2) — a prior revision reused one
+ * `quality:` line for both concerns, rendering the sealed subtype name (`Resolved`/`LegacyFallback`)
+ * as if it were the calibration quality and hiding whether CAM-2c actually achieved
+ * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality.CALIBRATED] or only
+ * [dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT].
+ * `intrinsics quality` is always [dev.pointtosky.core.astro.projection.camera.CameraIntrinsics.quality]
+ * itself (`"unavailable"` when `null` — always the case for a `PhysicalSensor`/`LEGACY_FALLBACK`
+ * publication, see that type's own cross-field contract), never inferred from [resolution]'s subtype.
+ */
 private fun publishedIntrinsicsLines(resolution: CoreCameraIntrinsicsResolution?): List<String> {
     if (resolution == null) {
-        return listOf("  source: $UNAVAILABLE", "  reference: $UNAVAILABLE", "  quality: $UNAVAILABLE")
+        return listOf(
+            "  publication: $UNAVAILABLE",
+            "  source: $UNAVAILABLE",
+            "  reference: $UNAVAILABLE",
+            "  intrinsics quality: $UNAVAILABLE",
+        )
     }
     val intrinsics = resolution.intrinsics
-    val qualityLabel =
-        when (resolution) {
-            is CoreCameraIntrinsicsResolution.Resolved -> "Resolved"
-            is CoreCameraIntrinsicsResolution.LegacyFallback -> "LegacyFallback (${resolution.reason})"
+    val lines = mutableListOf<String>()
+    when (resolution) {
+        is CoreCameraIntrinsicsResolution.Resolved -> lines += "  publication: Resolved"
+        is CoreCameraIntrinsicsResolution.LegacyFallback -> {
+            lines += "  publication: LegacyFallback"
+            lines += "  fallback reason: ${resolution.reason}"
         }
-    return listOf(
-        "  source: ${intrinsics.source.name}",
-        "  reference: ${formatReference(intrinsics.reference)}",
-        "  quality: $qualityLabel",
-    )
+    }
+    lines += "  source: ${intrinsics.source.name}"
+    lines += "  reference: ${formatReference(intrinsics.reference)}"
+    lines += "  intrinsics quality: ${intrinsics.quality?.name ?: UNAVAILABLE}"
+    return lines
 }
 
 private fun cameraLines(snapshot: CameraCharacteristicsSnapshot?): List<String> =

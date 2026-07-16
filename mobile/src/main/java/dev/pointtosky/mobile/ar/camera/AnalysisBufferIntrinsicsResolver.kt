@@ -14,7 +14,6 @@ import dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThrou
 import dev.pointtosky.core.astro.projection.camera.toActiveArrayLocalRect
 import dev.pointtosky.core.astro.projection.camera.toCameraIntrinsics
 import kotlin.math.abs
-import kotlinx.coroutines.CancellationException
 
 /**
  * Typed outcome of [resolveAnalysisBufferIntrinsics] (CAM-2c §6, fix §1) — an explicit result for
@@ -238,6 +237,13 @@ private fun preCorrectionActiveArrayMatchesActiveArray(snapshot: CameraCharacter
  * buffer (CAM-2c, fix §1-§6). Never silently falls back — every failure mode is one of
  * [AnalysisBufferIntrinsicsResolution]'s explicit variants.
  *
+ * Two overloads exist (CAM-2c runtime integration fix P1): this [CameraCharacteristicsSource]-based
+ * one reads the source exactly once (via [readSnapshotOrNull]) and delegates to the
+ * [CameraCharacteristicsSnapshot]-based core overload below — callers that also need the *same*
+ * snapshot for a CAM-1b fallback decision or diagnostics (`resolveCameraIntrinsicsPreferringCalibration`)
+ * should call the snapshot-based overload directly with their own already-read snapshot instead of
+ * calling this one, so the source is never read more than once per session resolution.
+ *
  * Resolution order:
  *  1. Read [source]'s snapshot (any thrown exception → [AnalysisBufferIntrinsicsResolution.InvalidMetadata]).
  *  2. Reject a logical multi-camera outright ([AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping]) —
@@ -290,15 +296,30 @@ internal fun resolveAnalysisBufferIntrinsics(
     sensorToBufferTransform: SensorToBufferMatrix3?,
     bufferWidthPx: Int,
     bufferHeightPx: Int,
+): AnalysisBufferIntrinsicsResolution =
+    resolveAnalysisBufferIntrinsics(source.readSnapshotOrNull(), sensorToBufferTransform, bufferWidthPx, bufferHeightPx)
+
+/**
+ * The snapshot-based core [resolveAnalysisBufferIntrinsics] delegates to (CAM-2c runtime integration
+ * fix P1) — takes an already-read [CameraCharacteristicsSnapshot] directly rather than reading a
+ * [CameraCharacteristicsSource] itself, so a caller that also needs the same snapshot for a CAM-1b
+ * fallback decision or for runtime diagnostics (`resolveCameraIntrinsicsPreferringCalibration`) reads
+ * the source exactly once and passes the one resulting immutable value to every consumer, rather than
+ * each consumer re-reading (and each read is not guaranteed to observe the same values). `snapshot ==
+ * null` — the source-based overload's read failed, or a caller has no source to read at all — is
+ * reported as [AnalysisBufferIntrinsicsResolution.InvalidMetadata] with
+ * [AnalysisBufferIntrinsicsInvalidMetadataReason.CHARACTERISTICS_UNAVAILABLE], exactly matching the
+ * source-based overload's own historical behavior for a thrown exception.
+ */
+internal fun resolveAnalysisBufferIntrinsics(
+    snapshot: CameraCharacteristicsSnapshot?,
+    sensorToBufferTransform: SensorToBufferMatrix3?,
+    bufferWidthPx: Int,
+    bufferHeightPx: Int,
 ): AnalysisBufferIntrinsicsResolution {
-    val snapshot =
-        try {
-            source.snapshot()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            return AnalysisBufferIntrinsicsResolution.InvalidMetadata(AnalysisBufferIntrinsicsInvalidMetadataReason.CHARACTERISTICS_UNAVAILABLE)
-        }
+    if (snapshot == null) {
+        return AnalysisBufferIntrinsicsResolution.InvalidMetadata(AnalysisBufferIntrinsicsInvalidMetadataReason.CHARACTERISTICS_UNAVAILABLE)
+    }
 
     if (snapshot.isLogicalMultiCamera) {
         return AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping(
@@ -528,6 +549,19 @@ internal fun resolveAnalysisBufferIntrinsics(
  * indistinguishable "no calibration diagnostics" `null`. [CameraCharacteristicsSnapshot] is captured
  * the same way, independent of outcome, so a diagnostics panel can show the camera metadata behind a
  * rejection too.
+ *
+ * **One immutable [CameraCharacteristicsSnapshot] per resolution (CAM-2c runtime integration fix
+ * P1).** [source] is read via [readSnapshotOrNull] exactly **once**, unconditionally, at the top of
+ * this function — never once inside [resolveAnalysisBufferIntrinsics], again directly here, and
+ * again inside [resolveCameraIntrinsics], which is what an earlier revision did (up to three
+ * independent reads for one resolution). That one resulting snapshot (or `null`, if the read failed)
+ * is the exact same value passed to both the calibrated-mapping attempt and the CAM-1b/legacy
+ * fallback decision, and is the exact same value returned as
+ * [CameraIntrinsicsResolution.cameraCharacteristicsSnapshot] for runtime diagnostics — so the CAM-2c
+ * attempt, the CAM-1b fallback (if any), and the HUD are guaranteed to describe the *same* read,
+ * never three reads that a real Camera2 implementation merely happens to return equal values for.
+ * `CancellationException` from that one read propagates unchanged; any other exception is reported
+ * as `snapshot == null` exactly once, with no further retry by either resolver below.
  */
 internal fun resolveCameraIntrinsicsPreferringCalibration(
     source: CameraCharacteristicsSource,
@@ -535,18 +569,11 @@ internal fun resolveCameraIntrinsicsPreferringCalibration(
     imageWidthPx: Int?,
     imageHeightPx: Int?,
 ): CameraIntrinsicsResolution {
+    val snapshot = source.readSnapshotOrNull()
     val attempt: AnalysisBufferIntrinsicsResolution? =
         if (imageWidthPx != null && imageHeightPx != null && imageWidthPx > 0 && imageHeightPx > 0) {
-            resolveAnalysisBufferIntrinsics(source, sensorToBufferTransform, imageWidthPx, imageHeightPx)
+            resolveAnalysisBufferIntrinsics(snapshot, sensorToBufferTransform, imageWidthPx, imageHeightPx)
         } else {
-            null
-        }
-    val snapshot =
-        try {
-            source.snapshot()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
             null
         }
     if (attempt is AnalysisBufferIntrinsicsResolution.Resolved) {
@@ -557,6 +584,6 @@ internal fun resolveCameraIntrinsicsPreferringCalibration(
             cameraCharacteristicsSnapshot = snapshot,
         )
     }
-    return resolveCameraIntrinsics(source, imageWidthPx, imageHeightPx)
+    return resolveCameraIntrinsics(snapshot, imageWidthPx, imageHeightPx)
         .copy(analysisBufferAttempt = attempt, cameraCharacteristicsSnapshot = snapshot)
 }

@@ -78,6 +78,25 @@ class CameraSessionIntrinsicsDiagnosticFormatTest {
     }
 
     @Test
+    fun `an unresolved publication renders every published-intrinsics field as unavailable`() {
+        val state =
+            CameraSessionIntrinsicsDiagnosticState(
+                analysisBufferAttempt = null,
+                publishedIntrinsicsResolution = null,
+                coordinatorState = CameraSessionIntrinsicsCoordinatorState.RESOLVING,
+                cameraCharacteristicsSnapshot = null,
+                frameCounters = frameCounters(),
+            )
+
+        val text = buildCameraSessionIntrinsicsDiagnosticText(state)
+
+        assertTrue(text.contains("publication: unavailable"))
+        assertTrue(text.contains("source: unavailable"))
+        assertTrue(text.contains("reference: unavailable"))
+        assertTrue(text.contains("intrinsics quality: unavailable"))
+    }
+
+    @Test
     fun `a logical-multi-camera rejection names the exact reason, camera id and physical ids - never collapsed to just the fallback`() {
         val attempt =
             AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping(
@@ -100,7 +119,15 @@ class CameraSessionIntrinsicsDiagnosticFormatTest {
         // block"): the published reference is PhysicalSensor, but the CAM-2c root cause must still
         // be visible on the same panel.
         assertTrue(text.contains("CAM-2c attempt: UnsupportedLogicalMultiCameraMapping(cameraId=0, physicalIds=1, 2)"))
+        // Publication status (Resolved) and intrinsic calibration quality are distinct, separately
+        // labelled fields (CAM-2c runtime integration fix P2) - "Resolved" describes only that CAM-1b
+        // successfully published a PhysicalSensor value, never that any calibration quality was
+        // achieved. physicalSensorIntrinsics carries no CameraIntrinsicsQuality at all (always the
+        // case for a PhysicalSensor-referenced CAM-1b value), so the quality line reads "unavailable".
+        assertTrue(text.contains("publication: Resolved"))
         assertTrue(text.contains("reference: PhysicalSensor"))
+        assertTrue(text.contains("intrinsics quality: unavailable"))
+        assertFalse(text.contains("quality: Resolved"), "must never render the publication subtype as if it were a calibration quality")
         assertTrue(text.contains("id: 0"))
         assertTrue(text.contains("logical: true"))
         assertTrue(text.contains("physical IDs: 1, 2"))
@@ -122,11 +149,13 @@ class CameraSessionIntrinsicsDiagnosticFormatTest {
         val text = buildCameraSessionIntrinsicsDiagnosticText(state)
 
         assertTrue(text.contains("CAM-2c attempt: MissingSensorToBufferTransform"))
+        assertTrue(text.contains("publication: Resolved"))
         assertTrue(text.contains("reference: PhysicalSensor"))
+        assertTrue(text.contains("intrinsics quality: unavailable"))
     }
 
     @Test
-    fun `a legacy fallback publication renders its reason`() {
+    fun `a legacy fallback publication renders publication status and fallback reason on separate lines from intrinsics quality`() {
         val fallbackIntrinsics = legacyFallbackCameraIntrinsics(imageWidthPx = 1920, imageHeightPx = 1080)
         val state =
             CameraSessionIntrinsicsDiagnosticState(
@@ -140,7 +169,13 @@ class CameraSessionIntrinsicsDiagnosticFormatTest {
         val text = buildCameraSessionIntrinsicsDiagnosticText(state)
 
         assertTrue(text.contains("CAM-2c attempt: MissingFocalLength"))
-        assertTrue(text.contains("quality: LegacyFallback (no_valid_focal_length)"))
+        assertTrue(text.contains("publication: LegacyFallback"))
+        assertTrue(text.contains("fallback reason: no_valid_focal_length"))
+        assertTrue(text.contains("source: LEGACY_FALLBACK"))
+        // legacyFallbackCameraIntrinsics never carries a CameraIntrinsicsQuality (only meaningful for
+        // CAMERA_CHARACTERISTICS) - the quality line must read "unavailable", never the fallback reason.
+        assertTrue(text.contains("intrinsics quality: unavailable"))
+        assertFalse(text.contains("quality: LegacyFallback"), "publication status and calibration quality must never share one label again")
     }
 
     @Test
@@ -195,12 +230,56 @@ class CameraSessionIntrinsicsDiagnosticFormatTest {
         val text = buildCameraSessionIntrinsicsDiagnosticText(state)
 
         assertTrue(text.contains("CAM-2c attempt: Resolved"))
+        assertTrue(text.contains("publication: Resolved"))
         assertTrue(text.contains("reference: AnalysisBuffer(640x480)"))
+        // The CAM-2c calibration quality this attempt actually achieved must be visible, distinct
+        // from the "publication: Resolved" line above (CAM-2c runtime integration fix P2).
+        assertTrue(text.contains("intrinsics quality: APPROXIMATE_PRINCIPAL_POINT"))
         assertTrue(text.contains("resolved buffer K:"))
         assertTrue(text.contains("474.0"))
         assertTrue(text.contains("AnalysisBuffer(640,480)"))
         assertTrue(text.contains("present: true"))
         assertTrue(text.contains("class: AXIS_ALIGNED_0"))
+    }
+
+    @Test
+    fun `a CALIBRATED CAM-2c resolution renders CALIBRATED, distinct from APPROXIMATE_PRINCIPAL_POINT`() {
+        val calibrated =
+            physicalSensorIntrinsics.copy(
+                reference = CameraIntrinsicsReference.AnalysisBuffer(640, 480),
+                quality = CameraIntrinsicsQuality.CALIBRATED,
+            )
+        val state =
+            CameraSessionIntrinsicsDiagnosticState(
+                analysisBufferAttempt = null,
+                publishedIntrinsicsResolution = CoreCameraIntrinsicsResolution.Resolved(calibrated),
+                coordinatorState = CameraSessionIntrinsicsCoordinatorState.RESOLVED,
+                cameraCharacteristicsSnapshot = snapshot,
+                frameCounters = frameCounters(),
+            )
+
+        val text = buildCameraSessionIntrinsicsDiagnosticText(state)
+
+        assertTrue(text.contains("intrinsics quality: CALIBRATED"))
+        assertFalse(text.contains("intrinsics quality: APPROXIMATE_PRINCIPAL_POINT"))
+    }
+
+    @Test
+    fun `a CAM-1b PhysicalSensor resolution always renders an unavailable intrinsics quality`() {
+        val state =
+            CameraSessionIntrinsicsDiagnosticState(
+                analysisBufferAttempt = AnalysisBufferIntrinsicsResolution.MissingActiveArray,
+                publishedIntrinsicsResolution = CoreCameraIntrinsicsResolution.Resolved(physicalSensorIntrinsics),
+                coordinatorState = CameraSessionIntrinsicsCoordinatorState.RESOLVED,
+                cameraCharacteristicsSnapshot = null,
+                frameCounters = frameCounters(),
+            )
+
+        val text = buildCameraSessionIntrinsicsDiagnosticText(state)
+
+        assertTrue(text.contains("publication: Resolved"))
+        assertTrue(text.contains("reference: PhysicalSensor"))
+        assertTrue(text.contains("intrinsics quality: unavailable"))
     }
 
     @Test

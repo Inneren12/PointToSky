@@ -6,7 +6,6 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.horizontalFovDeg
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
 import dev.pointtosky.core.astro.projection.camera.verticalFovDeg
-import kotlinx.coroutines.CancellationException
 
 /**
  * Diagnostic reasons [resolveCameraIntrinsics] falls back to
@@ -63,9 +62,26 @@ internal fun selectFocalLengthMm(candidates: FloatArray?): FocalLengthSelection 
  * [CameraIntrinsics]. Any failure along the way (missing/invalid/malformed metadata, or an
  * exception while reading it) returns an explicit [CameraIntrinsicsSource.LEGACY_FALLBACK] result
  * with a [CameraIntrinsicsResolution.fallbackReason] instead of guessing or clamping.
+ *
+ * Reads [source] exactly once (via [readSnapshotOrNull]) and delegates to the
+ * [CameraCharacteristicsSnapshot]-based core overload below (CAM-2c runtime integration fix P1) —
+ * see [resolveCameraIntrinsicsPreferringCalibration]'s KDoc for why a caller that already has a
+ * snapshot (read for the CAM-2c attempt) must call that overload directly instead of this one.
  */
 internal fun resolveCameraIntrinsics(
     source: CameraCharacteristicsSource,
+    imageWidthPx: Int?,
+    imageHeightPx: Int?,
+): CameraIntrinsicsResolution = resolveCameraIntrinsics(source.readSnapshotOrNull(), imageWidthPx, imageHeightPx)
+
+/**
+ * The snapshot-based core [resolveCameraIntrinsics] delegates to (CAM-2c runtime integration fix
+ * P1) — see that overload's KDoc. `snapshot == null` (the source-based overload's read failed, or a
+ * caller has no source to read at all) resolves [CameraIntrinsicsFallbackReason.CHARACTERISTICS_UNAVAILABLE],
+ * exactly matching the source-based overload's own historical behavior for a thrown exception.
+ */
+internal fun resolveCameraIntrinsics(
+    snapshot: CameraCharacteristicsSnapshot?,
     imageWidthPx: Int?,
     imageHeightPx: Int?,
 ): CameraIntrinsicsResolution {
@@ -75,14 +91,9 @@ internal fun resolveCameraIntrinsics(
             fallbackReason = reason,
         )
 
-    val snapshot =
-        try {
-            source.snapshot()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            return fallback(CameraIntrinsicsFallbackReason.CHARACTERISTICS_UNAVAILABLE)
-        }
+    if (snapshot == null) {
+        return fallback(CameraIntrinsicsFallbackReason.CHARACTERISTICS_UNAVAILABLE)
+    }
 
     val focalLengthMm =
         when (val selection = selectFocalLengthMm(snapshot.availableFocalLengthsMm)) {

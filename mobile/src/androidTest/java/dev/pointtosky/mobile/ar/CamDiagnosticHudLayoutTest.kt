@@ -474,8 +474,15 @@ class CamDiagnosticHudLayoutTest {
             .assert(hasText("CAM-2b: unavailable · PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED", substring = true))
         composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
             .assert(hasText("CAM-2c attempt: UnsupportedLogicalMultiCameraMapping", substring = true))
+        // Publication status ("Resolved" - CAM-1b successfully published a PhysicalSensor value) and
+        // intrinsic calibration quality are distinct, separately-labelled fields (CAM-2c runtime
+        // integration fix P2) - "Resolved" must never be read as if it were a calibration quality.
+        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
+            .assert(hasText("publication: Resolved", substring = true))
         composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
             .assert(hasText("reference: PhysicalSensor", substring = true))
+        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
+            .assert(hasText("intrinsics quality: unavailable", substring = true))
     }
 
     @Test

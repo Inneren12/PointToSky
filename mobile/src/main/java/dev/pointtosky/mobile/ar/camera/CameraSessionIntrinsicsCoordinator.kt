@@ -235,6 +235,26 @@ class CameraSessionIntrinsicsCoordinator(
      * (CAM-2c runtime integration fix §2) This session's full CAM-2c picture — the resolver's typed
      * attempt and the value it actually published, together with this coordinator's own state and
      * frame counters. See [CameraSessionIntrinsicsDiagnosticState]'s KDoc.
+     *
+     * **Observational, not one atomic snapshot.** [resolver]'s `lastAnalysisBufferAttempt`/
+     * `lastPublishedResolution`/`lastCameraCharacteristicsSnapshot` and this coordinator's own
+     * [state]/[frameCounters] are each read through their own `synchronized` getter, one after
+     * another — this property itself holds no lock across all of them. This is debug-only display
+     * (never consumed by projection or resolution) so that is an intentional, accepted tradeoff, not
+     * a broadening into a reactive/transactional read: [resolver]'s three fields are themselves
+     * guaranteed internally consistent with each other (all three are written together, under
+     * [resolver]'s own lock, by the one `resolveOnce` call that ever sets them — see
+     * [SessionScopedCameraIntrinsicsResolver.resolveOnce] and the single-snapshot-per-resolution
+     * guarantee in [resolveCameraIntrinsicsPreferringCalibration]'s KDoc), so a caller reading this
+     * property mid-resolution sees either the fully-pre-resolution values (all three still `null`) or
+     * the fully-post-resolution values (all three set from the one shared
+     * [CameraCharacteristicsSnapshot]) — never a mix of one resolution's attempt with another
+     * resolution's snapshot, since [resolveOnce] only ever runs once per session. Only [frameCounters]
+     * can legitimately be read from a moment adjacent to (fractionally before or after) the other four
+     * fields, since it keeps advancing independently for the coordinator's whole lifetime — a caller
+     * must not assume [CameraSessionIntrinsicsFrameCounters] was captured at exactly the same instant
+     * as [CameraSessionIntrinsicsDiagnosticState.analysisBufferAttempt] etc., only that both describe
+     * the same session.
      */
     val diagnosticState: CameraSessionIntrinsicsDiagnosticState
         get() =
