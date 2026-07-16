@@ -66,40 +66,51 @@ class CamDiagnosticSnapshotJsonTest {
 
     private val pixel9Matrix = SensorToBufferMatrix3(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
 
-    private val pixel9IntrinsicsState =
-        CameraSessionIntrinsicsDiagnosticState(
-            analysisBufferAttempt =
-                AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping(
-                    cameraId = "0",
-                    physicalCameraIdsForDiagnostics = setOf("4", "2", "3"),
-                ),
-            publishedIntrinsicsResolution = CoreCameraIntrinsicsResolution.Resolved(physicalSensorIntrinsics),
-            coordinatorState = CameraSessionIntrinsicsCoordinatorState.RESOLVED,
-            cameraCharacteristicsSnapshot = pixel9CharacteristicsSnapshot,
-            frameCounters =
-                CameraSessionIntrinsicsFrameCounters(
-                    framesAnalyzed = 1115L,
-                    framesWithTransform = 1115L,
-                    framesWithNullTransform = 0L,
-                    framesWithUsableTransform = 1115L,
-                    coordinatorFramesWaited = 1,
-                    latestFrameTransform = pixel9Matrix,
-                    latestFrameTransformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
-                ),
-        )
+    private fun pixel9IntrinsicsState(
+        attempt: AnalysisBufferIntrinsicsResolution? =
+            AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping(
+                cameraId = "0",
+                physicalCameraIdsForDiagnostics = setOf("4", "2", "3"),
+            ),
+        published: CoreCameraIntrinsicsResolution? = CoreCameraIntrinsicsResolution.Resolved(physicalSensorIntrinsics),
+        characteristics: CameraCharacteristicsSnapshot? = pixel9CharacteristicsSnapshot,
+        matrix: SensorToBufferMatrix3? = pixel9Matrix,
+        transformClass: SensorToBufferTransformClass? = SensorToBufferTransformClass.AXIS_ALIGNED_0,
+    ) = CameraSessionIntrinsicsDiagnosticState(
+        analysisBufferAttempt = attempt,
+        publishedIntrinsicsResolution = published,
+        coordinatorState = CameraSessionIntrinsicsCoordinatorState.RESOLVED,
+        cameraCharacteristicsSnapshot = characteristics,
+        frameCounters =
+            CameraSessionIntrinsicsFrameCounters(
+                framesAnalyzed = 1115L,
+                framesWithTransform = 1115L,
+                framesWithNullTransform = 0L,
+                framesWithUsableTransform = 1115L,
+                coordinatorFramesWaited = 1,
+                latestFrameTransform = matrix,
+                latestFrameTransformClass = transformClass,
+            ),
+    )
 
-    private val pixel9Snapshot =
-        captureCamDiagnosticSnapshot(
-            capturedAtEpochMillis = 1_700_000_000_000L,
-            sessionId = 9L,
-            cam2bState = null,
-            cameraGeometryState = null,
-            cameraGeometryStatusTransitionCount = 0,
-            cameraGeometryObservedFrameCount = 1115L,
-            cameraGeometryReadyBundleCount = 0L,
-            cameraIntrinsicsState = pixel9IntrinsicsState,
-            calibrationDiagnostics = null,
-        )
+    private fun snapshot(
+        state: CameraSessionIntrinsicsDiagnosticState? = pixel9IntrinsicsState(),
+        calibration: CameraCalibrationDiagnostics? = null,
+        capturedAtEpochMillis: Long = 1_700_000_000_000L,
+        sessionId: Long = 9L,
+    ) = captureCamDiagnosticSnapshot(
+        capturedAtEpochMillis = capturedAtEpochMillis,
+        sessionId = sessionId,
+        cam2bState = null,
+        cameraGeometryState = null,
+        cameraGeometryStatusTransitionCount = 0,
+        cameraGeometryObservedFrameCount = 1115L,
+        cameraGeometryReadyBundleCount = 0L,
+        cameraIntrinsicsState = state,
+        calibrationDiagnostics = calibration,
+    )
+
+    private val pixel9Snapshot = snapshot()
 
     @Test
     fun `the same snapshot always serializes to the exact same JSON string`() {
@@ -135,13 +146,9 @@ class CamDiagnosticSnapshotJsonTest {
 
     @Test
     fun `a null latest-frame transform serializes matrix as an explicit JSON null, never an empty or fabricated array`() {
-        val stateWithNullMatrix =
-            pixel9IntrinsicsState.copy(
-                frameCounters = pixel9IntrinsicsState.frameCounters.copy(latestFrameTransform = null, latestFrameTransformClass = null),
-            )
-        val snapshot = pixel9Snapshot.copy(cameraIntrinsicsState = stateWithNullMatrix)
+        val stateWithNullMatrix = pixel9IntrinsicsState(matrix = null, transformClass = null)
 
-        val root = buildCamDiagnosticJsonElement(snapshot, CamDiagnosticLiveness.LIVE)
+        val root = buildCamDiagnosticJsonElement(snapshot(state = stateWithNullMatrix), CamDiagnosticLiveness.LIVE)
         val frameTransform = root["cam2c"]!!.jsonObject["frameTransform"]!!.jsonObject
 
         assertEquals(JsonNull, frameTransform["matrix"])
@@ -168,20 +175,7 @@ class CamDiagnosticSnapshotJsonTest {
                         latestFrameTransformClass = null,
                     ),
             )
-        val snapshot =
-            captureCamDiagnosticSnapshot(
-                capturedAtEpochMillis = 0L,
-                sessionId = 1L,
-                cam2bState = null,
-                cameraGeometryState = null,
-                cameraGeometryStatusTransitionCount = 0,
-                cameraGeometryObservedFrameCount = 0L,
-                cameraGeometryReadyBundleCount = 0L,
-                cameraIntrinsicsState = emptyState,
-                calibrationDiagnostics = null,
-            )
-
-        val root = buildCamDiagnosticJsonElement(snapshot, CamDiagnosticLiveness.LIVE)
+        val root = buildCamDiagnosticJsonElement(snapshot(state = emptyState, capturedAtEpochMillis = 0L, sessionId = 1L), CamDiagnosticLiveness.LIVE)
         val cam2c = root["cam2c"]!!.jsonObject
 
         assertEquals(JsonNull, cam2c["cameraId"])
@@ -237,18 +231,14 @@ class CamDiagnosticSnapshotJsonTest {
                 quality = CameraIntrinsicsQuality.CALIBRATED,
             )
         val resolvedAttempt = AnalysisBufferIntrinsicsResolution.Resolved(calibratedIntrinsics, calibrationDiagnostics)
-        val snapshot =
-            pixel9Snapshot.copy(
-                cameraIntrinsicsState =
-                    pixel9IntrinsicsState.copy(
-                        analysisBufferAttempt = resolvedAttempt,
-                        publishedIntrinsicsResolution = CoreCameraIntrinsicsResolution.Resolved(calibratedIntrinsics),
-                        cameraCharacteristicsSnapshot = pixel9CharacteristicsSnapshot.copy(isLogicalMultiCamera = false),
-                    ),
-                calibrationDiagnostics = calibrationDiagnostics,
+        val state =
+            pixel9IntrinsicsState(
+                attempt = resolvedAttempt,
+                published = CoreCameraIntrinsicsResolution.Resolved(calibratedIntrinsics),
+                characteristics = pixel9CharacteristicsSnapshot.copy(isLogicalMultiCamera = false),
             )
 
-        val root = buildCamDiagnosticJsonElement(snapshot, CamDiagnosticLiveness.LIVE)
+        val root = buildCamDiagnosticJsonElement(snapshot(state = state, calibration = calibrationDiagnostics), CamDiagnosticLiveness.LIVE)
 
         val calibration = root["calibration"]!!.jsonObject
         assertEquals("CALIBRATED", calibration["quality"]!!.jsonPrimitive.content)

@@ -11,14 +11,8 @@ import java.util.Locale
  * downstream CAM-2b `PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED` symptom with no CAM-2c root cause
  * (see this fix's own requirements doc §6/§8).
  */
-/** Widened to `internal` (CAM diagnostic export/freeze fix) so [dev.pointtosky.mobile.ar.camera.buildCamDiagnosticReportText]/
- * [dev.pointtosky.mobile.ar.camera.buildCamDiagnosticCompactSummaryText] reuse this exact placeholder
- * rather than duplicating it - a single source of truth for the "field not available" string. */
-internal const val UNAVAILABLE = "unavailable"
+private const val UNAVAILABLE = "unavailable"
 
-/** Kept `private`, not widened - `CameraCalibrationDiagnosticFormat.kt` and `CamDiagnosticReportFormat.kt`
- * each define this identical one-line helper themselves, matching this codebase's existing convention of
- * a small per-file `formatPx` rather than one shared symbol. */
 private fun formatPx(value: Double): String = String.format(Locale.ROOT, "%.1f", value)
 
 /**
@@ -48,7 +42,7 @@ internal fun formatAnalysisBufferAttempt(attempt: AnalysisBufferIntrinsicsResolu
         is AnalysisBufferIntrinsicsResolution.InvalidMetadata -> "InvalidMetadata(${attempt.reason})"
     }
 
-internal fun formatReference(reference: CameraIntrinsicsReference): String =
+private fun formatReference(reference: CameraIntrinsicsReference): String =
     when (reference) {
         is CameraIntrinsicsReference.AnalysisBuffer -> "AnalysisBuffer(${reference.widthPx}x${reference.heightPx})"
         CameraIntrinsicsReference.PhysicalSensor -> "PhysicalSensor"
@@ -68,7 +62,7 @@ internal fun formatReference(reference: CameraIntrinsicsReference): String =
  * itself (`"unavailable"` when `null` — always the case for a `PhysicalSensor`/`LEGACY_FALLBACK`
  * publication, see that type's own cross-field contract), never inferred from [resolution]'s subtype.
  */
-internal fun publishedIntrinsicsLines(resolution: CoreCameraIntrinsicsResolution?): List<String> {
+private fun publishedIntrinsicsLines(resolution: CoreCameraIntrinsicsResolution?): List<String> {
     if (resolution == null) {
         return listOf(
             "  publication: $UNAVAILABLE",
@@ -92,7 +86,7 @@ internal fun publishedIntrinsicsLines(resolution: CoreCameraIntrinsicsResolution
     return lines
 }
 
-internal fun cameraLines(snapshot: CameraCharacteristicsSnapshot?): List<String> =
+private fun cameraLines(snapshot: CameraCharacteristicsSnapshot?): List<String> =
     if (snapshot == null) {
         listOf("  id: $UNAVAILABLE", "  logical: $UNAVAILABLE", "  physical IDs: $UNAVAILABLE")
     } else {
@@ -103,7 +97,7 @@ internal fun cameraLines(snapshot: CameraCharacteristicsSnapshot?): List<String>
         )
     }
 
-internal fun frameTransformLines(counters: CameraSessionIntrinsicsFrameCounters): List<String> {
+private fun frameTransformLines(counters: CameraSessionIntrinsicsFrameCounters): List<String> {
     val transform = counters.latestFrameTransform
     val matrixLine =
         if (transform == null) {
@@ -123,7 +117,7 @@ internal fun frameTransformLines(counters: CameraSessionIntrinsicsFrameCounters)
     )
 }
 
-internal fun metadataLines(snapshot: CameraCharacteristicsSnapshot?): List<String> {
+private fun metadataLines(snapshot: CameraCharacteristicsSnapshot?): List<String> {
     if (snapshot == null) {
         return listOf(
             "  pixel array: $UNAVAILABLE",
@@ -179,7 +173,7 @@ internal fun metadataLines(snapshot: CameraCharacteristicsSnapshot?): List<Strin
     )
 }
 
-internal fun resolvedBufferKLines(resolved: AnalysisBufferIntrinsicsResolution.Resolved): List<String> {
+private fun resolvedBufferKLines(resolved: AnalysisBufferIntrinsicsResolution.Resolved): List<String> {
     val d = resolved.diagnostics
     val reference = resolved.intrinsics.reference
     val bufferLabel =

@@ -19,10 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,30 +26,24 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.pointtosky.mobile.ar.camera.CamDiagnosticSnapshot
+import dev.pointtosky.mobile.ar.camera.CamDiagnosticsExportInput
+import dev.pointtosky.mobile.ar.camera.CamDiagnosticsExportUiProvider
 import dev.pointtosky.mobile.ar.camera.CameraCalibrationDiagnostics
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsDiagnosticState
-import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticCompactSummaryText
-import dev.pointtosky.mobile.ar.camera.captureCamDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.name
 
 /**
- * [androidx.compose.ui.platform.testTag] for the compact CAM diagnostics summary (HUD redesign §6) -
- * the highest-value few-line root-cause summary shown while the HUD's details are expanded, replacing
- * the previous giant per-domain text blocks ([buildCamDiagnosticCompactSummaryText]'s output). The
- * full multi-section report lives behind [CAM_DIAGNOSTIC_OPEN_BUTTON_TEST_TAG] instead.
+ * [androidx.compose.ui.platform.testTag] for the CAM diagnostics export slot (architecture fix §1) -
+ * the container [CamDiagnosticsExportUiProvider.Content] renders into. Stable across every build
+ * variant (defined in `main`) even though the *content* inside it is variant-specific: `internalDebug`
+ * renders the compact summary + "Open diagnostics"; every other variant renders nothing at all (the
+ * no-op implementation). Shared, variant-independent tests assert on this slot's presence/position;
+ * variant-specific content assertions live in `mobile/src/internalDebugAndroidTest`.
  */
-const val CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG = "cam_diagnostic_compact_summary"
-
-/**
- * [androidx.compose.ui.platform.testTag] for the "Open diagnostics" affordance (HUD redesign §6) that
- * opens [CamDiagnosticFullReportDialog] - the full, scrollable, Freeze/Copy/Share/JSON-capable
- * diagnostics surface, never shown directly over the AR viewport by default.
- */
-const val CAM_DIAGNOSTIC_OPEN_BUTTON_TEST_TAG = "cam_diagnostic_open_button"
+const val CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG = "cam_diagnostic_export_slot"
 
 /** [androidx.compose.ui.platform.testTag] for the outer HUD container (header + summary/details). */
 const val CAM_DIAGNOSTIC_HUD_PANELS_TEST_TAG = "cam_diagnostic_hud_panels"
@@ -135,16 +125,16 @@ object CamDiagnosticHudLayout {
  * - While collapsed (`!detailsExpanded && !controlsExpanded`): a short, non-scrolling one-line CAM-1g
  *   category summary. No [androidx.compose.foundation.verticalScroll] container exists in this state at
  *   all, so it can never consume a drag gesture over the AR viewport - the previous version's bug.
- * - While expanded (`detailsExpanded` and/or `controlsExpanded`): a bounded, few-line CAM diagnostics
- *   summary (gated on [detailsExpanded]; see [CamDiagnosticCompactSummaryPanel] - HUD redesign §6, no
- *   longer the giant per-domain text blocks a physical-device tester previously had to scroll/screenshot
- *   through), the CAM-2b panel, and the CAM-2b interactive controls body (gated on [controlsExpanded],
- *   via [controlsContent]) render inside a scrollable region that fills whatever height remains below
- *   the two header rows - never floating independently over the reticle or the bottom target-info card.
+ * - While expanded (`detailsExpanded` and/or `controlsExpanded`): [CamDiagnosticsExportUiProvider]'s own
+ *   content (gated on [detailsExpanded]; HUD redesign §6, architecture fix §1 - `internalDebug` renders
+ *   a bounded, few-line CAM diagnostics summary plus "Open diagnostics", never the giant per-domain text
+ *   blocks a physical-device tester previously had to scroll/screenshot through; every other build
+ *   variant renders nothing, since that implementation is not even compiled into those variants), the
+ *   CAM-2b panel, and the CAM-2b interactive controls body (gated on [controlsExpanded], via
+ *   [controlsContent]) render inside a scrollable region that fills whatever height remains below the
+ *   two header rows - never floating independently over the reticle or the bottom target-info card.
  *   Only in this state does any part of the HUD intercept pointer input, and only within that bounded
- *   region. The complete multi-section report - Freeze/Resume, Copy all, Share log, Share JSON - lives
- *   behind "Open diagnostics" ([CamDiagnosticFullReportDialog]), a full-screen [androidx.compose.ui.window.Dialog]
- *   that is never shown directly over the AR viewport by default.
+ *   region.
  *
  * Height containment (task hardening §1, closing the previous gap): [CamDiagnosticHudLayout]'s bound is
  * applied to the **outer** `Column` - the one holding both header rows *and* the summary/details region
@@ -176,35 +166,6 @@ fun CamDiagnosticTopPanels(
     intrinsicsDiagnosticState: CameraSessionIntrinsicsDiagnosticState? = null,
 ) {
     val showDetails = detailsExpanded || controlsExpanded
-    // HUD redesign §6: session-scoped ("fresh session -> closed dialog", matching every other
-    // session-keyed debug toggle in this HUD) rather than a permanent global - a new AR/debug session
-    // must never inherit a previous session's open full-diagnostics dialog.
-    var openDiagnostics by remember(cam1gSessionId) { mutableStateOf(false) }
-    // Diagnostic export/freeze fix §1: one immutable value snapshot, rebuilt fresh on every
-    // recomposition from exactly the same parameters the old per-domain overlays read - never a second,
-    // independent read of any live provider/coordinator. Cheap pure construction; safe to build even
-    // while collapsed; see CamDiagnosticSnapshot's own KDoc for why this can never disagree with
-    // [cam1gSnapshot]/[intrinsicsDiagnosticState]/[calibrationDiagnostics].
-    val liveSnapshot =
-        captureCamDiagnosticSnapshot(
-            capturedAtEpochMillis = System.currentTimeMillis(),
-            sessionId = cam1gSessionId,
-            cam2bState = cam2bState,
-            cameraGeometryState = cam1gSnapshot,
-            cameraGeometryStatusTransitionCount = cam1gStatusTransitionCount,
-            cameraGeometryObservedFrameCount = cam1gObservedFrameCount,
-            cameraGeometryReadyBundleCount = cam1gReadyBundleCount,
-            cameraIntrinsicsState = intrinsicsDiagnosticState,
-            calibrationDiagnostics = calibrationDiagnostics,
-        )
-    // Rendered regardless of showDetails/detailsExpanded (HUD redesign §6): once opened, this
-    // full-screen Dialog must not force-close just because the small top HUD is later collapsed.
-    if (openDiagnostics) {
-        CamDiagnosticFullReportDialog(
-            liveSnapshot = liveSnapshot,
-            onDismissRequest = { openDiagnostics = false },
-        )
-    }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val exclusionTop = maxHeight * (0.5f - CamDiagnosticHudLayout.CENTER_EXCLUSION_HEIGHT_FRACTION / 2f)
         // Bounds the WHOLE HUD container below (header rows + summary/details together) - not just the
@@ -309,14 +270,26 @@ fun CamDiagnosticTopPanels(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(CamDiagnosticHudLayout.TOP_HUD_PANEL_SPACING)) {
                         if (detailsExpanded) {
-                            // HUD redesign §6: a bounded, few-line root-cause summary - never the
-                            // previous giant per-domain text blocks that required scrolling/multiple
-                            // screenshots to read in full. The complete multi-section report is one tap
-                            // away via "Open diagnostics", not shown directly over the AR viewport here.
-                            CamDiagnosticCompactSummaryPanel(
-                                snapshot = liveSnapshot,
-                                onOpenDiagnostics = { openDiagnostics = true },
-                            )
+                            // Architecture fix §1: never a direct reference to any internalDebug-only
+                            // snapshot/formatter/dialog class from this shared (`main`) file - only the
+                            // variant-resolved provider, through the variant-safe interface declared in
+                            // CamDiagnosticsExportUi.kt. See that file's own KDoc for the source-set split.
+                            Box(modifier = Modifier.fillMaxWidth().testTag(CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG)) {
+                                CamDiagnosticsExportUiProvider.Content(
+                                    input =
+                                        CamDiagnosticsExportInput(
+                                            sessionId = cam1gSessionId,
+                                            cam2bState = cam2bState,
+                                            cameraGeometryState = cam1gSnapshot,
+                                            cameraGeometryStatusTransitionCount = cam1gStatusTransitionCount,
+                                            cameraGeometryObservedFrameCount = cam1gObservedFrameCount,
+                                            cameraGeometryReadyBundleCount = cam1gReadyBundleCount,
+                                            cameraIntrinsicsState = intrinsicsDiagnosticState,
+                                            calibrationDiagnostics = calibrationDiagnostics,
+                                        ),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
                             if (cam2bState != null) {
                                 PredictedStarOverlayPanel(state = cam2bState)
                             }
@@ -354,44 +327,3 @@ private fun cam2bSummaryLine(state: PredictedStarOverlayState?): String =
         }
     }
 
-/**
- * The compact CAM diagnostics summary (HUD redesign §6) - translucent, monospace, mostly non-clickable
- * except its own "Open diagnostics" line. Purely a display of [CamDiagnosticSnapshot] via
- * [buildCamDiagnosticCompactSummaryText]; touches no renderer/matcher/detector state, no CAM-2a
- * projection math, no camera binding. Width is bounded by the parent [CamDiagnosticTopPanels] column,
- * not here, so it never fights the shared HUD bound. Replaces the previous
- * `CameraGeometryDiagnosticOverlay`/`CameraSessionIntrinsicsDiagnosticOverlay`/
- * `CameraCalibrationDiagnosticOverlay` trio, whose combined output on a real Pixel 9 session could run
- * to dozens of lines - exactly the "multiple scrolling screenshots" workflow this fix replaces.
- */
-@Composable
-private fun CamDiagnosticCompactSummaryPanel(
-    snapshot: CamDiagnosticSnapshot,
-    onOpenDiagnostics: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier =
-            modifier
-                .testTag(CAM_DIAGNOSTIC_COMPACT_SUMMARY_TEST_TAG)
-                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
-                .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(
-            text = buildCamDiagnosticCompactSummaryText(snapshot),
-            color = Color.White,
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            text = "▸ Open diagnostics",
-            color = Color.White,
-            style = MaterialTheme.typography.labelMedium,
-            modifier =
-                Modifier
-                    .testTag(CAM_DIAGNOSTIC_OPEN_BUTTON_TEST_TAG)
-                    .clickable(onClick = onOpenDiagnostics),
-        )
-    }
-}
