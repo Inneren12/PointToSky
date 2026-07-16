@@ -45,8 +45,13 @@ package dev.pointtosky.core.astro.projection.camera
  * active-array-local **before** being composed with the matrix (`mapActiveArrayIntrinsicsThroughMatrix`)
  * — never translated by `SENSOR_INFO_ACTIVE_ARRAY_SIZE.left`/`.top`.
  *
- * @property fxPx horizontal focal length in active-array pixels. Finite, strictly positive.
- * @property fyPx vertical focal length in active-array pixels. Finite, strictly positive.
+ * @property fxPx horizontal focal length in sensor pixels (the active array and the full pixel array
+ *   share the same underlying pixel pitch — only the coordinate domain differs; see
+ *   [activeArrayIntrinsicsFromFocalLength]'s KDoc, CAM-2c fix §P2, for why this is derived from
+ *   `SENSOR_INFO_PIXEL_ARRAY_SIZE`, never `SENSOR_INFO_ACTIVE_ARRAY_SIZE`, when focal-length-derived).
+ *   Finite, strictly positive.
+ * @property fyPx vertical focal length in sensor pixels, the [fxPx] analogue. Finite, strictly
+ *   positive.
  * @property cxPx principal point X, active-array-local (`(0, 0)` at this rectangle's own top-left —
  *   see above). Finite.
  * @property cyPx principal point Y, active-array-local. Finite.
@@ -83,16 +88,32 @@ data class ActiveArrayIntrinsics(
 
 /**
  * Derives [ActiveArrayIntrinsics] from Camera2 `LENS_INFO_AVAILABLE_FOCAL_LENGTHS` +
- * `SENSOR_INFO_PHYSICAL_SIZE` + `SENSOR_INFO_ACTIVE_ARRAY_SIZE` (CAM-2c §3), when no calibrated
- * `LENS_INTRINSIC_CALIBRATION` is usable:
+ * `SENSOR_INFO_PHYSICAL_SIZE` + `SENSOR_INFO_PIXEL_ARRAY_SIZE` (CAM-2c §3; corrected fix §P2), when
+ * no calibrated `LENS_INTRINSIC_CALIBRATION` is usable:
  * ```text
- * fxActive = focalLengthMm / physicalSensorWidthMm  * activeArrayWidthPx
- * fyActive = focalLengthMm / physicalSensorHeightMm * activeArrayHeightPx
+ * fxPixelGrid = focalLengthMm / physicalSensorWidthMm  * pixelArrayWidthPx
+ * fyPixelGrid = focalLengthMm / physicalSensorHeightMm * pixelArrayHeightPx
  * ```
- * This is the same physical relationship [horizontalFovDeg]/[verticalFovDeg] already encode as an
- * angle (`fov = 2 atan(dim / (2 f))`); expressing it directly in active-array pixels here, rather
- * than converting through degrees, avoids a redundant trig round-trip before the buffer-space
- * mapping in `mapActiveArrayIntrinsicsThroughMatrix`.
+ * **`fx`/`fy` are derived from the *full pixel array*, never the active array (CAM-2c fix §P2).**
+ * `SENSOR_INFO_PHYSICAL_SIZE` describes the physical millimetres the *entire* pixel grid
+ * (`SENSOR_INFO_PIXEL_ARRAY_SIZE`) spans — including any optically black or otherwise inactive
+ * border pixels `SENSOR_INFO_ACTIVE_ARRAY_SIZE` excludes. Pixel pitch (`mm per pixel`, the physical
+ * quantity `fx`/`fy` actually encode) is therefore `physicalSizeMm / pixelArrayPx`, not
+ * `physicalSizeMm / activeArrayPx` — an earlier revision of this function divided by
+ * [activeArrayWidthPx]/[activeArrayHeightPx] instead, which **overestimates** pixel pitch (and so
+ * underestimates `fx`/`fy` in pixels, producing an overly wide computed FOV) whenever the active
+ * array is smaller than the full pixel array. This is the same physical relationship
+ * [horizontalFovDeg]/[verticalFovDeg] already encode as an angle (`fov = 2 atan(dim / (2 f))`);
+ * expressing it directly in pixels here, rather than converting through degrees, avoids a redundant
+ * trig round-trip before the buffer-space mapping in `mapActiveArrayIntrinsicsThroughMatrix`.
+ *
+ * [activeArrayWidthPx]/[activeArrayHeightPx] play a **different** role: they define the
+ * active-array-local coordinate domain [ActiveArrayIntrinsics.widthPx]/`heightPx` describe, and the
+ * default geometric-centre principal-point approximation below — never pixel pitch. The active array
+ * and pixel array share the same underlying sensor pixel grid (a pixel is the same physical size in
+ * both), so an `fx`/`fy` derived from the full pixel array is exactly as valid a description of
+ * active-array-local pixels as it is of full-pixel-array ones — only the coordinate origin and domain
+ * differ between the two, not the pixel pitch itself.
  *
  * The principal point defaults to the active array's own geometric centre, **active-array-local**
  * (CAM-2c fix round 3, §P1) — `activeArrayWidthPx/2`, `activeArrayHeightPx/2` — when
@@ -110,6 +131,8 @@ fun activeArrayIntrinsicsFromFocalLength(
     focalLengthMm: Double,
     sensorWidthMm: Double,
     sensorHeightMm: Double,
+    pixelArrayWidthPx: Int,
+    pixelArrayHeightPx: Int,
     activeArrayWidthPx: Int,
     activeArrayHeightPx: Int,
     principalPointXPx: Double? = null,
@@ -124,12 +147,14 @@ fun activeArrayIntrinsicsFromFocalLength(
     require(sensorHeightMm.isFinite() && sensorHeightMm > 0.0) {
         "sensorHeightMm must be finite and strictly positive; was $sensorHeightMm"
     }
+    require(pixelArrayWidthPx > 0) { "pixelArrayWidthPx must be strictly positive; was $pixelArrayWidthPx" }
+    require(pixelArrayHeightPx > 0) { "pixelArrayHeightPx must be strictly positive; was $pixelArrayHeightPx" }
     require(activeArrayWidthPx > 0) { "activeArrayWidthPx must be strictly positive; was $activeArrayWidthPx" }
     require(activeArrayHeightPx > 0) { "activeArrayHeightPx must be strictly positive; was $activeArrayHeightPx" }
 
     return ActiveArrayIntrinsics(
-        fxPx = focalLengthMm / sensorWidthMm * activeArrayWidthPx,
-        fyPx = focalLengthMm / sensorHeightMm * activeArrayHeightPx,
+        fxPx = focalLengthMm / sensorWidthMm * pixelArrayWidthPx,
+        fyPx = focalLengthMm / sensorHeightMm * pixelArrayHeightPx,
         cxPx = principalPointXPx ?: (activeArrayWidthPx / 2.0),
         cyPx = principalPointYPx ?: (activeArrayHeightPx / 2.0),
         widthPx = activeArrayWidthPx,

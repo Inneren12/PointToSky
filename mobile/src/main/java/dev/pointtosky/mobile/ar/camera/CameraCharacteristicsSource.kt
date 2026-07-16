@@ -29,6 +29,16 @@ import kotlinx.coroutines.CancellationException
  * @property activeArrayTopPx raw `SENSOR_INFO_ACTIVE_ARRAY_SIZE.top`, pixels.
  * @property activeArrayRightPx raw `SENSOR_INFO_ACTIVE_ARRAY_SIZE.right`, pixels.
  * @property activeArrayBottomPx raw `SENSOR_INFO_ACTIVE_ARRAY_SIZE.bottom`, pixels.
+ * @property pixelArrayWidthPx raw `SENSOR_INFO_PIXEL_ARRAY_SIZE` width, pixels (CAM-2c fix §P2) — the
+ *   full sensor pixel grid `SENSOR_INFO_PHYSICAL_SIZE`'s physical millimetres actually span, distinct
+ *   from [activeArrayRightPx]`-`[activeArrayLeftPx]: the active array may exclude optically black or
+ *   otherwise inactive border pixels, so it can be smaller than the full pixel array. Required only
+ *   for the focal-length-derived fallback path (see
+ *   `dev.pointtosky.core.astro.projection.camera.activeArrayIntrinsicsFromFocalLength`'s KDoc) —
+ *   never for a usable `LENS_INTRINSIC_CALIBRATION`, whose `fx`/`fy` are already supplied directly in
+ *   pixels. `null` when the device does not report `SENSOR_INFO_PIXEL_ARRAY_SIZE` (mandatory on real
+ *   Camera2 devices, but this snapshot never assumes a key is present).
+ * @property pixelArrayHeightPx raw `SENSOR_INFO_PIXEL_ARRAY_SIZE` height, pixels.
  * @property preCorrectionActiveArrayLeftPx raw `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE.left`,
  *   pixels, when the device reports one (only present on devices with geometric distortion
  *   correction — see [resolveAnalysisBufferIntrinsics]'s KDoc on why this must be checked before
@@ -69,6 +79,8 @@ data class CameraCharacteristicsSnapshot(
     val activeArrayTopPx: Int? = null,
     val activeArrayRightPx: Int? = null,
     val activeArrayBottomPx: Int? = null,
+    val pixelArrayWidthPx: Int? = null,
+    val pixelArrayHeightPx: Int? = null,
     val preCorrectionActiveArrayLeftPx: Int? = null,
     val preCorrectionActiveArrayTopPx: Int? = null,
     val preCorrectionActiveArrayRightPx: Int? = null,
@@ -122,6 +134,7 @@ internal class Camera2CharacteristicsSource(
         val characteristics = Camera2CameraInfo.from(cameraInfo)
         val physicalSize = characteristics.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
         val activeArray = characteristics.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+        val pixelArraySize = characteristics.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
         val preCorrectionActiveArray =
             characteristics.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE)
         val capabilities = characteristics.getCameraCharacteristic(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
@@ -136,6 +149,8 @@ internal class Camera2CharacteristicsSource(
             activeArrayTopPx = activeArray?.top,
             activeArrayRightPx = activeArray?.right,
             activeArrayBottomPx = activeArray?.bottom,
+            pixelArrayWidthPx = pixelArraySize?.width,
+            pixelArrayHeightPx = pixelArraySize?.height,
             preCorrectionActiveArrayLeftPx = preCorrectionActiveArray?.left,
             preCorrectionActiveArrayTopPx = preCorrectionActiveArray?.top,
             preCorrectionActiveArrayRightPx = preCorrectionActiveArray?.right,

@@ -531,7 +531,11 @@ Failing either check falls back to `activeArrayIntrinsicsFromFocalLength` with a
 principal point and zero skew. Either way `fx`/`fy` are real, focal-length-derived numbers — this is
 a principal-point-only fallback, never a fixed-FOV guess. `CameraIntrinsicsQuality`
 (`CALIBRATED`/`APPROXIMATE_PRINCIPAL_POINT`) records which policy applied; it is `null` for every
-source except `CAMERA_CHARACTERISTICS`.
+source except `CAMERA_CHARACTERISTICS`. **Corrected by fix §P2 (§3.8):** this fallback's `fx`/`fy`
+were originally derived from `physicalSensorSizeMm / activeArrayPx`; §3.8 corrects this to
+`physicalSensorSizeMm / pixelArrayPx` (`SENSOR_INFO_PIXEL_ARRAY_SIZE`, not
+`SENSOR_INFO_ACTIVE_ARRAY_SIZE`) — the two differ whenever the active array excludes inactive border
+pixels the full pixel array still reports.
 
 **A new, deliberate `CameraIntrinsics` invariant relaxation.** `source=CAMERA_CHARACTERISTICS` may
 now carry `reference=AnalysisBuffer` in addition to the existing `reference=PhysicalSensor` — the
@@ -819,6 +823,85 @@ no physical device or emulator is available in this sandboxed environment, so li
 this corrected coordinate contract remains untested here — and, unchanged from §3.5/§3.6, a real Pixel
 9's rear camera is still expected to hit `UnsupportedLogicalMultiCameraMapping` before any of this fix
 would even be exercised.
+
+### 3.8 CAM-2c fix §P2: focal-derived pixel pitch comes from the full pixel array, not the active array
+
+The focal-length-derived fallback (used whenever no usable `LENS_INTRINSIC_CALIBRATION` exists — §3.4)
+computed `fx`/`fy` in pixels as:
+
+```text
+fxActive = focalLengthMm / physicalSensorWidthMm  * activeArrayWidthPx
+fyActive = focalLengthMm / physicalSensorHeightMm * activeArrayHeightPx
+```
+
+This mixes two distinct Camera2 keys that do not describe the same region: `SENSOR_INFO_PHYSICAL_SIZE`
+is the physical size of the **full pixel array** (`SENSOR_INFO_PIXEL_ARRAY_SIZE`), while
+`SENSOR_INFO_ACTIVE_ARRAY_SIZE` may be **smaller** — a real, documented Camera2 possibility, since the
+active array excludes optically black or otherwise inactive border pixels the full pixel array still
+reports. Dividing the physical millimetres by the smaller active-array pixel count overestimates pixel
+pitch and so **underestimates** `fx`/`fy` in pixels whenever the two differ, producing a computed field
+of view wider than the real one.
+
+**The corrected formula** derives pixel pitch from the full pixel array instead:
+
+```text
+fxPixelGrid = focalLengthMm / physicalSensorWidthMm  * pixelArrayWidthPx
+fyPixelGrid = focalLengthMm / physicalSensorHeightMm * pixelArrayHeightPx
+```
+
+`activeArrayWidthPx`/`activeArrayHeightPx` keep their existing, different role: they define the
+active-array-local coordinate domain (`ActiveArrayIntrinsics.widthPx`/`heightPx`, per §3.7) and the
+default geometric-centre principal-point approximation — never pixel pitch. The active array and the
+full pixel array share the same underlying sensor pixel grid (a pixel is the same physical size in
+both), so an `fx`/`fy` value derived from the full pixel array is exactly as valid a description of
+active-array-local pixels as it is of full-pixel-array ones.
+
+**Pixel-array metadata source.** `CameraCharacteristicsSnapshot` gains `pixelArrayWidthPx`/
+`pixelArrayHeightPx: Int?`, sourced from `CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE` (an
+`android.util.Size`, distinct from the `Rect`-typed active-array/pre-correction-active-array keys) in
+`Camera2CharacteristicsSource`. Kept structurally distinct from `activeArrayLeft/Top/Right/Bottom`,
+`preCorrectionActiveArray*`, and analysis-buffer dimensions — never inferred from
+`activeArrayRight - activeArrayLeft`.
+
+**A usable calibrated `K` needs no pixel-array size at all.** `LENS_INTRINSIC_CALIBRATION` already
+supplies `fx`/`fy` directly in pixels, so `resolveAnalysisBufferIntrinsics`'s calibrated branch never
+reads `pixelArrayWidthPx`/`pixelArrayHeightPx`. The pixel-array-size check lives exclusively in the
+focal-length-derived fallback branch: a new typed outcome,
+`AnalysisBufferIntrinsicsResolution.MissingPixelArraySize`, is returned only when that fallback is
+actually reached (no usable calibration) **and** the pixel array size is missing or not strictly
+positive. A device with usable `LENS_INTRINSIC_CALIBRATION` but no reported `SENSOR_INFO_PIXEL_ARRAY_SIZE`
+still resolves normally with `quality = CALIBRATED`.
+
+**Diagnostics** (`CameraCalibrationDiagnostics`, internal-debug-only, unchanged persistence policy) gain
+`pixelArrayWidthPx`/`pixelArrayHeightPx: Int?` and `focalDerivationBasis: String`
+(`PIXEL_ARRAY`/`LENS_INTRINSIC_CALIBRATION`) — surfaced in `buildCameraCalibrationDiagnosticText` as a
+`pixel array: W×H` line (or `unavailable`), a `pixel-array vs active-array delta: Δw=…, Δh=…` line, and
+a `focal derivation basis: …` line, alongside the existing `active rect (full pixel array): […]` line.
+
+**Tests.** `ActiveArrayIntrinsicsTest`/`AnalysisBufferIntrinsicsResolverTest` add: pixel array equal to
+the active array (the new default test fixture — every pre-existing focal-derived-quality test already
+exercises this case unchanged, since it numerically matches the old formula exactly); pixel array
+larger than the active array (`6.4×4.8mm`, `3.6mm` focal, pixel array `4100×3100`, active array
+`4032×3024` — asserting `fx = 3.6/6.4×4100`, `fy = 3.6/4.8×3100`, explicitly distinct from the old
+active-array-based values, and an end-to-end off-axis `PinholeProjectionModel.project` call proving the
+projected pixel itself reflects the pixel-array-derived focal length); missing/invalid pixel-array
+dimensions (`MissingPixelArraySize`, both when absent and when zero/negative); a usable calibrated `K`
+resolving despite a missing pixel array; and a non-zero active-array origin combined with a
+larger-than-active pixel array, confirming the two corrections (§3.7 and this one) compose
+independently — `cx`/`cy` remain active-array-local while `fx`/`fy` reflect the pixel array alone.
+
+**Validation (this environment, fourth fix pass).** `:core:astro-core:test` (468 tests, up from 465 —
+four new `activeArrayIntrinsicsFromFocalLength` tests) and `:mobile:test{Internal,Public}DebugUnitTest`
+(339 tests each, up from 333 — six new resolver tests plus one new diagnostics-format test) all pass
+under a real Gradle build, alongside `compileInternalDebugAndroidTestKotlin`,
+`lintInternalDebug`/`lintPublicDebug` (0 errors, 30 pre-existing warnings, unchanged), and
+`assembleInternalDebug`/`assemblePublicDebug`. Skew handling (§3.4/§3.5's `INTRINSIC_SKEW_TOLERANCE_PX`
+policy), coordinate-origin handling (§3.7), rotation ownership (§3.6/§3.7's `RotationOwnershipUnproven`
+outcome), the pinhole projection math itself (`mapActiveArrayIntrinsicsThroughMatrix`,
+`PinholeProjectionModel`), and `CropScaleTransform`/`displayPoint` ownership are all unchanged by this
+fix — confirmed by grep and by every pre-existing test in those areas continuing to pass unmodified. As
+with every prior CAM-2c pass, no physical device or emulator is available in this sandboxed environment,
+so live Pixel 9 validation of this corrected pixel-pitch formula remains untested here.
 
 ---
 

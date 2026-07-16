@@ -54,6 +54,21 @@ sealed interface AnalysisBufferIntrinsicsResolution {
     data object MissingPhysicalSensorSize : AnalysisBufferIntrinsicsResolution
 
     /**
+     * The focal-length-derived fallback was required (no usable `LENS_INTRINSIC_CALIBRATION`), but
+     * `SENSOR_INFO_PIXEL_ARRAY_SIZE` is missing or its width/height is not strictly positive (CAM-2c
+     * fix §P2). Pixel pitch (`fx`/`fy` in pixels) is derived from the *full pixel array*, never the
+     * active array (see `dev.pointtosky.core.astro.projection.camera.activeArrayIntrinsicsFromFocalLength`'s
+     * KDoc) — so this fallback cannot proceed without it, and this codebase never silently substitutes
+     * `SENSOR_INFO_ACTIVE_ARRAY_SIZE` instead (that substitution is exactly the defect this fix
+     * corrects). Distinct from [MissingActiveArray]: the active array itself may be perfectly valid
+     * here, only the pixel array is unavailable. **Never** returned when a usable calibrated `K` is
+     * found first — `LENS_INTRINSIC_CALIBRATION` already supplies `fx`/`fy` directly in pixels, so the
+     * calibrated path needs no pixel-array size at all (see [resolveAnalysisBufferIntrinsics]'s KDoc,
+     * resolution-order step 5).
+     */
+    data object MissingPixelArraySize : AnalysisBufferIntrinsicsResolution
+
+    /**
      * `LENS_INFO_AVAILABLE_FOCAL_LENGTHS` has no exactly-one usable candidate — missing, empty, all
      * invalid, or ambiguous (more than one valid value; see [selectFocalLengthMm]'s own KDoc for why
      * an ambiguous array is never resolved by guessing).
@@ -235,18 +250,21 @@ private fun preCorrectionActiveArrayMatchesActiveArray(snapshot: CameraCharacter
  *  4. Require [sensorToBufferTransform] ([AnalysisBufferIntrinsicsResolution.MissingSensorToBufferTransform]).
  *  5. Build active-array intrinsics: `LENS_INTRINSIC_CALIBRATION` when [isUsableLensIntrinsicCalibration],
  *     [preCorrectionActiveArrayMatchesActiveArray], and [isIntrinsicSkewWithinTolerance] all hold
- *     (`quality = `[CameraIntrinsicsQuality.CALIBRATED]), else [activeArrayIntrinsicsFromFocalLength]
- *     (`quality = `[CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT] — with
- *     [CameraCalibrationDiagnosticReason.NON_ZERO_INTRINSIC_SKEW] recorded when the *only* reason
- *     calibration was rejected is the skew tolerance, so the diagnostics panel can distinguish that
- *     from "no calibration reported at all"). **The resulting principal point is read/derived directly
- *     as active-array-local** (CAM-2c fix round 3, §P1) — `LENS_INTRINSIC_CALIBRATION`'s `cx`/`cy` are
- *     already local to the pre-correction active-array rectangle's own top-left per Android's own
- *     documented contract, and the focal-length-derived default is the active array's own local
- *     centre; neither is translated by `SENSOR_INFO_ACTIVE_ARRAY_SIZE.left`/`.top` (a prior revision of
- *     this fix did add that translation — a regression, since it converted an already-local value into
- *     an incorrect hybrid; see [ActiveArrayIntrinsics]'s KDoc for the corrected contract and its
- *     source evidence).
+ *     (`quality = `[CameraIntrinsicsQuality.CALIBRATED]) — **needing no `SENSOR_INFO_PIXEL_ARRAY_SIZE`
+ *     at all**, since `fx`/`fy` are already supplied directly in pixels — else
+ *     [activeArrayIntrinsicsFromFocalLength], which **does** require `SENSOR_INFO_PIXEL_ARRAY_SIZE`
+ *     (`quality = `[CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT] when present —
+ *     [AnalysisBufferIntrinsicsResolution.MissingPixelArraySize] when it is missing/invalid, CAM-2c fix
+ *     §P2 — with [CameraCalibrationDiagnosticReason.NON_ZERO_INTRINSIC_SKEW] recorded when the *only*
+ *     reason calibration was rejected is the skew tolerance, so the diagnostics panel can distinguish
+ *     that from "no calibration reported at all"). **The resulting principal point is read/derived
+ *     directly as active-array-local** (CAM-2c fix round 3, §P1) — `LENS_INTRINSIC_CALIBRATION`'s
+ *     `cx`/`cy` are already local to the pre-correction active-array rectangle's own top-left per
+ *     Android's own documented contract, and the focal-length-derived default is the active array's
+ *     own local centre; neither is translated by `SENSOR_INFO_ACTIVE_ARRAY_SIZE.left`/`.top` (a prior
+ *     revision of this fix did add that translation — a regression, since it converted an
+ *     already-local value into an incorrect hybrid; see [ActiveArrayIntrinsics]'s KDoc for the
+ *     corrected contract and its source evidence).
  *  6. Map through [sensorToBufferTransform] via [mapActiveArrayIntrinsicsThroughMatrix] — full 3x3
  *     matrix composition, not an independent per-field formula (CAM-2c fix §1/§2). A
  *     [MatrixIntrinsicsMappingResult.Unsupported] outcome here returns
@@ -369,11 +387,22 @@ internal fun resolveAnalysisBufferIntrinsics(
                 )
             quality = CameraIntrinsicsQuality.CALIBRATED
         } else {
+            // The focal-derived fallback (unlike a usable calibrated K) needs SENSOR_INFO_PIXEL_ARRAY_SIZE
+            // to derive fx/fy (CAM-2c fix §P2) - pixel pitch is physicalSizeMm / pixelArrayPx, not
+            // physicalSizeMm / activeArrayPx (see activeArrayIntrinsicsFromFocalLength's KDoc for why).
+            // Never silently substitute activeArrayWidthPx/HeightPx here.
+            val pixelArrayWidthPx = snapshot.pixelArrayWidthPx
+            val pixelArrayHeightPx = snapshot.pixelArrayHeightPx
+            if (pixelArrayWidthPx == null || pixelArrayHeightPx == null || pixelArrayWidthPx <= 0 || pixelArrayHeightPx <= 0) {
+                return AnalysisBufferIntrinsicsResolution.MissingPixelArraySize
+            }
             active =
                 activeArrayIntrinsicsFromFocalLength(
                     focalLengthMm = focalLengthMm,
                     sensorWidthMm = sensorWidthMm.toDouble(),
                     sensorHeightMm = sensorHeightMm.toDouble(),
+                    pixelArrayWidthPx = pixelArrayWidthPx,
+                    pixelArrayHeightPx = pixelArrayHeightPx,
                     activeArrayWidthPx = activeArrayWidthPx,
                     activeArrayHeightPx = activeArrayHeightPx,
                 )
@@ -454,6 +483,18 @@ internal fun resolveAnalysisBufferIntrinsics(
                 cameraId = snapshot.cameraId,
                 isLogicalMultiCamera = snapshot.isLogicalMultiCamera,
                 physicalCameraIds = snapshot.physicalCameraIds,
+                pixelArrayWidthPx = snapshot.pixelArrayWidthPx,
+                pixelArrayHeightPx = snapshot.pixelArrayHeightPx,
+                // CAM-2c fix §P2: which key fx/fy actually came from - LENS_INTRINSIC_CALIBRATION
+                // supplies them directly (no pixel-array size needed); the focal-derived fallback
+                // computes them from SENSOR_INFO_PIXEL_ARRAY_SIZE (see the pixel-array-size check
+                // above, which already guarantees this branch is never reached without it).
+                focalDerivationBasis =
+                    if (useLensIntrinsicCalibration) {
+                        CameraCalibrationDiagnostics.FOCAL_DERIVATION_BASIS_LENS_INTRINSIC_CALIBRATION
+                    } else {
+                        CameraCalibrationDiagnostics.FOCAL_DERIVATION_BASIS_PIXEL_ARRAY
+                    },
             )
         AnalysisBufferIntrinsicsResolution.Resolved(intrinsics, diagnostics)
     } catch (_: IllegalArgumentException) {

@@ -24,11 +24,21 @@ import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
  * @property activeArrayTopPx `SENSOR_INFO_ACTIVE_ARRAY_SIZE.top`, relative to the full pixel array.
  * @property activeArrayRightPx `SENSOR_INFO_ACTIVE_ARRAY_SIZE.right`, relative to the full pixel array.
  * @property activeArrayBottomPx `SENSOR_INFO_ACTIVE_ARRAY_SIZE.bottom`, relative to the full pixel array.
+ * @property pixelArrayWidthPx `SENSOR_INFO_PIXEL_ARRAY_SIZE` width, pixels (CAM-2c fix §P2) — the full
+ *   sensor pixel grid [sensorWidthMm]/[sensorHeightMm] actually span, distinct from
+ *   [activeArrayWidthPx]/[activeArrayHeightPx] (which may exclude optically black or otherwise
+ *   inactive border pixels). `null` when [quality] is [CameraIntrinsicsQuality.CALIBRATED] and the
+ *   device happens not to report `SENSOR_INFO_PIXEL_ARRAY_SIZE` — the calibrated path needs no pixel
+ *   array size at all (see [focalDerivationBasis]); always non-`null` when [quality] is
+ *   [CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT], since that path requires it to resolve at
+ *   all (see [AnalysisBufferIntrinsicsResolution.MissingPixelArraySize]).
+ * @property pixelArrayHeightPx `SENSOR_INFO_PIXEL_ARRAY_SIZE` height, pixels.
  * @property sensorWidthMm physical sensor width, millimetres.
  * @property sensorHeightMm physical sensor height, millimetres.
  * @property focalLengthMm the single resolved `LENS_INFO_AVAILABLE_FOCAL_LENGTHS` value, millimetres.
- * @property activeFxPx horizontal focal length in active-array pixels.
- * @property activeFyPx vertical focal length in active-array pixels.
+ * @property activeFxPx horizontal focal length in sensor pixels — see [focalDerivationBasis] for which
+ *   key it was actually derived from.
+ * @property activeFyPx vertical focal length in sensor pixels, the [activeFxPx] analogue.
  * @property activeCxPx principal point X, in the basis named by [principalPointBasis] — always
  *   active-array-local as of CAM-2c fix round 3 §P1 (`(0, 0)` at the active array rectangle's own
  *   top-left, never [activeArrayLeftPx] added in).
@@ -36,6 +46,13 @@ import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
  * @property principalPointBasis always [PRINCIPAL_POINT_BASIS_ACTIVE_ARRAY_LOCAL] as of this fix —
  *   documents, for the diagnostics panel, which coordinate basis [activeCxPx]/[activeCyPx] use, rather
  *   than leaving it an unstated convention (CAM-2c fix round 2 §6; corrected round 3 §P1).
+ * @property focalDerivationBasis (CAM-2c fix §P2) which Camera2 key [activeFxPx]/[activeFyPx] were
+ *   actually derived from — [FOCAL_DERIVATION_BASIS_LENS_INTRINSIC_CALIBRATION] when [quality] is
+ *   [CameraIntrinsicsQuality.CALIBRATED] (`fx`/`fy` read directly from `LENS_INTRINSIC_CALIBRATION`),
+ *   [FOCAL_DERIVATION_BASIS_PIXEL_ARRAY] when [quality] is
+ *   [CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT] (`fx`/`fy` computed from
+ *   `SENSOR_INFO_PIXEL_ARRAY_SIZE`, never `SENSOR_INFO_ACTIVE_ARRAY_SIZE` — see
+ *   `dev.pointtosky.core.astro.projection.camera.activeArrayIntrinsicsFromFocalLength`'s KDoc for why).
  * @property cropLeftPx the active-array-local region ([ActiveArrayLocalRect]) a buffer's whole frame
  *   maps onto, left edge — see [resolveAnalysisBufferIntrinsics]'s crop-bounds validation against
  *   `[0, activeArrayWidthPx] x [0, activeArrayHeightPx]` (CAM-2c fix round 3 §P1).
@@ -77,6 +94,8 @@ data class CameraCalibrationDiagnostics(
     val activeArrayTopPx: Double,
     val activeArrayRightPx: Double,
     val activeArrayBottomPx: Double,
+    val pixelArrayWidthPx: Int?,
+    val pixelArrayHeightPx: Int?,
     val sensorWidthMm: Double,
     val sensorHeightMm: Double,
     val focalLengthMm: Double,
@@ -85,6 +104,7 @@ data class CameraCalibrationDiagnostics(
     val activeCxPx: Double,
     val activeCyPx: Double,
     val principalPointBasis: String,
+    val focalDerivationBasis: String,
     val cropLeftPx: Double,
     val cropTopPx: Double,
     val cropRightPx: Double,
@@ -108,6 +128,12 @@ data class CameraCalibrationDiagnostics(
         /** [CameraCalibrationDiagnostics.principalPointBasis]'s one, current value (CAM-2c fix round 3 §P1). */
         const val PRINCIPAL_POINT_BASIS_ACTIVE_ARRAY_LOCAL = "ACTIVE_ARRAY_LOCAL"
 
+        /** [CameraCalibrationDiagnostics.focalDerivationBasis] value for the calibrated path (CAM-2c fix §P2). */
+        const val FOCAL_DERIVATION_BASIS_LENS_INTRINSIC_CALIBRATION = "LENS_INTRINSIC_CALIBRATION"
+
+        /** [CameraCalibrationDiagnostics.focalDerivationBasis] value for the focal-derived fallback (CAM-2c fix §P2). */
+        const val FOCAL_DERIVATION_BASIS_PIXEL_ARRAY = "PIXEL_ARRAY"
+
         fun of(
             active: ActiveArrayIntrinsics,
             activeArrayRect: ActiveArrayRect,
@@ -118,6 +144,9 @@ data class CameraCalibrationDiagnostics(
             focalLengthMm: Double,
             quality: CameraIntrinsicsQuality,
             transformClass: SensorToBufferTransformClass,
+            focalDerivationBasis: String,
+            pixelArrayWidthPx: Int? = null,
+            pixelArrayHeightPx: Int? = null,
             skewDiagnosticReason: String? = null,
             cameraId: String? = null,
             isLogicalMultiCamera: Boolean = false,
@@ -129,6 +158,8 @@ data class CameraCalibrationDiagnostics(
             activeArrayTopPx = activeArrayRect.topPx,
             activeArrayRightPx = activeArrayRect.rightPx,
             activeArrayBottomPx = activeArrayRect.bottomPx,
+            pixelArrayWidthPx = pixelArrayWidthPx,
+            pixelArrayHeightPx = pixelArrayHeightPx,
             sensorWidthMm = sensorWidthMm,
             sensorHeightMm = sensorHeightMm,
             focalLengthMm = focalLengthMm,
@@ -137,6 +168,7 @@ data class CameraCalibrationDiagnostics(
             activeCxPx = active.cxPx,
             activeCyPx = active.cyPx,
             principalPointBasis = PRINCIPAL_POINT_BASIS_ACTIVE_ARRAY_LOCAL,
+            focalDerivationBasis = focalDerivationBasis,
             cropLeftPx = cropRegion.leftPx,
             cropTopPx = cropRegion.topPx,
             cropRightPx = cropRegion.rightPx,

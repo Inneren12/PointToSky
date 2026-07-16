@@ -52,6 +52,8 @@ class CalibratedAnalysisBufferProjectionTest {
                     focalLengthMm = 3.6,
                     sensorWidthMm = 6.4,
                     sensorHeightMm = 4.8,
+                    pixelArrayWidthPx = 4032,
+                    pixelArrayHeightPx = 3024,
                     activeArrayWidthPx = 4032,
                     activeArrayHeightPx = 3024,
                 )

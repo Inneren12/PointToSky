@@ -23,9 +23,27 @@ fun buildCameraCalibrationDiagnosticText(diagnostics: CameraCalibrationDiagnosti
     lines +=
         "active rect (full pixel array): [${formatPx(diagnostics.activeArrayLeftPx)},${formatPx(diagnostics.activeArrayTopPx)} — " +
             "${formatPx(diagnostics.activeArrayRightPx)},${formatPx(diagnostics.activeArrayBottomPx)}]"
+    val pixelArrayWidthPx = diagnostics.pixelArrayWidthPx
+    val pixelArrayHeightPx = diagnostics.pixelArrayHeightPx
+    lines +=
+        "pixel array: " +
+            if (pixelArrayWidthPx != null && pixelArrayHeightPx != null) {
+                "${pixelArrayWidthPx}×${pixelArrayHeightPx}"
+            } else {
+                "unavailable"
+            }
+    lines +=
+        "pixel-array vs active-array delta: " +
+            if (pixelArrayWidthPx != null && pixelArrayHeightPx != null) {
+                "Δw=${pixelArrayWidthPx - diagnostics.activeArrayWidthPx}, " +
+                    "Δh=${pixelArrayHeightPx - diagnostics.activeArrayHeightPx}"
+            } else {
+                "unavailable"
+            }
     lines += "sensor: ${formatMm(diagnostics.sensorWidthMm)} × ${formatMm(diagnostics.sensorHeightMm)}"
     lines += "focal length: ${formatMm(diagnostics.focalLengthMm)}"
     lines += "active fx/fy: ${formatPx(diagnostics.activeFxPx)}, ${formatPx(diagnostics.activeFyPx)}"
+    lines += "focal derivation basis: ${diagnostics.focalDerivationBasis}"
     lines += "principal point basis: ${diagnostics.principalPointBasis}"
     lines += "active cx/cy: ${formatPx(diagnostics.activeCxPx)}, ${formatPx(diagnostics.activeCyPx)}"
     lines +=

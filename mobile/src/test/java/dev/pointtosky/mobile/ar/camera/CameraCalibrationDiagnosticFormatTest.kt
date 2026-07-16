@@ -15,6 +15,8 @@ class CameraCalibrationDiagnosticFormatTest {
             activeArrayTopPx = 50.0,
             activeArrayRightPx = 4132.0,
             activeArrayBottomPx = 3074.0,
+            pixelArrayWidthPx = 4100,
+            pixelArrayHeightPx = 3100,
             sensorWidthMm = 6.4,
             sensorHeightMm = 4.8,
             focalLengthMm = 3.6,
@@ -23,6 +25,7 @@ class CameraCalibrationDiagnosticFormatTest {
             activeCxPx = 2116.0,
             activeCyPx = 1562.0,
             principalPointBasis = CameraCalibrationDiagnostics.PRINCIPAL_POINT_BASIS_ACTIVE_ARRAY_LOCAL,
+            focalDerivationBasis = CameraCalibrationDiagnostics.FOCAL_DERIVATION_BASIS_PIXEL_ARRAY,
             // Active-array-local (CAM-2c fix round 3 §P1): a full-frame, no-subcrop mapping starts
             // at (0,0) here regardless of activeArrayLeftPx/TopPx above, which is a different,
             // full-pixel-array-relative coordinate space (see ActiveArrayRect's KDoc).
@@ -66,10 +69,30 @@ class CameraCalibrationDiagnosticFormatTest {
         assertTrue(text.contains("2116.0"))
         assertTrue(text.contains("1562.0"))
         assertTrue(text.contains("crop (active-array-local): [0.0,0.0 — 4032.0,3024.0]"))
+        assertTrue(text.contains("pixel array: 4100×3100"))
+        assertTrue(text.contains("pixel-array vs active-array delta: Δw=68, Δh=76"))
+        assertTrue(text.contains("focal derivation basis: PIXEL_ARRAY"))
     }
 
     @Test
     fun `text starts with the CAM-2c header line`() {
         assertTrue(buildCameraCalibrationDiagnosticText(diagnostics).startsWith("CAM-2c calibration"))
+    }
+
+    @Test
+    fun `pixel array and its delta render as unavailable when the calibrated path needed no pixel array size`() {
+        val calibratedDiagnostics =
+            diagnostics.copy(
+                pixelArrayWidthPx = null,
+                pixelArrayHeightPx = null,
+                quality = CameraIntrinsicsQuality.CALIBRATED,
+                focalDerivationBasis = CameraCalibrationDiagnostics.FOCAL_DERIVATION_BASIS_LENS_INTRINSIC_CALIBRATION,
+            )
+
+        val text = buildCameraCalibrationDiagnosticText(calibratedDiagnostics)
+
+        assertTrue(text.contains("pixel array: unavailable"))
+        assertTrue(text.contains("pixel-array vs active-array delta: unavailable"))
+        assertTrue(text.contains("focal derivation basis: LENS_INTRINSIC_CALIBRATION"))
     }
 }

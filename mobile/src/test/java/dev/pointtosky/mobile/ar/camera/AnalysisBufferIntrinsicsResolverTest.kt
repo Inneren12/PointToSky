@@ -5,6 +5,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
+import dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -41,6 +42,8 @@ class AnalysisBufferIntrinsicsResolverTest {
         activeArrayTopPx: Int? = 0,
         activeArrayRightPx: Int? = 4032,
         activeArrayBottomPx: Int? = 3024,
+        pixelArrayWidthPx: Int? = 4032,
+        pixelArrayHeightPx: Int? = 3024,
         preCorrectionActiveArrayLeftPx: Int? = null,
         preCorrectionActiveArrayTopPx: Int? = null,
         preCorrectionActiveArrayRightPx: Int? = null,
@@ -58,6 +61,8 @@ class AnalysisBufferIntrinsicsResolverTest {
             activeArrayTopPx = activeArrayTopPx,
             activeArrayRightPx = activeArrayRightPx,
             activeArrayBottomPx = activeArrayBottomPx,
+            pixelArrayWidthPx = pixelArrayWidthPx,
+            pixelArrayHeightPx = pixelArrayHeightPx,
             preCorrectionActiveArrayLeftPx = preCorrectionActiveArrayLeftPx,
             preCorrectionActiveArrayTopPx = preCorrectionActiveArrayTopPx,
             preCorrectionActiveArrayRightPx = preCorrectionActiveArrayRightPx,
@@ -167,6 +172,138 @@ class AnalysisBufferIntrinsicsResolverTest {
             val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(sourceOf(lensIntrinsicCalibration = bad)))
             assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
         }
+    }
+
+    // --- CAM-2c fix §P2: focal-derived fx/fy come from SENSOR_INFO_PIXEL_ARRAY_SIZE, not the active array ---
+
+    @Test
+    fun `the focal-derived fallback uses the pixel array, not the active array, for fx and fy when they differ`() {
+        // Pixel array (4100x3100) larger than this fixture's usual 4032x3024 active array - a real,
+        // documented Camera2 possibility (optically black/inactive border pixels excluded from the
+        // active array).
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolve(sourceOf(pixelArrayWidthPx = 4100, pixelArrayHeightPx = 3100)),
+            )
+
+        assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
+        // sourceOf()'s focalLengthsMm/sensorWidthMm/sensorHeightMm are Float (matching real Camera2
+        // metadata), converted via .toDouble() inside the resolver - so the expected value here must
+        // go through the exact same Float->Double conversion, not the raw Double literals, to avoid a
+        // spurious sub-epsilon mismatch from Float's reduced precision.
+        val expectedActiveFx = 3.6f.toDouble() / 6.4f.toDouble() * 4100
+        val expectedActiveFy = 3.6f.toDouble() / 4.8f.toDouble() * 3100
+        assertEquals(expectedActiveFx, resolved.diagnostics.activeFxPx, eps)
+        assertEquals(expectedActiveFy, resolved.diagnostics.activeFyPx, eps)
+        assertEquals(
+            CameraCalibrationDiagnostics.FOCAL_DERIVATION_BASIS_PIXEL_ARRAY,
+            resolved.diagnostics.focalDerivationBasis,
+        )
+        // The old (incorrect) active-array-based formula would have produced measurably different,
+        // smaller fx/fy values - explicitly assert this result is NOT that old value.
+        val oldWrongActiveFx = 3.6f.toDouble() / 6.4f.toDouble() * 4032
+        val oldWrongActiveFy = 3.6f.toDouble() / 4.8f.toDouble() * 3024
+        assertTrue(kotlin.math.abs(oldWrongActiveFx - resolved.diagnostics.activeFxPx) > 1.0)
+        assertTrue(kotlin.math.abs(oldWrongActiveFy - resolved.diagnostics.activeFyPx) > 1.0)
+    }
+
+    @Test
+    fun `an off-axis ray projects using the pixel-array-derived focal length after the sensor-to-buffer mapping`() {
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolve(sourceOf(pixelArrayWidthPx = 4100, pixelArrayHeightPx = 3100)),
+            )
+
+        val model =
+            PinholeProjectionModel(
+                focalLengthXPx = resolved.diagnostics.bufferFxPx,
+                focalLengthYPx = resolved.diagnostics.bufferFyPx,
+                principalPointXPx = resolved.diagnostics.bufferCxPx,
+                principalPointYPx = resolved.diagnostics.bufferCyPx,
+                imageWidthPx = bufferWidthPx.toDouble(),
+                imageHeightPx = bufferHeightPx.toDouble(),
+            )
+        val projected = model.project(normalizedX = 0.1, normalizedY = 0.05)
+
+        // fullFrameTransform's own scale (bufferWidthPx/4032.0, bufferHeightPx/3024.0 - the ACTIVE
+        // array's own width/height, since the matrix's domain is active-array-local) composes with
+        // the pixel-array-derived active fx/fy. Float->Double conversion matched to the resolver's
+        // own path - see the comment in the previous test.
+        val expectedBufferFx = (3.6f.toDouble() / 6.4f.toDouble() * 4100) * (bufferWidthPx / 4032.0)
+        val expectedBufferFy = (3.6f.toDouble() / 4.8f.toDouble() * 3100) * (bufferHeightPx / 3024.0)
+        val expectedX = expectedBufferFx * 0.1 + resolved.diagnostics.bufferCxPx
+        val expectedY = expectedBufferFy * 0.05 + resolved.diagnostics.bufferCyPx
+        assertEquals(expectedX, projected.x, eps)
+        assertEquals(expectedY, projected.y, eps)
+
+        // The old, active-array-derived focal length would have projected this same ray to a
+        // measurably different pixel.
+        val oldWrongBufferFx = (3.6f.toDouble() / 6.4f.toDouble() * 4032) * (bufferWidthPx / 4032.0)
+        val oldWrongX = oldWrongBufferFx * 0.1 + resolved.diagnostics.bufferCxPx
+        assertTrue(kotlin.math.abs(oldWrongX - projected.x) > 0.1)
+    }
+
+    @Test
+    fun `a missing or invalid pixel array size is reported as MissingPixelArraySize when the focal-derived fallback is required`() {
+        assertEquals(
+            AnalysisBufferIntrinsicsResolution.MissingPixelArraySize,
+            resolve(sourceOf(pixelArrayWidthPx = null)),
+        )
+        assertEquals(
+            AnalysisBufferIntrinsicsResolution.MissingPixelArraySize,
+            resolve(sourceOf(pixelArrayHeightPx = null)),
+        )
+        assertEquals(
+            AnalysisBufferIntrinsicsResolution.MissingPixelArraySize,
+            resolve(sourceOf(pixelArrayWidthPx = 0)),
+        )
+        assertEquals(
+            AnalysisBufferIntrinsicsResolution.MissingPixelArraySize,
+            resolve(sourceOf(pixelArrayHeightPx = -1)),
+        )
+    }
+
+    @Test
+    fun `a usable LENS_INTRINSIC_CALIBRATION resolves even when the pixel array size is missing`() {
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2100.0f, 1400.0f, 0f)
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolve(sourceOf(lensIntrinsicCalibration = calibration, pixelArrayWidthPx = null, pixelArrayHeightPx = null)),
+            )
+
+        assertEquals(CameraIntrinsicsQuality.CALIBRATED, resolved.intrinsics.quality)
+        assertEquals(
+            CameraCalibrationDiagnostics.FOCAL_DERIVATION_BASIS_LENS_INTRINSIC_CALIBRATION,
+            resolved.diagnostics.focalDerivationBasis,
+        )
+        assertNull(resolved.diagnostics.pixelArrayWidthPx)
+        assertNull(resolved.diagnostics.pixelArrayHeightPx)
+    }
+
+    @Test
+    fun `a non-zero active array origin still resolves the pixel-array-derived focal length with cx-cy remaining active-array-local`() {
+        // Same non-zero-origin active array [100,50]-[4132,3074] as the coordinate-origin fixture
+        // below, combined with a pixel array larger than the active array - the two corrections
+        // (CAM-2c fix round 3 §P1 and fix §P2) compose independently.
+        val source =
+            sourceOf(
+                activeArrayLeftPx = 100,
+                activeArrayTopPx = 50,
+                activeArrayRightPx = 4132,
+                activeArrayBottomPx = 3074,
+                pixelArrayWidthPx = 4200,
+                pixelArrayHeightPx = 3200,
+            )
+        val resolved = assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(resolve(source, fullFrameTransform))
+
+        val expectedActiveFx = 3.6f.toDouble() / 6.4f.toDouble() * 4200
+        val expectedActiveFy = 3.6f.toDouble() / 4.8f.toDouble() * 3200
+        assertEquals(expectedActiveFx, resolved.diagnostics.activeFxPx, eps)
+        assertEquals(expectedActiveFy, resolved.diagnostics.activeFyPx, eps)
+        // cx/cy remain the active array's own local centre (4032/2, 3024/2) - never activeLeft/Top
+        // translated, and unaffected by the pixel array's own, larger size.
+        assertEquals(2016.0, resolved.diagnostics.activeCxPx, eps)
+        assertEquals(1512.0, resolved.diagnostics.activeCyPx, eps)
     }
 
     // --- Typed failure outcomes ---

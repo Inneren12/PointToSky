@@ -17,7 +17,7 @@ No" — it is never described as simply "tested," which would misstate what was 
 | CAM-1g | `internalDebug`-only camera-geometry diagnostics overlay; observable geometry result + debug counters | Yes | Yes | Yes (per that PR's own record) | Yes (per that PR's own record) | **No — `CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`** |
 | CAM-2a | Pure, Android-free star prediction (`projectStars`): catalog RA/Dec + observer location/time + magnetic declination + `CameraSessionGeometry` → predicted camera/image/display positions, with typed unavailable outcomes | Yes | Yes | Yes (388 tests, `:core:astro-core`, verified via a direct `kotlinc`/JUnit-console invocation — Gradle itself could not run; see `docs/camera_star_prediction_contract.md` §13) | Partial (`:core:astro-core` compilation confirmed this way; `:mobile` not attempted by that PR) | No — not wired into any renderer, no device claim |
 | CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode via a total, exact-copy `CameraSessionGeometry.withIntrinsics` substitution | Yes | Yes | **Yes — real Gradle, not a workaround.** `:core:astro-core:test` 388/388, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 271/271 each (incl. `PredictedStarOverlayReducerTest`/`Format`/`CatalogAdapterTest`), `androidTest` compilation for both flavors (after fixing one pre-existing, CAM-2b-unrelated compile bug — see below); connected instrumentation **not run** (no device/emulator in this environment); see below | **Yes for debug** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 errors), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green. Release: Kotlin/Java compile green for both flavors; APK packaging blocked only by a missing release signing keystore (`storeFile`), not a code defect; see below | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (build gates now sufficiently verified; no physical device or emulator was available in this environment) |
-| CAM-2c | Calibrated Camera2-to-`ImageAnalysis`-buffer pinhole intrinsics over a general (not axis-aligned-only) sensor-to-buffer matrix: full `SensorToBufferMatrix3` + classification, active-array-local active-array intrinsics (`LENS_INTRINSIC_CALIBRATION` when coordinate-space- and skew-tolerance-verified, else focal-length-derived, neither translated by the active array's full-pixel-array placement — see fix round 3, §P1), matrix-composed buffer-space K′ with axis-swap/sign-normalization restricted to the proven `AXIS_ALIGNED_0` class in production (`ORTHOGONAL_90`/`180`/`270` return a typed `RotationOwnershipUnproven` outcome), typed `AnalysisBufferIntrinsicsResolution` (incl. `UnsupportedSensorToBufferTransform`/`RotationOwnershipUnproven`), coordinator coherent-input gate, `CameraIntrinsics.source=CAMERA_CHARACTERISTICS`+`reference=AnalysisBuffer` accepted by CAM-2a unchanged, debug-only calibration diagnostics panel (incl. active rect + principal-point basis) — **blocked on any logical-multi-camera device, very plausibly including a real Pixel 9's rear camera; see below** | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 465/465, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 333/333 each; see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; see below | **No — physical-device validation could not be attempted: no physical device or emulator is available in this environment. Expected to hit `UnsupportedLogicalMultiCameraMapping` (not a calibrated result) on a real Pixel 9's rear camera regardless — see the fix notes below** |
+| CAM-2c | Calibrated Camera2-to-`ImageAnalysis`-buffer pinhole intrinsics over a general (not axis-aligned-only) sensor-to-buffer matrix: full `SensorToBufferMatrix3` + classification, active-array-local active-array intrinsics (`LENS_INTRINSIC_CALIBRATION` when coordinate-space- and skew-tolerance-verified, else focal-length-derived from `SENSOR_INFO_PIXEL_ARRAY_SIZE` pixel pitch — never the active array, which affects only the coordinate domain and centre approximation; see fix §P2 — neither translated by the active array's full-pixel-array placement, see fix round 3 §P1), matrix-composed buffer-space K′ with axis-swap/sign-normalization restricted to the proven `AXIS_ALIGNED_0` class in production (`ORTHOGONAL_90`/`180`/`270` return a typed `RotationOwnershipUnproven` outcome), typed `AnalysisBufferIntrinsicsResolution` (incl. `UnsupportedSensorToBufferTransform`/`RotationOwnershipUnproven`/`MissingPixelArraySize`), coordinator coherent-input gate, `CameraIntrinsics.source=CAMERA_CHARACTERISTICS`+`reference=AnalysisBuffer` accepted by CAM-2a unchanged, debug-only calibration diagnostics panel (incl. active rect, principal-point basis, pixel-array size/delta, focal derivation basis) — **blocked on any logical-multi-camera device, very plausibly including a real Pixel 9's rear camera; see below** | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 468/468, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 339/339 each; see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; see below | **No — physical-device validation could not be attempted: no physical device or emulator is available in this environment. Expected to hit `UnsupportedLogicalMultiCameraMapping` (not a calibrated result) on a real Pixel 9's rear camera regardless — see the fix notes below** |
 
 ## CAM-2c (original pass — see "CAM-2c fix" below for corrections)
 
@@ -310,6 +310,67 @@ description.**
     `UnsupportedLogicalMultiCameraMapping` before any of this fix would even be exercised.
 
 **Overall CAM-2c fix round 3 status: code/test gates above are real-Gradle green; physical-device
+validation remains unexecuted for lack of any device or emulator capability in this environment, and —
+independently of that gap — is expected to hit the logical-multi-camera guard on a real Pixel 9's rear
+camera rather than reach a calibrated `AnalysisBuffer` result at all. See the final verdict in the PR
+description.**
+
+## CAM-2c fix §P2 (this sprint)
+
+- **Scope:** the focal-length-derived fallback (used whenever no usable `LENS_INTRINSIC_CALIBRATION`
+  exists) computed pixel focal length as `focalLengthMm / physicalSensorWidthMm * activeArrayWidthPx`
+  — mixing `SENSOR_INFO_PHYSICAL_SIZE` (the full pixel array's physical size) with
+  `SENSOR_INFO_ACTIVE_ARRAY_SIZE` (which may be smaller, excluding optically black/inactive border
+  pixels). This overestimates pixel pitch and underestimates `fx`/`fy` whenever the two arrays differ,
+  producing an overly wide computed FOV. The already-resolved non-zero-`LENS_INTRINSIC_CALIBRATION`-skew
+  review comment (separate check, separate rejection path, unchanged) is untouched by this fix. See
+  `docs/camera_coordinate_calibration_contract.md` §3.8 for the full design.
+- **The fix:** `activeArrayIntrinsicsFromFocalLength` now derives `fx`/`fy` from
+  `SENSOR_INFO_PIXEL_ARRAY_SIZE` (`fxPixelGrid = focalLengthMm / physicalSensorWidthMm *
+  pixelArrayWidthPx`), never `SENSOR_INFO_ACTIVE_ARRAY_SIZE`. `activeArrayWidthPx`/`activeArrayHeightPx`
+  keep their separate, existing role — the active-array-local coordinate domain and the default
+  principal-point centre approximation — never pixel pitch.
+- **Pixel-array metadata:** `CameraCharacteristicsSnapshot` gains `pixelArrayWidthPx`/
+  `pixelArrayHeightPx: Int?`, sourced from `CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE` (an
+  `android.util.Size`) in `Camera2CharacteristicsSource` — never inferred from
+  `activeArrayRight - activeArrayLeft`.
+- **A usable calibrated `K` needs no pixel-array size:** the pixel-array-size requirement lives
+  exclusively in the focal-derived fallback branch of `resolveAnalysisBufferIntrinsics`. A new typed
+  outcome, `AnalysisBufferIntrinsicsResolution.MissingPixelArraySize`, fires only when that fallback is
+  actually reached and the pixel array is missing or non-positive — a device with usable
+  `LENS_INTRINSIC_CALIBRATION` but no reported pixel-array size still resolves with `quality =
+  CALIBRATED`.
+- **Diagnostics:** `CameraCalibrationDiagnostics` gains `pixelArrayWidthPx`/`pixelArrayHeightPx: Int?`
+  and `focalDerivationBasis: String` (`PIXEL_ARRAY`/`LENS_INTRINSIC_CALIBRATION`), surfaced as new
+  `pixel array: W×H`, `pixel-array vs active-array delta: Δw=…, Δh=…`, and `focal derivation basis: …`
+  lines — internal-debug-only, as before.
+- **Tests:** pixel array equal to the active array is now the default test fixture, so every
+  pre-existing focal-derived test already proves the corrected formula matches the old one in that
+  case; new tests cover a pixel array larger than the active array (asserting the exact corrected
+  `fx`/`fy`, explicitly distinct from the old values, and an end-to-end off-axis
+  `PinholeProjectionModel.project` call proving the projected pixel itself reflects the correction);
+  missing/invalid pixel-array dimensions (`MissingPixelArraySize`); a usable calibrated `K` resolving
+  despite a missing pixel array; and a non-zero active-array origin combined with a larger pixel array,
+  confirming the two fixes compose independently.
+- **Validation closure pass (this session) — real Gradle**, same provisioned JDK 17 + Android SDK as
+  the prior passes.
+  - *`:core:astro-core:test`*: **PASS, 468/468** (0 failures/errors; up from 465 — four new
+    `activeArrayIntrinsicsFromFocalLength` tests).
+  - *`:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest`*: **PASS, 339/339 each** (0
+    failures/errors; up from 333 — six new resolver tests and one new diagnostics-format test).
+  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS.**
+  - *`:mobile:lintInternalDebug`/`lintPublicDebug`*: **PASS**, 0 errors, 30 warnings each (same
+    pre-existing warning count as the prior pass; none attributable to this fix).
+  - *`:mobile:assembleInternalDebug`/`assemblePublicDebug`*: **PASS**, both debug APKs built.
+  - *Confirmed unchanged:* skew handling (`INTRINSIC_SKEW_TOLERANCE_PX` policy), coordinate-origin
+    handling (fix round 3 §P1), rotation ownership (`RotationOwnershipUnproven`), the pinhole
+    projection math itself, and `CropScaleTransform`/`displayPoint` ownership — verified by grep and by
+    every pre-existing test in those areas continuing to pass unmodified.
+  - *Physical Pixel 9 validation*: **not executed** — no physical device or emulator is available in
+    this environment (same limitation as every prior CAM-2 pass). A real Pixel 9's rear camera is still
+    expected to hit `UnsupportedLogicalMultiCameraMapping` before this fix would even be exercised.
+
+**Overall CAM-2c fix §P2 status: code/test gates above are real-Gradle green; physical-device
 validation remains unexecuted for lack of any device or emulator capability in this environment, and —
 independently of that gap — is expected to hit the logical-multi-camera guard on a real Pixel 9's rear
 camera rather than reach a calibrated `AnalysisBuffer` result at all. See the final verdict in the PR
