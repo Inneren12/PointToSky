@@ -285,25 +285,21 @@ class AnalysisBufferIntrinsicsResolverTest {
         assertEquals(SensorToBufferTransformClass.PROJECTIVE_UNSUPPORTED, result.transformClass)
     }
 
-    // --- CAM-2c fix round 2 §1/§2/§3: non-zero active-array origin, exact principal-point values ---
+    // --- CAM-2c fix round 3 §P1: a non-zero active-array origin never affects K composition ---
 
     /**
      * A non-zero-origin active array [100,50]-[4132,3074] (4032x3024, same size as the zero-origin
-     * fixture above, shifted) mapped onto the 640x480 buffer with no crop beyond the origin shift
-     * itself: `bufferX = (activeX − 100) · sx`, `bufferY = (activeY − 50) · sy`. Used to prove the
-     * principal point is translated into this matrix's own (sensor matrix space, i.e. *not*
-     * rectangle-local) coordinates before composition (CAM-2c fix round 2 §1) — omitting that
-     * translation would silently reuse `activeLeft`/`activeTop` as if they were `0`.
+     * fixture above, shifted within the full pixel array). Per Android's own Camera2 contract (see
+     * [dev.pointtosky.core.astro.projection.camera.ActiveArrayIntrinsics]'s KDoc for the AOSP-sourced
+     * evidence), `LENS_INTRINSIC_CALIBRATION` and the CameraX sensor-to-buffer matrix's own domain are
+     * both **active-array-local** — `(0, 0)` at this rectangle's own top-left — never translated by
+     * `activeArrayLeftPx`/`activeArrayTopPx`. The matrix mapping this active array onto the buffer is
+     * therefore [fullFrameTransform] itself, byte-for-byte identical to the zero-origin case: a
+     * non-zero origin changes nothing about the matrix or the composed principal point. (A prior,
+     * incorrect revision of this fix instead built a distinct `nonZeroOriginTransform` and added
+     * `activeLeft`/`activeTop` to the principal point before composing — see the regression test
+     * below for why that was wrong.)
      */
-    private val originSx = bufferWidthPx / 4032.0
-    private val originSy = bufferHeightPx / 3024.0
-    private val nonZeroOriginTransform =
-        SensorToBufferMatrix3(
-            m00 = originSx, m01 = 0.0, m02 = -(100.0 * originSx),
-            m10 = 0.0, m11 = originSy, m12 = -(50.0 * originSy),
-            m20 = 0.0, m21 = 0.0, m22 = 1.0,
-        )
-
     private fun nonZeroOriginSourceOf(lensIntrinsicCalibration: FloatArray? = null) =
         sourceOf(
             activeArrayLeftPx = 100,
@@ -318,103 +314,137 @@ class AnalysisBufferIntrinsicsResolverTest {
         )
 
     @Test
-    fun `a non-zero-origin active array with no calibration resolves the focal-length-derived centre to the exact buffer centre`() {
+    fun `a non-zero-origin active array with no calibration resolves the focal-length-derived centre to the exact buffer centre, identically to the zero-origin case`() {
         val resolved =
             assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
-                resolveAnalysisBufferIntrinsics(nonZeroOriginSourceOf(), nonZeroOriginTransform, bufferWidthPx, bufferHeightPx),
+                resolveAnalysisBufferIntrinsics(nonZeroOriginSourceOf(), fullFrameTransform, bufferWidthPx, bufferHeightPx),
             )
 
         assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
-        // Active-array centre in sensor matrix space is (100 + 4032/2, 50 + 3024/2) = (2116, 1562);
-        // (2116-100)*sx = 2016*sx = 320.0 exactly, (1562-50)*sy = 1512*sy = 240.0 exactly.
-        assertEquals(320.0, resolved.intrinsics.principalPointXPx!!, eps)
-        assertEquals(240.0, resolved.intrinsics.principalPointYPx!!, eps)
+        // Active-array-local centre is (4032/2, 3024/2) regardless of this rectangle's (100,50)
+        // placement within the full pixel array - the exact same buffer centre as the zero-origin
+        // fixture's own centred-projection test above.
+        assertEquals(bufferWidthPx / 2.0, resolved.intrinsics.principalPointXPx!!, eps)
+        assertEquals(bufferHeightPx / 2.0, resolved.intrinsics.principalPointYPx!!, eps)
     }
 
     @Test
-    fun `a non-zero active array origin with a matching non-zero pre-correction origin yields CALIBRATED quality and the exact translated centre`() {
-        // Calibration cx/cy = the pre-correction rectangle's own local centre (2016, 1512).
+    fun `a non-zero active array origin with a matching non-zero pre-correction origin yields CALIBRATED quality and the exact local centre`() {
+        // Calibration cx/cy = the active-array-local centre (2016, 1512) - read directly, never
+        // translated by activeArrayLeftPx/TopPx.
         val calibration = floatArrayOf(2760.3f, 2760.3f, 2016.0f, 1512.0f, 0f)
 
         val resolved =
             assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
                 resolveAnalysisBufferIntrinsics(
                     nonZeroOriginSourceOf(calibration),
-                    nonZeroOriginTransform,
+                    fullFrameTransform,
                     bufferWidthPx,
                     bufferHeightPx,
                 ),
             )
 
         assertEquals(CameraIntrinsicsQuality.CALIBRATED, resolved.intrinsics.quality)
-        // Same absolute centre as the focal-derived case above: (100+2016, 50+1512) = (2116, 1562).
-        assertEquals(320.0, resolved.intrinsics.principalPointXPx!!, eps)
-        assertEquals(240.0, resolved.intrinsics.principalPointYPx!!, eps)
+        assertEquals(bufferWidthPx / 2.0, resolved.intrinsics.principalPointXPx!!, eps)
+        assertEquals(bufferHeightPx / 2.0, resolved.intrinsics.principalPointYPx!!, eps)
     }
 
     @Test
-    fun `an off-centre calibrated principal point translates to the exact expected buffer point`() {
-        // Local (rectangle-relative) calibration cx/cy = (1000, 800), not the centre.
+    fun `an off-centre calibrated principal point maps to the exact expected buffer point with no origin translation`() {
+        // Active-array-local calibration cx/cy = (1000, 800), not the centre.
         val calibration = floatArrayOf(2760.3f, 2760.3f, 1000.0f, 800.0f, 0f)
 
         val resolved =
             assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
                 resolveAnalysisBufferIntrinsics(
                     nonZeroOriginSourceOf(calibration),
-                    nonZeroOriginTransform,
+                    fullFrameTransform,
                     bufferWidthPx,
                     bufferHeightPx,
                 ),
             )
 
-        // Absolute (sensor-matrix-space) centre: (100+1000, 50+800) = (1100, 850).
-        // Buffer point: (1100-100)*sx = 1000*sx, (850-50)*sy = 800*sy.
-        assertEquals(1000.0 * originSx, resolved.intrinsics.principalPointXPx!!, eps)
-        assertEquals(800.0 * originSy, resolved.intrinsics.principalPointYPx!!, eps)
+        // fullFrameTransform is a pure scale (no translate term): bufferCx = 1000*sx, bufferCy =
+        // 800*sy - identical formula to the zero-origin case, since the active array's own (100,50)
+        // placement within the full pixel array never enters this computation.
+        val sx = bufferWidthPx / 4032.0
+        val sy = bufferHeightPx / 3024.0
+        assertEquals(1000.0 * sx, resolved.intrinsics.principalPointXPx!!, eps)
+        assertEquals(800.0 * sy, resolved.intrinsics.principalPointYPx!!, eps)
     }
 
     @Test
-    fun `omitting the active array origin would silently produce a different, wrong principal point - the fix is not a no-op`() {
-        // Same fixture as "an off-centre calibrated principal point translates to the exact expected
-        // buffer point" above: local calibration cx = 1000.0, active array left = 100.0.
+    fun `translating the local principal point by activeLeft-activeTop before composition would silently produce a wrong, off-centre buffer point - the fix is not a no-op`() {
+        // Same fixture as "an off-centre calibrated principal point maps to the exact expected buffer
+        // point" above: active-array-local calibration cx = 1000.0, active array left = 100.0.
         val calibration = floatArrayOf(2760.3f, 2760.3f, 1000.0f, 800.0f, 0f)
 
         val resolved =
             assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
                 resolveAnalysisBufferIntrinsics(
                     nonZeroOriginSourceOf(calibration),
-                    nonZeroOriginTransform,
+                    fullFrameTransform,
                     bufferWidthPx,
                     bufferHeightPx,
                 ),
             )
 
-        // The pre-fix defect read calibration[2] (1000.0) directly as cxPx, without adding
-        // activeLeft (100.0) first, then composed it through the SAME matrix: bufferCx = m00*1000.0 +
-        // m02 = originSx*1000.0 - originSx*100.0 = originSx*900.0 - a different, wrong buffer point.
-        val preFixWrongBufferCx = originSx * (1000.0 - 100.0)
-        // The fixed result instead translates to the absolute (1000+100=1100) point first: bufferCx =
-        // originSx*(1100.0-100.0) = originSx*1000.0.
-        val fixedBufferCx = originSx * 1000.0
-        assertEquals(fixedBufferCx, resolved.intrinsics.principalPointXPx!!, eps)
+        val sx = bufferWidthPx / 4032.0
+        // The (now-reverted) defect added activeLeft (100.0) to the already-local calibration cx
+        // before composing through fullFrameTransform: bufferCx = (1000.0 + 100.0) * sx - a
+        // different, wrong buffer point than the correct, untranslated one.
+        val wronglyTranslatedBufferCx = (1000.0 + 100.0) * sx
         assertTrue(
-            kotlin.math.abs(preFixWrongBufferCx - resolved.intrinsics.principalPointXPx!!) > 1.0,
-            "the pre-fix (un-translated) computation ($preFixWrongBufferCx) must differ measurably " +
-                "from the fixed one (${resolved.intrinsics.principalPointXPx})",
+            kotlin.math.abs(wronglyTranslatedBufferCx - resolved.intrinsics.principalPointXPx!!) > 1.0,
+            "a wrongly origin-translated computation ($wronglyTranslatedBufferCx) must differ " +
+                "measurably from the correct, untranslated one (${resolved.intrinsics.principalPointXPx})",
         )
     }
 
     @Test
-    fun `the inverse-crop region recovers the exact non-zero-origin active array rectangle, not a zero-based one`() {
+    fun `the inverse-crop region recovers the active-array-local rectangle, not the full-pixel-array-relative one`() {
         val resolved =
             assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
-                resolveAnalysisBufferIntrinsics(nonZeroOriginSourceOf(), nonZeroOriginTransform, bufferWidthPx, bufferHeightPx),
+                resolveAnalysisBufferIntrinsics(nonZeroOriginSourceOf(), fullFrameTransform, bufferWidthPx, bufferHeightPx),
             )
 
-        assertEquals(100.0, resolved.diagnostics.cropLeftPx, eps)
-        assertEquals(50.0, resolved.diagnostics.cropTopPx, eps)
-        assertEquals(4132.0, resolved.diagnostics.cropRightPx, eps)
-        assertEquals(3074.0, resolved.diagnostics.cropBottomPx, eps)
+        // Active-array-local: [0,0]-[4032,3024], identical to the zero-origin case - NOT the
+        // full-pixel-array-relative [100,50]-[4132,3074] rectangle a prior (incorrect) revision of
+        // this fix expected here.
+        assertEquals(0.0, resolved.diagnostics.cropLeftPx, eps)
+        assertEquals(0.0, resolved.diagnostics.cropTopPx, eps)
+        assertEquals(4032.0, resolved.diagnostics.cropRightPx, eps)
+        assertEquals(3024.0, resolved.diagnostics.cropBottomPx, eps)
+        // The full-pixel-array-relative ground-truth rectangle (diagnostics/provenance only - see
+        // ActiveArrayRect's own KDoc) is still tracked separately and unaffected by this correction.
+        assertEquals(100.0, resolved.diagnostics.activeArrayLeftPx, eps)
+        assertEquals(50.0, resolved.diagnostics.activeArrayTopPx, eps)
+    }
+
+    @Test
+    fun `converting a local principal point to its full-pixel-array coordinate is a documented relationship, never fed into K`() {
+        // Active-array-local calibration cx/cy = (2016, 1512) - the rectangle's own local centre.
+        val calibration = floatArrayOf(2760.3f, 2760.3f, 2016.0f, 1512.0f, 0f)
+
+        val resolved =
+            assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
+                resolveAnalysisBufferIntrinsics(
+                    nonZeroOriginSourceOf(calibration),
+                    fullFrameTransform,
+                    bufferWidthPx,
+                    bufferHeightPx,
+                ),
+            )
+
+        // The local principal point actually used for K composition (buffer centre, as above).
+        assertEquals(bufferWidthPx / 2.0, resolved.intrinsics.principalPointXPx!!, eps)
+        // Its equivalent full-pixel-array coordinate - a documented conversion for cross-referencing
+        // against raw Camera2 debug dumps, computed here from the diagnostics' own fields, never fed
+        // back into the resolver or K composition.
+        val fullArrayCx = resolved.diagnostics.activeArrayLeftPx + resolved.diagnostics.activeCxPx
+        val fullArrayCy = resolved.diagnostics.activeArrayTopPx + resolved.diagnostics.activeCyPx
+        assertEquals(2116.0, fullArrayCx, eps)
+        assertEquals(1562.0, fullArrayCy, eps)
     }
 
     @Test
@@ -436,7 +466,7 @@ class AnalysisBufferIntrinsicsResolverTest {
 
         val resolved =
             assertIs<AnalysisBufferIntrinsicsResolution.Resolved>(
-                resolveAnalysisBufferIntrinsics(source, nonZeroOriginTransform, bufferWidthPx, bufferHeightPx),
+                resolveAnalysisBufferIntrinsics(source, fullFrameTransform, bufferWidthPx, bufferHeightPx),
             )
         assertEquals(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT, resolved.intrinsics.quality)
     }

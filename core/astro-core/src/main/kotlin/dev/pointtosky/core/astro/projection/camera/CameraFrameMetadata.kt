@@ -32,7 +32,9 @@ package dev.pointtosky.core.astro.projection.camera
  * @property cropRectBottomPx `ImageProxy.cropRect.bottom`, when represented.
  * @property sensorToBufferTransform (CAM-2c, fix §1) `ImageProxy.imageInfo.getSensorToBufferTransformMatrix()`,
  *   converted to a plain, Android-independent [SensorToBufferMatrix3] — the real per-frame mapping
- *   from Camera2 `SENSOR_INFO_ACTIVE_ARRAY_SIZE` pixel coordinates to *this exact frame's own*
+ *   from Camera2 `SENSOR_INFO_ACTIVE_ARRAY_SIZE` pixel coordinates, **active-array-local** (`(0, 0)`
+ *   at that rectangle's own top-left, never `SENSOR_INFO_ACTIVE_ARRAY_SIZE.left`/`.top` — see
+ *   [ActiveArrayIntrinsics]'s KDoc, corrected in fix round 3 §P1), to *this exact frame's own*
  *   [bufferWidthPx] × [bufferHeightPx] buffer, preserving all 9 reported values (see
  *   `dev.pointtosky.mobile.ar.camera.ImageProxyFrameMetadataSource`) — never collapsed to an
  *   axis-aligned-only approximation. `null` only when the underlying matrix is entirely unavailable.
@@ -40,7 +42,7 @@ package dev.pointtosky.core.astro.projection.camera
  *   carried here in full; it is [dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics]'s
  *   job to classify and reject it explicitly, never this type's. **Not** the same coordinate space as
  *   [cropRectLeftPx]/etc above, which are already in *this frame's own buffer* pixel coordinates;
- *   see [ActiveArraySensorCropRegion]'s KDoc for why the two must never be conflated.
+ *   see [ActiveArrayRect]'s KDoc for why the two must never be conflated.
  */
 data class CameraFrameMetadata(
     val timestampNanos: Long,

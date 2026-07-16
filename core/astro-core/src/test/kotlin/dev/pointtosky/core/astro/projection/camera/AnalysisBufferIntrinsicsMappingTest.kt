@@ -11,8 +11,8 @@ private const val EPS = 1e-6
 
 /**
  * Pure JVM tests for [SensorToBufferMatrix3], [classifySensorToBufferMatrix],
- * [ActiveArrayRect], and [mapActiveArrayIntrinsicsThroughMatrix] (CAM-2c §4/§5/§8, fix
- * §1/§2/§7).
+ * [ActiveArrayRect], [ActiveArrayLocalRect], and [mapActiveArrayIntrinsicsThroughMatrix] (CAM-2c
+ * §4/§5/§8, fix §1/§2/§7, fix round 3 §P1).
  */
 class AnalysisBufferIntrinsicsMappingTest {
     private fun axisAlignedMatrix(
@@ -101,15 +101,15 @@ class AnalysisBufferIntrinsicsMappingTest {
         assertEquals(SensorToBufferTransformClass.SINGULAR, classifySensorToBufferMatrix(matrix))
     }
 
-    // --- ActiveArrayRect / toActiveArrayRect ---
+    // --- ActiveArrayLocalRect / toActiveArrayLocalRect ---
 
     @Test
-    fun `toActiveArrayRect inverts a centered-crop-then-scale transform`() {
+    fun `toActiveArrayLocalRect inverts a centered-crop-then-scale transform`() {
         // Active array region (1008,756)-(3024,2268) - a centered 2016x1512 crop of a 4032x3024
         // active array - mapped onto a 1008x756 buffer (scale 0.5).
         val transform = axisAlignedMatrix(0.5, 0.5, -504.0, -378.0)
 
-        val region = transform.toActiveArrayRect(bufferWidthPx = 1008, bufferHeightPx = 756)
+        val region = transform.toActiveArrayLocalRect(bufferWidthPx = 1008, bufferHeightPx = 756)
 
         assertEquals(1008.0, region.leftPx, EPS)
         assertEquals(756.0, region.topPx, EPS)
@@ -118,13 +118,13 @@ class AnalysisBufferIntrinsicsMappingTest {
     }
 
     @Test
-    fun `toActiveArrayRect is exact for a 90-degree axis permutation`() {
+    fun `toActiveArrayLocalRect is exact for a 90-degree axis permutation`() {
         // W=4032 active array, mapped 90-degrees onto a 3024x4032 buffer (no crop, no extra scale
         // beyond the axis swap itself): bufferX = activeY, bufferY = 4032 - activeX.
         val matrix = SensorToBufferMatrix3(0.0, 1.0, 0.0, -1.0, 0.0, 4032.0, 0.0, 0.0, 1.0)
         assertEquals(SensorToBufferTransformClass.ORTHOGONAL_90, classifySensorToBufferMatrix(matrix))
 
-        val region = matrix.toActiveArrayRect(bufferWidthPx = 3024, bufferHeightPx = 4032)
+        val region = matrix.toActiveArrayLocalRect(bufferWidthPx = 3024, bufferHeightPx = 4032)
 
         // Active array is 4032 wide x 3024 tall; the 90-degree swap maps it exactly onto the
         // 3024x4032 buffer with no crop, so inverting recovers that full active-array rectangle.
@@ -135,17 +135,33 @@ class AnalysisBufferIntrinsicsMappingTest {
     }
 
     @Test
-    fun `toActiveArrayRect rejects non-positive buffer dimensions`() {
+    fun `toActiveArrayLocalRect rejects non-positive buffer dimensions`() {
         val transform = axisAlignedMatrix(1.0, 1.0, 0.0, 0.0)
-        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayRect(0, 100) }
-        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayRect(100, -1) }
+        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayLocalRect(0, 100) }
+        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayLocalRect(100, -1) }
     }
 
     @Test
-    fun `toActiveArrayRect rejects a singular matrix`() {
+    fun `toActiveArrayLocalRect rejects a singular matrix`() {
         val transform = axisAlignedMatrix(0.0, 0.0, 0.0, 0.0)
-        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayRect(100, 100) }
+        assertFailsWith<IllegalArgumentException> { transform.toActiveArrayLocalRect(100, 100) }
     }
+
+    @Test
+    fun `ActiveArrayLocalRect rejects a degenerate or unordered region`() {
+        assertFailsWith<IllegalArgumentException> { ActiveArrayLocalRect(100.0, 0.0, 100.0, 100.0) }
+        assertFailsWith<IllegalArgumentException> { ActiveArrayLocalRect(0.0, 100.0, 100.0, 100.0) }
+        assertFailsWith<IllegalArgumentException> { ActiveArrayLocalRect(100.0, 0.0, 0.0, 100.0) }
+    }
+
+    @Test
+    fun `ActiveArrayLocalRect computes width and height`() {
+        val region = ActiveArrayLocalRect(100.0, 200.0, 500.0, 800.0)
+        assertEquals(400.0, region.widthPx)
+        assertEquals(600.0, region.heightPx)
+    }
+
+    // --- ActiveArrayRect (full-pixel-array-relative ground truth; CAM-2c fix round 3 §P1) ---
 
     @Test
     fun `ActiveArrayRect rejects a degenerate or unordered region`() {
@@ -159,6 +175,29 @@ class AnalysisBufferIntrinsicsMappingTest {
         val region = ActiveArrayRect(100.0, 200.0, 500.0, 800.0)
         assertEquals(400.0, region.widthPx)
         assertEquals(600.0, region.heightPx)
+    }
+
+    @Test
+    fun `ActiveArrayRect and ActiveArrayLocalRect are distinct types - a full-array coordinate is never used as a local one`() {
+        // A non-zero-origin active array: full-pixel-array rect (100,50)-(4132,3074), local
+        // coordinate (2016,1512) is the rectangle's own centre. The full-array coordinate for that
+        // same physical point is activeArrayRect.leftPx + localX, activeArrayRect.topPx + localY -
+        // a documented conversion (CAM-2c fix round 3 §P1), never used to feed K composition (see
+        // ActiveArrayIntrinsics's KDoc).
+        val activeArrayRect = ActiveArrayRect(leftPx = 100.0, topPx = 50.0, rightPx = 4132.0, bottomPx = 3074.0)
+        val localCx = 2016.0
+        val localCy = 1512.0
+
+        val fullArrayCx = activeArrayRect.leftPx + localCx
+        val fullArrayCy = activeArrayRect.topPx + localCy
+
+        assertEquals(2116.0, fullArrayCx, EPS)
+        assertEquals(1562.0, fullArrayCy, EPS)
+        // The two representations of the same point are never numerically equal for a non-zero
+        // origin - conflating them (as an earlier revision of this fix did) silently shifts the
+        // principal point.
+        assertTrue(fullArrayCx != localCx)
+        assertTrue(fullArrayCy != localCy)
     }
 
     // --- mapActiveArrayIntrinsicsThroughMatrix: AXIS_ALIGNED_0 (matches the old crop/scale math) ---

@@ -3,14 +3,21 @@ package dev.pointtosky.core.astro.projection.camera
 import kotlin.math.abs
 
 /**
- * A general-purpose rectangle expressed in "sensor matrix space" — Camera2's own, possibly
- * non-zero-origin `SENSOR_INFO_ACTIVE_ARRAY_SIZE` pixel coordinate system (CAM-2c §4, fix round 2
- * §1/§2), the same coordinate system [SensorToBufferMatrix3] itself operates in. Used for two
- * distinct purposes that share this exact shape: (1) the actual, ground-truth
- * `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rectangle Camera2 reports (`left`/`top` **not** assumed zero — see
- * [ActiveArrayIntrinsics]'s KDoc), used to validate that a matrix-inferred region stays within it
- * (`dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics`); and (2) the region
- * [toActiveArrayRect] infers a buffer maps onto, by inverting a [SensorToBufferMatrix3].
+ * The actual, ground-truth `SENSOR_INFO_ACTIVE_ARRAY_SIZE` (or `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`)
+ * rectangle Camera2 reports, **relative to the full pixel array** (CAM-2c §4; coordinate contract
+ * corrected in fix round 3, §P1) — `left`/`top` **not** assumed zero: per AOSP's own
+ * `preCorrectionActiveArraySize` documentation, *"This rectangle is defined relative to the full
+ * pixel array; `(0,0)` is the top-left of the full pixel array."*
+ *
+ * Used for exactly two purposes, both full-pixel-array-relative: (1) the exact four-edge
+ * pre-correction-vs-active-array match check
+ * (`dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics`'s
+ * `preCorrectionActiveArrayMatchesActiveArray`); and (2) diagnostics/provenance display. **Never**
+ * folded into [ActiveArrayIntrinsics.cxPx]/`cyPx` or any other active-array-local pixel coordinate —
+ * see [ActiveArrayIntrinsics]'s KDoc for why `left`/`top` here must not be added to those. Distinct
+ * from [ActiveArrayLocalRect] specifically so the two coordinate spaces cannot be silently conflated
+ * at the type level — an earlier revision of this fix used one shared type for both, then added
+ * `left`/`top` to an already-local value, producing a wrong off-centre principal point.
  *
  * **Not** the same coordinate space as [CameraFrameMetadata]'s own `cropRectLeftPx`/`cropRectTopPx`/
  * `cropRectRightPx`/`cropRectBottomPx` fields, which are already in that frame's own *buffer* pixel
@@ -20,14 +27,10 @@ import kotlin.math.abs
  * `dev.pointtosky.mobile.ar.camera.ImageProxyFrameMetadataSource`'s KDoc for why `ImageProxy.cropRect`
  * is never used as this type's source in this codebase's current CameraX binding path.
  *
- * Purpose (2) is diagnostics/validation-only (CAM-2c fix §1): never fed back into
- * [mapActiveArrayIntrinsicsThroughMatrix], which composes matrices directly rather than
- * round-tripping through a crop rectangle.
- *
- * @property leftPx inclusive left edge (smaller x), sensor matrix space pixels.
- * @property topPx inclusive top edge (smaller y), sensor matrix space pixels.
- * @property rightPx exclusive-by-convention right edge (larger x), sensor matrix space pixels.
- * @property bottomPx exclusive-by-convention bottom edge (larger y), sensor matrix space pixels.
+ * @property leftPx inclusive left edge (smaller x), full-pixel-array pixels.
+ * @property topPx inclusive top edge (smaller y), full-pixel-array pixels.
+ * @property rightPx exclusive-by-convention right edge (larger x), full-pixel-array pixels.
+ * @property bottomPx exclusive-by-convention bottom edge (larger y), full-pixel-array pixels.
  */
 data class ActiveArrayRect(
     val leftPx: Double,
@@ -47,32 +50,79 @@ data class ActiveArrayRect(
         }
     }
 
-    /** Width in sensor matrix space pixels, always strictly positive by the ordering invariant. */
+    /** Width in full-pixel-array pixels, always strictly positive by the ordering invariant. */
     val widthPx: Double get() = rightPx - leftPx
 
-    /** Height in sensor matrix space pixels, always strictly positive by the ordering invariant. */
+    /** Height in full-pixel-array pixels, always strictly positive by the ordering invariant. */
     val heightPx: Double get() = bottomPx - topPx
 }
 
 /**
- * Inverts this (non-singular, affine) [SensorToBufferMatrix3] into the [ActiveArrayRect]
- * it maps onto a buffer of exactly [bufferWidthPx] × [bufferHeightPx] pixels (CAM-2c fix §1):
- * transforms the buffer rectangle's four corners back into sensor matrix space via the matrix
- * inverse, then takes their bounding box. **Exact** (a tight fit, not an over-approximation) for
- * [SensorToBufferTransformClass.AXIS_ALIGNED_0]/`ORTHOGONAL_90`/`ORTHOGONAL_180`/`ORTHOGONAL_270` —
- * since each of those maps a rectangle onto a rectangle exactly — though only `AXIS_ALIGNED_0` is
- * ever composed by [mapActiveArrayIntrinsicsThroughMatrix] into a production pinhole model as of
- * CAM-2c fix round 2 §4 (see that function's KDoc on rotation-ownership proof scope). Diagnostics/
- * validation-only; never itself fed back into any intrinsics computation.
+ * A rectangle in **active-array-local** coordinates — `(0, 0)` at the active array rectangle's own
+ * top-left, the same coordinate system [ActiveArrayIntrinsics.cxPx]/`cyPx` and
+ * [SensorToBufferMatrix3] itself both operate in (CAM-2c fix round 3, §P1). Produced by
+ * [toActiveArrayLocalRect] inverting a [SensorToBufferMatrix3]: the local-space region a buffer maps
+ * onto, used only to validate that region stays within `[0, activeArrayWidthPx] x [0,
+ * activeArrayHeightPx]` (`dev.pointtosky.mobile.ar.camera.resolveAnalysisBufferIntrinsics`) and for
+ * diagnostics. **Not** the same coordinate space as [ActiveArrayRect] — see that type's KDoc for why
+ * conflating the two was the exact bug this fix corrects; a local rectangle's `leftPx`/`topPx` are
+ * typically at or near `0`, never `SENSOR_INFO_ACTIVE_ARRAY_SIZE.left`/`.top`.
+ *
+ * Diagnostics/validation-only (CAM-2c fix §1): never fed back into
+ * [mapActiveArrayIntrinsicsThroughMatrix], which composes matrices directly rather than
+ * round-tripping through a crop rectangle.
+ *
+ * @property leftPx inclusive left edge (smaller x), active-array-local pixels.
+ * @property topPx inclusive top edge (smaller y), active-array-local pixels.
+ * @property rightPx exclusive-by-convention right edge (larger x), active-array-local pixels.
+ * @property bottomPx exclusive-by-convention bottom edge (larger y), active-array-local pixels.
+ */
+data class ActiveArrayLocalRect(
+    val leftPx: Double,
+    val topPx: Double,
+    val rightPx: Double,
+    val bottomPx: Double,
+) {
+    init {
+        require(leftPx.isFinite() && topPx.isFinite() && rightPx.isFinite() && bottomPx.isFinite()) {
+            "all rectangle edges must be finite; was ($leftPx, $topPx, $rightPx, $bottomPx)"
+        }
+        require(leftPx < rightPx) {
+            "rectangle must be ordered horizontally (leftPx < rightPx); was leftPx=$leftPx, rightPx=$rightPx"
+        }
+        require(topPx < bottomPx) {
+            "rectangle must be ordered vertically (topPx < bottomPx); was topPx=$topPx, bottomPx=$bottomPx"
+        }
+    }
+
+    /** Width in active-array-local pixels, always strictly positive by the ordering invariant. */
+    val widthPx: Double get() = rightPx - leftPx
+
+    /** Height in active-array-local pixels, always strictly positive by the ordering invariant. */
+    val heightPx: Double get() = bottomPx - topPx
+}
+
+/**
+ * Inverts this (non-singular, affine) [SensorToBufferMatrix3] into the [ActiveArrayLocalRect]
+ * it maps onto a buffer of exactly [bufferWidthPx] × [bufferHeightPx] pixels (CAM-2c fix §1;
+ * renamed and re-typed in fix round 3, §P1 — see [ActiveArrayLocalRect]'s KDoc for why the result is
+ * active-array-local, not full-pixel-array-relative): transforms the buffer rectangle's four corners
+ * back into active-array-local space via the matrix inverse, then takes their bounding box. **Exact**
+ * (a tight fit, not an over-approximation) for [SensorToBufferTransformClass.AXIS_ALIGNED_0]/
+ * `ORTHOGONAL_90`/`ORTHOGONAL_180`/`ORTHOGONAL_270` — since each of those maps a rectangle onto a
+ * rectangle exactly — though only `AXIS_ALIGNED_0` is ever composed by
+ * [mapActiveArrayIntrinsicsThroughMatrix] into a production pinhole model as of CAM-2c fix round 2
+ * §4 (see that function's KDoc on rotation-ownership proof scope). Diagnostics/validation-only;
+ * never itself fed back into any intrinsics computation.
  *
  * @throws IllegalArgumentException if [bufferWidthPx]/[bufferHeightPx] is not strictly positive, the
  *   matrix is not affine (see [classifySensorToBufferMatrix]), or the matrix's linear part is singular
  *   (not invertible).
  */
-fun SensorToBufferMatrix3.toActiveArrayRect(
+fun SensorToBufferMatrix3.toActiveArrayLocalRect(
     bufferWidthPx: Int,
     bufferHeightPx: Int,
-): ActiveArrayRect {
+): ActiveArrayLocalRect {
     require(bufferWidthPx > 0) { "bufferWidthPx must be strictly positive; was $bufferWidthPx" }
     require(bufferHeightPx > 0) { "bufferHeightPx must be strictly positive; was $bufferHeightPx" }
     require(abs(m20) <= DEFAULT_SENSOR_TO_BUFFER_CLASSIFICATION_TOLERANCE &&
@@ -106,7 +156,7 @@ fun SensorToBufferMatrix3.toActiveArrayRect(
             activeYOf(0.0, bufferHeight),
             activeYOf(bufferWidth, bufferHeight),
         )
-    return ActiveArrayRect(
+    return ActiveArrayLocalRect(
         leftPx = cornerXs.min(),
         topPx = cornerYs.min(),
         rightPx = cornerXs.max(),
