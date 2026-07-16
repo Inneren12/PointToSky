@@ -15,15 +15,37 @@ import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
  * @property fallbackReason `null` when [intrinsics] came from real metadata; a short, non-sensitive
  *   diagnostic code (see [CameraIntrinsicsFallbackReason]) explaining why the legacy fallback was
  *   used otherwise.
- * @property calibrationDiagnostics (CAM-2c §9) non-`null` only when [intrinsics] came from a
- *   successful [resolveAnalysisBufferIntrinsics] mapping — every intermediate quantity that
- *   resolution computed, for the internal debug panel only. Never read by projection itself.
+ * @property analysisBufferAttempt (CAM-2c runtime integration fix) the exact, typed
+ *   [AnalysisBufferIntrinsicsResolution] the calibrated `AnalysisBuffer` mapping produced for this
+ *   resolution — `Resolved` when it succeeded, one of its explicit failure variants when it did not,
+ *   or `null` only when the calibrated path was never attempted at all (no analyzed frame dimensions
+ *   known yet — see [resolveCameraIntrinsicsPreferringCalibration]). Preserved **even when
+ *   [intrinsics] itself ends up being the CAM-1b `PhysicalSensor`/legacy-fallback result** — a prior
+ *   revision collapsed this into a `null` [CameraCalibrationDiagnostics] the moment CAM-2c failed,
+ *   which made the real rejection reason (e.g. `UnsupportedLogicalMultiCameraMapping`) invisible to
+ *   any diagnostics panel; this field is the fix. Never read by projection itself.
+ * @property cameraCharacteristicsSnapshot (CAM-2c runtime integration fix) the raw
+ *   [CameraCharacteristicsSnapshot] this resolution attempt actually read from the bound camera —
+ *   captured regardless of [analysisBufferAttempt]'s outcome, so a diagnostics panel can show the
+ *   camera ID/logical-multi-camera flag/pixel-array/active-array/physical-size/focal-length metadata
+ *   that produced a given rejection, not only the fields a successful mapping happens to carry.
+ *   `null` when characteristics could not be read at all (see [CameraCharacteristicsSource.snapshot]).
  */
 data class CameraIntrinsicsResolution(
     val intrinsics: CameraIntrinsics,
     val fallbackReason: String? = null,
-    val calibrationDiagnostics: CameraCalibrationDiagnostics? = null,
-)
+    val analysisBufferAttempt: AnalysisBufferIntrinsicsResolution? = null,
+    val cameraCharacteristicsSnapshot: CameraCharacteristicsSnapshot? = null,
+) {
+    /**
+     * (CAM-2c §9) The [CameraCalibrationDiagnostics] this resolution's calibrated mapping produced,
+     * derived from [analysisBufferAttempt] — non-`null` only when that attempt was
+     * [AnalysisBufferIntrinsicsResolution.Resolved]. Convenience accessor for callers that only need
+     * the detailed calibration numbers, not the full typed attempt.
+     */
+    val calibrationDiagnostics: CameraCalibrationDiagnostics?
+        get() = (analysisBufferAttempt as? AnalysisBufferIntrinsicsResolution.Resolved)?.diagnostics
+}
 
 /**
  * Resolves real per-device [CameraIntrinsics] for a bound CameraX camera (CAM-1b; CAM-2c adds the

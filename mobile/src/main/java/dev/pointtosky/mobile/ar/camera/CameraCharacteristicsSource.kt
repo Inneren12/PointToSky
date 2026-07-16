@@ -102,6 +102,28 @@ fun interface CameraCharacteristicsSource {
 }
 
 /**
+ * Reads this [CameraCharacteristicsSource] exactly once, converting a thrown exception into `null`
+ * (CAM-2c runtime integration fix P1) — the single, one-read-per-call boundary every caller in this
+ * package (`resolveAnalysisBufferIntrinsics`, `resolveCameraIntrinsics`,
+ * `resolveCameraIntrinsicsPreferringCalibration`) is built on, so a single uncached session
+ * resolution never reads [source] more than once even when it is consulted by more than one
+ * resolver. `CancellationException` is rethrown, never converted to `null` or swallowed — a
+ * cancelled coroutine must not silently resolve to "characteristics unavailable".
+ *
+ * Callers that need to distinguish "characteristics unavailable" from other failure reasons must do
+ * so from the resulting `null`, exactly as before this fix — this function itself carries no
+ * additional retry or fallback behavior beyond the one read.
+ */
+internal fun CameraCharacteristicsSource.readSnapshotOrNull(): CameraCharacteristicsSnapshot? =
+    try {
+        snapshot()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
+/**
  * Production [CameraCharacteristicsSource] backed by CameraX's Camera2 interop
  * (`Camera2CameraInfo.from(cameraInfo)`).
  *

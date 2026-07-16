@@ -97,6 +97,7 @@ import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticsGate
 import dev.pointtosky.mobile.ar.camera.CameraSessionGeometryProvider
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsCoordinator
+import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsDiagnosticState
 import dev.pointtosky.mobile.ar.camera.CameraTimestampSynchronizer
 import dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver
 import dev.pointtosky.mobile.ar.camera.nextDebugSessionId
@@ -408,6 +409,15 @@ fun ArScreen(
     // the observation above so the panel updates as soon as a later recompute reflects a since-
     // completed resolution; debug-only, never consumed by projection.
     val cameraCalibrationDiagnostics: CameraCalibrationDiagnostics?
+    // CAM-2c runtime integration fix §2/§5: the coordinator's full CAM-2c picture - its own typed
+    // attempt (Resolved or an explicit failure variant), the resolution it actually published (which
+    // may legitimately be a CAM-1b PhysicalSensor fallback), the coordinator's own lifecycle state,
+    // the raw camera characteristics snapshot, and the running per-frame transform-transport
+    // counters - read alongside the observation above for the same reason cameraCalibrationDiagnostics
+    // is: geometryObservation's emission (driven by onPairedFrame/onIntrinsicsResolved, both of which
+    // this coordinator's own resolution always precedes or accompanies) is what actually drives
+    // recomposition here, not a dedicated Flow of its own. Debug-only; never consumed by projection.
+    val cameraIntrinsicsDiagnosticState: CameraSessionIntrinsicsDiagnosticState?
     if (CameraGeometryDiagnosticsGate.isEnabled) {
         val geometryObservation by geometryProvider.observation.collectAsStateWithLifecycle()
         val sessionId = remember { nextDebugSessionId() }
@@ -432,6 +442,7 @@ fun ArScreen(
         cameraGeometryReadyBundleCount = debugState.readyBundleCount
         cameraGeometrySessionResult = geometryObservation.result
         cameraCalibrationDiagnostics = intrinsicsResolver.lastCalibrationDiagnostics
+        cameraIntrinsicsDiagnosticState = intrinsicsCoordinator.diagnosticState
     } else {
         cameraGeometryDiagnosticSnapshot = null
         cameraGeometryDiagnosticSessionId = 0L
@@ -440,6 +451,7 @@ fun ArScreen(
         cameraGeometryReadyBundleCount = 0L
         cameraGeometrySessionResult = null
         cameraCalibrationDiagnostics = null
+        cameraIntrinsicsDiagnosticState = null
     }
 
     // Single declination computation point, hoisted above the Box so both the legacy renderer (below,
@@ -780,6 +792,7 @@ fun ArScreen(
                 cam1gObservedFrameCount = cameraGeometryObservedFrameCount,
                 cam1gReadyBundleCount = cameraGeometryReadyBundleCount,
                 calibrationDiagnostics = cameraCalibrationDiagnostics,
+                intrinsicsDiagnosticState = cameraIntrinsicsDiagnosticState,
                 cam2bState = predictedStarOverlayState.takeIf { predictedStarDebugControls.showPredictedStarPanel },
                 detailsExpanded = predictedStarDebugControls.hudDetailsExpanded,
                 onDetailsExpandedChange = { predictedStarDebugControls.hudDetailsExpanded = it },
