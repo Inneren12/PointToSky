@@ -7,7 +7,6 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.MatrixIntrinsicsMappingResult
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainConsistency
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import dev.pointtosky.core.astro.projection.camera.activeArrayIntrinsicsFromFocalLength
@@ -116,39 +115,6 @@ sealed interface AnalysisBufferIntrinsicsResolution {
      */
     data class RotationOwnershipUnproven(
         val transformClass: SensorToBufferTransformClass,
-    ) : AnalysisBufferIntrinsicsResolution
-
-    /**
-     * **Reserved, not currently returned by [resolveAnalysisBufferIntrinsics] (CAM-2c domain-consistency
-     * fix).** [transformClass] classified as a structurally supported class (would otherwise compose a
-     * `K'`), but
-     * `dev.pointtosky.core.astro.projection.camera.assessSensorToBufferDomainConsistency`'s own,
-     * deliberately strict, whole-source-domain check found [consistency] to be something other than
-     * [SensorToBufferDomainConsistency.CONSISTENT] — see that function's own KDoc, "Scope and known
-     * limitation," for exactly why a `MAPPED_BOUNDS_MISMATCH` verdict is common and *expected* for an
-     * ordinary, legitimate active-array crop (most real devices), not just for a broken transform like
-     * the real Pixel 9 identity-matrix evidence (`docs/validation/cam_2c_pixel9_evidence.md`) that
-     * motivated adding this check at all.
-     *
-     * [resolveAnalysisBufferIntrinsics] computes this same assessment as diagnostic evidence (see
-     * [AnalysisBufferIntrinsicsResolution.Resolved]'s own attached
-     * `dev.pointtosky.mobile.ar.camera.CameraCalibrationDiagnostics` — wired separately, at the
-     * `internalDebug` diagnostics-export boundary, not on this sealed type) but does **not** return this
-     * variant instead of [AnalysisBufferIntrinsicsResolution.Resolved] today: doing so would silently
-     * flip a large share of already-working, non-logical-multi-camera devices (any device whose
-     * sensor-native aspect ratio does not exactly equal its analysis buffer's — the common case) from a
-     * resolved calibration to a rejection, which is both a real behavior change this fix's own scope
-     * explicitly rules out ("do not change outcome precedence merely to expose the new consistency
-     * failure") and not justified by evidence this codebase actually has — this check is proven strict
-     * enough to catch the identity-matrix defect, not proven complete enough to certify every legitimate
-     * crop. This variant exists so a future pass — once CAM-2d or an equivalent supplies real proof of
-     * CameraX's true cropped-domain contract — has a typed, already-integrated place to land that
-     * decision (mirroring [RotationOwnershipUnproven]'s own "the math exists, the proof does not" shape)
-     * rather than inventing new plumbing under time pressure.
-     */
-    data class DomainConsistencyUnproven(
-        val transformClass: SensorToBufferTransformClass,
-        val consistency: SensorToBufferDomainConsistency,
     ) : AnalysisBufferIntrinsicsResolution
 
     /**

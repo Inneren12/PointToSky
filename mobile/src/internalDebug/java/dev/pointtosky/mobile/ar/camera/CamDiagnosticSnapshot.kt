@@ -2,7 +2,7 @@ package dev.pointtosky.mobile.ar.camera
 
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainBounds
-import dev.pointtosky.core.astro.projection.camera.assessSensorToBufferDomainConsistency
+import dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.name
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
@@ -60,8 +60,8 @@ data class CameraMetadataExportSnapshot(
 
 /**
  * `internalDebug`-only. A rectangle exported from a
- * [dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainBounds] (CAM-2c domain-consistency
- * fix) - a plain value, never the core type itself.
+ * [dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainBounds] - a plain value, never the
+ * core type itself.
  */
 data class MappedBoundsExportSnapshot(
     val leftPx: Double,
@@ -75,19 +75,31 @@ data class MappedBoundsExportSnapshot(
  * (architecture fix §2) - [matrix] is a freshly built 9-element `List<Double>` (`m00`..`m22`, in that
  * order), never the original [dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3] value.
  *
- * @property framesWithSupportedTransformClass (CAM-2c domain-consistency fix, renamed from
- *   `framesWithUsableTransform`) the subset of frames whose transform classified as a **structurally**
- *   supported [dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass] — never a claim
- *   that the transform's own numbers are *semantically* usable; see [domainConsistency] for that
- *   separate question.
- * @property domainConsistency the latest frame's
- *   [dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainConsistency] name, or `null` when
- *   no assessment could be attempted (no transform, or missing active-array/buffer dimensions).
- * @property mappedSourceBoundsPx the latest frame's source domain (active array), mapped through its own
- *   transform - see [dev.pointtosky.core.astro.projection.camera.assessSensorToBufferDomainConsistency].
+ * @property framesWithSupportedTransformClass (renamed from `framesWithUsableTransform`) the subset of
+ *   frames whose transform classified as a **structurally** supported
+ *   [dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass] — never a claim that the
+ *   transform's own numbers match any particular source-domain hypothesis; see
+ *   [wholeActiveArrayHypothesisVerdict] for that separate, explicitly-scoped question.
+ * @property sourceDomainBasis the
+ *   [dev.pointtosky.core.astro.projection.camera.SourceDomainBasis] name that
+ *   [wholeActiveArrayHypothesisVerdict] was tested against — always
+ *   `"ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL"` as of this codebase, `null` only when no transform is present
+ *   at all (no assessment was attempted). Carried explicitly so a reader never has to assume which
+ *   hypothesis a verdict describes.
+ * @property wholeActiveArrayHypothesisVerdict the latest frame's
+ *   [dev.pointtosky.core.astro.projection.camera.WholeActiveArrayHypothesisVerdict] name, or `null` only
+ *   when no transform is present at all. When a transform *is* present but the active-array/buffer
+ *   dimensions needed to test the hypothesis are missing, this is still non-`null` — a typed
+ *   `SOURCE_METADATA_UNAVAILABLE`/`BUFFER_METADATA_UNAVAILABLE` verdict, never a silent `null`. This is
+ *   never a general validity/usability verdict on the transform itself — see that enum's own KDoc.
+ * @property mappedAssumedSourceBoundsPx the latest frame's *assumed* source domain (the whole active
+ *   array, under [sourceDomainBasis]'s hypothesis), mapped through its own transform - see
+ *   [dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis].
  * @property expectedBufferBoundsPx the analysis buffer's own `[0,0]`-`[width,height]` rectangle, the
- *   value [mappedSourceBoundsPx] is compared against.
- * @property consistencyReason a short, human-readable explanation of [domainConsistency]'s verdict.
+ *   value [mappedAssumedSourceBoundsPx] is compared against. Present whenever a valid buffer size is
+ *   known, even when [mappedAssumedSourceBoundsPx] itself is `null`.
+ * @property hypothesisReason a short, human-readable explanation of [wholeActiveArrayHypothesisVerdict],
+ *   never a claim that the transform itself is invalid, unusable, or broken.
  */
 data class FrameTransformExportSnapshot(
     val present: Boolean,
@@ -98,10 +110,11 @@ data class FrameTransformExportSnapshot(
     val framesWithNullTransform: Long,
     val framesWithSupportedTransformClass: Long,
     val coordinatorFramesWaited: Int,
-    val domainConsistency: String? = null,
-    val mappedSourceBoundsPx: MappedBoundsExportSnapshot? = null,
+    val sourceDomainBasis: String? = null,
+    val wholeActiveArrayHypothesisVerdict: String? = null,
+    val mappedAssumedSourceBoundsPx: MappedBoundsExportSnapshot? = null,
     val expectedBufferBoundsPx: MappedBoundsExportSnapshot? = null,
-    val consistencyReason: String? = null,
+    val hypothesisReason: String? = null,
 )
 
 /** `internalDebug`-only. What CAM-1b/CAM-2c actually published, as plain strings/scalars. */
@@ -309,14 +322,18 @@ private fun mappedBoundsExportSnapshot(bounds: SensorToBufferDomainBounds?): Map
     bounds?.let { MappedBoundsExportSnapshot(it.leftPx, it.topPx, it.rightPx, it.bottomPx) }
 
 /**
- * `internalDebug`-only (CAM-2c domain-consistency fix). Computes the latest frame's
- * [dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainConsistency] assessment - the source
- * domain is this session's own `SENSOR_INFO_ACTIVE_ARRAY_SIZE` width/height (from [characteristics]),
- * the buffer domain is CAM-1g's own currently-tracked `ImageAnalysis` buffer width/height (from
+ * `internalDebug`-only. Computes the latest frame's
+ * [dev.pointtosky.core.astro.projection.camera.WholeActiveArrayMappingAssessment] - tests exactly the
+ * one, explicitly-named hypothesis that the matrix's source domain is the *complete*
+ * `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle (from [characteristics]'s own reported width/height),
+ * against CAM-1g's own currently-tracked `ImageAnalysis` buffer width/height (from
  * [geometryBufferWidthPx]/[geometryBufferHeightPx] - deliberately CAM-1g's, not any CAM-2c-resolved
  * value, since this assessment must still be computable even when CAM-2c never resolves, e.g. the real
- * Pixel 9 `UnsupportedLogicalMultiCameraMapping` case this fix is about). `null` when the transform, the
- * active array, or the buffer dimensions are unavailable - never a fabricated verdict.
+ * Pixel 9 `UnsupportedLogicalMultiCameraMapping` case). `null` only when no transform is present at all
+ * — when a transform *is* present but the active-array/buffer dimensions are missing, a typed
+ * unavailable verdict is returned instead of `null` (see
+ * [dev.pointtosky.core.astro.projection.camera.WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE]/
+ * `BUFFER_METADATA_UNAVAILABLE`).
  */
 private fun frameTransformExportSnapshot(
     counters: CameraSessionIntrinsicsFrameCounters?,
@@ -339,7 +356,7 @@ private fun frameTransformExportSnapshot(
         }
     val assessment =
         transform?.let {
-            assessSensorToBufferDomainConsistency(
+            assessWholeActiveArrayMappingHypothesis(
                 matrix = it,
                 sourceWidthPx = activeArrayWidthPx,
                 sourceHeightPx = activeArrayHeightPx,
@@ -359,10 +376,11 @@ private fun frameTransformExportSnapshot(
         framesWithNullTransform = counters?.framesWithNullTransform ?: 0L,
         framesWithSupportedTransformClass = counters?.framesWithUsableTransform ?: 0L,
         coordinatorFramesWaited = counters?.coordinatorFramesWaited ?: 0,
-        domainConsistency = assessment?.consistency?.name,
-        mappedSourceBoundsPx = mappedBoundsExportSnapshot(assessment?.mappedSourceBoundsPx),
+        sourceDomainBasis = assessment?.sourceDomainBasis?.name,
+        wholeActiveArrayHypothesisVerdict = assessment?.verdict?.name,
+        mappedAssumedSourceBoundsPx = mappedBoundsExportSnapshot(assessment?.mappedAssumedSourceBoundsPx),
         expectedBufferBoundsPx = mappedBoundsExportSnapshot(assessment?.expectedBufferBoundsPx),
-        consistencyReason = assessment?.reason,
+        hypothesisReason = assessment?.reason,
     )
 }
 
@@ -402,7 +420,6 @@ private fun attemptTypeName(attempt: AnalysisBufferIntrinsicsResolution?): Strin
         AnalysisBufferIntrinsicsResolution.MissingSensorToBufferTransform -> "MissingSensorToBufferTransform"
         is AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform -> "UnsupportedSensorToBufferTransform"
         is AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven -> "RotationOwnershipUnproven"
-        is AnalysisBufferIntrinsicsResolution.DomainConsistencyUnproven -> "DomainConsistencyUnproven"
         is AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping -> "UnsupportedLogicalMultiCameraMapping"
         is AnalysisBufferIntrinsicsResolution.InvalidMetadata -> "InvalidMetadata"
     }
@@ -426,7 +443,6 @@ private fun cam2cDiagnosticSnapshot(
             when (attempt) {
                 is AnalysisBufferIntrinsicsResolution.UnsupportedSensorToBufferTransform -> attempt.transformClass.name
                 is AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven -> attempt.transformClass.name
-                is AnalysisBufferIntrinsicsResolution.DomainConsistencyUnproven -> attempt.transformClass.name
                 else -> null
             },
         attemptInvalidMetadataReason = (attempt as? AnalysisBufferIntrinsicsResolution.InvalidMetadata)?.reason,

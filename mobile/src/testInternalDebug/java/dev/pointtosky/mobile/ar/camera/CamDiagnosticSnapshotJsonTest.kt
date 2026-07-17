@@ -151,14 +151,15 @@ class CamDiagnosticSnapshotJsonTest {
     }
 
     @Test
-    fun `the top-level envelope matches schemaVersion 2 and the task's own worked example`() {
+    fun `the top-level envelope matches schemaVersion 3 and the task's own worked example`() {
         val root = buildCamDiagnosticJsonElement(pixel9Snapshot, CamDiagnosticLiveness.LIVE)
 
-        // CAM-2c domain-consistency fix bumped the schema 1 -> 2: framesWithUsableTransform was renamed
-        // to framesWithSupportedTransformClass, and domainConsistency/mappedSourceBoundsPx/
-        // expectedBufferBoundsPx/consistencyReason were added - see CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION's
-        // own KDoc.
-        assertEquals(2, root["schemaVersion"]!!.jsonPrimitive.int)
+        // Schema bumped 1 -> 2 -> 3: framesWithUsableTransform was renamed to
+        // framesWithSupportedTransformClass, and the misleadingly general domainConsistency/
+        // mappedSourceBoundsPx/consistencyReason fields were renamed to the hypothesis-specific
+        // sourceDomainBasis/wholeActiveArrayHypothesisVerdict/mappedAssumedSourceBoundsPx/hypothesisReason
+        // - see CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION's own KDoc.
+        assertEquals(3, root["schemaVersion"]!!.jsonPrimitive.int)
         assertEquals(1_700_000_000_000L, root["capturedAtEpochMillis"]!!.jsonPrimitive.long)
         assertEquals(9L, root["sessionId"]!!.jsonPrimitive.long)
 
@@ -297,7 +298,7 @@ class CamDiagnosticSnapshotJsonTest {
     }
 
     @Test
-    fun `an identity matrix over the real Pixel 9 domain reports AXIS_ALIGNED_0 and a non-Consistent domainConsistency distinctly`() {
+    fun `an identity matrix over the real Pixel 9 domain reports AXIS_ALIGNED_0 and a mismatched whole-active-array hypothesis verdict distinctly`() {
         val pixel9ActiveArray =
             pixel9CharacteristicsSnapshot.copy(isLogicalMultiCamera = false)
         val identityMatrix = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
@@ -318,13 +319,36 @@ class CamDiagnosticSnapshotJsonTest {
         val frameTransform = root["cam2c"]!!.jsonObject["frameTransform"]!!.jsonObject
 
         assertEquals("AXIS_ALIGNED_0", frameTransform["transformClass"]!!.jsonPrimitive.content)
-        assertEquals("MAPPED_BOUNDS_MISMATCH", frameTransform["domainConsistency"]!!.jsonPrimitive.content)
-        val mappedBounds = frameTransform["mappedSourceBoundsPx"]!!.jsonObject
+        assertEquals("ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL", frameTransform["sourceDomainBasis"]!!.jsonPrimitive.content)
+        assertEquals("WHOLE_ACTIVE_ARRAY_HYPOTHESIS_MISMATCH", frameTransform["wholeActiveArrayHypothesisVerdict"]!!.jsonPrimitive.content)
+        val mappedBounds = frameTransform["mappedAssumedSourceBoundsPx"]!!.jsonObject
         assertEquals(4080.0, mappedBounds["rightPx"]!!.jsonPrimitive.double)
         assertEquals(3072.0, mappedBounds["bottomPx"]!!.jsonPrimitive.double)
         val expectedBounds = frameTransform["expectedBufferBoundsPx"]!!.jsonObject
         assertEquals(640.0, expectedBounds["rightPx"]!!.jsonPrimitive.double)
         assertEquals(480.0, expectedBounds["bottomPx"]!!.jsonPrimitive.double)
+        val reason = frameTransform["hypothesisReason"]!!.jsonPrimitive.content
+        assertFalse(reason.contains("matrix is invalid", ignoreCase = true))
+        assertFalse(reason.contains("matrix is broken", ignoreCase = true))
+    }
+
+    @Test
+    fun `no exported text or JSON contains the misleading general labels this fix removed`() {
+        val pixel9ActiveArray = pixel9CharacteristicsSnapshot.copy(isLogicalMultiCamera = false)
+        val identityMatrix = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        val state =
+            pixel9IntrinsicsState(
+                attempt = null,
+                published = null,
+                characteristics = pixel9ActiveArray,
+                matrix = identityMatrix,
+                transformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
+            )
+        val json = buildCamDiagnosticJson(snapshot(state = state, geometry = minimalGeometry(640, 480)), CamDiagnosticLiveness.LIVE)
+
+        for (forbidden in listOf("\"domainConsistency\"", "MAPPED_BOUNDS_MISMATCH", "DomainConsistencyUnproven")) {
+            assertFalse(json.contains(forbidden), "must never contain the removed/renamed label \"$forbidden\"; JSON was:\n$json")
+        }
     }
 
     @Test

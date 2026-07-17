@@ -223,7 +223,7 @@ class CamDiagnosticReportFormatTest {
     }
 
     @Test
-    fun `an identity matrix over the real Pixel 9 domain reports AXIS_ALIGNED_0 and a non-Consistent domainConsistency on separate lines`() {
+    fun `an identity matrix over the real Pixel 9 domain reports AXIS_ALIGNED_0 and a mismatched whole-active-array hypothesis verdict on separate lines`() {
         val state =
             pixel9IntrinsicsState(
                 attempt = null,
@@ -234,13 +234,17 @@ class CamDiagnosticReportFormatTest {
 
         val text = buildCamDiagnosticReportText(snapshot(state = state, geometry = minimalGeometry(640, 480)), CamDiagnosticLiveness.LIVE)
 
-        // Structural classification and semantic domain consistency are two distinct lines - a caller
-        // reading only "class: AXIS_ALIGNED_0" must not conclude the mapping is usable.
+        // Structural classification and the whole-active-array hypothesis verdict are two distinct
+        // lines - a caller reading only "class: AXIS_ALIGNED_0" must not conclude the mapping is usable,
+        // and a mismatch here must never be read as "this matrix is broken/invalid/unusable."
         assertTrue(text.contains("class: AXIS_ALIGNED_0"))
-        assertTrue(text.contains("domainConsistency: MAPPED_BOUNDS_MISMATCH"))
-        assertTrue(text.contains("mappedSourceBounds: [0.0,0.0 — 4080.0,3072.0]"))
+        assertTrue(text.contains("sourceDomainBasis: ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL"))
+        assertTrue(text.contains("wholeActiveArrayHypothesisVerdict: WHOLE_ACTIVE_ARRAY_HYPOTHESIS_MISMATCH"))
+        assertTrue(text.contains("mappedAssumedSourceBounds: [0.0,0.0 — 4080.0,3072.0]"))
         assertTrue(text.contains("expectedBufferBounds: [0.0,0.0 — 640.0,480.0]"))
-        assertFalse(text.contains("domainConsistency: CONSISTENT"))
+        assertFalse(text.contains("wholeActiveArrayHypothesisVerdict: MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS"))
+        assertFalse(text.contains("domainConsistency"))
+        assertFalse(text.contains("MAPPED_BOUNDS_MISMATCH"))
     }
 
     @Test

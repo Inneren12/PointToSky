@@ -51,16 +51,20 @@ enum class CameraSessionIntrinsicsCoordinatorState {
  * @property framesWithUsableTransform the subset of [framesWithTransform] that additionally
  *   classified as [SensorToBufferTransformClass.AXIS_ALIGNED_0] — the only class this codebase's
  *   calibrated mapping actually resolves (see [CameraSessionIntrinsicsCoordinator]'s own KDoc).
- *   **Naming note (CAM-2c domain-consistency fix):** despite the property name (kept as-is to limit
- *   this fix's scope — see this class's own KDoc for the full reasoning), this counts frames whose
- *   transform classified as a **structurally supported transform class**, never a claim that the
- *   transform's own numbers were checked for *semantic* source-to-buffer domain consistency — a real
- *   Pixel 9 session recorded every frame in this bucket while the reported matrix was, in fact, an
- *   identity matrix that cannot map its `4080x3072` active array onto its `640x480` analysis buffer
- *   (`docs/validation/cam_2c_pixel9_evidence.md`). Every user-facing/exported label derived from this
- *   counter (`CamDiagnosticReportFormat`/`CamDiagnosticSnapshotJson`) says "supported transform class,"
- *   never "usable"; see `dev.pointtosky.core.astro.projection.camera.assessSensorToBufferDomainConsistency`
- *   for the separate, semantic check.
+ *   **Naming note (CAM-2c diagnostics fix):** despite the property name (kept as-is to limit this fix's
+ *   scope — see this class's own KDoc for the full reasoning), this counts frames whose transform
+ *   classified as a **structurally supported transform class**, never a claim that the transform's own
+ *   numbers were checked against any particular source-domain hypothesis — a real Pixel 9 session
+ *   recorded every frame in this bucket while the reported matrix was, in fact, the identity matrix,
+ *   which does not match the whole-active-array-local hypothesis this codebase can currently test against
+ *   its `4080x3072` active array and `640x480` analysis buffer (`docs/validation/cam_2c_pixel9_evidence.md`)
+ *   — this is evidence that one specific hypothesis does not hold, never proof the transform itself is
+ *   broken, invalid, or unusable; the pinned CameraX version's real source-domain contract has not been
+ *   source-traced or device-proven here. Every user-facing/exported label derived from this counter
+ *   (`CamDiagnosticReportFormat`/`CamDiagnosticSnapshotJson`) says "supported transform class," never
+ *   "usable"; see
+ *   `dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis` for the
+ *   separate, explicitly-scoped hypothesis check.
  * @property coordinatorFramesWaited how many frames the coordinator's own coherent-input gate
  *   actually counted against [CameraSessionIntrinsicsCoordinator]'s `maxFramesWaitingForUsableTransform`
  *   bound before resolution was claimed (frozen once resolution starts) — distinct from

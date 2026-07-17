@@ -36,8 +36,6 @@ internal fun formatAnalysisBufferAttempt(attempt: AnalysisBufferIntrinsicsResolu
             "UnsupportedSensorToBufferTransform(${attempt.transformClass.name})"
         is AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven ->
             "RotationOwnershipUnproven(${attempt.transformClass.name})"
-        is AnalysisBufferIntrinsicsResolution.DomainConsistencyUnproven ->
-            "DomainConsistencyUnproven(${attempt.transformClass.name}, ${attempt.consistency.name})"
         is AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping ->
             "UnsupportedLogicalMultiCameraMapping(cameraId=${attempt.cameraId ?: "unknown"}, " +
                 "physicalIds=${attempt.physicalCameraIdsForDiagnostics?.sorted()?.joinToString() ?: UNAVAILABLE})"

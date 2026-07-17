@@ -44,8 +44,6 @@ private fun formatAttempt(cam2c: Cam2cDiagnosticSnapshot): String {
     val type = cam2c.attemptType ?: return "not attempted (no analyzed frame yet)"
     return when (type) {
         "UnsupportedSensorToBufferTransform", "RotationOwnershipUnproven" -> "$type(${cam2c.attemptTransformClass ?: UNAVAILABLE})"
-        "DomainConsistencyUnproven" ->
-            "DomainConsistencyUnproven(${cam2c.attemptTransformClass ?: UNAVAILABLE}, ${cam2c.frameTransform.domainConsistency ?: UNAVAILABLE})"
         "InvalidMetadata" -> "InvalidMetadata(${cam2c.attemptInvalidMetadataReason ?: UNAVAILABLE})"
         "UnsupportedLogicalMultiCameraMapping" ->
             "UnsupportedLogicalMultiCameraMapping(cameraId=${cam2c.camera.cameraId ?: "unknown"}, " +
@@ -94,12 +92,17 @@ private fun formatMappedBounds(bounds: MappedBoundsExportSnapshot?): String =
 
 /**
  * The raw transform transport for the *latest* frame only - present/matrix/structural class, plus the
- * separate **semantic** domain-consistency verdict (CAM-2c domain-consistency fix) - `class` and
- * `domainConsistency` are deliberately two different lines, never conflated: a matrix can classify as
- * `AXIS_ALIGNED_0` (structurally supported) while `domainConsistency` is anything other than
- * `CONSISTENT` (semantically not proven) - see the real Pixel 9 identity-matrix evidence in
- * `docs/validation/cam_2c_pixel9_evidence.md`. Running counters live in the COUNTERS section instead
- * (see [countersSectionLines]).
+ * separate, explicitly-scoped whole-active-array-mapping hypothesis verdict - `class` and
+ * `wholeActiveArrayHypothesisVerdict` are deliberately two different lines, never conflated: a matrix can
+ * classify as `AXIS_ALIGNED_0` (structurally supported) while the hypothesis verdict is anything other
+ * than `MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS` — that is evidence only that *this one, named* hypothesis
+ * does not hold, **never** a claim that the transform itself is broken, invalid, unusable, or known not
+ * to describe the real pipeline (this codebase has not source-traced or device-proven the pinned
+ * CameraX version's real source-domain contract) — see the real Pixel 9 identity-matrix evidence in
+ * `docs/validation/cam_2c_pixel9_evidence.md` and
+ * `dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis`'s own KDoc.
+ * `sourceDomainBasis` names exactly which hypothesis was tested. Running counters live in the COUNTERS
+ * section instead (see [countersSectionLines]).
  */
 private fun frameTransformSectionLines(frameTransform: FrameTransformExportSnapshot): List<String> {
     val matrixLine =
@@ -110,10 +113,11 @@ private fun frameTransformSectionLines(frameTransform: FrameTransformExportSnaps
         "present: ${frameTransform.present}",
         matrixLine,
         "class: ${frameTransform.transformClass ?: UNAVAILABLE}",
-        "domainConsistency: ${frameTransform.domainConsistency ?: UNAVAILABLE}",
-        "mappedSourceBounds: ${formatMappedBounds(frameTransform.mappedSourceBoundsPx)}",
+        "sourceDomainBasis: ${frameTransform.sourceDomainBasis ?: UNAVAILABLE}",
+        "wholeActiveArrayHypothesisVerdict: ${frameTransform.wholeActiveArrayHypothesisVerdict ?: UNAVAILABLE}",
+        "mappedAssumedSourceBounds: ${formatMappedBounds(frameTransform.mappedAssumedSourceBoundsPx)}",
         "expectedBufferBounds: ${formatMappedBounds(frameTransform.expectedBufferBoundsPx)}",
-        "consistencyReason: ${frameTransform.consistencyReason ?: UNAVAILABLE}",
+        "hypothesisReason: ${frameTransform.hypothesisReason ?: UNAVAILABLE}",
     )
 }
 
@@ -297,9 +301,6 @@ private fun cam2cShortReason(cam2c: Cam2cDiagnosticSnapshot): String? =
         "MissingSensorToBufferTransform" -> "missing sensor-to-buffer transform"
         "UnsupportedSensorToBufferTransform" -> "unsupported transform (${cam2c.attemptTransformClass ?: UNAVAILABLE})"
         "RotationOwnershipUnproven" -> "rotation ownership unproven (${cam2c.attemptTransformClass ?: UNAVAILABLE})"
-        "DomainConsistencyUnproven" ->
-            "domain consistency unproven (${cam2c.attemptTransformClass ?: UNAVAILABLE}, " +
-                "${cam2c.frameTransform.domainConsistency ?: UNAVAILABLE})"
         "UnsupportedLogicalMultiCameraMapping" -> "logical multi-camera"
         "InvalidMetadata" -> "invalid metadata (${cam2c.attemptInvalidMetadataReason ?: UNAVAILABLE})"
         else -> null

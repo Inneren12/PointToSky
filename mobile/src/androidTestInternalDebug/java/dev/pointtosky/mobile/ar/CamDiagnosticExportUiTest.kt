@@ -113,8 +113,9 @@ class CamDiagnosticExportUiTest {
                         framesWithUsableTransform = 1115L,
                         coordinatorFramesWaited = 1,
                         // The real matrix observed on this device was the identity matrix - not a scale
-                        // (docs/validation/cam_2c_pixel9_evidence.md). AXIS_ALIGNED_0 structurally; not
-                        // proven CONSISTENT semantically (see SensorToBufferDomainConsistency).
+                        // (docs/validation/cam_2c_pixel9_evidence.md). AXIS_ALIGNED_0 structurally; does
+                        // not match the whole-active-array-mapping hypothesis (see
+                        // WholeActiveArrayHypothesisVerdict) - never a claim the matrix itself is broken.
                         latestFrameTransform = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
                         latestFrameTransformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
                     ),

@@ -14,12 +14,17 @@ import kotlinx.serialization.json.put
  * `internalDebug`-only. Current schema version for [buildCamDiagnosticJson]. Bump whenever a field is
  * renamed, removed, or reinterpreted; a purely additive field may keep the same version.
  *
- * Bumped to `2` by the CAM-2c domain-consistency fix: `cam2c.frameTransform.framesWithUsableTransform`
- * was renamed to `framesWithSupportedTransformClass` (see that field's own KDoc for why the old name
- * overstated what the counter proves), and `domainConsistency`/`mappedSourceBoundsPx`/
- * `expectedBufferBoundsPx`/`consistencyReason` were added alongside it.
+ * - `2`: `cam2c.frameTransform.framesWithUsableTransform` was renamed to
+ *   `framesWithSupportedTransformClass` (see that field's own KDoc for why the old name overstated what
+ *   the counter proves).
+ * - `3`: the general-sounding `domainConsistency`/`mappedSourceBoundsPx`/`consistencyReason` fields
+ *   (introduced in `2`) falsely implied a proven, general semantic verdict on the matrix. Renamed to
+ *   `wholeActiveArrayHypothesisVerdict`/`mappedAssumedSourceBoundsPx`/`hypothesisReason` to make explicit
+ *   that only one, specific, unproven source-domain hypothesis is being tested — see
+ *   `dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis`'s own KDoc.
+ *   `sourceDomainBasis` was added to name that hypothesis explicitly.
  */
-const val CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION: Int = 2
+const val CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION: Int = 3
 
 /** `internalDebug`-only. `explicitNulls = true` so every documented field is always present with either
  * a real value or a literal `null`. kotlinx.serialization's own number formatting never consults the
@@ -89,15 +94,20 @@ private fun JsonObjectBuilder.putFrameTransform(frameTransform: FrameTransformEx
     put("framesAnalyzed", frameTransform.framesAnalyzed)
     put("framesWithTransform", frameTransform.framesWithTransform)
     put("framesWithNullTransform", frameTransform.framesWithNullTransform)
-    // CAM-2c domain-consistency fix: renamed from framesWithUsableTransform (schema v1 -> v2) - this
-    // counts a structurally supported transform CLASS, never a semantically-checked "usable" transform;
-    // see domainConsistency below for the separate semantic verdict.
+    // Renamed from framesWithUsableTransform (schema v1 -> v2) - this counts a structurally supported
+    // transform CLASS, never a semantically-checked "usable" transform; see
+    // wholeActiveArrayHypothesisVerdict below for the separate, explicitly-scoped hypothesis check.
     put("framesWithSupportedTransformClass", frameTransform.framesWithSupportedTransformClass)
     put("coordinatorFramesWaited", frameTransform.coordinatorFramesWaited)
-    put("domainConsistency", frameTransform.domainConsistency)
-    put("mappedSourceBoundsPx", mappedBoundsJson(frameTransform.mappedSourceBoundsPx))
+    // sourceDomainBasis/wholeActiveArrayHypothesisVerdict/mappedAssumedSourceBoundsPx/hypothesisReason
+    // (schema v2 -> v3): a mismatch here is evidence only that the named hypothesis does not hold, never
+    // a claim that the transform is broken, invalid, unusable, or known not to describe the real
+    // pipeline - see assessWholeActiveArrayMappingHypothesis's own KDoc.
+    put("sourceDomainBasis", frameTransform.sourceDomainBasis)
+    put("wholeActiveArrayHypothesisVerdict", frameTransform.wholeActiveArrayHypothesisVerdict)
+    put("mappedAssumedSourceBoundsPx", mappedBoundsJson(frameTransform.mappedAssumedSourceBoundsPx))
     put("expectedBufferBoundsPx", mappedBoundsJson(frameTransform.expectedBufferBoundsPx))
-    put("consistencyReason", frameTransform.consistencyReason)
+    put("hypothesisReason", frameTransform.hypothesisReason)
 }
 
 private fun resolvedBufferKJson(resolvedBufferK: ResolvedBufferKExportSnapshot?): JsonElement {

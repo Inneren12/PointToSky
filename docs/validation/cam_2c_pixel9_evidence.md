@@ -58,11 +58,15 @@ Read literally, field by field:
   **Correction (see §3 below):** the original write-up of this bullet claimed *"the sensor-to-buffer
   transform pipeline itself is working correctly and consistently on this device."* That claim is **not
   supported** by what `AXIS_ALIGNED_0`/`1115/1115` actually proves — those numbers only establish that a
-  transform was *present* and *structurally classifiable* every frame, never that its numbers correctly
-  relate this device's `4080x3072` active array to its `640x480` `ImageAnalysis` buffer. §3 recorded the
-  actual matrix on a later run of the same device and found it to be the **identity** matrix, which
-  cannot describe that relationship. Read `transformPresent`/`matrixClass` here as transport/structural
-  evidence only, never as semantic-usability evidence.
+  transform was *present* and *structurally classifiable* every frame, never that its numbers match any
+  particular hypothesis about the matrix's real source domain. §3 recorded the actual matrix on a later
+  run of the same device and found it to be the **identity** matrix, which does not match the one
+  source-domain hypothesis this codebase can currently test (that the matrix's source is the *complete*
+  active array) — this is evidence that hypothesis does not hold, **not** evidence the matrix itself is
+  broken, invalid, or known not to describe the real pipeline: the pinned CameraX version's actual
+  source-domain contract has not been source-traced or device-proven here, and a legitimate
+  cropped/pre-normalized source domain remains a live possibility. Read `transformPresent`/`matrixClass`
+  here as transport/structural evidence only, never as semantic-usability evidence.
 - `CAM-2c=UnsupportedLogicalMultiCameraMapping` — despite the transform being present and usable on
   every frame, `resolveAnalysisBufferIntrinsics` still refuses to build a calibrated mapping, because
   `logical=true` (see `AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping`'s KDoc):
@@ -204,17 +208,23 @@ Read field by field, against the same fields section 1 already established by ha
   finding.** Section 1 never recorded the matrix's actual 9 values (its HUD showed only the derived
   `matrixClass` label); this run's export/freeze workflow is the first time this codebase has seen the
   real numbers. An identity matrix reports `bufferX = activeX`, `bufferY = activeY` — i.e. **no scaling
-  at all** between a `4080x3072` active-array coordinate and a `640x480` buffer coordinate. Taken at face
-  value, this matrix cannot describe how this device's real crop/scale pipeline maps one domain onto the
-  other.
+  at all** between a `4080x3072` active-array coordinate and a `640x480` buffer coordinate. Under the one
+  source-domain hypothesis this codebase can currently test — that the matrix's source is the *complete*
+  active array — this matrix does not land on the reported buffer. **This is evidence that hypothesis
+  does not hold for this matrix; it is not evidence the matrix itself is broken, invalid, unusable, or
+  known not to describe the real pipeline.** The pinned `androidx.camera:camera-camera2:1.3.4`
+  implementation's actual source-domain contract for `ImageInfo.getSensorToBufferTransformMatrix()` has
+  not been source-traced or device-proven in this codebase; a legitimate, correctly-functioning device
+  could plausibly report an identity matrix if its own source domain were already cropped or
+  pre-normalized before this matrix is computed. That possibility remains open and unresolved.
 - `transformClass=AXIS_ALIGNED_0`, `framesWithSupportedTransformClass=1751/1751` — the identity matrix
   *is* a valid instance of `AXIS_ALIGNED_0` (positive, non-skewed scale — `1.0` counts as a positive
   scale) and is present on every frame. **This is exactly why `AXIS_ALIGNED_0`/a high supported-class
   frame count must never be read as "the mapping pipeline is working correctly"** — both are purely
   *structural* facts (a scale/translate matrix was reported, consistently), and both are fully satisfied
-  by a matrix that is *semantically* impossible for this device's own reported active-array/buffer
-  domains. This is the exact defect the CAM-2c domain-consistency fix (§4 below) exists to make
-  diagnosable.
+  by a matrix that does not match the one, narrow, whole-active-array hypothesis this codebase can
+  currently test for these active-array/buffer dimensions. This is the exact gap the CAM-2c diagnostics
+  fix (§4 below) exists to make visible — without claiming to have closed it.
 
 **What is, and is not, confirmed by this run:**
 
@@ -226,57 +236,76 @@ Read field by field, against the same fields section 1 already established by ha
   not necessarily all seven of section 2's own checklist items) — do not read this section as closing
   every item of that checklist; only the items the captured report above actually demonstrates are
   claimed here.
-- **Not established by this run:** *semantic* source-to-buffer domain consistency. `matrixClass=AXIS_ALIGNED_0`
-  and `1751/1751` prove the transform is present and structurally classifiable, never that its numbers
-  correctly relate this device's active array to its analysis buffer — see §4's `domainConsistency`
-  diagnostic for the separate, explicit check that answers that question, and the real verdict it
-  computes for this exact fixture (`MAPPED_BOUNDS_MISMATCH`, not `CONSISTENT`).
+- **Not established by this run:** what this matrix's real source domain actually is, on the pinned
+  CameraX version. `matrixClass=AXIS_ALIGNED_0` and `1751/1751` prove the transform is present and
+  structurally classifiable, never that its numbers match any particular source-domain hypothesis — see
+  §4's `wholeActiveArrayHypothesisVerdict` diagnostic for the one, narrow hypothesis this codebase can
+  currently test, and the real verdict it computes for this exact fixture
+  (`WHOLE_ACTIVE_ARRAY_HYPOTHESIS_MISMATCH`, not `MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS`) — a mismatch
+  that is evidence only against *that* hypothesis, never proof the matrix itself is broken, invalid, or
+  known not to describe the real pipeline.
 
-## 4. CAM-2c domain-consistency fix — separating structural classification from semantic consistency
+## 4. CAM-2c diagnostics fix — an explicit, named hypothesis test, not a general verdict
 
-In direct response to §3's identity-matrix finding, this codebase now computes and surfaces a second,
-explicit verdict alongside `transformClass`, so a diagnostics reader (or a future calibration gate) can
-never again read "`AXIS_ALIGNED_0` + a high supported-class frame count" as proof the mapping is usable:
+An earlier revision of this fix introduced a function (`assessSensorToBufferDomainConsistency`, a
+`SensorToBufferDomainConsistency` verdict including a `CONSISTENT`/`MAPPED_BOUNDS_MISMATCH` pair) that
+described its result in general terms — "domain consistency," "consistent," "mismatch" — as if it were a
+proven, general verdict on whether the matrix itself is semantically usable. **That framing was itself a
+defect, corrected in this revision.** The public CameraX/Camera2 contract for
+`ImageInfo.getSensorToBufferTransformMatrix()`'s own source domain has not been source-traced or
+device-proven in this codebase at the pinned `androidx.camera:camera-camera2:1.3.4` version — it is not
+established whether the matrix always maps the *complete* active array, or some already-cropped/
+pre-normalized sub-region of it. A general "consistency" verdict overstated what a whole-active-array-only
+check can actually prove, and risked exactly the kind of overclaim this whole fix exists to correct.
 
-- **`dev.pointtosky.core.astro.projection.camera.assessSensorToBufferDomainConsistency`** (`:core:astro-core`,
-  pure JVM) — a new, separate function that forward-maps the reported active-array domain through the
-  matrix and compares the result against the reported analysis-buffer domain, within an explicit, bounded
-  tolerance (`DEFAULT_DOMAIN_CONSISTENCY_TOLERANCE_PX`, half a pixel). Returns a typed
-  `SensorToBufferDomainConsistency`: `CONSISTENT`, `SOURCE_DOMAIN_UNAVAILABLE`,
-  `BUFFER_DOMAIN_UNAVAILABLE`, `MAPPED_BOUNDS_MISMATCH`, `NON_FINITE_MAPPED_BOUNDS`, or
-  `UNSUPPORTED_TRANSFORM_CLASS` — never a bare boolean, and never inferred from `transformClass` alone.
-  For this exact fixture (identity matrix, `4080x3072` source, `640x480` buffer) it returns
-  `MAPPED_BOUNDS_MISMATCH`, not `CONSISTENT` — see that function's own KDoc, "Scope and known
-  limitation," for why this check is deliberately strict (it also reports `MAPPED_BOUNDS_MISMATCH` for an
-  ordinary, legitimate active-array crop, since this codebase does not yet have proof of what a *cropped*
-  relationship should look like either — a `MAPPED_BOUNDS_MISMATCH` verdict is evidence consistency is
-  **not proven**, never proof a transform is broken).
+This codebase now computes and surfaces one, explicitly-named hypothesis test instead:
+
+- **`dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis`**
+  (`:core:astro-core`, pure JVM) — tests exactly one, named hypothesis
+  (`SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL`: that the matrix's source domain is the *complete*
+  active array): forward-maps that assumed domain through the matrix and compares the result against the
+  reported analysis-buffer domain, within an explicit, bounded tolerance
+  (`DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX`, half a pixel). Returns a typed
+  `WholeActiveArrayHypothesisVerdict`: `MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS`,
+  `SOURCE_METADATA_UNAVAILABLE`, `BUFFER_METADATA_UNAVAILABLE`, `WHOLE_ACTIVE_ARRAY_HYPOTHESIS_MISMATCH`,
+  `NON_FINITE_MAPPED_BOUNDS`, or `UNSUPPORTED_TRANSFORM_CLASS` — never a bare boolean, never inferred from
+  `transformClass` alone, and every field/KDoc explicit that this tests one hypothesis, not the matrix's
+  general validity. For this exact fixture (identity matrix, `4080x3072` source, `640x480` buffer) it
+  returns `WHOLE_ACTIVE_ARRAY_HYPOTHESIS_MISMATCH`, not `MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS` — see that
+  function's own KDoc, "Scope and provenance," for why a mismatch here is evidence only against *this*
+  hypothesis: an ordinary, legitimate active-array crop would produce the identical verdict, since this
+  codebase has no proof of what a cropped relationship should look like either.
 - **Diagnostics renamed, not just re-labelled.** `CameraSessionIntrinsicsFrameCounters.framesWithUsableTransform`
   (the runtime field, kept as-is to limit this fix's scope) is now described everywhere user-facing as
   counting a **structurally supported transform class**, never a "usable" one; the `internalDebug`
   export DTO's own field was renamed to `framesWithSupportedTransformClass` (JSON schema version bumped
   1 → 2), and every text/JSON export line that previously said "usable"/"usableAxisAligned0" now says
   "supported transform class"/"supportedClassAxisAligned0".
-- **New, separate fields**, alongside (never replacing) `transformClass`: `domainConsistency`,
-  `mappedSourceBounds`, `expectedBufferBounds`, `consistencyReason` — in both the plain-text report
-  (`FRAME TRANSFORM` section) and the JSON export (`cam2c.frameTransform`).
-- **Not (yet) a hard gate.** `resolveAnalysisBufferIntrinsics` does **not** reject an otherwise-`Resolved`,
-  non-logical-multi-camera mapping merely because `domainConsistency != CONSISTENT` — doing so today would
-  silently flip most real, working, non-Pixel-9 devices (any device whose sensor aspect ratio does not
-  exactly match its buffer's — the common case) from a resolved calibration to a rejection, which this
-  fix's own scope explicitly rules out ("do not change outcome precedence merely to expose the new
-  consistency failure"). A reserved, documented `AnalysisBufferIntrinsicsResolution.DomainConsistencyUnproven`
-  variant exists for a future pass (once CAM-2d or equivalent supplies real proof of CameraX's cropped-
-  domain contract) to use instead of silently accepting an unproven transform — see that variant's own
-  KDoc. For the real Pixel 9 logical-multi-camera path specifically, `UnsupportedLogicalMultiCameraMapping`
-  remains the one externally returned CAM-2c outcome, unchanged; the domain-consistency verdict is
-  diagnostic evidence alongside it, never a replacement for it.
+- **New, separate, hypothesis-specific fields**, alongside (never replacing) `transformClass`:
+  `sourceDomainBasis` (which hypothesis was tested — always `ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL` today),
+  `wholeActiveArrayHypothesisVerdict`, `mappedAssumedSourceBounds`, `expectedBufferBounds`,
+  `hypothesisReason` — in both the plain-text report (`FRAME TRANSFORM` section) and the JSON export
+  (`cam2c.frameTransform`, JSON schema version bumped 2 → 3). The earlier revision's general
+  `domainConsistency`/`mappedSourceBoundsPx`/`consistencyReason` field names, and the `CONSISTENT`/
+  `MAPPED_BOUNDS_MISMATCH` verdict names, no longer appear anywhere in exported text or JSON.
+- **No reserved resolver outcome for this hypothesis test.** The earlier revision reserved a
+  `AnalysisBufferIntrinsicsResolution.DomainConsistencyUnproven` sealed variant, constructed by no
+  production path, "for a future gate." That variant has been **removed**: reserving a typed outcome for
+  an unproven source-domain model invites exactly the kind of overclaim this fix corrects, and no
+  production code ever constructed it. A future typed resolver outcome should be added only once the
+  pinned (or an upgraded) CameraX version's source-domain/crop contract is actually source-traced or
+  device-proven — not before.
+- **Diagnostic-only; outcome precedence unchanged.** `resolveAnalysisBufferIntrinsics` does not reject any
+  currently-`Resolved` calibration because of this hypothesis check, and does not infer or synthesize a
+  replacement matrix. For the real Pixel 9 logical-multi-camera path specifically,
+  `UnsupportedLogicalMultiCameraMapping` remains the one externally returned CAM-2c outcome, unchanged;
+  the hypothesis verdict is diagnostic evidence alongside it, never a replacement for it.
 - **Calibrated mapping remains blocked first by physical-camera provenance** (the logical-multi-camera
-  guard, §1/§3), exactly as before. The identity-matrix observation is now also a required investigation
-  (and, per the reserved `DomainConsistencyUnproven` variant above, eventually a gate) that CAM-2d — or
-  any future pass that lifts the logical-multi-camera block — must resolve before it may publish
-  calibrated `AnalysisBuffer` intrinsics; a device that clears the logical-multi-camera check with an
-  unproven or inconsistent matrix must not be allowed to compose `K` on that basis alone.
+  guard, §1/§3), exactly as before. The identity-matrix observation, and the fact that it does not match
+  the one hypothesis this codebase can currently test, remain an open investigation — not a proven
+  defect — that a future pass source-tracing or device-proving the real CameraX source-domain contract
+  should resolve before CAM-2d (or any pass that lifts the logical-multi-camera block) publishes
+  calibrated `AnalysisBuffer` intrinsics on the strength of an untested assumption.
 
 See `docs/SPRINT_STATUS.md`'s CAM-2c row for the exact Gradle commands and test counts this fix's own
 pass ran.
@@ -292,11 +321,14 @@ Scoped to what this file actually establishes:
   execution now confirmed for the Freeze/report-capture path specifically (§3) — Share log, Share JSON,
   and Resume live remain unconfirmed unless separately exercised.
 - Section 3 (device verification of the workflow itself): the report-capture path confirmed on a real
-  Pixel 9; produced the identity-matrix finding that motivated §4.
-- Section 4 (the domain-consistency fix): build/lint/unit-test verified (see `docs/SPRINT_STATUS.md`);
-  semantic source-to-buffer domain consistency itself remains **unresolved** — `assessSensorToBufferDomainConsistency`
-  can now *detect and report* the gap, it does not close it, and calibrated mapping is still blocked first
-  by the unchanged logical-multi-camera guard.
+  Pixel 9; produced the identity-matrix finding that motivated §4. The identity matrix does not match the
+  whole-active-array-local hypothesis this codebase can currently test — this is **not** established to
+  mean the matrix is semantically impossible, defective, or known not to describe the real pipeline; the
+  pinned CameraX version's actual source-domain contract remains unresolved.
+- Section 4 (the diagnostics fix): build/lint/unit-test verified (see `docs/SPRINT_STATUS.md`);
+  `assessWholeActiveArrayMappingHypothesis` can now *detect and report*, honestly and narrowly scoped,
+  whether one specific hypothesis holds — it does not, and cannot yet, establish the matrix's real source
+  domain, and calibrated mapping is still blocked first by the unchanged logical-multi-camera guard.
 
 See the accompanying review response for the overall `CAM DIAGNOSTIC EXPORT PASS` /
 `CAM DIAGNOSTIC EXPORT NEEDS FIX` verdict, which also accounts for the architecture/immutability/test
