@@ -27,34 +27,69 @@ internal fun explicitPhysicalCameraSelector(physicalCameraId: String): CameraSel
 
 /**
  * Given the [CameraInfo] CameraX handed back from a successful `bindToLifecycle` call using
- * [explicitPhysicalCameraSelector], finds the physical `CameraInfo` matching [requestedPhysicalCameraId]
- * in `boundLogicalCameraInfo.physicalCameraInfos`, reads its characteristics directly (never the
- * logical camera's), and returns the verified [PhysicalCameraBindingResolution].
+ * [explicitPhysicalCameraSelector], determines — via the pure [selectPhysicalCameraInfoSource] — which
+ * of two possible shapes CameraX returned, reads characteristics from the exact `CameraInfo` that
+ * shape implies (never the logical camera's when a physical one is what's needed), and returns the
+ * verified [PhysicalCameraBindingResolution]:
+ *
+ * - **Shape A**: [boundCameraInfo] is itself already backed by the requested physical camera
+ *   (`Camera2CameraInfo.from(boundCameraInfo).cameraId == requestedPhysicalCameraId`) — characteristics
+ *   are read directly from [boundCameraInfo], and [PhysicalCameraProvenance.logicalCameraId] is `null`
+ *   (no separate logical `CameraInfo` was ever identified in this shape — never fabricated).
+ * - **Shape B**: [boundCameraInfo] is the logical camera's own, and the requested ID is found among its
+ *   `getPhysicalCameraInfos()` set — characteristics are read from that nested physical `CameraInfo`,
+ *   and [PhysicalCameraProvenance.logicalCameraId] is [boundCameraInfo]'s own Camera2 ID (`null` only
+ *   if that ID itself could not be read).
  *
  * A `CameraSelector`-level physical-camera bind can "succeed" (no exception) without CameraX actually
- * being able to attribute a physical `CameraInfo` to it on every device/HAL - this function is exactly
- * where that gap would surface, as [PhysicalCameraBindingResolution.PhysicalCameraIdentityUnverified].
+ * being able to attribute a physical `CameraInfo` to it on every device/HAL under *either* shape - this
+ * function is exactly where that gap would surface, as
+ * [PhysicalCameraBindingResolution.PhysicalCameraIdentityUnverified].
  */
 @OptIn(ExperimentalCamera2Interop::class)
 internal fun resolvePhysicalCameraBindingFromCameraInfo(
-    boundLogicalCameraInfo: CameraInfo,
+    boundCameraInfo: CameraInfo,
     requestedPhysicalCameraId: String,
     context: Context?,
 ): PhysicalCameraBindingResolution {
-    val logicalCameraId =
-        runCatching { Camera2CameraInfo.from(boundLogicalCameraInfo).cameraId }.getOrNull()
-    val physicalCameraInfo =
-        boundLogicalCameraInfo.physicalCameraInfos.firstOrNull { candidate ->
-            runCatching { Camera2CameraInfo.from(candidate).cameraId }.getOrNull() == requestedPhysicalCameraId
+    val boundCamera2Id = runCatching { Camera2CameraInfo.from(boundCameraInfo).cameraId }.getOrNull()
+    val declaredPhysicalCameraInfos = boundCameraInfo.physicalCameraInfos.toList()
+    val declaredPhysicalCameraInfoIds =
+        declaredPhysicalCameraInfos.mapNotNull { candidate -> runCatching { Camera2CameraInfo.from(candidate).cameraId }.getOrNull() }
+
+    return when (
+        selectPhysicalCameraInfoSource(
+            boundCameraInfoCamera2Id = boundCamera2Id,
+            requestedPhysicalCameraId = requestedPhysicalCameraId,
+            declaredPhysicalCameraInfoIds = declaredPhysicalCameraInfoIds,
+        )
+    ) {
+        PhysicalCameraInfoSelection.UseBoundCameraInfoDirectly -> {
+            val snapshot = Camera2CharacteristicsSource(boundCameraInfo, context).readSnapshotOrNull()
+            verifyPhysicalCameraProvenance(
+                logicalCameraId = null,
+                requestedPhysicalCameraId = requestedPhysicalCameraId,
+                physicalCameraInfoFound = true,
+                physicalCharacteristicsSnapshot = snapshot,
+                bindingSource = PhysicalCameraBindingSource.BOUND_CAMERA_INFO_IS_PHYSICAL,
+            )
         }
-    val physicalSnapshot =
-        physicalCameraInfo?.let { Camera2CharacteristicsSource(it, context).readSnapshotOrNull() }
-    return verifyPhysicalCameraProvenance(
-        logicalCameraId = logicalCameraId,
-        requestedPhysicalCameraId = requestedPhysicalCameraId,
-        physicalCameraInfoFound = physicalCameraInfo != null,
-        physicalCharacteristicsSnapshot = physicalSnapshot,
-    )
+        PhysicalCameraInfoSelection.UseDeclaredPhysicalCameraInfo -> {
+            val physicalCameraInfo =
+                declaredPhysicalCameraInfos.firstOrNull { candidate ->
+                    runCatching { Camera2CameraInfo.from(candidate).cameraId }.getOrNull() == requestedPhysicalCameraId
+                }
+            val snapshot = physicalCameraInfo?.let { Camera2CharacteristicsSource(it, context).readSnapshotOrNull() }
+            verifyPhysicalCameraProvenance(
+                logicalCameraId = boundCamera2Id,
+                requestedPhysicalCameraId = requestedPhysicalCameraId,
+                physicalCameraInfoFound = physicalCameraInfo != null,
+                physicalCharacteristicsSnapshot = snapshot,
+                bindingSource = PhysicalCameraBindingSource.MATCHED_DECLARED_PHYSICAL_CAMERA_INFO,
+            )
+        }
+        PhysicalCameraInfoSelection.NoMatch -> PhysicalCameraBindingResolution.PhysicalCameraIdentityUnverified
+    }
 }
 
 /**

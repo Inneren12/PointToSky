@@ -29,19 +29,51 @@ enum class PhysicalCameraBindingMethod {
  * session uses. Exactly one level exists today - CAM-2c integration never accepts less. */
 enum class PhysicalCameraProvenanceConfidence {
     /**
-     * The bound logical camera's own `CameraInfo.getPhysicalCameraInfos()` set contains a physical
-     * `CameraInfo` whose `Camera2CameraInfo.from(it).cameraId` exactly equals the requested physical
-     * camera ID, and `CameraCharacteristics` were read directly from *that* physical `CameraInfo`
-     * (never the logical camera's) - confirming the snapshot's own `cameraId` matches and its own
-     * `isLogicalMultiCamera` reads `false`. This is a same-session, characteristics-identity check,
-     * not a live/per-frame guarantee - see `PhysicalCameraProvenance`'s own KDoc "Scope" note.
+     * Either the `CameraInfo` CameraX handed back from binding is itself backed by the requested
+     * physical camera ([PhysicalCameraBindingSource.BOUND_CAMERA_INFO_IS_PHYSICAL]), or the bound
+     * logical camera's own `CameraInfo.getPhysicalCameraInfos()` set contains a physical `CameraInfo`
+     * whose `Camera2CameraInfo.from(it).cameraId` exactly equals the requested physical camera ID
+     * ([PhysicalCameraBindingSource.MATCHED_DECLARED_PHYSICAL_CAMERA_INFO]). Either way,
+     * `CameraCharacteristics` were read directly from *that* physical `CameraInfo` (never a logical
+     * camera's) - confirming the snapshot's own `cameraId` matches and its own `isLogicalMultiCamera`
+     * reads `false`. This is a same-session, characteristics-identity check, not a live/per-frame
+     * guarantee - see `PhysicalCameraProvenance`'s own KDoc "Scope" note.
      */
     VERIFIED_BY_CHARACTERISTICS_IDENTITY,
 }
 
 /**
+ * Which `CameraInfo` shape a verified physical binding's characteristics were actually read from
+ * (fix for a correctness gap: `resolvePhysicalCameraBindingFromCameraInfo` previously assumed the
+ * `CameraInfo` CameraX hands back from binding is always the *logical* camera's own, and searched only
+ * its `physicalCameraInfos` — CameraX does not document that the returned `CameraInfo` is never itself
+ * already the physical one). Never inferred from ID ordering — always the exact identity comparison
+ * [selectPhysicalCameraInfoSource] performs.
+ */
+enum class PhysicalCameraBindingSource {
+    /** `Camera2CameraInfo.from(boundCameraInfo).cameraId` already equals the requested physical
+     * candidate — the bound `CameraInfo` itself is backed by the physical sensor. No separate logical
+     * `CameraInfo` was ever identified in this shape, so [PhysicalCameraProvenance.logicalCameraId] is
+     * `null` for this source (never fabricated as equal to the physical ID). */
+    BOUND_CAMERA_INFO_IS_PHYSICAL,
+
+    /** The bound `CameraInfo` is the logical camera's own, and the requested physical candidate was
+     * found among its declared `getPhysicalCameraInfos()` set — the classic logical-multi-camera shape
+     * this experiment was originally built around. */
+    MATCHED_DECLARED_PHYSICAL_CAMERA_INFO,
+}
+
+/**
  * One coherent provenance tuple (task §5) tying a CAM-2c `AnalysisBuffer` resolution to a single,
  * explicitly selected, and characteristics-verified physical Camera2 sensor.
+ *
+ * [logicalCameraId] is **nullable and never fabricated**: it is the bound logical camera's own Camera2
+ * ID when [bindingSource] is [PhysicalCameraBindingSource.MATCHED_DECLARED_PHYSICAL_CAMERA_INFO] and
+ * that ID could actually be read; it is `null` — genuinely unavailable, never silently substituted with
+ * [physicalCameraId] — whenever [bindingSource] is [PhysicalCameraBindingSource.BOUND_CAMERA_INFO_IS_PHYSICAL]
+ * (no separate logical `CameraInfo` was ever identified in that shape) or the logical ID simply could
+ * not be read. A caller/report must distinguish "logical camera ID known" from "logical camera ID
+ * unavailable" — never present a fabricated equality as if it were observed.
  *
  * **Scope - session-scoped identity, not a live per-frame guarantee.** CameraX 1.4.2's `CameraInfo`
  * exposes `getPhysicalCameraInfos()` as a static `Set`, not an observable/`LiveData` of the *currently
@@ -50,14 +82,16 @@ enum class PhysicalCameraProvenanceConfidence {
  * no such method exists on `CameraInfo`, `Camera`, or `Camera2CameraInfo`). This [PhysicalCameraProvenance]
  * therefore proves identity *once*, at bind time, from the characteristics this resolution actually
  * used - it is not a proof that the same physical sensor produced every frame across the session's
- * entire lifetime. The physical-camera-binding experiment mitigates this practically (task §9) by
- * fixing the zoom ratio and never enabling extensions/effects for the experiment session - not a
- * proof of frame-level stability, a documented, honest limitation instead.
+ * entire lifetime. The physical-camera-binding experiment *mitigates* this practically (task §9) by
+ * fixing the zoom ratio and never enabling extensions/effects for the experiment session - not a proof
+ * of frame-level stability, a documented, honest limitation instead; it does not claim to prevent every
+ * possible OEM physical-camera switch, only to remove the one trigger (zoom) this codebase can control.
  */
 data class PhysicalCameraProvenance(
-    val logicalCameraId: String,
+    val logicalCameraId: String?,
     val physicalCameraId: String,
     val bindingMethod: PhysicalCameraBindingMethod,
+    val bindingSource: PhysicalCameraBindingSource,
     val confidence: PhysicalCameraProvenanceConfidence,
 )
 
@@ -99,19 +133,21 @@ sealed interface PhysicalCameraBindingResolution {
 
 /**
  * Pure, testable core of the physical-camera provenance check (task §5/§6): given the logical
- * camera's own Camera2 ID (if known), the requested physical camera ID, and the [CameraCharacteristicsSnapshot]
- * read directly from the physical `CameraInfo` matching that ID (or `null` if no such `CameraInfo`
- * could be found or read), returns the exact typed outcome. No Android/CameraX types appear in this
- * function's signature, so it is unit-testable with fake snapshots - the real-Android glue that finds
- * the matching physical `CameraInfo` and reads its characteristics lives in
- * `resolvePhysicalCameraBindingFromCameraInfo` (`PhysicalCameraBindingExperiment.kt`), which delegates
- * every actual verification decision here.
+ * camera's own Camera2 ID (if known — `null` when genuinely unavailable, never fabricated), the
+ * requested physical camera ID, [bindingSource] (which `CameraInfo` shape the caller matched — see
+ * [PhysicalCameraBindingSource]), and the [CameraCharacteristicsSnapshot] read directly from the
+ * physical `CameraInfo` matching that ID (or `null` if no such `CameraInfo` could be found or read),
+ * returns the exact typed outcome. No Android/CameraX types appear in this function's signature, so it
+ * is unit-testable with fake snapshots - the real-Android glue that finds the matching physical
+ * `CameraInfo` and reads its characteristics lives in `resolvePhysicalCameraBindingFromCameraInfo`
+ * (`PhysicalCameraBindingExperiment.kt`), which delegates every actual verification decision here.
  */
 internal fun verifyPhysicalCameraProvenance(
     logicalCameraId: String?,
     requestedPhysicalCameraId: String,
     physicalCameraInfoFound: Boolean,
     physicalCharacteristicsSnapshot: CameraCharacteristicsSnapshot?,
+    bindingSource: PhysicalCameraBindingSource,
 ): PhysicalCameraBindingResolution {
     if (!physicalCameraInfoFound) {
         return PhysicalCameraBindingResolution.PhysicalCameraIdentityUnverified
@@ -133,11 +169,62 @@ internal fun verifyPhysicalCameraProvenance(
     return PhysicalCameraBindingResolution.Bound(
         provenance =
             PhysicalCameraProvenance(
-                logicalCameraId = logicalCameraId ?: requestedPhysicalCameraId,
+                logicalCameraId = logicalCameraId,
                 physicalCameraId = requestedPhysicalCameraId,
                 bindingMethod = PhysicalCameraBindingMethod.CAMERA_SELECTOR_PHYSICAL_CAMERA_ID,
+                bindingSource = bindingSource,
                 confidence = PhysicalCameraProvenanceConfidence.VERIFIED_BY_CHARACTERISTICS_IDENTITY,
             ),
         physicalCharacteristicsSnapshot = physicalCharacteristicsSnapshot,
     )
 }
+
+/** Typed, pure decision of which `CameraInfo` shape [selectPhysicalCameraInfoSource] matched — the
+ * real-Android glue in `resolvePhysicalCameraBindingFromCameraInfo` acts on this to decide which
+ * `CameraInfo` to read characteristics from. */
+internal sealed interface PhysicalCameraInfoSelection {
+    /** [PhysicalCameraBindingSource.BOUND_CAMERA_INFO_IS_PHYSICAL]: read characteristics from the bound
+     * `CameraInfo` directly. */
+    data object UseBoundCameraInfoDirectly : PhysicalCameraInfoSelection
+
+    /** [PhysicalCameraBindingSource.MATCHED_DECLARED_PHYSICAL_CAMERA_INFO]: read characteristics from
+     * the nested physical `CameraInfo` matching the requested ID among the bound (logical)
+     * `CameraInfo`'s own declared candidates. */
+    data object UseDeclaredPhysicalCameraInfo : PhysicalCameraInfoSelection
+
+    /** Neither shape matched — the bound `CameraInfo` is not itself the requested physical camera, and
+     * none of its declared physical candidates are either. */
+    data object NoMatch : PhysicalCameraInfoSelection
+}
+
+/**
+ * Pure decision (fix for a correctness gap — task's "make bound CameraInfo resolution robust to both
+ * CameraX shapes"): given the bound `CameraInfo`'s own Camera2 ID (if resolvable — `null` if it could
+ * not be read), the requested physical camera ID, and the Camera2 IDs of every `CameraInfo` the bound
+ * one declares via `getPhysicalCameraInfos()` (each already resolved to its own ID by the caller —
+ * this function takes only plain `String`s, no Android/CameraX types, so it is unit-testable without
+ * mocking `CameraInfo`/`Camera2CameraInfo`), determines which shape applies:
+ *
+ * - **Shape A** ([PhysicalCameraInfoSelection.UseBoundCameraInfoDirectly]): the bound `CameraInfo`
+ *   itself is already backed by the requested physical camera.
+ * - **Shape B** ([PhysicalCameraInfoSelection.UseDeclaredPhysicalCameraInfo]): the bound `CameraInfo`
+ *   is the logical camera's own, and the requested ID is among its declared physical candidates.
+ * - Neither ([PhysicalCameraInfoSelection.NoMatch]): the requested ID cannot be attributed to either
+ *   shape.
+ *
+ * Shape A is checked first — an exact identity match on the bound `CameraInfo`'s own ID is never
+ * ambiguous with a nested-candidate match, and checking it first means a device that (hypothetically)
+ * reports itself as its own declared physical candidate still resolves to the more direct shape A
+ * reading rather than an unnecessary nested one. Never infers correctness from ID ordering — both
+ * checks are exact string-equality comparisons against real, previously-read Camera2 IDs.
+ */
+internal fun selectPhysicalCameraInfoSource(
+    boundCameraInfoCamera2Id: String?,
+    requestedPhysicalCameraId: String,
+    declaredPhysicalCameraInfoIds: List<String>,
+): PhysicalCameraInfoSelection =
+    when {
+        boundCameraInfoCamera2Id == requestedPhysicalCameraId -> PhysicalCameraInfoSelection.UseBoundCameraInfoDirectly
+        declaredPhysicalCameraInfoIds.contains(requestedPhysicalCameraId) -> PhysicalCameraInfoSelection.UseDeclaredPhysicalCameraInfo
+        else -> PhysicalCameraInfoSelection.NoMatch
+    }
