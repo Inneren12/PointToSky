@@ -36,6 +36,8 @@ internal fun formatAnalysisBufferAttempt(attempt: AnalysisBufferIntrinsicsResolu
             "UnsupportedSensorToBufferTransform(${attempt.transformClass.name})"
         is AnalysisBufferIntrinsicsResolution.RotationOwnershipUnproven ->
             "RotationOwnershipUnproven(${attempt.transformClass.name})"
+        is AnalysisBufferIntrinsicsResolution.DomainConsistencyUnproven ->
+            "DomainConsistencyUnproven(${attempt.transformClass.name}, ${attempt.consistency.name})"
         is AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping ->
             "UnsupportedLogicalMultiCameraMapping(cameraId=${attempt.cameraId ?: "unknown"}, " +
                 "physicalIds=${attempt.physicalCameraIdsForDiagnostics?.sorted()?.joinToString() ?: UNAVAILABLE})"
@@ -112,7 +114,7 @@ private fun frameTransformLines(counters: CameraSessionIntrinsicsFrameCounters):
         matrixLine,
         "  class: ${counters.latestFrameTransformClass?.name ?: UNAVAILABLE}",
         "  analyzed: ${counters.framesAnalyzed}, withTransform: ${counters.framesWithTransform}, " +
-            "nullTransform: ${counters.framesWithNullTransform}, usableAxisAligned0: ${counters.framesWithUsableTransform}",
+            "nullTransform: ${counters.framesWithNullTransform}, supportedClassAxisAligned0: ${counters.framesWithUsableTransform}",
         "  coordinator frames waited: ${counters.coordinatorFramesWaited}",
     )
 }

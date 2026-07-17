@@ -20,6 +20,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -64,7 +65,11 @@ class CamDiagnosticSnapshotJsonTest {
             physicalCameraIds = setOf("2", "3", "4"),
         )
 
-    private val pixel9Matrix = SensorToBufferMatrix3(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+    // A synthetic fixture used only to prove all 9 matrix slots serialize distinctly - NOT the matrix
+    // actually observed on a real Pixel 9 (which was, in fact, the identity matrix; see
+    // `docs/validation/cam_2c_pixel9_evidence.md` and `CamDiagnosticReportFormatTest`'s own
+    // `identityMatrixOverThePixel9Domain` fixture for that real-evidence case).
+    private val syntheticNineDistinctValuesMatrix = SensorToBufferMatrix3(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
 
     private fun pixel9IntrinsicsState(
         attempt: AnalysisBufferIntrinsicsResolution? =
@@ -74,7 +79,7 @@ class CamDiagnosticSnapshotJsonTest {
             ),
         published: CoreCameraIntrinsicsResolution? = CoreCameraIntrinsicsResolution.Resolved(physicalSensorIntrinsics),
         characteristics: CameraCharacteristicsSnapshot? = pixel9CharacteristicsSnapshot,
-        matrix: SensorToBufferMatrix3? = pixel9Matrix,
+        matrix: SensorToBufferMatrix3? = syntheticNineDistinctValuesMatrix,
         transformClass: SensorToBufferTransformClass? = SensorToBufferTransformClass.AXIS_ALIGNED_0,
     ) = CameraSessionIntrinsicsDiagnosticState(
         analysisBufferAttempt = attempt,
@@ -96,19 +101,44 @@ class CamDiagnosticSnapshotJsonTest {
     private fun snapshot(
         state: CameraSessionIntrinsicsDiagnosticState? = pixel9IntrinsicsState(),
         calibration: CameraCalibrationDiagnostics? = null,
+        geometry: CameraGeometryDiagnosticSnapshot? = null,
         capturedAtEpochMillis: Long = 1_700_000_000_000L,
         sessionId: Long = 9L,
     ) = captureCamDiagnosticSnapshot(
         capturedAtEpochMillis = capturedAtEpochMillis,
         sessionId = sessionId,
         cam2bState = null,
-        cameraGeometryState = null,
+        cameraGeometryState = geometry,
         cameraGeometryStatusTransitionCount = 0,
         cameraGeometryObservedFrameCount = 1115L,
         cameraGeometryReadyBundleCount = 0L,
         cameraIntrinsicsState = state,
         calibrationDiagnostics = calibration,
     )
+
+    private fun minimalGeometry(bufferWidthPx: Int?, bufferHeightPx: Int?) =
+        CameraGeometryDiagnosticSnapshot(
+            category = CameraGeometryDiagnosticCategory.READY_LEGACY_FALLBACK,
+            quality = null,
+            frameTimestampNanos = null,
+            bufferWidthPx = bufferWidthPx,
+            bufferHeightPx = bufferHeightPx,
+            cropLeftPx = null,
+            cropTopPx = null,
+            cropRightPx = null,
+            cropBottomPx = null,
+            rotationDegrees = 90,
+            viewportWidthPx = null,
+            viewportHeightPx = null,
+            pairDeltaNanos = null,
+            intrinsicsSource = null,
+            horizontalFovDeg = null,
+            verticalFovDeg = null,
+            uniformScale = null,
+            displayOffsetX = null,
+            displayOffsetY = null,
+            centerProbe = null,
+        )
 
     private val pixel9Snapshot = snapshot()
 
@@ -121,10 +151,14 @@ class CamDiagnosticSnapshotJsonTest {
     }
 
     @Test
-    fun `the top-level envelope matches schemaVersion 1 and the task's own worked example`() {
+    fun `the top-level envelope matches schemaVersion 2 and the task's own worked example`() {
         val root = buildCamDiagnosticJsonElement(pixel9Snapshot, CamDiagnosticLiveness.LIVE)
 
-        assertEquals(1, root["schemaVersion"]!!.jsonPrimitive.int)
+        // CAM-2c domain-consistency fix bumped the schema 1 -> 2: framesWithUsableTransform was renamed
+        // to framesWithSupportedTransformClass, and domainConsistency/mappedSourceBoundsPx/
+        // expectedBufferBoundsPx/consistencyReason were added - see CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION's
+        // own KDoc.
+        assertEquals(2, root["schemaVersion"]!!.jsonPrimitive.int)
         assertEquals(1_700_000_000_000L, root["capturedAtEpochMillis"]!!.jsonPrimitive.long)
         assertEquals(9L, root["sessionId"]!!.jsonPrimitive.long)
 
@@ -247,6 +281,50 @@ class CamDiagnosticSnapshotJsonTest {
         val resolvedBufferK = root["cam2c"]!!.jsonObject["resolvedBufferK"]!!.jsonObject
         assertEquals(443.75, resolvedBufferK["fxPx"]!!.jsonPrimitive.double)
         assertEquals(240.0, resolvedBufferK["cyPx"]!!.jsonPrimitive.double)
+    }
+
+    @Test
+    fun `the frame transform counter is exported under its renamed key, never the old usable-transform name`() {
+        val root = buildCamDiagnosticJsonElement(pixel9Snapshot, CamDiagnosticLiveness.LIVE)
+        val frameTransform = root["cam2c"]!!.jsonObject["frameTransform"]!!.jsonObject
+
+        assertEquals(1115L, frameTransform["framesWithSupportedTransformClass"]!!.jsonPrimitive.long)
+        assertNull(frameTransform["framesWithUsableTransform"])
+        assertFalse(
+            buildCamDiagnosticJson(pixel9Snapshot, CamDiagnosticLiveness.LIVE).contains("framesWithUsableTransform"),
+            "the exported JSON must never contain the old, semantically-overstated field name",
+        )
+    }
+
+    @Test
+    fun `an identity matrix over the real Pixel 9 domain reports AXIS_ALIGNED_0 and a non-Consistent domainConsistency distinctly`() {
+        val pixel9ActiveArray =
+            pixel9CharacteristicsSnapshot.copy(isLogicalMultiCamera = false)
+        val identityMatrix = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        val state =
+            pixel9IntrinsicsState(
+                attempt = null,
+                published = null,
+                characteristics = pixel9ActiveArray,
+                matrix = identityMatrix,
+                transformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
+            )
+
+        val root =
+            buildCamDiagnosticJsonElement(
+                snapshot(state = state, geometry = minimalGeometry(640, 480)),
+                CamDiagnosticLiveness.LIVE,
+            )
+        val frameTransform = root["cam2c"]!!.jsonObject["frameTransform"]!!.jsonObject
+
+        assertEquals("AXIS_ALIGNED_0", frameTransform["transformClass"]!!.jsonPrimitive.content)
+        assertEquals("MAPPED_BOUNDS_MISMATCH", frameTransform["domainConsistency"]!!.jsonPrimitive.content)
+        val mappedBounds = frameTransform["mappedSourceBoundsPx"]!!.jsonObject
+        assertEquals(4080.0, mappedBounds["rightPx"]!!.jsonPrimitive.double)
+        assertEquals(3072.0, mappedBounds["bottomPx"]!!.jsonPrimitive.double)
+        val expectedBounds = frameTransform["expectedBufferBoundsPx"]!!.jsonObject
+        assertEquals(640.0, expectedBounds["rightPx"]!!.jsonPrimitive.double)
+        assertEquals(480.0, expectedBounds["bottomPx"]!!.jsonPrimitive.double)
     }
 
     @Test

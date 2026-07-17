@@ -44,6 +44,8 @@ private fun formatAttempt(cam2c: Cam2cDiagnosticSnapshot): String {
     val type = cam2c.attemptType ?: return "not attempted (no analyzed frame yet)"
     return when (type) {
         "UnsupportedSensorToBufferTransform", "RotationOwnershipUnproven" -> "$type(${cam2c.attemptTransformClass ?: UNAVAILABLE})"
+        "DomainConsistencyUnproven" ->
+            "DomainConsistencyUnproven(${cam2c.attemptTransformClass ?: UNAVAILABLE}, ${cam2c.frameTransform.domainConsistency ?: UNAVAILABLE})"
         "InvalidMetadata" -> "InvalidMetadata(${cam2c.attemptInvalidMetadataReason ?: UNAVAILABLE})"
         "UnsupportedLogicalMultiCameraMapping" ->
             "UnsupportedLogicalMultiCameraMapping(cameraId=${cam2c.camera.cameraId ?: "unknown"}, " +
@@ -87,8 +89,18 @@ private fun cameraLines(camera: CameraMetadataExportSnapshot): List<String> =
         "physical IDs: ${camera.physicalCameraIds?.joinToString() ?: UNAVAILABLE}",
     )
 
-/** The raw transform transport for the *latest* frame only - present/matrix/class. Running counters
- * live in the COUNTERS section instead (see [countersSectionLines]). */
+private fun formatMappedBounds(bounds: MappedBoundsExportSnapshot?): String =
+    bounds?.let { "[${formatPx(it.leftPx)},${formatPx(it.topPx)} — ${formatPx(it.rightPx)},${formatPx(it.bottomPx)}]" } ?: UNAVAILABLE
+
+/**
+ * The raw transform transport for the *latest* frame only - present/matrix/structural class, plus the
+ * separate **semantic** domain-consistency verdict (CAM-2c domain-consistency fix) - `class` and
+ * `domainConsistency` are deliberately two different lines, never conflated: a matrix can classify as
+ * `AXIS_ALIGNED_0` (structurally supported) while `domainConsistency` is anything other than
+ * `CONSISTENT` (semantically not proven) - see the real Pixel 9 identity-matrix evidence in
+ * `docs/validation/cam_2c_pixel9_evidence.md`. Running counters live in the COUNTERS section instead
+ * (see [countersSectionLines]).
+ */
 private fun frameTransformSectionLines(frameTransform: FrameTransformExportSnapshot): List<String> {
     val matrixLine =
         frameTransform.matrix?.let { m ->
@@ -98,6 +110,10 @@ private fun frameTransformSectionLines(frameTransform: FrameTransformExportSnaps
         "present: ${frameTransform.present}",
         matrixLine,
         "class: ${frameTransform.transformClass ?: UNAVAILABLE}",
+        "domainConsistency: ${frameTransform.domainConsistency ?: UNAVAILABLE}",
+        "mappedSourceBounds: ${formatMappedBounds(frameTransform.mappedSourceBoundsPx)}",
+        "expectedBufferBounds: ${formatMappedBounds(frameTransform.expectedBufferBoundsPx)}",
+        "consistencyReason: ${frameTransform.consistencyReason ?: UNAVAILABLE}",
     )
 }
 
@@ -202,7 +218,7 @@ private fun countersSectionLines(snapshot: CamDiagnosticSnapshot): List<String> 
         "frames analyzed: ${ft.framesAnalyzed}",
         "frames withTransform: ${ft.framesWithTransform}",
         "frames nullTransform: ${ft.framesWithNullTransform}",
-        "frames usableAxisAligned0: ${ft.framesWithUsableTransform}",
+        "frames supportedClassAxisAligned0: ${ft.framesWithSupportedTransformClass}",
         "coordinator frames waited: ${ft.coordinatorFramesWaited}",
     )
 }
@@ -281,6 +297,9 @@ private fun cam2cShortReason(cam2c: Cam2cDiagnosticSnapshot): String? =
         "MissingSensorToBufferTransform" -> "missing sensor-to-buffer transform"
         "UnsupportedSensorToBufferTransform" -> "unsupported transform (${cam2c.attemptTransformClass ?: UNAVAILABLE})"
         "RotationOwnershipUnproven" -> "rotation ownership unproven (${cam2c.attemptTransformClass ?: UNAVAILABLE})"
+        "DomainConsistencyUnproven" ->
+            "domain consistency unproven (${cam2c.attemptTransformClass ?: UNAVAILABLE}, " +
+                "${cam2c.frameTransform.domainConsistency ?: UNAVAILABLE})"
         "UnsupportedLogicalMultiCameraMapping" -> "logical multi-camera"
         "InvalidMetadata" -> "invalid metadata (${cam2c.attemptInvalidMetadataReason ?: UNAVAILABLE})"
         else -> null
@@ -299,7 +318,7 @@ fun buildCamDiagnosticCompactSummaryText(snapshot: CamDiagnosticSnapshot): Strin
     lines += "camera: ${cam2c.camera.cameraId ?: UNAVAILABLE}"
     lines += "physical: ${cam2c.camera.physicalCameraIds?.joinToString() ?: UNAVAILABLE}"
     lines += "matrix: ${cam2c.frameTransform.transformClass ?: UNAVAILABLE} · " +
-        "${cam2c.frameTransform.framesWithUsableTransform}/${cam2c.frameTransform.framesAnalyzed}"
+        "${cam2c.frameTransform.framesWithSupportedTransformClass}/${cam2c.frameTransform.framesAnalyzed}"
     lines += "published: ${cam2c.publishedIntrinsics.reference ?: UNAVAILABLE}"
     return lines.joinToString(separator = "\n")
 }

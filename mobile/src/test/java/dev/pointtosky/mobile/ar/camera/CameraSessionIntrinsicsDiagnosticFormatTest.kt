@@ -5,6 +5,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsQuality
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainConsistency
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import dev.pointtosky.core.astro.projection.camera.legacyFallbackCameraIntrinsics
@@ -133,6 +134,27 @@ class CameraSessionIntrinsicsDiagnosticFormatTest {
         assertTrue(text.contains("physical IDs: 1, 2"))
         // No "resolved buffer K" section for a failed attempt.
         assertFalse(text.contains("resolved buffer K"))
+    }
+
+    @Test
+    fun `a reserved DomainConsistencyUnproven attempt renders both the transform class and the consistency verdict`() {
+        val attempt =
+            AnalysisBufferIntrinsicsResolution.DomainConsistencyUnproven(
+                transformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
+                consistency = SensorToBufferDomainConsistency.MAPPED_BOUNDS_MISMATCH,
+            )
+        val state =
+            CameraSessionIntrinsicsDiagnosticState(
+                analysisBufferAttempt = attempt,
+                publishedIntrinsicsResolution = null,
+                coordinatorState = CameraSessionIntrinsicsCoordinatorState.RESOLVED,
+                cameraCharacteristicsSnapshot = snapshot,
+                frameCounters = frameCounters(),
+            )
+
+        val text = buildCameraSessionIntrinsicsDiagnosticText(state)
+
+        assertTrue(text.contains("CAM-2c attempt: DomainConsistencyUnproven(AXIS_ALIGNED_0, MAPPED_BOUNDS_MISMATCH)"))
     }
 
     @Test
@@ -296,7 +318,7 @@ class CameraSessionIntrinsicsDiagnosticFormatTest {
         val text = buildCameraSessionIntrinsicsDiagnosticText(state)
 
         assertTrue(text.contains("present: false"))
-        assertTrue(text.contains("analyzed: 12, withTransform: 10, nullTransform: 2, usableAxisAligned0: 9"))
+        assertTrue(text.contains("analyzed: 12, withTransform: 10, nullTransform: 2, supportedClassAxisAligned0: 9"))
         assertTrue(text.contains("coordinator frames waited: 3"))
     }
 }

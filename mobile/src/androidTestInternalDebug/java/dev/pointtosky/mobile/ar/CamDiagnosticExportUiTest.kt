@@ -57,7 +57,9 @@ import org.junit.runner.RunWith
  * `internalDebug`-only Compose UI tests for [CamDiagnosticsExportUiProvider]/[CamDiagnosticFullReportDialog]
  * (architecture fix §1/§7) - the real export implementation, unreachable from shared `androidTest`
  * sources now that it lives in `mobile/src/internalDebug`. Reuses the real Pixel 9 logical-multi-camera
- * evidence fixture (`cameraId=0`, `logical=true`, `physicalIds=2,3,4`, `UnsupportedLogicalMultiCameraMapping`).
+ * evidence fixture (`cameraId=0`, `logical=true`, `physicalIds=2,3,4`, `UnsupportedLogicalMultiCameraMapping`,
+ * a `4080x3072` active array, and the identity sensor-to-buffer matrix actually observed on that device -
+ * see `docs/validation/cam_2c_pixel9_evidence.md`; this is a real recorded value, not a synthetic scale).
  */
 @RunWith(AndroidJUnit4::class)
 class CamDiagnosticExportUiTest {
@@ -110,7 +112,10 @@ class CamDiagnosticExportUiTest {
                         framesWithNullTransform = 0L,
                         framesWithUsableTransform = 1115L,
                         coordinatorFramesWaited = 1,
-                        latestFrameTransform = SensorToBufferMatrix3(0.15686, 0.0, 0.0, 0.0, 0.15686, 0.0, 0.0, 0.0, 1.0),
+                        // The real matrix observed on this device was the identity matrix - not a scale
+                        // (docs/validation/cam_2c_pixel9_evidence.md). AXIS_ALIGNED_0 structurally; not
+                        // proven CONSISTENT semantically (see SensorToBufferDomainConsistency).
+                        latestFrameTransform = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
                         latestFrameTransformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
                     ),
             )

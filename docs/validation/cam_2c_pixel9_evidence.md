@@ -1,16 +1,20 @@
 # CAM-2c: real Pixel 9 evidence, and the CAM diagnostic export/freeze workflow
 
-This file has three distinct sections, kept deliberately separate because they have different
+This file has four distinct sections, kept deliberately separate because they have different
 provenance and different confidence levels:
 
 1. **Original Pixel 9 evidence** — the first confirmed, real-device CAM-2c observation. Collected
    *before* the export/freeze workflow existed, through the previous HUD and multiple scrolling
-   screenshots.
+   screenshots. **Its "sensor-to-buffer transform pipeline is working correctly" claim is corrected by
+   section 3 below — read that correction before citing this section.**
 2. **Diagnostic workflow implemented in response** — what was built afterward, specifically because
    collecting section 1's evidence that way was slow and error-prone.
-3. **New workflow device verification** — the status of actually running the new workflow on a
-   physical device. As of this writing, **not yet executed** — see that section for exactly what is
-   and is not claimed.
+3. **New workflow device verification** — the export/freeze workflow (section 2) actually run on a
+   physical Pixel 9. This is where the **identity-matrix finding** was discovered, and it corrects a
+   claim made in section 1.
+4. **CAM-2c domain-consistency fix** — the diagnostics/validation-terminology/documentation response to
+   section 3's finding: a new, separate semantic-consistency check, renamed diagnostics, and what is and
+   is not gated as a result.
 
 Do not read section 2 as having produced section 1's evidence. It did not. The workflow was built
 *after* section 1 was already observed, so that future evidence-gathering (CAM-2d or otherwise) would
@@ -47,10 +51,18 @@ Read literally, field by field:
   classified as `SensorToBufferTransformClass.AXIS_ALIGNED_0` (pure scale + translate, both scales
   positive) — the one class this codebase's calibrated mapping is willing to compose.
 - `transformPresent=1115/1115` — of 1115 analyzed frames in this session, all 1115 carried a non-null
-  sensor-to-buffer transform, and all 1115 classified as the usable `AXIS_ALIGNED_0` class
-  (`CameraSessionIntrinsicsFrameCounters.framesWithUsableTransform` / `.framesAnalyzed`). The
-  sensor-to-buffer transform pipeline itself is working correctly and consistently on this device — this
-  is not the failure.
+  sensor-to-buffer transform, and all 1115 classified as the structurally supported `AXIS_ALIGNED_0`
+  class (`CameraSessionIntrinsicsFrameCounters.framesWithUsableTransform` — see this field's own KDoc for
+  why its name is kept but no longer described as "usable" — / `.framesAnalyzed`).
+
+  **Correction (see §3 below):** the original write-up of this bullet claimed *"the sensor-to-buffer
+  transform pipeline itself is working correctly and consistently on this device."* That claim is **not
+  supported** by what `AXIS_ALIGNED_0`/`1115/1115` actually proves — those numbers only establish that a
+  transform was *present* and *structurally classifiable* every frame, never that its numbers correctly
+  relate this device's `4080x3072` active array to its `640x480` `ImageAnalysis` buffer. §3 recorded the
+  actual matrix on a later run of the same device and found it to be the **identity** matrix, which
+  cannot describe that relationship. Read `transformPresent`/`matrixClass` here as transport/structural
+  evidence only, never as semantic-usability evidence.
 - `CAM-2c=UnsupportedLogicalMultiCameraMapping` — despite the transform being present and usable on
   every frame, `resolveAnalysisBufferIntrinsics` still refuses to build a calibrated mapping, because
   `logical=true` (see `AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping`'s KDoc):
@@ -154,39 +166,137 @@ Pure JVM formatting/JSON/snapshot/mutation tests: `dev.pointtosky.mobile.ar.came
 (`mobile/src/androidTest`). See `docs/SPRINT_STATUS.md`'s CAM-2c row for the exact Gradle commands and
 results this pass actually ran.
 
-## 3. New workflow device verification — NOT YET RUN
+## 3. New workflow device verification — a real run, and the identity-matrix finding
 
-The export/freeze workflow described in section 2 has **not** been exercised on a physical device as of
-this writing. No physical device or emulator was available in the authoring environment (same
-limitation as every prior CAM-2 device-validation pass — see `docs/validation/cam_2b_device_validation.md`
-and `docs/validation/cam_1g_device_validation.md` for the same disclosure pattern).
+The export/freeze workflow described in section 2 **has** now been exercised on a physical Pixel 9
+(`internalDebug`), producing a real, `Copy all`-style diagnostic report:
 
-**Do not treat this section as passed.** It will be filled in only after someone actually:
+```text
+cameraId=0
+logicalMultiCamera=true
+physicalCameraIds=2,3,4
+pixelArray=4080x3072
+activeArray=[0,0 — 4080,3072]
+ImageAnalysis buffer=640x480
+cropRect=[0,0 — 640,480]
+rotationDegrees=90
+sensorToBuffer matrix=
+  [1,0,0,
+   0,1,0,
+   0,0,1]
+transformClass=AXIS_ALIGNED_0
+framesWithSupportedTransformClass=1751/1751
+CAM-2c result=UnsupportedLogicalMultiCameraMapping
+```
 
-1. Opens full diagnostics on a real Pixel 9.
-2. Presses Freeze.
-3. Presses Copy all and pastes the clipboard contents somewhere to confirm they match what the screen
-   shows.
-4. Presses Share log and confirms a real share sheet appears with the correct text.
-5. Presses Share JSON and confirms a real share sheet appears with valid, schema-versioned JSON.
-6. Confirms the copied/shared report contains the same fields section 1 already established by hand
-   (`cameraId=0`, `logical=true`, `physicalIds=2,3,4`, `matrixClass=AXIS_ALIGNED_0`, the frame-transform
-   counters, `UnsupportedLogicalMultiCameraMapping`, `publishedReference=PhysicalSensor`).
-7. Presses Resume live and confirms the counters continue updating afterward.
+Read field by field, against the same fields section 1 already established by hand:
 
-This is a distinct, separate confirmation from section 1 — section 1 already proves the *values* are
-correct (by hand, via screenshots); this section would prove the *workflow* built in section 2
-reproduces the same values correctly, end to end, on a real device. Until run, treat the workflow as
-build/test-verified only, not device-verified.
+- `cameraId=0`, `logicalMultiCamera=true`, `physicalCameraIds=2,3,4`, `CAM-2c result=UnsupportedLogicalMultiCameraMapping`
+  — **exactly** matches section 1's original evidence (same camera identity, same logical-multi-camera
+  block, same typed outcome), on a different session (1751 analyzed frames here vs. 1115 in section 1)
+  and a different reported buffer/crop (this run's `ImageAnalysis buffer=640x480`/`cropRect=[0,0 —
+  640,480]` were not captured at all by section 1's screenshot-driven HUD). The logical-multi-camera
+  block remains confirmed and unchanged.
+- `pixelArray=4080x3072`, `activeArray=[0,0 — 4080,3072]` — the same round-number active array section 1
+  implied but never itself recorded as raw numbers (section 1's HUD did not surface the pixel/active
+  array rectangle at all).
+- `sensorToBuffer matrix = [1,0,0, 0,1,0, 0,0,1]` — the **identity** matrix. **This is the critical new
+  finding.** Section 1 never recorded the matrix's actual 9 values (its HUD showed only the derived
+  `matrixClass` label); this run's export/freeze workflow is the first time this codebase has seen the
+  real numbers. An identity matrix reports `bufferX = activeX`, `bufferY = activeY` — i.e. **no scaling
+  at all** between a `4080x3072` active-array coordinate and a `640x480` buffer coordinate. Taken at face
+  value, this matrix cannot describe how this device's real crop/scale pipeline maps one domain onto the
+  other.
+- `transformClass=AXIS_ALIGNED_0`, `framesWithSupportedTransformClass=1751/1751` — the identity matrix
+  *is* a valid instance of `AXIS_ALIGNED_0` (positive, non-skewed scale — `1.0` counts as a positive
+  scale) and is present on every frame. **This is exactly why `AXIS_ALIGNED_0`/a high supported-class
+  frame count must never be read as "the mapping pipeline is working correctly"** — both are purely
+  *structural* facts (a scale/translate matrix was reported, consistently), and both are fully satisfied
+  by a matrix that is *semantically* impossible for this device's own reported active-array/buffer
+  domains. This is the exact defect the CAM-2c domain-consistency fix (§4 below) exists to make
+  diagnosable.
+
+**What is, and is not, confirmed by this run:**
+
+- **Confirmed:** the export/freeze workflow opens on a real device and its captured/copied report
+  reproduces the same camera-identity/logical-multi-camera fields section 1 established by hand, plus new
+  fields (raw matrix values, `ImageAnalysis` buffer, crop rect, rotation) section 1 never captured at all.
+- **Pending, not separately exercised in this evidence:** Share log, Share JSON, and Resume live are not
+  confirmed by the report above (which is consistent with a `Freeze` + `Copy all`/equivalent text capture,
+  not necessarily all seven of section 2's own checklist items) — do not read this section as closing
+  every item of that checklist; only the items the captured report above actually demonstrates are
+  claimed here.
+- **Not established by this run:** *semantic* source-to-buffer domain consistency. `matrixClass=AXIS_ALIGNED_0`
+  and `1751/1751` prove the transform is present and structurally classifiable, never that its numbers
+  correctly relate this device's active array to its analysis buffer — see §4's `domainConsistency`
+  diagnostic for the separate, explicit check that answers that question, and the real verdict it
+  computes for this exact fixture (`MAPPED_BOUNDS_MISMATCH`, not `CONSISTENT`).
+
+## 4. CAM-2c domain-consistency fix — separating structural classification from semantic consistency
+
+In direct response to §3's identity-matrix finding, this codebase now computes and surfaces a second,
+explicit verdict alongside `transformClass`, so a diagnostics reader (or a future calibration gate) can
+never again read "`AXIS_ALIGNED_0` + a high supported-class frame count" as proof the mapping is usable:
+
+- **`dev.pointtosky.core.astro.projection.camera.assessSensorToBufferDomainConsistency`** (`:core:astro-core`,
+  pure JVM) — a new, separate function that forward-maps the reported active-array domain through the
+  matrix and compares the result against the reported analysis-buffer domain, within an explicit, bounded
+  tolerance (`DEFAULT_DOMAIN_CONSISTENCY_TOLERANCE_PX`, half a pixel). Returns a typed
+  `SensorToBufferDomainConsistency`: `CONSISTENT`, `SOURCE_DOMAIN_UNAVAILABLE`,
+  `BUFFER_DOMAIN_UNAVAILABLE`, `MAPPED_BOUNDS_MISMATCH`, `NON_FINITE_MAPPED_BOUNDS`, or
+  `UNSUPPORTED_TRANSFORM_CLASS` — never a bare boolean, and never inferred from `transformClass` alone.
+  For this exact fixture (identity matrix, `4080x3072` source, `640x480` buffer) it returns
+  `MAPPED_BOUNDS_MISMATCH`, not `CONSISTENT` — see that function's own KDoc, "Scope and known
+  limitation," for why this check is deliberately strict (it also reports `MAPPED_BOUNDS_MISMATCH` for an
+  ordinary, legitimate active-array crop, since this codebase does not yet have proof of what a *cropped*
+  relationship should look like either — a `MAPPED_BOUNDS_MISMATCH` verdict is evidence consistency is
+  **not proven**, never proof a transform is broken).
+- **Diagnostics renamed, not just re-labelled.** `CameraSessionIntrinsicsFrameCounters.framesWithUsableTransform`
+  (the runtime field, kept as-is to limit this fix's scope) is now described everywhere user-facing as
+  counting a **structurally supported transform class**, never a "usable" one; the `internalDebug`
+  export DTO's own field was renamed to `framesWithSupportedTransformClass` (JSON schema version bumped
+  1 → 2), and every text/JSON export line that previously said "usable"/"usableAxisAligned0" now says
+  "supported transform class"/"supportedClassAxisAligned0".
+- **New, separate fields**, alongside (never replacing) `transformClass`: `domainConsistency`,
+  `mappedSourceBounds`, `expectedBufferBounds`, `consistencyReason` — in both the plain-text report
+  (`FRAME TRANSFORM` section) and the JSON export (`cam2c.frameTransform`).
+- **Not (yet) a hard gate.** `resolveAnalysisBufferIntrinsics` does **not** reject an otherwise-`Resolved`,
+  non-logical-multi-camera mapping merely because `domainConsistency != CONSISTENT` — doing so today would
+  silently flip most real, working, non-Pixel-9 devices (any device whose sensor aspect ratio does not
+  exactly match its buffer's — the common case) from a resolved calibration to a rejection, which this
+  fix's own scope explicitly rules out ("do not change outcome precedence merely to expose the new
+  consistency failure"). A reserved, documented `AnalysisBufferIntrinsicsResolution.DomainConsistencyUnproven`
+  variant exists for a future pass (once CAM-2d or equivalent supplies real proof of CameraX's cropped-
+  domain contract) to use instead of silently accepting an unproven transform — see that variant's own
+  KDoc. For the real Pixel 9 logical-multi-camera path specifically, `UnsupportedLogicalMultiCameraMapping`
+  remains the one externally returned CAM-2c outcome, unchanged; the domain-consistency verdict is
+  diagnostic evidence alongside it, never a replacement for it.
+- **Calibrated mapping remains blocked first by physical-camera provenance** (the logical-multi-camera
+  guard, §1/§3), exactly as before. The identity-matrix observation is now also a required investigation
+  (and, per the reserved `DomainConsistencyUnproven` variant above, eventually a gate) that CAM-2d — or
+  any future pass that lifts the logical-multi-camera block — must resolve before it may publish
+  calibrated `AnalysisBuffer` intrinsics; a device that clears the logical-multi-camera check with an
+  unproven or inconsistent matrix must not be allowed to compose `K` on that basis alone.
+
+See `docs/SPRINT_STATUS.md`'s CAM-2c row for the exact Gradle commands and test counts this fix's own
+pass ran.
 
 ## Final verdict
 
 Scoped to what this file actually establishes:
 
-- Section 1 (original evidence): confirmed, real-device, unchanged by anything since.
-- Section 2 (the export/freeze workflow's own implementation): build/lint/unit-test verified; not
-  device-verified.
-- Section 3 (device verification of the workflow itself): not yet run.
+- Section 1 (original evidence): confirmed, real-device, camera-identity/logical-multi-camera fields
+  unchanged by anything since; its "the transform pipeline is working correctly" phrasing is corrected —
+  see the correction note inline in that section and §3's identity-matrix finding.
+- Section 2 (the export/freeze workflow's own implementation): build/lint/unit-test verified; device
+  execution now confirmed for the Freeze/report-capture path specifically (§3) — Share log, Share JSON,
+  and Resume live remain unconfirmed unless separately exercised.
+- Section 3 (device verification of the workflow itself): the report-capture path confirmed on a real
+  Pixel 9; produced the identity-matrix finding that motivated §4.
+- Section 4 (the domain-consistency fix): build/lint/unit-test verified (see `docs/SPRINT_STATUS.md`);
+  semantic source-to-buffer domain consistency itself remains **unresolved** — `assessSensorToBufferDomainConsistency`
+  can now *detect and report* the gap, it does not close it, and calibrated mapping is still blocked first
+  by the unchanged logical-multi-camera guard.
 
 See the accompanying review response for the overall `CAM DIAGNOSTIC EXPORT PASS` /
 `CAM DIAGNOSTIC EXPORT NEEDS FIX` verdict, which also accounts for the architecture/immutability/test

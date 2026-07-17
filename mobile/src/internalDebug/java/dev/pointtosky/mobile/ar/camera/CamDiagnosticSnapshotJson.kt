@@ -13,8 +13,13 @@ import kotlinx.serialization.json.put
 /**
  * `internalDebug`-only. Current schema version for [buildCamDiagnosticJson]. Bump whenever a field is
  * renamed, removed, or reinterpreted; a purely additive field may keep the same version.
+ *
+ * Bumped to `2` by the CAM-2c domain-consistency fix: `cam2c.frameTransform.framesWithUsableTransform`
+ * was renamed to `framesWithSupportedTransformClass` (see that field's own KDoc for why the old name
+ * overstated what the counter proves), and `domainConsistency`/`mappedSourceBoundsPx`/
+ * `expectedBufferBoundsPx`/`consistencyReason` were added alongside it.
  */
-const val CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION: Int = 1
+const val CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION: Int = 2
 
 /** `internalDebug`-only. `explicitNulls = true` so every documented field is always present with either
  * a real value or a literal `null`. kotlinx.serialization's own number formatting never consults the
@@ -64,6 +69,16 @@ private fun JsonObjectBuilder.putMetadata(camera: CameraMetadataExportSnapshot) 
     )
 }
 
+private fun mappedBoundsJson(bounds: MappedBoundsExportSnapshot?): JsonElement {
+    if (bounds == null) return JsonNull
+    return buildJsonObject {
+        put("leftPx", bounds.leftPx)
+        put("topPx", bounds.topPx)
+        put("rightPx", bounds.rightPx)
+        put("bottomPx", bounds.bottomPx)
+    }
+}
+
 private fun JsonObjectBuilder.putFrameTransform(frameTransform: FrameTransformExportSnapshot) {
     put("present", frameTransform.present)
     put(
@@ -74,8 +89,15 @@ private fun JsonObjectBuilder.putFrameTransform(frameTransform: FrameTransformEx
     put("framesAnalyzed", frameTransform.framesAnalyzed)
     put("framesWithTransform", frameTransform.framesWithTransform)
     put("framesWithNullTransform", frameTransform.framesWithNullTransform)
-    put("framesWithUsableTransform", frameTransform.framesWithUsableTransform)
+    // CAM-2c domain-consistency fix: renamed from framesWithUsableTransform (schema v1 -> v2) - this
+    // counts a structurally supported transform CLASS, never a semantically-checked "usable" transform;
+    // see domainConsistency below for the separate semantic verdict.
+    put("framesWithSupportedTransformClass", frameTransform.framesWithSupportedTransformClass)
     put("coordinatorFramesWaited", frameTransform.coordinatorFramesWaited)
+    put("domainConsistency", frameTransform.domainConsistency)
+    put("mappedSourceBoundsPx", mappedBoundsJson(frameTransform.mappedSourceBoundsPx))
+    put("expectedBufferBoundsPx", mappedBoundsJson(frameTransform.expectedBufferBoundsPx))
+    put("consistencyReason", frameTransform.consistencyReason)
 }
 
 private fun resolvedBufferKJson(resolvedBufferK: ResolvedBufferKExportSnapshot?): JsonElement {
