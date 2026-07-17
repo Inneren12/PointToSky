@@ -347,3 +347,61 @@ Scoped to what this file actually establishes:
 See the accompanying review response for the overall `CAM DIAGNOSTIC EXPORT PASS` /
 `CAM DIAGNOSTIC EXPORT NEEDS FIX` verdict, which also accounts for the architecture/immutability/test
 fixes made alongside this documentation correction.
+
+## 5. CAM-2c physical-camera provenance experiment — code-only pass, no new device evidence
+
+**Read this section before assuming the CAM-2c block above is lifted.** Everything in §1-§4 above is
+**real, confirmed Pixel 9 device evidence**, gathered by hand on physical hardware before this pass
+began (the task that requested this pass supplied it as "current confirmed Pixel 9 evidence" — the
+exact `cameraId=0`/`physicalIds=2,3,4`/`sensorToBuffer=identity`/`CAM-2c=UnsupportedLogicalMultiCameraMapping`
+readings match §1/§3 above exactly). This section describes a **separate, code-only** pass that
+upgraded CameraX and built a physical-camera-binding mechanism on top of it — see
+`docs/camera_coordinate_calibration_contract.md` §3.9 and `docs/SPRINT_STATUS.md`'s "CAM-2c
+physical-camera provenance experiment" section for the full design and validation record. **This pass
+did not run on a Pixel 9 or any other physical device.** It ran in a Claude Code remote-execution
+container with real network access (used to install a JDK 17 toolchain, a real Android SDK, and run a
+genuine, non-fabricated Gradle build) — a different *kind* of sandboxed environment than every prior
+CAM-2c pass (which had no network access at all for provisioning), but still a cloud container with
+**no physical Android device or emulator attached**.
+
+**What this pass established (real, Gradle-verified, this session):**
+- CameraX `1.3.4` → `1.4.2` compiles clean under this project's existing `AGP 8.7.2`/`compileSdk 35`
+  with zero behavioral regressions (`:core:astro-core:test` 468/468 and
+  `:mobile:test{Internal,Public}DebugUnitTest` both unchanged from the pre-upgrade baseline).
+- `CameraSelector.Builder.setPhysicalCameraId(String)`, `CameraInfo.getPhysicalCameraInfos(): Set<CameraInfo>`,
+  and `Camera2CameraInfo.from(CameraInfo)`'s dual constructor (logical vs. physical impl) are all
+  confirmed present in the resolved `camera-core`/`camera-camera2` `1.4.2` API jars via direct `javap -p`
+  inspection of the compiled classes — not merely read from (occasionally truncated/unreliable) web
+  documentation.
+- A new, additive, `internalDebug`-only resolution path (`resolveCam2cForExplicitPhysicalCamera`)
+  reaches a calibrated `Resolved` `AnalysisBufferIntrinsicsResolution` against **fixture data** —
+  a `CameraCharacteristicsSnapshot` shaped like a physical Pixel 9 sub-camera (`cameraId="2"`,
+  `isLogicalMultiCamera=false`) resolves exactly like an ordinary single-sensor device would, proven by
+  14 new unit tests (`PhysicalCameraProvenanceTest`/`Cam2cPhysicalCameraResolutionTest`/
+  `CameraTopologyReportTest`).
+- `AnalysisBufferIntrinsicsResolver.kt`'s `UnsupportedLogicalMultiCameraMapping` guard (the exact one
+  §1/§3 above observed firing) is **unmodified** — zero lines changed. The new path works *around* it
+  by construction (feeding a physical camera's own, non-logical snapshot), not by weakening it.
+
+**What this pass did *not* establish — the honest gap:**
+- Whether a real Pixel 9's `CameraInfo.getPhysicalCameraInfos()` actually returns a non-empty `Set`
+  containing a `CameraInfo` resolvable to physical ID `2`, `3`, or `4` when bound via
+  `CameraSelector.Builder().setPhysicalCameraId("2")` (or `"3"`/`"4"`) — this is a real-device behavior
+  this session could not observe. The `1.4.2` API surface guarantees the *methods exist*; it does not
+  guarantee this exact device's HAL populates them the way this codebase's `resolvePhysicalCameraBindingFromCameraInfo`
+  expects.
+- Whether such a bind, if it succeeds, actually constrains the physical sensor that produces subsequent
+  `ImageAnalysis` frames (as opposed to merely accepting the selector but still routing through the
+  logical camera's own fusion pipeline) — no per-frame physical-camera-identity signal exists in this
+  CameraX version to verify this even in principle (`docs/camera_coordinate_calibration_contract.md`
+  §3.9's §9 subsection).
+- Any center/edge/corner residual data (task §10) — this requires a live camera pointed at real or
+  simulated stars, which no cloud container can do.
+- Whether the sensor-to-buffer transform's real source domain (§3/§4 above's still-open question) looks
+  any different for a physical-camera-bound session than the logical-camera-bound identity matrix this
+  file's §3 already recorded — untested, since no physical-camera-bound frame was ever captured.
+
+**Read the two kinds of evidence in this file as distinct classes, not a single narrative:** §1-§4 are
+device observations; §5 (this section) is code that is *ready to be run* on a device and has never been
+run on one. Do not cite this section as evidence the Pixel 9 block is lifted — it is evidence the
+mechanism that *could* lift it, pending real-device confirmation, now exists and compiles/tests green.

@@ -18,6 +18,7 @@ No" — it is never described as simply "tested," which would misstate what was 
 | CAM-2a | Pure, Android-free star prediction (`projectStars`): catalog RA/Dec + observer location/time + magnetic declination + `CameraSessionGeometry` → predicted camera/image/display positions, with typed unavailable outcomes | Yes | Yes | Yes (388 tests, `:core:astro-core`, verified via a direct `kotlinc`/JUnit-console invocation — Gradle itself could not run; see `docs/camera_star_prediction_contract.md` §13) | Partial (`:core:astro-core` compilation confirmed this way; `:mobile` not attempted by that PR) | No — not wired into any renderer, no device claim |
 | CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode via a total, exact-copy `CameraSessionGeometry.withIntrinsics` substitution | Yes | Yes | **Yes — real Gradle, not a workaround.** `:core:astro-core:test` 388/388, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 271/271 each (incl. `PredictedStarOverlayReducerTest`/`Format`/`CatalogAdapterTest`), `androidTest` compilation for both flavors (after fixing one pre-existing, CAM-2b-unrelated compile bug — see below); connected instrumentation **not run** (no device/emulator in this environment); see below | **Yes for debug** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 errors), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green. Release: Kotlin/Java compile green for both flavors; APK packaging blocked only by a missing release signing keystore (`storeFile`), not a code defect; see below | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (build gates now sufficiently verified; no physical device or emulator was available in this environment) |
 | CAM-2c | Calibrated Camera2-to-`ImageAnalysis`-buffer pinhole intrinsics over a general (not axis-aligned-only) sensor-to-buffer matrix: full `SensorToBufferMatrix3` + classification, active-array-local active-array intrinsics (`LENS_INTRINSIC_CALIBRATION` when coordinate-space- and skew-tolerance-verified, else focal-length-derived from `SENSOR_INFO_PIXEL_ARRAY_SIZE` pixel pitch — never the active array, which affects only the coordinate domain and centre approximation; see fix §P2 — neither translated by the active array's full-pixel-array placement, see fix round 3 §P1), matrix-composed buffer-space K′ with axis-swap/sign-normalization restricted to the proven `AXIS_ALIGNED_0` class in production (`ORTHOGONAL_90`/`180`/`270` return a typed `RotationOwnershipUnproven` outcome), typed `AnalysisBufferIntrinsicsResolution` (incl. `UnsupportedSensorToBufferTransform`/`RotationOwnershipUnproven`/`MissingPixelArraySize`), coordinator coherent-input gate, `CameraIntrinsics.source=CAMERA_CHARACTERISTICS`+`reference=AnalysisBuffer` accepted by CAM-2a unchanged, debug-only calibration diagnostics panel (incl. active rect, principal-point basis, pixel-array size/delta, focal derivation basis) — **blocked on any logical-multi-camera device, very plausibly including a real Pixel 9's rear camera; see below** | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 468/468, `:mobile:testInternalDebugUnitTest` 412/412, `:mobile:testPublicDebugUnitTest` 370/370 (counts now differ - the CAM diagnostic export tests, including the whole-active-array hypothesis diagnostic, are `internalDebug`-only; see the architecture-fix pass and, most recently, the "CAM-2c hypothesis-diagnostic architecture fix" pass below for the current counts and what each addition covers); see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; see below | **Runtime diagnostics confirmed on a real Pixel 9 (via the previous screenshot-based HUD, and now also via the diagnostic export/freeze workflow) — calibrated mapping still blocked, and whether this device's matrix matches this codebase's one testable source-domain hypothesis is separately unresolved.** `cameraId=0`, `logical=true`, `physicalIds=2,3,4`, `matrixClass=AXIS_ALIGNED_0`, `transformPresent=1115/1115` (original) / `1751/1751` (export-workflow run), `CAM-2c=UnsupportedLogicalMultiCameraMapping`, `publishedReference=PhysicalSensor` — the logical-multi-camera block is exactly the outcome predicted below, now confirmed by two independent real-device observations. **The export-workflow run additionally recorded the real sensor-to-buffer matrix's own 9 values for the first time — the identity matrix** — which the original screenshot-based HUD never captured. That identity matrix does not match the one, named hypothesis this codebase can currently test (that the matrix's source domain is the *complete* active array) — evidence against that hypothesis only, **not** proof the matrix is broken, invalid, or known not to describe the real pipeline (the pinned CameraX version's actual source-domain contract has not been source-traced or device-proven here). This corrects this row's earlier reading of `matrixClass=AXIS_ALIGNED_0`/a high frame count as proof "the sensor-to-buffer transform pipeline itself is working correctly" — see `docs/validation/cam_2c_pixel9_evidence.md`'s §3/§4 for the full finding, the `assessWholeActiveArrayMappingHypothesis` diagnostic this motivated (see the "CAM-2c diagnostics fix — hypothesis-scoped verdict" pass below for why it is named this way, not a general "domain consistency" verdict), and exactly what is/is not confirmed |
+| CAM-2c physical-camera provenance experiment | CameraX `1.3.4`→`1.4.2` upgrade (minimum justified — unlocks `CameraSelector.setPhysicalCameraId`/`CameraInfo.getPhysicalCameraInfos()` without an unscoped AGP/compileSdk bump; `1.6.1`/`1.5.x` both require AGP `8.9.1`+, confirmed by a real failed compile attempt), `internalDebug`-only camera-topology recon, `internalDebug`-only explicit physical-camera-binding experiment (standalone `Activity`, fixed-zoom mitigation for the no-per-frame-identity-API gap), a new additive CAM-2c resolution entry point for a verified physical binding — `AnalysisBufferIntrinsicsResolver.kt`'s existing `UnsupportedLogicalMultiCameraMapping` guard is unmodified; a verified physical snapshot simply never triggers it | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 468/468 (unchanged), `:mobile:testInternalDebugUnitTest` 426/426 (+14 new), `:mobile:testPublicDebugUnitTest` 370/370 (unchanged); see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 errors), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; `internalDebug`-only boundary additionally verified via `aapt dump xmltree` and `.dex` string inspection of the actual built APKs; see below | **No — this session ran in a Claude Code remote-execution container with a real (network-provisioned) JDK/Android SDK/Gradle build, a different kind of environment than every prior CAM-2c pass, but still with no physical device or emulator attached.** No live bind was ever attempted; whether a real Pixel 9's `CameraInfo.getPhysicalCameraInfos()` actually reaches `PhysicalCameraBindingResolution.Bound` for this codebase's declared physical IDs (`2`/`3`/`4`) is unconfirmed. See `docs/camera_coordinate_calibration_contract.md` §3.9 and this file's own "CAM-2c physical-camera provenance experiment" section for the full record. |
 
 ## CAM-2c (original pass — see "CAM-2c fix" below for corrections)
 
@@ -640,6 +641,92 @@ the `internalDebug`-only diagnostics source set, `internal`-scoped, with its abs
 proven the same way every other export-only class's absence is proven. Behavior, JSON schema, and every
 exported field name/value are unchanged. The pinned CameraX version's real sensor-to-buffer source domain
 remains unresolved.**
+
+## CAM-2c physical-camera provenance experiment (this sprint)
+
+- **Trigger:** every prior CAM-2c pass above confirmed the same real Pixel 9 block twice
+  (`docs/validation/cam_2c_pixel9_evidence.md` §1/§3): `UnsupportedLogicalMultiCameraMapping`, because
+  this project's pinned `androidx.camera:camera-camera2:1.3.4` cannot bind a concrete physical camera
+  or read per-frame physical-camera provenance. This pass is the first to attempt the version bump that
+  unlocks those APIs and build the physical-binding path on top of it.
+- **Scope:** CameraX dependency upgrade; a new `internalDebug`-only camera-topology recon export; a new
+  `internalDebug`-only explicit physical-camera-binding experiment (its own standalone `Activity`, not
+  layered onto the live AR screen); a new, additive CAM-2c resolution entry point for a verified
+  physical binding. Does **not** touch CAM-2a projection math, magnetic declination handling, the
+  device-to-optical transform, the renderer, the detector, the matcher, the star catalog, or
+  `AnalysisBufferIntrinsicsResolver.kt`'s existing `UnsupportedLogicalMultiCameraMapping` guard — zero
+  lines of that file changed. See `docs/camera_coordinate_calibration_contract.md` §3.9 for the full
+  design and the `javap`-inspected API evidence.
+- **CameraX upgrade:** `1.3.4` → `1.4.2` (not the current stable `1.6.1` — that requires AGP `8.9.1`+
+  and compileSdk `36`, a project-wide change confirmed out of scope by an actual failed compile attempt
+  against this project's pinned `AGP 8.7.2`/`compileSdk 35`; `1.4.2` is the latest stable patch of the
+  first line exposing `CameraSelector.setPhysicalCameraId`/`CameraInfo.getPhysicalCameraInfos()`, and it
+  compiles clean with zero new warnings). Dependencies moved into `gradle/libs.versions.toml`
+  (`camerax = "1.4.2"`), replacing four previously hardcoded, uncatalogued version strings.
+- **Physical-camera binding:** `CameraPreview.kt` gained two purely additive, default-`null`/no-op
+  parameters (`cameraSelectorOverride`, `onExplicitBindFailure`) — no production call site passes a
+  non-default value, so the live AR screen's behavior is unchanged. The new
+  `PhysicalCameraBindingExperimentActivity` (`internalDebug`-only, registered only in
+  `mobile/src/internalDebug/AndroidManifest.xml`) binds `Preview`+`ImageAnalysis` together through one
+  explicit `CameraSelector.Builder().setPhysicalCameraId(candidate)`, fixes zoom to `1.0×` immediately
+  after bind (task §9's mitigation for the "no per-frame physical-camera-identity API exists at CameraX
+  1.4.2" limitation — documented, not solved), and never silently falls back to the logical camera on a
+  bind failure.
+- **Provenance, typed failures, narrow guard extension:** `PhysicalCameraProvenance`
+  (`logicalCameraId`/`physicalCameraId`/`bindingMethod`/`confidence`) and the typed
+  `PhysicalCameraBindingResolution` (`Bound`/`PhysicalCameraBindingUnavailable`/
+  `PhysicalCameraIdentityUnverified`/`PhysicalCameraCharacteristicsMismatch`) live entirely in
+  `internalDebug` — no production/public API surface added. `resolveCam2cForExplicitPhysicalCamera`
+  wraps the **unchanged** `resolveAnalysisBufferIntrinsics(snapshot, ...)` with a physical camera's own,
+  characteristics-verified snapshot; since that snapshot's own `cameraId` is the physical ID and its own
+  `isLogicalMultiCamera` reads `false`, it simply never triggers the existing guard — the guard itself
+  needed no modification. The ordinary, no-explicit-binding session path is completely unaffected and
+  still hits `UnsupportedLogicalMultiCameraMapping` exactly as before, proven by the pre-existing
+  `AnalysisBufferIntrinsicsResolverTest` cases continuing to pass unmodified.
+- **Topology recon:** `CameraTopologyBuilder.kt` enumerates every rear Camera2 camera and its declared
+  physical candidates via the raw `CameraManager` (never via ID ordering), exported through the existing
+  CAM diagnostics dialog's new "Share topology" action.
+- **Compile-time `internalDebug`-only boundary — verified two ways, not just by source-set placement.**
+  `aapt dump xmltree` on the built `internal-debug` APK shows `PhysicalCameraBindingExperimentActivity`
+  present; the identical command on the `public-debug` APK shows it absent. `strings` over the
+  `public-debug` APK's `.dex` files finds zero occurrences of any new class/function name introduced by
+  this pass.
+- **Automated tests (task §11):** `PhysicalCameraProvenanceTest`, `Cam2cPhysicalCameraResolutionTest`,
+  `CameraTopologyReportTest` (all new, `mobile/src/testInternalDebug`) — see
+  `docs/camera_coordinate_calibration_contract.md` §3.9 for the exact case list. A grep of every new
+  production file for the literal strings `"2"`/`"3"`/`"4"` found zero hardcoded physical-camera-ID
+  matches.
+- **Validation closure pass (this session) — real Gradle, a different kind of environment than every
+  prior CAM-2c pass.** This session ran in a Claude Code remote-execution container with real network
+  access — a JDK 17 toolchain and a real Android SDK were installed via `apt`/`sdkmanager`, and Gradle
+  8.14.3 (pre-installed in the container) ran every gate below as a genuine, non-fabricated build.
+  Still: **no physical Android device or emulator is attached to this container**, and none could be
+  attached — the same fundamental gap every prior CAM-2c pass recorded, not a smaller version of it.
+  - *`:core:astro-core:test`*: **PASS, 468/468** (unchanged — no `:core:astro-core` code touched).
+  - *`:mobile:testInternalDebugUnitTest`*: **PASS, 426/426** (412 baseline + 14 new).
+  - *`:mobile:testPublicDebugUnitTest`*: **PASS, 370/370** (unchanged — confirms zero leakage into the
+    public variant).
+  - *`:mobile:compileInternalDebugKotlin`/`compilePublicDebugKotlin`*: **PASS**, zero new warnings.
+  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS.**
+  - *`:mobile:lintInternalDebug`/`lintPublicDebug`*: **PASS, 0 errors** (28/26 warnings; two new,
+    pre-existing-pattern warnings — `LockedOrientationActivity`/`DiscouragedApi` on the new experiment
+    `Activity`'s `android:screenOrientation="portrait"`, mirroring the identical warning `MainActivity`
+    itself already carries — not a new class of problem).
+  - *`:mobile:assembleInternalDebug`/`assemblePublicDebug`*: **PASS**, both debug APKs built and
+    manifest/`.dex`-inspected as described above.
+  - *Physical Pixel 9 validation (task §9/§10)*: **not executed** — no physical device or emulator is
+    available in this environment. No residual data, no confirmation that a real device's
+    `getPhysicalCameraInfos()` actually reaches `PhysicalCameraBindingResolution.Bound`, and no live
+    "selected physical camera and evidence supporting that selection" exist from this pass.
+
+**Overall CAM-2c physical-camera provenance experiment status: `CAM-2c PHYSICAL CAMERA PROVENANCE
+BLOCKED` — every code/test/lint/assemble gate above is real-Gradle green, the resolution logic and
+typed outcomes are proven correct against fixtures, and the compile-time `internalDebug`-only boundary
+is verified in the actual packaged APK output — but this remains a code-readiness result, not a device
+validation result. No physical Pixel 9 (or any device/emulator) was available in this session to
+exercise the actual binding call, confirm `getPhysicalCameraInfos()` behavior, or capture the §10
+residual evidence the task requires before any "CAM-2c works" claim would be justified. See the final
+verdict in the PR description / final report.**
 
 ## CAM-2b (this sprint)
 
