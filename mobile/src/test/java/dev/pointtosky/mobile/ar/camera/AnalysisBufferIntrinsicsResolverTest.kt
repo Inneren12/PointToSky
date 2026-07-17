@@ -339,6 +339,36 @@ class AnalysisBufferIntrinsicsResolverTest {
     }
 
     @Test
+    fun `the real Pixel 9 evidence fixture - logical multi-camera, identity matrix - still returns UnsupportedLogicalMultiCameraMapping and publishes no AnalysisBuffer intrinsics`() {
+        // The exact real-device evidence from docs/validation/cam_2c_pixel9_evidence.md: cameraId=0,
+        // physicalIds=2,3,4, a 4080x3072 active array, a 640x480 ImageAnalysis buffer, and an identity
+        // sensor-to-buffer matrix (AXIS_ALIGNED_0 structurally). The whole-active-array-mapping
+        // hypothesis diagnostic must never bypass or reorder this pre-existing, higher-precedence
+        // rejection.
+        val source =
+            sourceOf(
+                isLogicalMultiCamera = true,
+                cameraId = "0",
+                physicalCameraIds = setOf("2", "3", "4"),
+                activeArrayLeftPx = 0,
+                activeArrayTopPx = 0,
+                activeArrayRightPx = 4080,
+                activeArrayBottomPx = 3072,
+                pixelArrayWidthPx = 4080,
+                pixelArrayHeightPx = 3072,
+            )
+        val identityMatrix = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+
+        val result = resolveAnalysisBufferIntrinsics(source, identityMatrix, 640, 480)
+
+        assertEquals(
+            AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping("0", setOf("2", "3", "4")),
+            result,
+        )
+        assertTrue(result !is AnalysisBufferIntrinsicsResolution.Resolved)
+    }
+
+    @Test
     fun `a missing active array size is reported as MissingActiveArray`() {
         assertEquals(AnalysisBufferIntrinsicsResolution.MissingActiveArray, resolve(sourceOf(activeArrayLeftPx = null)))
         assertEquals(AnalysisBufferIntrinsicsResolution.MissingActiveArray, resolve(sourceOf(activeArrayRightPx = null)))

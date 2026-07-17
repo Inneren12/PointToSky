@@ -57,9 +57,46 @@ data class CameraMetadataExportSnapshot(
 )
 
 /**
+ * `internalDebug`-only. A rectangle exported from a [SensorToBufferDomainBounds] - a plain value, never
+ * that richer diagnostic type itself.
+ */
+data class MappedBoundsExportSnapshot(
+    val leftPx: Double,
+    val topPx: Double,
+    val rightPx: Double,
+    val bottomPx: Double,
+)
+
+/**
  * `internalDebug`-only. The latest frame's transform transport plus running counters
  * (architecture fix §2) - [matrix] is a freshly built 9-element `List<Double>` (`m00`..`m22`, in that
  * order), never the original [dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3] value.
+ *
+ * @property framesWithSupportedTransformClass (renamed from `framesWithUsableTransform`) the subset of
+ *   frames whose transform classified as a **structurally** supported
+ *   [dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass] — never a claim that the
+ *   transform's own numbers match any particular source-domain hypothesis; see
+ *   [wholeActiveArrayHypothesisVerdict] for that separate, explicitly-scoped question.
+ * @property sourceDomainBasis the
+ *   [SourceDomainBasis] name that
+ *   [wholeActiveArrayHypothesisVerdict] was tested against — always
+ *   `"ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL"` as of this codebase, `null` only when no transform is present
+ *   at all (no assessment was attempted). Carried explicitly so a reader never has to assume which
+ *   hypothesis a verdict describes.
+ * @property wholeActiveArrayHypothesisVerdict the latest frame's
+ *   [WholeActiveArrayHypothesisVerdict] name, or `null` only
+ *   when no transform is present at all. When a transform *is* present but the active-array/buffer
+ *   dimensions needed to test the hypothesis are missing, this is still non-`null` — a typed
+ *   `SOURCE_METADATA_UNAVAILABLE`/`BUFFER_METADATA_UNAVAILABLE` verdict, never a silent `null`. This is
+ *   never a general validity/usability verdict on the transform itself — see that enum's own KDoc.
+ * @property mappedAssumedSourceBoundsPx the latest frame's *assumed* source domain (the whole active
+ *   array, under [sourceDomainBasis]'s hypothesis), mapped through its own transform - see
+ *   [assessWholeActiveArrayMappingHypothesis].
+ * @property expectedBufferBoundsPx the analysis buffer's own `[0,0]`-`[width,height]` rectangle, the
+ *   value [mappedAssumedSourceBoundsPx] is compared against. Present whenever a valid buffer size is
+ *   known, even when [mappedAssumedSourceBoundsPx] itself is `null`.
+ * @property hypothesisReason a short, human-readable explanation of [wholeActiveArrayHypothesisVerdict],
+ *   never a claim that the transform itself is invalid, unusable, or broken.
  */
 data class FrameTransformExportSnapshot(
     val present: Boolean,
@@ -68,8 +105,13 @@ data class FrameTransformExportSnapshot(
     val framesAnalyzed: Long,
     val framesWithTransform: Long,
     val framesWithNullTransform: Long,
-    val framesWithUsableTransform: Long,
+    val framesWithSupportedTransformClass: Long,
     val coordinatorFramesWaited: Int,
+    val sourceDomainBasis: String? = null,
+    val wholeActiveArrayHypothesisVerdict: String? = null,
+    val mappedAssumedSourceBoundsPx: MappedBoundsExportSnapshot? = null,
+    val expectedBufferBoundsPx: MappedBoundsExportSnapshot? = null,
+    val hypothesisReason: String? = null,
 )
 
 /** `internalDebug`-only. What CAM-1b/CAM-2c actually published, as plain strings/scalars. */
@@ -272,8 +314,53 @@ private fun cameraMetadataExportSnapshot(snapshot: CameraCharacteristicsSnapshot
         availableFocalLengthsMm = snapshot?.availableFocalLengthsMm?.map { it.toDouble() },
     )
 
-private fun frameTransformExportSnapshot(counters: CameraSessionIntrinsicsFrameCounters?): FrameTransformExportSnapshot {
+/** `internalDebug`-only. [SensorToBufferDomainBounds] deep-copied into a plain [MappedBoundsExportSnapshot]. */
+private fun mappedBoundsExportSnapshot(bounds: SensorToBufferDomainBounds?): MappedBoundsExportSnapshot? =
+    bounds?.let { MappedBoundsExportSnapshot(it.leftPx, it.topPx, it.rightPx, it.bottomPx) }
+
+/**
+ * `internalDebug`-only. Computes the latest frame's
+ * [WholeActiveArrayMappingAssessment] - tests exactly the
+ * one, explicitly-named hypothesis that the matrix's source domain is the *complete*
+ * `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle (from [characteristics]'s own reported width/height),
+ * against CAM-1g's own currently-tracked `ImageAnalysis` buffer width/height (from
+ * [geometryBufferWidthPx]/[geometryBufferHeightPx] - deliberately CAM-1g's, not any CAM-2c-resolved
+ * value, since this assessment must still be computable even when CAM-2c never resolves, e.g. the real
+ * Pixel 9 `UnsupportedLogicalMultiCameraMapping` case). `null` only when no transform is present at all
+ * — when a transform *is* present but the active-array/buffer dimensions are missing, a typed
+ * unavailable verdict is returned instead of `null` (see
+ * [WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE]/
+ * `BUFFER_METADATA_UNAVAILABLE`).
+ */
+private fun frameTransformExportSnapshot(
+    counters: CameraSessionIntrinsicsFrameCounters?,
+    characteristics: CameraCharacteristicsSnapshot?,
+    geometryBufferWidthPx: Int?,
+    geometryBufferHeightPx: Int?,
+): FrameTransformExportSnapshot {
     val transform = counters?.latestFrameTransform
+    val activeArrayWidthPx =
+        if (characteristics?.activeArrayLeftPx != null && characteristics.activeArrayRightPx != null) {
+            characteristics.activeArrayRightPx - characteristics.activeArrayLeftPx
+        } else {
+            null
+        }
+    val activeArrayHeightPx =
+        if (characteristics?.activeArrayTopPx != null && characteristics.activeArrayBottomPx != null) {
+            characteristics.activeArrayBottomPx - characteristics.activeArrayTopPx
+        } else {
+            null
+        }
+    val assessment =
+        transform?.let {
+            assessWholeActiveArrayMappingHypothesis(
+                matrix = it,
+                sourceWidthPx = activeArrayWidthPx,
+                sourceHeightPx = activeArrayHeightPx,
+                bufferWidthPx = geometryBufferWidthPx,
+                bufferHeightPx = geometryBufferHeightPx,
+            )
+        }
     return FrameTransformExportSnapshot(
         present = transform != null,
         // Deep-copy/normalize: a fresh 9-element List<Double> - never the SensorToBufferMatrix3 value
@@ -284,8 +371,13 @@ private fun frameTransformExportSnapshot(counters: CameraSessionIntrinsicsFrameC
         framesAnalyzed = counters?.framesAnalyzed ?: 0L,
         framesWithTransform = counters?.framesWithTransform ?: 0L,
         framesWithNullTransform = counters?.framesWithNullTransform ?: 0L,
-        framesWithUsableTransform = counters?.framesWithUsableTransform ?: 0L,
+        framesWithSupportedTransformClass = counters?.framesWithUsableTransform ?: 0L,
         coordinatorFramesWaited = counters?.coordinatorFramesWaited ?: 0,
+        sourceDomainBasis = assessment?.sourceDomainBasis?.name,
+        wholeActiveArrayHypothesisVerdict = assessment?.verdict?.name,
+        mappedAssumedSourceBoundsPx = mappedBoundsExportSnapshot(assessment?.mappedAssumedSourceBoundsPx),
+        expectedBufferBoundsPx = mappedBoundsExportSnapshot(assessment?.expectedBufferBoundsPx),
+        hypothesisReason = assessment?.reason,
     )
 }
 
@@ -335,7 +427,11 @@ private fun resolvedBufferKExportSnapshot(attempt: AnalysisBufferIntrinsicsResol
     return ResolvedBufferKExportSnapshot(fxPx = d.bufferFxPx, fyPx = d.bufferFyPx, cxPx = d.bufferCxPx, cyPx = d.bufferCyPx)
 }
 
-private fun cam2cDiagnosticSnapshot(state: CameraSessionIntrinsicsDiagnosticState?): Cam2cDiagnosticSnapshot {
+private fun cam2cDiagnosticSnapshot(
+    state: CameraSessionIntrinsicsDiagnosticState?,
+    geometryBufferWidthPx: Int?,
+    geometryBufferHeightPx: Int?,
+): Cam2cDiagnosticSnapshot {
     val attempt = state?.analysisBufferAttempt
     return Cam2cDiagnosticSnapshot(
         coordinatorState = state?.coordinatorState?.name,
@@ -348,7 +444,13 @@ private fun cam2cDiagnosticSnapshot(state: CameraSessionIntrinsicsDiagnosticStat
             },
         attemptInvalidMetadataReason = (attempt as? AnalysisBufferIntrinsicsResolution.InvalidMetadata)?.reason,
         camera = cameraMetadataExportSnapshot(state?.cameraCharacteristicsSnapshot),
-        frameTransform = frameTransformExportSnapshot(state?.frameCounters),
+        frameTransform =
+            frameTransformExportSnapshot(
+                state?.frameCounters,
+                state?.cameraCharacteristicsSnapshot,
+                geometryBufferWidthPx,
+                geometryBufferHeightPx,
+            ),
         publishedIntrinsics = publishedIntrinsicsExportSnapshot(state?.publishedIntrinsicsResolution),
         resolvedBufferK = resolvedBufferKExportSnapshot(attempt),
     )
@@ -452,7 +554,7 @@ fun captureCamDiagnosticSnapshot(
         capturedAtEpochMillis = capturedAtEpochMillis,
         sessionId = sessionId,
         cam2b = cam2bDiagnosticSnapshot(cam2bState),
-        cam2c = cam2cDiagnosticSnapshot(cameraIntrinsicsState),
+        cam2c = cam2cDiagnosticSnapshot(cameraIntrinsicsState, cameraGeometryState?.bufferWidthPx, cameraGeometryState?.bufferHeightPx),
         geometry =
             cameraGeometryExportSnapshot(
                 cameraGeometryState,

@@ -112,7 +112,7 @@ private fun frameTransformLines(counters: CameraSessionIntrinsicsFrameCounters):
         matrixLine,
         "  class: ${counters.latestFrameTransformClass?.name ?: UNAVAILABLE}",
         "  analyzed: ${counters.framesAnalyzed}, withTransform: ${counters.framesWithTransform}, " +
-            "nullTransform: ${counters.framesWithNullTransform}, usableAxisAligned0: ${counters.framesWithUsableTransform}",
+            "nullTransform: ${counters.framesWithNullTransform}, supportedClassAxisAligned0: ${counters.framesWithUsableTransform}",
         "  coordinator frames waited: ${counters.coordinatorFramesWaited}",
     )
 }

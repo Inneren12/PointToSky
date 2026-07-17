@@ -87,8 +87,22 @@ private fun cameraLines(camera: CameraMetadataExportSnapshot): List<String> =
         "physical IDs: ${camera.physicalCameraIds?.joinToString() ?: UNAVAILABLE}",
     )
 
-/** The raw transform transport for the *latest* frame only - present/matrix/class. Running counters
- * live in the COUNTERS section instead (see [countersSectionLines]). */
+private fun formatMappedBounds(bounds: MappedBoundsExportSnapshot?): String =
+    bounds?.let { "[${formatPx(it.leftPx)},${formatPx(it.topPx)} — ${formatPx(it.rightPx)},${formatPx(it.bottomPx)}]" } ?: UNAVAILABLE
+
+/**
+ * The raw transform transport for the *latest* frame only - present/matrix/structural class, plus the
+ * separate, explicitly-scoped whole-active-array-mapping hypothesis verdict - `class` and
+ * `wholeActiveArrayHypothesisVerdict` are deliberately two different lines, never conflated: a matrix can
+ * classify as `AXIS_ALIGNED_0` (structurally supported) while the hypothesis verdict is anything other
+ * than `MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS` — that is evidence only that *this one, named* hypothesis
+ * does not hold, **never** a claim that the transform itself is broken, invalid, unusable, or known not
+ * to describe the real pipeline (this codebase has not source-traced or device-proven the pinned
+ * CameraX version's real source-domain contract) — see the real Pixel 9 identity-matrix evidence in
+ * `docs/validation/cam_2c_pixel9_evidence.md` and [assessWholeActiveArrayMappingHypothesis]'s own KDoc.
+ * `sourceDomainBasis` names exactly which hypothesis was tested. Running counters live in the COUNTERS
+ * section instead (see [countersSectionLines]).
+ */
 private fun frameTransformSectionLines(frameTransform: FrameTransformExportSnapshot): List<String> {
     val matrixLine =
         frameTransform.matrix?.let { m ->
@@ -98,6 +112,11 @@ private fun frameTransformSectionLines(frameTransform: FrameTransformExportSnaps
         "present: ${frameTransform.present}",
         matrixLine,
         "class: ${frameTransform.transformClass ?: UNAVAILABLE}",
+        "sourceDomainBasis: ${frameTransform.sourceDomainBasis ?: UNAVAILABLE}",
+        "wholeActiveArrayHypothesisVerdict: ${frameTransform.wholeActiveArrayHypothesisVerdict ?: UNAVAILABLE}",
+        "mappedAssumedSourceBounds: ${formatMappedBounds(frameTransform.mappedAssumedSourceBoundsPx)}",
+        "expectedBufferBounds: ${formatMappedBounds(frameTransform.expectedBufferBoundsPx)}",
+        "hypothesisReason: ${frameTransform.hypothesisReason ?: UNAVAILABLE}",
     )
 }
 
@@ -202,7 +221,7 @@ private fun countersSectionLines(snapshot: CamDiagnosticSnapshot): List<String> 
         "frames analyzed: ${ft.framesAnalyzed}",
         "frames withTransform: ${ft.framesWithTransform}",
         "frames nullTransform: ${ft.framesWithNullTransform}",
-        "frames usableAxisAligned0: ${ft.framesWithUsableTransform}",
+        "frames supportedClassAxisAligned0: ${ft.framesWithSupportedTransformClass}",
         "coordinator frames waited: ${ft.coordinatorFramesWaited}",
     )
 }
@@ -299,7 +318,7 @@ fun buildCamDiagnosticCompactSummaryText(snapshot: CamDiagnosticSnapshot): Strin
     lines += "camera: ${cam2c.camera.cameraId ?: UNAVAILABLE}"
     lines += "physical: ${cam2c.camera.physicalCameraIds?.joinToString() ?: UNAVAILABLE}"
     lines += "matrix: ${cam2c.frameTransform.transformClass ?: UNAVAILABLE} · " +
-        "${cam2c.frameTransform.framesWithUsableTransform}/${cam2c.frameTransform.framesAnalyzed}"
+        "${cam2c.frameTransform.framesWithSupportedTransformClass}/${cam2c.frameTransform.framesAnalyzed}"
     lines += "published: ${cam2c.publishedIntrinsics.reference ?: UNAVAILABLE}"
     return lines.joinToString(separator = "\n")
 }

@@ -4,6 +4,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
 import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionSummary
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
@@ -294,6 +295,100 @@ class CamDiagnosticSnapshotTest {
         assertNull(snapshot.geometry.cropRect)
         assertNull(snapshot.calibration)
         assertEquals(0L, snapshot.cam2c.frameTransform.framesAnalyzed)
+    }
+
+    @Test
+    fun `capturing the real Pixel 9 identity-matrix evidence computes WHOLE_ACTIVE_ARRAY_HYPOTHESIS_MISMATCH`() {
+        // The exact real-device evidence from docs/validation/cam_2c_pixel9_evidence.md: a 4080x3072
+        // active array, a 640x480 ImageAnalysis buffer (CAM-1g geometry), and an identity sensor-to-
+        // buffer matrix - AXIS_ALIGNED_0 structurally, but not a match for the whole-active-array
+        // hypothesis. This does NOT establish the matrix itself is broken/invalid/unusable - only that
+        // this one, named hypothesis does not hold for it.
+        val characteristics =
+            CameraCharacteristicsSnapshot(
+                availableFocalLengthsMm = null,
+                sensorPhysicalWidthMm = null,
+                sensorPhysicalHeightMm = null,
+                activeArrayLeftPx = 0,
+                activeArrayTopPx = 0,
+                activeArrayRightPx = 4080,
+                activeArrayBottomPx = 3072,
+                cameraId = "0",
+            )
+        val identityMatrix = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        val state =
+            CameraSessionIntrinsicsDiagnosticState(
+                analysisBufferAttempt = null,
+                publishedIntrinsicsResolution = null,
+                coordinatorState = CameraSessionIntrinsicsCoordinatorState.RESOLVED,
+                cameraCharacteristicsSnapshot = characteristics,
+                frameCounters =
+                    CameraSessionIntrinsicsFrameCounters(
+                        framesAnalyzed = 1751L,
+                        framesWithTransform = 1751L,
+                        framesWithNullTransform = 0L,
+                        framesWithUsableTransform = 1751L,
+                        coordinatorFramesWaited = 1,
+                        latestFrameTransform = identityMatrix,
+                        latestFrameTransformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
+                    ),
+            )
+        val geometry =
+            CameraGeometryDiagnosticSnapshot(
+                category = CameraGeometryDiagnosticCategory.READY_LEGACY_FALLBACK,
+                quality = null,
+                frameTimestampNanos = null,
+                bufferWidthPx = 640,
+                bufferHeightPx = 480,
+                cropLeftPx = null,
+                cropTopPx = null,
+                cropRightPx = null,
+                cropBottomPx = null,
+                rotationDegrees = 90,
+                viewportWidthPx = null,
+                viewportHeightPx = null,
+                pairDeltaNanos = null,
+                intrinsicsSource = null,
+                horizontalFovDeg = null,
+                verticalFovDeg = null,
+                uniformScale = null,
+                displayOffsetX = null,
+                displayOffsetY = null,
+                centerProbe = null,
+            )
+
+        val snapshot =
+            captureCamDiagnosticSnapshot(
+                capturedAtEpochMillis = 0L,
+                sessionId = 1L,
+                cam2bState = null,
+                cameraGeometryState = geometry,
+                cameraGeometryStatusTransitionCount = 0,
+                cameraGeometryObservedFrameCount = 1751L,
+                cameraGeometryReadyBundleCount = 0L,
+                cameraIntrinsicsState = state,
+                calibrationDiagnostics = null,
+            )
+
+        // Structural classification says AXIS_ALIGNED_0 (the transform is a pure positive scale/translate)...
+        assertEquals("AXIS_ALIGNED_0", snapshot.cam2c.frameTransform.transformClass)
+        // ...but the whole-active-array-mapping hypothesis check says this matrix does not match it: an
+        // identity matrix does not land a 4080x3072 domain onto a 640x480 buffer under that hypothesis.
+        assertEquals(
+            WholeActiveArrayHypothesisVerdict.WHOLE_ACTIVE_ARRAY_HYPOTHESIS_MISMATCH.name,
+            snapshot.cam2c.frameTransform.wholeActiveArrayHypothesisVerdict,
+        )
+        assertEquals(SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL.name, snapshot.cam2c.frameTransform.sourceDomainBasis)
+        assertEquals(0.0, snapshot.cam2c.frameTransform.mappedAssumedSourceBoundsPx?.leftPx)
+        assertEquals(4080.0, snapshot.cam2c.frameTransform.mappedAssumedSourceBoundsPx?.rightPx)
+        assertEquals(640.0, snapshot.cam2c.frameTransform.expectedBufferBoundsPx?.rightPx)
+        assertEquals(1751L, snapshot.cam2c.frameTransform.framesWithSupportedTransformClass)
+        // The reason must never claim the matrix is broken/invalid/unusable - only that this one
+        // hypothesis does not hold.
+        val reason = snapshot.cam2c.frameTransform.hypothesisReason
+        assertEquals(true, reason?.contains("hypothesis", ignoreCase = true))
+        assertEquals(false, reason?.contains("matrix is invalid", ignoreCase = true))
+        assertEquals(false, reason?.contains("matrix is broken", ignoreCase = true))
     }
 
     @Test

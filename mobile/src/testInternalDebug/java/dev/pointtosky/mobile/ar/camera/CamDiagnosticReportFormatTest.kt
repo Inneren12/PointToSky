@@ -57,7 +57,16 @@ class CamDiagnosticReportFormatTest {
             physicalCameraIds = setOf("2", "3", "4"),
         )
 
-    private val pixel9Matrix = SensorToBufferMatrix3(0.15686, 0.0, 0.0, 0.0, 0.15686, 0.0, 0.0, 0.0, 1.0)
+    // A synthetic axis-aligned-scale fixture used across most tests below purely to exercise report
+    // formatting (a non-identity, non-degenerate matrix). This is NOT the matrix actually observed on a
+    // real Pixel 9 - the real, observed sensor-to-buffer matrix was the IDENTITY matrix (see
+    // `docs/validation/cam_2c_pixel9_evidence.md`, and `identityMatrixOverThePixel9Domain` below for the
+    // dedicated test using that real value).
+    private val syntheticScaleFixtureMatrix = SensorToBufferMatrix3(0.15686, 0.0, 0.0, 0.0, 0.15686, 0.0, 0.0, 0.0, 1.0)
+
+    /** The real matrix observed on a Pixel 9 (`docs/validation/cam_2c_pixel9_evidence.md`) - identity,
+     * not a scale. */
+    private val identityMatrixOverThePixel9Domain = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 
     private fun pixel9IntrinsicsState(
         attempt: AnalysisBufferIntrinsicsResolution? =
@@ -67,7 +76,7 @@ class CamDiagnosticReportFormatTest {
             ),
         published: CoreCameraIntrinsicsResolution? = CoreCameraIntrinsicsResolution.Resolved(physicalSensorIntrinsics),
         characteristics: CameraCharacteristicsSnapshot? = pixel9CharacteristicsSnapshot,
-        matrix: SensorToBufferMatrix3? = pixel9Matrix,
+        matrix: SensorToBufferMatrix3? = syntheticScaleFixtureMatrix,
         transformClass: SensorToBufferTransformClass? = SensorToBufferTransformClass.AXIS_ALIGNED_0,
     ) = CameraSessionIntrinsicsDiagnosticState(
         analysisBufferAttempt = attempt,
@@ -89,18 +98,43 @@ class CamDiagnosticReportFormatTest {
     private fun snapshot(
         state: CameraSessionIntrinsicsDiagnosticState? = pixel9IntrinsicsState(),
         calibration: CameraCalibrationDiagnostics? = null,
+        geometry: CameraGeometryDiagnosticSnapshot? = null,
         capturedAtEpochMillis: Long = 1_700_000_000_000L,
     ) = captureCamDiagnosticSnapshot(
         capturedAtEpochMillis = capturedAtEpochMillis,
         sessionId = 9L,
         cam2bState = null,
-        cameraGeometryState = null,
+        cameraGeometryState = geometry,
         cameraGeometryStatusTransitionCount = 0,
         cameraGeometryObservedFrameCount = 1115L,
         cameraGeometryReadyBundleCount = 0L,
         cameraIntrinsicsState = state,
         calibrationDiagnostics = calibration,
     )
+
+    private fun minimalGeometry(bufferWidthPx: Int?, bufferHeightPx: Int?) =
+        CameraGeometryDiagnosticSnapshot(
+            category = CameraGeometryDiagnosticCategory.READY_LEGACY_FALLBACK,
+            quality = null,
+            frameTimestampNanos = null,
+            bufferWidthPx = bufferWidthPx,
+            bufferHeightPx = bufferHeightPx,
+            cropLeftPx = null,
+            cropTopPx = null,
+            cropRightPx = null,
+            cropBottomPx = null,
+            rotationDegrees = 90,
+            viewportWidthPx = null,
+            viewportHeightPx = null,
+            pairDeltaNanos = null,
+            intrinsicsSource = null,
+            horizontalFovDeg = null,
+            verticalFovDeg = null,
+            uniformScale = null,
+            displayOffsetX = null,
+            displayOffsetY = null,
+            centerProbe = null,
+        )
 
     private val pixel9Snapshot = snapshot()
 
@@ -186,6 +220,31 @@ class CamDiagnosticReportFormatTest {
         assertTrue(text.contains("class: AXIS_ALIGNED_0"))
         assertTrue(text.contains("analyzed"))
         assertTrue(text.contains("reference: PhysicalSensor"))
+    }
+
+    @Test
+    fun `an identity matrix over the real Pixel 9 domain reports AXIS_ALIGNED_0 and a mismatched whole-active-array hypothesis verdict on separate lines`() {
+        val state =
+            pixel9IntrinsicsState(
+                attempt = null,
+                published = null,
+                matrix = identityMatrixOverThePixel9Domain,
+                transformClass = SensorToBufferTransformClass.AXIS_ALIGNED_0,
+            )
+
+        val text = buildCamDiagnosticReportText(snapshot(state = state, geometry = minimalGeometry(640, 480)), CamDiagnosticLiveness.LIVE)
+
+        // Structural classification and the whole-active-array hypothesis verdict are two distinct
+        // lines - a caller reading only "class: AXIS_ALIGNED_0" must not conclude the mapping is usable,
+        // and a mismatch here must never be read as "this matrix is broken/invalid/unusable."
+        assertTrue(text.contains("class: AXIS_ALIGNED_0"))
+        assertTrue(text.contains("sourceDomainBasis: ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL"))
+        assertTrue(text.contains("wholeActiveArrayHypothesisVerdict: WHOLE_ACTIVE_ARRAY_HYPOTHESIS_MISMATCH"))
+        assertTrue(text.contains("mappedAssumedSourceBounds: [0.0,0.0 — 4080.0,3072.0]"))
+        assertTrue(text.contains("expectedBufferBounds: [0.0,0.0 — 640.0,480.0]"))
+        assertFalse(text.contains("wholeActiveArrayHypothesisVerdict: MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS"))
+        assertFalse(text.contains("domainConsistency"))
+        assertFalse(text.contains("MAPPED_BOUNDS_MISMATCH"))
     }
 
     @Test

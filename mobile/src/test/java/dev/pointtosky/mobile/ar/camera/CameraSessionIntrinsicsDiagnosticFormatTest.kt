@@ -296,7 +296,7 @@ class CameraSessionIntrinsicsDiagnosticFormatTest {
         val text = buildCameraSessionIntrinsicsDiagnosticText(state)
 
         assertTrue(text.contains("present: false"))
-        assertTrue(text.contains("analyzed: 12, withTransform: 10, nullTransform: 2, usableAxisAligned0: 9"))
+        assertTrue(text.contains("analyzed: 12, withTransform: 10, nullTransform: 2, supportedClassAxisAligned0: 9"))
         assertTrue(text.contains("coordinator frames waited: 3"))
     }
 }

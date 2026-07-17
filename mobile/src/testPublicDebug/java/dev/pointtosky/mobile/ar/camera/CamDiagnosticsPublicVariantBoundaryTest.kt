@@ -24,6 +24,14 @@ class CamDiagnosticsPublicVariantBoundaryTest {
             "dev.pointtosky.mobile.ar.CamDiagnosticActionsKt",
             "dev.pointtosky.mobile.ar.CamDiagnosticFullReportDialogKt",
             "dev.pointtosky.mobile.ar.camera.CamDiagnosticsExportUiImplKt",
+            // The whole-active-array hypothesis diagnostic (moved out of :core:astro-core's public
+            // production API since its only caller is the internalDebug-only export) - see
+            // WholeActiveArrayMappingHypothesis.kt's own KDoc.
+            "dev.pointtosky.mobile.ar.camera.SensorToBufferDomainBounds",
+            "dev.pointtosky.mobile.ar.camera.SourceDomainBasis",
+            "dev.pointtosky.mobile.ar.camera.WholeActiveArrayHypothesisVerdict",
+            "dev.pointtosky.mobile.ar.camera.WholeActiveArrayMappingAssessment",
+            "dev.pointtosky.mobile.ar.camera.WholeActiveArrayMappingHypothesisKt",
         )
 
     @Test
