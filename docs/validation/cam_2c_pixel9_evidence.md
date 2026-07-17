@@ -405,3 +405,54 @@ CAM-2c pass (which had no network access at all for provisioning), but still a c
 device observations; §5 (this section) is code that is *ready to be run* on a device and has never been
 run on one. Do not cite this section as evidence the Pixel 9 block is lifted — it is evidence the
 mechanism that *could* lift it, pending real-device confirmation, now exists and compiles/tests green.
+
+## 6. Fix pass on §5's own mechanism — two P1 correctness blockers, still no new device evidence
+
+A review of §5's mechanism found two P1 correctness blockers and five evidence-integrity defects, fixed
+in a follow-up pass (`docs/camera_coordinate_calibration_contract.md` §3.10,
+`docs/SPRINT_STATUS.md`'s "CAM-2c physical-camera provenance experiment fix" entry). Read this section
+before treating anything in §5 as more settled than it was — the fixes make the *mechanism* more
+correct; they do not, and cannot, add real Pixel 9 evidence.
+
+**The two P1 blockers, in plain terms:**
+
+1. `CameraTopologyBuilder`'s capability-code mapping used a fabricated value (`29`) instead of the real
+   `CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA` constant (`11`, confirmed
+   via `javap` against this project's own pinned Android SDK jar). Any topology report this mechanism
+   produced before the fix could have silently mislabeled — or failed to label — a real device's
+   logical-multi-camera capability.
+2. `resolveCam2cForExplicitPhysicalCamera` could resolve calibrated `AnalysisBuffer` intrinsics from a
+   verified physical-camera binding **alone**, without independently proving the sensor-to-buffer
+   transform's own source domain. Concretely: had this mechanism been run against the real Pixel 9
+   identity matrix this file's §3 recorded, a verified physical binding could have resolved a
+   calibrated `K` despite that exact matrix already being known, from §3's own finding, not to match the
+   one hypothesis this codebase can currently test. This is now closed by a `SensorToBufferDomainProof`
+   gate — physical-sensor identity and transform-domain proof are independent, both-required conditions;
+   see the calibration contract doc for the full type.
+
+**Explicit statements this section exists to make unambiguous (matching the fix task's own requirement
+list):**
+
+- The CameraX physical-binding *code* is build/test-ready — every gate a real Gradle run in this
+  environment can check is green.
+- Physical binding is **not yet device-verified**. It never was, in §5 or here.
+- Sensor-to-buffer transform-domain proof is a **separate, independently required** gate, now made
+  explicit in code rather than implicit and unchecked.
+- A fixture reaching `Cam2cPhysicalCameraResolution.Resolved` in a unit test (constructed with an
+  explicitly-supplied `SensorToBufferDomainProof.ProvenActiveArrayLocal`, which no real code path in
+  this codebase can produce automatically) is **not** evidence that the real Pixel 9 identity matrix
+  this file's §3 recorded is usable. On every device this codebase can currently run on, the automatic
+  domain-proof computation can only ever produce `Unresolved` or `HypothesisMismatch` — never `Proven*` —
+  so `resolveCam2cForExplicitPhysicalCamera` cannot resolve automatically today, by design.
+- The fixed `1.0×` zoom mitigation (§5, unchanged by this fix pass except that it is now actually
+  *awaited* before provenance is established — see the calibration contract doc's Fix 5) removes one
+  lens-switch trigger this codebase can control. It does not prove, and was never claimed by this fix
+  pass to prove, frame-level physical-camera-identity stability against every possible OEM behavior.
+- No physical camera ID is selected by default anywhere in this codebase. The experiment screen requires
+  an explicit user tap on a candidate enumerated from real `CameraManager` topology.
+
+**Still true, unchanged by this fix pass:** everything §5 already said about what has *not* been
+established — real-device `getPhysicalCameraInfos()` behavior, whether a bind actually constrains frame
+production, center/edge/corner residuals, and the sensor-to-buffer transform's real source domain — all
+remain exactly as unestablished as §5 recorded. This fix pass improves the correctness of code that has
+still never touched a physical camera.
