@@ -6,8 +6,6 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
 import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
-import dev.pointtosky.core.astro.projection.camera.SourceDomainBasis
-import dev.pointtosky.core.astro.projection.camera.WholeActiveArrayHypothesisVerdict
 import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionSummary
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayMetadata

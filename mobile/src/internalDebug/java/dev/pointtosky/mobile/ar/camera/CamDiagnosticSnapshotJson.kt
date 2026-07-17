@@ -21,8 +21,8 @@ import kotlinx.serialization.json.put
  *   (introduced in `2`) falsely implied a proven, general semantic verdict on the matrix. Renamed to
  *   `wholeActiveArrayHypothesisVerdict`/`mappedAssumedSourceBoundsPx`/`hypothesisReason` to make explicit
  *   that only one, specific, unproven source-domain hypothesis is being tested — see
- *   `dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis`'s own KDoc.
- *   `sourceDomainBasis` was added to name that hypothesis explicitly.
+ *   [assessWholeActiveArrayMappingHypothesis]'s own KDoc. `sourceDomainBasis` was added to name that
+ *   hypothesis explicitly.
  */
 const val CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION: Int = 3
 

@@ -1,5 +1,8 @@
-package dev.pointtosky.core.astro.projection.camera
+package dev.pointtosky.mobile.ar.camera
 
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
+import dev.pointtosky.core.astro.projection.camera.classifySensorToBufferMatrix
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -9,8 +12,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Pure JVM tests for [assessWholeActiveArrayMappingHypothesis] — a check of exactly one named
- * hypothesis (that a [SensorToBufferMatrix3]'s source domain is the *complete*
+ * `internalDebug`-only pure JVM tests for [assessWholeActiveArrayMappingHypothesis] — a check of exactly
+ * one named hypothesis (that a [SensorToBufferMatrix3]'s source domain is the *complete*
  * `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle), never a general validity or semantic-consistency
  * verdict on the matrix itself. The real Pixel 9 identity-matrix evidence
  * (`docs/validation/cam_2c_pixel9_evidence.md`) is the motivating fixture for the first two cases below.

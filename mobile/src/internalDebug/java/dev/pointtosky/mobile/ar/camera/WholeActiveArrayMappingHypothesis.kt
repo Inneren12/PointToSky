@@ -1,22 +1,32 @@
-package dev.pointtosky.core.astro.projection.camera
+package dev.pointtosky.mobile.ar.camera
 
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
+import dev.pointtosky.core.astro.projection.camera.SensorToBufferTransformClass
+import dev.pointtosky.core.astro.projection.camera.classifySensorToBufferMatrix
 import kotlin.math.abs
 
 /**
- * A rectangle in whichever pixel space it was computed in (assumed source domain or destination
- * buffer), produced by [assessWholeActiveArrayMappingHypothesis]. Unlike [ActiveArrayRect]/
- * [ActiveArrayLocalRect], this type deliberately carries **no** ordering invariant (`leftPx <=
- * rightPx`/`topPx <= bottomPx` is not `require`d) — a degenerate ([SensorToBufferTransformClass.SINGULAR]-like)
- * matrix can legitimately collapse all four mapped corners onto a single point or line, and that
- * degenerate result must still be representable (and then correctly flagged as a mismatch against a
- * non-degenerate expected buffer rectangle) rather than throwing.
+ * `internalDebug`-only. A rectangle in whichever pixel space it was computed in (assumed source domain
+ * or destination buffer), produced by [assessWholeActiveArrayMappingHypothesis]. Unlike
+ * `dev.pointtosky.core.astro.projection.camera.ActiveArrayRect`/`ActiveArrayLocalRect`, this type
+ * deliberately carries **no** ordering invariant (`leftPx <= rightPx`/`topPx <= bottomPx` is not
+ * `require`d) — a degenerate ([SensorToBufferTransformClass.SINGULAR]-like) matrix can legitimately
+ * collapse all four mapped corners onto a single point or line, and that degenerate result must still be
+ * representable (and then correctly flagged as a mismatch against a non-degenerate expected buffer
+ * rectangle) rather than throwing.
+ *
+ * This is a debug-only diagnostic assessment, not a production API — kept in `internalDebug` (never
+ * `:core:astro-core`) because its only caller is the CAM diagnostic export, and its whole-active-array
+ * hypothesis is deliberately unproven (see [assessWholeActiveArrayMappingHypothesis]'s own KDoc). It
+ * builds only on the immutable, already-public `SensorToBufferMatrix3`/`classifySensorToBufferMatrix`
+ * core APIs, never a reflection bridge or a duplicate implementation of them.
  *
  * @property leftPx the minimum X of the rectangle's corners.
  * @property topPx the minimum Y of the rectangle's corners.
  * @property rightPx the maximum X of the rectangle's corners.
  * @property bottomPx the maximum Y of the rectangle's corners.
  */
-data class SensorToBufferDomainBounds(
+internal data class SensorToBufferDomainBounds(
     val leftPx: Double,
     val topPx: Double,
     val rightPx: Double,
@@ -24,17 +34,18 @@ data class SensorToBufferDomainBounds(
 )
 
 /**
- * Which coordinate-space *assumption* [assessWholeActiveArrayMappingHypothesis] tested as the source
- * domain of a [SensorToBufferMatrix3]. This exists because the public CameraX/Camera2 contract for
- * `ImageInfo.getSensorToBufferTransformMatrix()`'s own source domain has **not** been source-traced or
- * device-proven in this codebase at the pinned `androidx.camera:camera-camera2:1.3.4` version: it is not
- * established here whether the matrix always maps the *complete* `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local
- * rectangle, or some already-cropped/pre-normalized sub-region of it, into the analysis buffer. Every
- * verdict [assessWholeActiveArrayMappingHypothesis] returns is conditioned on whichever basis this field
- * names — a caller must read the verdict as "does this matrix match *this* hypothesis," never as "is
- * this matrix valid" in any absolute sense.
+ * `internalDebug`-only. Which coordinate-space *assumption* [assessWholeActiveArrayMappingHypothesis]
+ * tested as the source domain of a [SensorToBufferMatrix3]. This exists because the public CameraX/
+ * Camera2 contract for `ImageInfo.getSensorToBufferTransformMatrix()`'s own source domain has **not**
+ * been source-traced or device-proven in this codebase at the pinned
+ * `androidx.camera:camera-camera2:1.3.4` version: it is not established here whether the matrix always
+ * maps the *complete* `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle, or some already-cropped/
+ * pre-normalized sub-region of it, into the analysis buffer. Every verdict
+ * [assessWholeActiveArrayMappingHypothesis] returns is conditioned on whichever basis this field names —
+ * a caller must read the verdict as "does this matrix match *this* hypothesis," never as "is this matrix
+ * valid" in any absolute sense.
  */
-enum class SourceDomainBasis {
+internal enum class SourceDomainBasis {
     /**
      * The only basis this codebase currently tests: that the matrix's source domain is the *complete*
      * `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle (`[0, 0]` to `[activeArrayWidthPx,
@@ -47,18 +58,18 @@ enum class SourceDomainBasis {
 }
 
 /**
- * The typed outcome of [assessWholeActiveArrayMappingHypothesis] — **not** a general verdict on whether
- * a [SensorToBufferMatrix3] is valid, usable, or semantically consistent with the real CameraX pipeline.
- * It tests exactly one thing: does this matrix, applied to the [SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL]
- * hypothesis (the *complete* active array, uncropped), land on the reported analysis buffer's own `[0,
- * 0]` to `[bufferWidthPx, bufferHeightPx]` rectangle? A mismatch is evidence *that hypothesis* does not
- * hold for this matrix — it is never evidence the matrix itself is broken, invalid, unusable, or
- * semantically impossible: this codebase has not proven what the pinned CameraX version's real source
- * domain is, so a legitimate, correctly-functioning cropped or pre-normalized source domain remains a
- * live possibility this assessment cannot rule out. See [assessWholeActiveArrayMappingHypothesis]'s own
- * KDoc for the full scope note.
+ * `internalDebug`-only. The typed outcome of [assessWholeActiveArrayMappingHypothesis] — **not** a
+ * general verdict on whether a [SensorToBufferMatrix3] is valid, usable, or semantically consistent with
+ * the real CameraX pipeline. It tests exactly one thing: does this matrix, applied to the
+ * [SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL] hypothesis (the *complete* active array,
+ * uncropped), land on the reported analysis buffer's own `[0, 0]` to `[bufferWidthPx, bufferHeightPx]`
+ * rectangle? A mismatch is evidence *that hypothesis* does not hold for this matrix — it is never
+ * evidence the matrix itself is broken, invalid, unusable, or semantically impossible: this codebase has
+ * not proven what the pinned CameraX version's real source domain is, so a legitimate, correctly-
+ * functioning cropped or pre-normalized source domain remains a live possibility this assessment cannot
+ * rule out. See [assessWholeActiveArrayMappingHypothesis]'s own KDoc for the full scope note.
  */
-enum class WholeActiveArrayHypothesisVerdict {
+internal enum class WholeActiveArrayHypothesisVerdict {
     /**
      * The matrix's mapped-assumed-source bounds match the expected destination-buffer bounds within
      * [DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX] (or the caller's own explicit tolerance) —
@@ -105,20 +116,20 @@ enum class WholeActiveArrayHypothesisVerdict {
     /**
      * The matrix classified as [SensorToBufferTransformClass.PROJECTIVE_UNSUPPORTED] — a genuinely
      * projective map, which requires a perspective divide this function does not perform (mirroring
-     * [mapActiveArrayIntrinsicsThroughMatrix]'s own refusal to compose that class). Every other
-     * [SensorToBufferTransformClass] (including the three [mapActiveArrayIntrinsicsThroughMatrix] itself
-     * refuses to compose — `MIRRORED`/`GENERAL_AFFINE_UNSUPPORTED`/`SINGULAR`) is still an ordinary
-     * affine map, forward-mappable by direct matrix multiplication with no inversion, so this function
-     * can and does test the hypothesis against all of them.
+     * `dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix`'s own refusal
+     * to compose that class). Every other [SensorToBufferTransformClass] (including the three that core
+     * function itself refuses to compose — `MIRRORED`/`GENERAL_AFFINE_UNSUPPORTED`/`SINGULAR`) is still
+     * an ordinary affine map, forward-mappable by direct matrix multiplication with no inversion, so
+     * this function can and does test the hypothesis against all of them.
      */
     UNSUPPORTED_TRANSFORM_CLASS,
 }
 
 /**
- * The full result of [assessWholeActiveArrayMappingHypothesis]: the typed [verdict], the
- * [sourceDomainBasis] it was tested against, and the evidence behind it, so a diagnostics panel or JSON
- * export can show *which hypothesis* was tested and *why* it did or did not hold — never just a bare
- * verdict a reader could mistake for a general validity claim.
+ * `internalDebug`-only. The full result of [assessWholeActiveArrayMappingHypothesis]: the typed
+ * [verdict], the [sourceDomainBasis] it was tested against, and the evidence behind it, so the CAM
+ * diagnostics panel or JSON export can show *which hypothesis* was tested and *why* it did or did not
+ * hold — never just a bare verdict a reader could mistake for a general validity claim.
  *
  * @property verdict the typed outcome; see [WholeActiveArrayHypothesisVerdict].
  * @property sourceDomainBasis always [SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL] as of this
@@ -146,7 +157,7 @@ enum class WholeActiveArrayHypothesisVerdict {
  *   message, always safe to surface in a diagnostics report, and never phrased as a claim that the
  *   matrix itself is invalid.
  */
-data class WholeActiveArrayMappingAssessment(
+internal data class WholeActiveArrayMappingAssessment(
     val verdict: WholeActiveArrayHypothesisVerdict,
     val sourceDomainBasis: SourceDomainBasis,
     val mappedAssumedSourceBoundsPx: SensorToBufferDomainBounds?,
@@ -155,22 +166,27 @@ data class WholeActiveArrayMappingAssessment(
 )
 
 /**
- * Default tolerance, in pixels, [assessWholeActiveArrayMappingHypothesis] uses to compare mapped-assumed-
- * source bounds against expected buffer bounds. Bounded and explicit — half a pixel, matching this
- * codebase's existing sub-pixel tolerance convention (see
- * `dev.pointtosky.mobile.ar.camera.INTRINSIC_SKEW_TOLERANCE_PX`) — large enough to absorb ordinary
- * floating-point rounding from a scale computed as `bufferDimPx / sourceDimPx`, far too small to treat a
- * genuinely different domain as a match.
+ * `internalDebug`-only. Default tolerance, in pixels, [assessWholeActiveArrayMappingHypothesis] uses to
+ * compare mapped-assumed-source bounds against expected buffer bounds. Bounded and explicit — half a
+ * pixel, matching this codebase's existing sub-pixel tolerance convention (see
+ * [INTRINSIC_SKEW_TOLERANCE_PX]) — large enough to absorb ordinary floating-point rounding from a scale
+ * computed as `bufferDimPx / sourceDimPx`, far too small to treat a genuinely different domain as a
+ * match.
  */
-const val DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX: Double = 0.5
+internal const val DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX: Double = 0.5
 
 /**
- * Tests one specific, named hypothesis about [matrix]'s source domain — that it is the *complete*
- * `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle (`[0, 0]` to `[sourceWidthPx, sourceHeightPx]`,
- * [SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL]) — against the reported destination analysis
- * buffer (`[0, 0]` to `[bufferWidthPx, bufferHeightPx]`, buffer pixels). This is **not** a general
- * validity or semantic-consistency check on [matrix]; see "Scope and provenance" below for exactly what
- * it does and does not establish.
+ * `internalDebug`-only. Tests one specific, named hypothesis about [matrix]'s source domain — that it is
+ * the *complete* `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle (`[0, 0]` to `[sourceWidthPx,
+ * sourceHeightPx]`, [SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL]) — against the reported
+ * destination analysis buffer (`[0, 0]` to `[bufferWidthPx, bufferHeightPx]`, buffer pixels). This is
+ * **not** a general validity or semantic-consistency check on [matrix]; see "Scope and provenance" below
+ * for exactly what it does and does not establish.
+ *
+ * Kept `internalDebug`-only (never `:core:astro-core`): the only caller is the CAM diagnostic export
+ * (`CamDiagnosticSnapshot.kt`), and its whole-active-array hypothesis is deliberately unproven — shipping
+ * it as a public production core API would misrepresent a debug-only, unproven diagnostic as a supported
+ * part of this codebase's calibration surface.
  *
  * ## Why this exists
  * A real Pixel 9 `internalDebug` run recorded `matrixClass=AXIS_ALIGNED_0`,
@@ -225,7 +241,7 @@ const val DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX: Double = 0.5
  * itself, rather than accepted as a second, independent parameter — so this assessment can never disagree
  * with [matrix]'s own classification. Only [SensorToBufferTransformClass.PROJECTIVE_UNSUPPORTED] is
  * rejected outright ([WholeActiveArrayHypothesisVerdict.UNSUPPORTED_TRANSFORM_CLASS]) — every other class
- * (including the three [mapActiveArrayIntrinsicsThroughMatrix] itself refuses to compose —
+ * (including the three `mapActiveArrayIntrinsicsThroughMatrix` itself refuses to compose —
  * `MIRRORED`/`GENERAL_AFFINE_UNSUPPORTED`/`SINGULAR`) is still an ordinary affine map, forward-mappable by
  * direct matrix multiplication with no inversion, so this function can and does test all of them.
  *
@@ -251,7 +267,7 @@ const val DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX: Double = 0.5
  *   [DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX].
  * @throws IllegalArgumentException if [tolerancePx] is not finite and non-negative.
  */
-fun assessWholeActiveArrayMappingHypothesis(
+internal fun assessWholeActiveArrayMappingHypothesis(
     matrix: SensorToBufferMatrix3,
     sourceWidthPx: Int?,
     sourceHeightPx: Int?,
@@ -270,9 +286,7 @@ fun assessWholeActiveArrayMappingHypothesis(
     // constructed - before the source domain is even looked at. This guarantees
     // BUFFER_METADATA_UNAVAILABLE wins whenever the buffer is invalid, regardless of whether the source
     // is also invalid, and guarantees SOURCE_METADATA_UNAVAILABLE is only ever reached once a valid
-    // expectedBufferBoundsPx already exists to preserve. Checking source first (an earlier revision's
-    // bug) could return SOURCE_METADATA_UNAVAILABLE with expectedBufferBoundsPx=null when the buffer was
-    // ALSO invalid, violating that exact contract.
+    // expectedBufferBoundsPx already exists to preserve.
     val bufferValid = bufferWidthPx != null && bufferHeightPx != null && bufferWidthPx > 0 && bufferHeightPx > 0
     if (!bufferValid) {
         return WholeActiveArrayMappingAssessment(

@@ -67,8 +67,9 @@ Read literally, field by field:
   source-domain contract has not been source-traced or device-proven here, and a legitimate
   cropped/pre-normalized source domain remains a live possibility. Read `transformPresent`/`matrixClass`
   here as transport/structural evidence only, never as semantic-usability evidence.
-- `CAM-2c=UnsupportedLogicalMultiCameraMapping` — despite the transform being present and usable on
-  every frame, `resolveAnalysisBufferIntrinsics` still refuses to build a calibrated mapping, because
+- `CAM-2c=UnsupportedLogicalMultiCameraMapping` — despite a transform being present and structurally
+  classified as `AXIS_ALIGNED_0` on every frame, `resolveAnalysisBufferIntrinsics` still refuses to build
+  a calibrated mapping, because
   `logical=true` (see `AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping`'s KDoc):
   this codebase's pinned `androidx.camera:camera-camera2:1.3.4` cannot bind a concrete physical camera
   (`CameraSelector.setPhysicalCameraId`) or read per-frame physical-camera provenance
@@ -260,8 +261,8 @@ check can actually prove, and risked exactly the kind of overclaim this whole fi
 
 This codebase now computes and surfaces one, explicitly-named hypothesis test instead:
 
-- **`dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis`**
-  (`:core:astro-core`, pure JVM) — tests exactly one, named hypothesis
+- **`dev.pointtosky.mobile.ar.camera.assessWholeActiveArrayMappingHypothesis`**
+  (`mobile/src/internalDebug`, pure JVM, `internal`-scoped) — tests exactly one, named hypothesis
   (`SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL`: that the matrix's source domain is the *complete*
   active array): forward-maps that assumed domain through the matrix and compares the result against the
   reported analysis-buffer domain, within an explicit, bounded tolerance
@@ -311,6 +312,14 @@ This codebase now computes and surfaces one, explicitly-named hypothesis test in
   `SOURCE_METADATA_UNAVAILABLE` is only ever returned once a valid `expectedBufferBoundsPx` already
   exists to preserve, matching `WholeActiveArrayMappingAssessment.expectedBufferBoundsPx`'s own documented
   contract (`null` only for `BUFFER_METADATA_UNAVAILABLE`).
+- **Moved out of `:core:astro-core`.** This function and its types (`SensorToBufferDomainBounds`,
+  `SourceDomainBasis`, `WholeActiveArrayHypothesisVerdict`, `WholeActiveArrayMappingAssessment`) originally
+  shipped inside `:core:astro-core`'s own public production API, despite having zero non-test callers
+  outside the `internalDebug`-only CAM diagnostic export. Moved, unmodified, into `mobile/src/internalDebug`
+  and marked `internal`, so an unproven diagnostic hypothesis no longer ships as part of the shared core
+  module's public surface. `CamDiagnosticsInternalDebugVariantBoundaryTest`/
+  `CamDiagnosticsPublicVariantBoundaryTest` now prove its presence in `internalDebug` and absence from
+  `publicDebug` the same way every other export-only class's boundary is proven.
 
 See `docs/SPRINT_STATUS.md`'s CAM-2c row for the exact Gradle commands and test counts this fix's own
 pass ran.

@@ -1,8 +1,6 @@
 package dev.pointtosky.mobile.ar.camera
 
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
-import dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainBounds
-import dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.name
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
@@ -59,9 +57,8 @@ data class CameraMetadataExportSnapshot(
 )
 
 /**
- * `internalDebug`-only. A rectangle exported from a
- * [dev.pointtosky.core.astro.projection.camera.SensorToBufferDomainBounds] - a plain value, never the
- * core type itself.
+ * `internalDebug`-only. A rectangle exported from a [SensorToBufferDomainBounds] - a plain value, never
+ * that richer diagnostic type itself.
  */
 data class MappedBoundsExportSnapshot(
     val leftPx: Double,
@@ -81,20 +78,20 @@ data class MappedBoundsExportSnapshot(
  *   transform's own numbers match any particular source-domain hypothesis; see
  *   [wholeActiveArrayHypothesisVerdict] for that separate, explicitly-scoped question.
  * @property sourceDomainBasis the
- *   [dev.pointtosky.core.astro.projection.camera.SourceDomainBasis] name that
+ *   [SourceDomainBasis] name that
  *   [wholeActiveArrayHypothesisVerdict] was tested against — always
  *   `"ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL"` as of this codebase, `null` only when no transform is present
  *   at all (no assessment was attempted). Carried explicitly so a reader never has to assume which
  *   hypothesis a verdict describes.
  * @property wholeActiveArrayHypothesisVerdict the latest frame's
- *   [dev.pointtosky.core.astro.projection.camera.WholeActiveArrayHypothesisVerdict] name, or `null` only
+ *   [WholeActiveArrayHypothesisVerdict] name, or `null` only
  *   when no transform is present at all. When a transform *is* present but the active-array/buffer
  *   dimensions needed to test the hypothesis are missing, this is still non-`null` — a typed
  *   `SOURCE_METADATA_UNAVAILABLE`/`BUFFER_METADATA_UNAVAILABLE` verdict, never a silent `null`. This is
  *   never a general validity/usability verdict on the transform itself — see that enum's own KDoc.
  * @property mappedAssumedSourceBoundsPx the latest frame's *assumed* source domain (the whole active
  *   array, under [sourceDomainBasis]'s hypothesis), mapped through its own transform - see
- *   [dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis].
+ *   [assessWholeActiveArrayMappingHypothesis].
  * @property expectedBufferBoundsPx the analysis buffer's own `[0,0]`-`[width,height]` rectangle, the
  *   value [mappedAssumedSourceBoundsPx] is compared against. Present whenever a valid buffer size is
  *   known, even when [mappedAssumedSourceBoundsPx] itself is `null`.
@@ -323,7 +320,7 @@ private fun mappedBoundsExportSnapshot(bounds: SensorToBufferDomainBounds?): Map
 
 /**
  * `internalDebug`-only. Computes the latest frame's
- * [dev.pointtosky.core.astro.projection.camera.WholeActiveArrayMappingAssessment] - tests exactly the
+ * [WholeActiveArrayMappingAssessment] - tests exactly the
  * one, explicitly-named hypothesis that the matrix's source domain is the *complete*
  * `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle (from [characteristics]'s own reported width/height),
  * against CAM-1g's own currently-tracked `ImageAnalysis` buffer width/height (from
@@ -332,7 +329,7 @@ private fun mappedBoundsExportSnapshot(bounds: SensorToBufferDomainBounds?): Map
  * Pixel 9 `UnsupportedLogicalMultiCameraMapping` case). `null` only when no transform is present at all
  * — when a transform *is* present but the active-array/buffer dimensions are missing, a typed
  * unavailable verdict is returned instead of `null` (see
- * [dev.pointtosky.core.astro.projection.camera.WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE]/
+ * [WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE]/
  * `BUFFER_METADATA_UNAVAILABLE`).
  */
 private fun frameTransformExportSnapshot(

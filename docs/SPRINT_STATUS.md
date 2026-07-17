@@ -17,7 +17,7 @@ No" — it is never described as simply "tested," which would misstate what was 
 | CAM-1g | `internalDebug`-only camera-geometry diagnostics overlay; observable geometry result + debug counters | Yes | Yes | Yes (per that PR's own record) | Yes (per that PR's own record) | **No — `CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`** |
 | CAM-2a | Pure, Android-free star prediction (`projectStars`): catalog RA/Dec + observer location/time + magnetic declination + `CameraSessionGeometry` → predicted camera/image/display positions, with typed unavailable outcomes | Yes | Yes | Yes (388 tests, `:core:astro-core`, verified via a direct `kotlinc`/JUnit-console invocation — Gradle itself could not run; see `docs/camera_star_prediction_contract.md` §13) | Partial (`:core:astro-core` compilation confirmed this way; `:mobile` not attempted by that PR) | No — not wired into any renderer, no device claim |
 | CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode via a total, exact-copy `CameraSessionGeometry.withIntrinsics` substitution | Yes | Yes | **Yes — real Gradle, not a workaround.** `:core:astro-core:test` 388/388, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 271/271 each (incl. `PredictedStarOverlayReducerTest`/`Format`/`CatalogAdapterTest`), `androidTest` compilation for both flavors (after fixing one pre-existing, CAM-2b-unrelated compile bug — see below); connected instrumentation **not run** (no device/emulator in this environment); see below | **Yes for debug** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 errors), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green. Release: Kotlin/Java compile green for both flavors; APK packaging blocked only by a missing release signing keystore (`storeFile`), not a code defect; see below | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (build gates now sufficiently verified; no physical device or emulator was available in this environment) |
-| CAM-2c | Calibrated Camera2-to-`ImageAnalysis`-buffer pinhole intrinsics over a general (not axis-aligned-only) sensor-to-buffer matrix: full `SensorToBufferMatrix3` + classification, active-array-local active-array intrinsics (`LENS_INTRINSIC_CALIBRATION` when coordinate-space- and skew-tolerance-verified, else focal-length-derived from `SENSOR_INFO_PIXEL_ARRAY_SIZE` pixel pitch — never the active array, which affects only the coordinate domain and centre approximation; see fix §P2 — neither translated by the active array's full-pixel-array placement, see fix round 3 §P1), matrix-composed buffer-space K′ with axis-swap/sign-normalization restricted to the proven `AXIS_ALIGNED_0` class in production (`ORTHOGONAL_90`/`180`/`270` return a typed `RotationOwnershipUnproven` outcome), typed `AnalysisBufferIntrinsicsResolution` (incl. `UnsupportedSensorToBufferTransform`/`RotationOwnershipUnproven`/`MissingPixelArraySize`), coordinator coherent-input gate, `CameraIntrinsics.source=CAMERA_CHARACTERISTICS`+`reference=AnalysisBuffer` accepted by CAM-2a unchanged, debug-only calibration diagnostics panel (incl. active rect, principal-point basis, pixel-array size/delta, focal derivation basis) — **blocked on any logical-multi-camera device, very plausibly including a real Pixel 9's rear camera; see below** | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 480/480, `:mobile:testInternalDebugUnitTest` 400/400, `:mobile:testPublicDebugUnitTest` 370/370 (counts now differ - the CAM diagnostic export tests are `internalDebug`-only; see the architecture-fix pass and, most recently, the "CAM-2c diagnostics fix — hypothesis-scoped verdict" pass below for the current counts and what each addition covers); see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; see below | **Runtime diagnostics confirmed on a real Pixel 9 (via the previous screenshot-based HUD, and now also via the diagnostic export/freeze workflow) — calibrated mapping still blocked, and whether this device's matrix matches this codebase's one testable source-domain hypothesis is separately unresolved.** `cameraId=0`, `logical=true`, `physicalIds=2,3,4`, `matrixClass=AXIS_ALIGNED_0`, `transformPresent=1115/1115` (original) / `1751/1751` (export-workflow run), `CAM-2c=UnsupportedLogicalMultiCameraMapping`, `publishedReference=PhysicalSensor` — the logical-multi-camera block is exactly the outcome predicted below, now confirmed by two independent real-device observations. **The export-workflow run additionally recorded the real sensor-to-buffer matrix's own 9 values for the first time — the identity matrix** — which the original screenshot-based HUD never captured. That identity matrix does not match the one, named hypothesis this codebase can currently test (that the matrix's source domain is the *complete* active array) — evidence against that hypothesis only, **not** proof the matrix is broken, invalid, or known not to describe the real pipeline (the pinned CameraX version's actual source-domain contract has not been source-traced or device-proven here). This corrects this row's earlier reading of `matrixClass=AXIS_ALIGNED_0`/a high frame count as proof "the sensor-to-buffer transform pipeline itself is working correctly" — see `docs/validation/cam_2c_pixel9_evidence.md`'s §3/§4 for the full finding, the `assessWholeActiveArrayMappingHypothesis` diagnostic this motivated (see the "CAM-2c diagnostics fix — hypothesis-scoped verdict" pass below for why it is named this way, not a general "domain consistency" verdict), and exactly what is/is not confirmed |
+| CAM-2c | Calibrated Camera2-to-`ImageAnalysis`-buffer pinhole intrinsics over a general (not axis-aligned-only) sensor-to-buffer matrix: full `SensorToBufferMatrix3` + classification, active-array-local active-array intrinsics (`LENS_INTRINSIC_CALIBRATION` when coordinate-space- and skew-tolerance-verified, else focal-length-derived from `SENSOR_INFO_PIXEL_ARRAY_SIZE` pixel pitch — never the active array, which affects only the coordinate domain and centre approximation; see fix §P2 — neither translated by the active array's full-pixel-array placement, see fix round 3 §P1), matrix-composed buffer-space K′ with axis-swap/sign-normalization restricted to the proven `AXIS_ALIGNED_0` class in production (`ORTHOGONAL_90`/`180`/`270` return a typed `RotationOwnershipUnproven` outcome), typed `AnalysisBufferIntrinsicsResolution` (incl. `UnsupportedSensorToBufferTransform`/`RotationOwnershipUnproven`/`MissingPixelArraySize`), coordinator coherent-input gate, `CameraIntrinsics.source=CAMERA_CHARACTERISTICS`+`reference=AnalysisBuffer` accepted by CAM-2a unchanged, debug-only calibration diagnostics panel (incl. active rect, principal-point basis, pixel-array size/delta, focal derivation basis) — **blocked on any logical-multi-camera device, very plausibly including a real Pixel 9's rear camera; see below** | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 468/468, `:mobile:testInternalDebugUnitTest` 412/412, `:mobile:testPublicDebugUnitTest` 370/370 (counts now differ - the CAM diagnostic export tests, including the whole-active-array hypothesis diagnostic, are `internalDebug`-only; see the architecture-fix pass and, most recently, the "CAM-2c hypothesis-diagnostic architecture fix" pass below for the current counts and what each addition covers); see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; see below | **Runtime diagnostics confirmed on a real Pixel 9 (via the previous screenshot-based HUD, and now also via the diagnostic export/freeze workflow) — calibrated mapping still blocked, and whether this device's matrix matches this codebase's one testable source-domain hypothesis is separately unresolved.** `cameraId=0`, `logical=true`, `physicalIds=2,3,4`, `matrixClass=AXIS_ALIGNED_0`, `transformPresent=1115/1115` (original) / `1751/1751` (export-workflow run), `CAM-2c=UnsupportedLogicalMultiCameraMapping`, `publishedReference=PhysicalSensor` — the logical-multi-camera block is exactly the outcome predicted below, now confirmed by two independent real-device observations. **The export-workflow run additionally recorded the real sensor-to-buffer matrix's own 9 values for the first time — the identity matrix** — which the original screenshot-based HUD never captured. That identity matrix does not match the one, named hypothesis this codebase can currently test (that the matrix's source domain is the *complete* active array) — evidence against that hypothesis only, **not** proof the matrix is broken, invalid, or known not to describe the real pipeline (the pinned CameraX version's actual source-domain contract has not been source-traced or device-proven here). This corrects this row's earlier reading of `matrixClass=AXIS_ALIGNED_0`/a high frame count as proof "the sensor-to-buffer transform pipeline itself is working correctly" — see `docs/validation/cam_2c_pixel9_evidence.md`'s §3/§4 for the full finding, the `assessWholeActiveArrayMappingHypothesis` diagnostic this motivated (see the "CAM-2c diagnostics fix — hypothesis-scoped verdict" pass below for why it is named this way, not a general "domain consistency" verdict), and exactly what is/is not confirmed |
 
 ## CAM-2c (original pass — see "CAM-2c fix" below for corrections)
 
@@ -488,9 +488,10 @@ This pass below is the current, accurate record.)*
   intrinsics composition, logical-multi-camera precedence, camera binding, renderer, detector, matcher,
   or catalog code.
 - **Renamed to name the tested hypothesis explicitly, not a general verdict:**
-  - `assessSensorToBufferDomainConsistency` → `dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis`
-    (`:core:astro-core`, file renamed `SensorToBufferDomainConsistency.kt` →
-    `WholeActiveArrayMappingHypothesis.kt`).
+  - `assessSensorToBufferDomainConsistency` → `assessWholeActiveArrayMappingHypothesis`
+    (`:core:astro-core` at the time of this pass, file renamed `SensorToBufferDomainConsistency.kt` →
+    `WholeActiveArrayMappingHypothesis.kt`; **later moved out of `:core:astro-core` entirely — see the
+    "CAM-2c hypothesis-diagnostic architecture fix" pass below**).
   - `SensorToBufferDomainConsistency` (enum) → `WholeActiveArrayHypothesisVerdict`, with values renamed
     `CONSISTENT` → `MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS`, `SOURCE_DOMAIN_UNAVAILABLE` →
     `SOURCE_METADATA_UNAVAILABLE`, `BUFFER_DOMAIN_UNAVAILABLE` → `BUFFER_METADATA_UNAVAILABLE`,
@@ -578,6 +579,67 @@ pipeline. The reserved, unconstructed `DomainConsistencyUnproven` resolver outco
 CameraX version's actual source-coordinate-domain contract remains unresolved — this pass makes that
 gap honestly visible, it does not close it — and calibrated mapping is still blocked first by the
 unchanged logical-multi-camera guard.**
+
+## CAM-2c hypothesis-diagnostic architecture fix — moved out of `:core:astro-core` (this sprint)
+
+- **Trigger:** a review found `WholeActiveArrayMappingHypothesis.kt` (`assessWholeActiveArrayMappingHypothesis`
+  and its `SensorToBufferDomainBounds`/`SourceDomainBasis`/`WholeActiveArrayHypothesisVerdict`/
+  `WholeActiveArrayMappingAssessment` types) living in `core/astro-core/src/main` — the shared, public
+  production core module's own API surface — despite its **only** non-test caller being the
+  `internalDebug`-only CAM diagnostic export. This shipped an unproven diagnostic hypothesis model as
+  part of the production core API despite zero production behavior callers.
+- **Scope:** diagnostic-only, same as every pass in this workstream — no change to CAM-2a projection
+  math, CAM-2c intrinsics composition or resolver, logical-multi-camera precedence, CameraX binding,
+  renderer, detector, matcher, catalog, the exported JSON schema version/keys, or the real Pixel 9
+  evidence.
+- **Moved, not duplicated.** The complete implementation moved from
+  `core/astro-core/src/main/kotlin/dev/pointtosky/core/astro/projection/camera/WholeActiveArrayMappingHypothesis.kt`
+  to `mobile/src/internalDebug/java/dev/pointtosky/mobile/ar/camera/WholeActiveArrayMappingHypothesis.kt` —
+  the exact same, unmodified logic (buffer-first precedence, all six verdicts, the explicit
+  `ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL` basis), now compiled only into the `internalDebug` variant. Every
+  type and the function itself are now `internal` (never part of any public API): `SensorToBufferDomainBounds`,
+  `SourceDomainBasis`, `WholeActiveArrayHypothesisVerdict`, `WholeActiveArrayMappingAssessment`,
+  `DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX`, `assessWholeActiveArrayMappingHypothesis`. It
+  still builds only on the immutable, already-public core `SensorToBufferMatrix3`/
+  `classifySensorToBufferMatrix` APIs — no reflection bridge, no duplicated matrix-classification logic.
+- **Tests moved alongside it.** `WholeActiveArrayMappingHypothesisTest` (all 12 cases, unchanged) moved
+  from `core/astro-core/src/test` to `mobile/src/testInternalDebug` in the same package, importing
+  `SensorToBufferMatrix3`/`SensorToBufferTransformClass`/`classifySensorToBufferMatrix` from `:core:astro-core`
+  the same way every other `testInternalDebug` file does.
+- **Variant-boundary proof extended.** `CamDiagnosticsInternalDebugVariantBoundaryTest`
+  (`testInternalDebug`) now also asserts `SensorToBufferDomainBounds`/`SourceDomainBasis`/
+  `WholeActiveArrayHypothesisVerdict`/`WholeActiveArrayMappingAssessment`/`WholeActiveArrayMappingHypothesisKt`
+  are present on the `internalDebug` classpath; `CamDiagnosticsPublicVariantBoundaryTest` (`testPublicDebug`)
+  now also asserts they are genuinely **absent** from `publicDebug`'s compiled classpath — the same
+  `Class.forName` compile-time-resolution technique the export UI classes already used, not a new
+  mechanism.
+- **`docs/validation/cam_2c_pixel9_evidence.md` wording fix.** "despite the transform being present and
+  usable on every frame" (§1) — which could be read as a semantic-usability claim — corrected to "despite
+  a transform being present and structurally classified as `AXIS_ALIGNED_0` on every frame."
+  - *`:core:astro-core:test`*: **PASS, 468/468** — back to this module's original baseline; the 12
+    hypothesis tests no longer live here.
+  - *`:mobile:testInternalDebugUnitTest`*: **PASS, 412/412** (400 prior + 12: the moved
+    `WholeActiveArrayMappingHypothesisTest` cases, now running as `internalDebug` mobile tests).
+  - *`:mobile:testPublicDebugUnitTest`*: **PASS, 370/370** (unchanged — the moved tests are
+    `internalDebug`-only; `CamDiagnosticsPublicVariantBoundaryTest` gained new assertions, not new test
+    methods).
+  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS** — compiled only, not run on a connected
+    device/emulator.
+  - *`:mobile:lintInternalDebug`/`lintPublicDebug`*: **PASS, 0 errors, 30 warnings each** (identical to
+    the pre-existing baseline — see `mobile/lint-baseline.xml`; no new lint finding).
+  - *`:mobile:assembleInternalDebug`/`assemblePublicDebug`*: **PASS**, both debug APKs built.
+  - *Confirmed unchanged:* CAM-2a projection math, CAM-2c intrinsics composition/resolver, logical-multi-
+    camera precedence, CameraX binding, renderer, detector, matcher, catalog, JSON schema version (still
+    `3`) and every exported field name/value, real Pixel 9 evidence.
+  - *Physical device/emulator execution*: **not run** by this pass — no physical device or emulator is
+    available in this environment; this is a source-set/visibility move with no new device-evidence claim.
+
+**Overall CAM-2c hypothesis-diagnostic architecture fix status: the unproven whole-active-array hypothesis
+model no longer ships as part of `:core:astro-core`'s public production API — it now lives entirely inside
+the `internalDebug`-only diagnostics source set, `internal`-scoped, with its absence from `publicDebug`
+proven the same way every other export-only class's absence is proven. Behavior, JSON schema, and every
+exported field name/value are unchanged. The pinned CameraX version's real sensor-to-buffer source domain
+remains unresolved.**
 
 ## CAM-2b (this sprint)
 

@@ -62,9 +62,9 @@ enum class CameraSessionIntrinsicsCoordinatorState {
  *   broken, invalid, or unusable; the pinned CameraX version's real source-domain contract has not been
  *   source-traced or device-proven here. Every user-facing/exported label derived from this counter
  *   (`CamDiagnosticReportFormat`/`CamDiagnosticSnapshotJson`) says "supported transform class," never
- *   "usable"; see
- *   `dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis` for the
- *   separate, explicitly-scoped hypothesis check.
+ *   "usable"; see the `internalDebug`-only `dev.pointtosky.mobile.ar.camera.assessWholeActiveArrayMappingHypothesis`
+ *   (`mobile/src/internalDebug`, never a `:core:astro-core` production API, since its only caller is this
+ *   debug-only diagnostic export) for the separate, explicitly-scoped hypothesis check.
  * @property coordinatorFramesWaited how many frames the coordinator's own coherent-input gate
  *   actually counted against [CameraSessionIntrinsicsCoordinator]'s `maxFramesWaitingForUsableTransform`
  *   bound before resolution was claimed (frozen once resolution starts) — distinct from

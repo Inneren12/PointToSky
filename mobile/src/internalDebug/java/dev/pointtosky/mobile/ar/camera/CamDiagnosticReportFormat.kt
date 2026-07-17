@@ -99,8 +99,7 @@ private fun formatMappedBounds(bounds: MappedBoundsExportSnapshot?): String =
  * does not hold, **never** a claim that the transform itself is broken, invalid, unusable, or known not
  * to describe the real pipeline (this codebase has not source-traced or device-proven the pinned
  * CameraX version's real source-domain contract) — see the real Pixel 9 identity-matrix evidence in
- * `docs/validation/cam_2c_pixel9_evidence.md` and
- * `dev.pointtosky.core.astro.projection.camera.assessWholeActiveArrayMappingHypothesis`'s own KDoc.
+ * `docs/validation/cam_2c_pixel9_evidence.md` and [assessWholeActiveArrayMappingHypothesis]'s own KDoc.
  * `sourceDomainBasis` names exactly which hypothesis was tested. Running counters live in the COUNTERS
  * section instead (see [countersSectionLines]).
  */
