@@ -1363,6 +1363,11 @@ pure `PHYSICAL_CAMERA_BINDING_EXPERIMENT_ACTIVITY_CLASS_NAME` constant (via refl
 `PhysicalCameraBindingExperimentActivity::class.java.name`) and unit-tested
 (`PhysicalCameraBindingExperimentActivityLaunchTest`) against the exact manifest string.
 
+> **Corrected by §3.11 below:** the class-name comparison above proves the two strings match, never that
+> the in-app action actually launches the registered `Activity` — §3.11's Fix C replaces the inlined
+> `Intent(...)` construction with one `buildPhysicalCameraBindingExperimentIntent(context)` function and
+> adds real, `PackageManager`-backed instrumented tests.
+
 **Fix 9 (this documentation pass) and Fix 10 (boundary/validation).** `CamDiagnosticsInternalDebugVariantBoundaryTest`/
 `CamDiagnosticsPublicVariantBoundaryTest` were extended with every new class this fix pass and the prior
 pass introduced (`PhysicalCameraProvenance`, `PhysicalCameraBindingResolution`,
@@ -1384,6 +1389,155 @@ pass introduced (`PhysicalCameraProvenance`, `PhysicalCameraBindingResolution`,
 - Physical Pixel 9 validation: **still not executed** — no physical device or emulator is available in
   this environment, same as every prior pass. This fix pass corrects code-level defects a careful review
   found without a device; it does not, and cannot, newly establish device-level facts.
+
+### 3.11 CAM-2c physical-camera provenance experiment: runtime correctness fix — stale callbacks, terminal
+lifecycle, launch-path testability (this PR)
+
+**Scope, restated.** Confined to `CameraPreview`'s callback delivery, the experiment's own session
+state/lifecycle, and its launch-path test coverage. CAM-2a projection math, transform-domain policy
+(§3.10 Fix 2's `SensorToBufferDomainProof` gate), intrinsics math, the renderer, the detector, the
+matcher, the star catalog, and the ordinary logical-camera guard are all untouched.
+
+**Fix A — stale callback capture.** `CameraPreview`'s `ImageAnalysis.Analyzer` and bind coroutine are
+installed inside a `DisposableEffect(Unit)` that runs its body exactly once per composition (§4.4's own
+"Lifecycle ownership" section already documents this for the bind/dispose race; the same one-shot effect
+also owns callback installation). The experiment's session composable
+(`PhysicalCameraBindingSession`) constructs a *brand-new* `onFrameMetadata`/`onCameraInfo`/
+`onExplicitBindFailure` lambda instance on every recomposition (every state transition) — before this
+fix, a later recomposition's new lambda never reached the already-installed, long-lived analyzer, which
+kept invoking whichever lambda instance existed the moment the effect first ran (e.g. one that read a
+`Binding`-era value, permanently, even after the session had since resolved to `Bound`).
+
+Fixed with `rememberStableCallback<T>(latest: (T) -> Unit): (T) -> Unit` (`CameraPreview.kt`, production,
+shared by every build variant — not `internalDebug`-only, since the defect class applies to any caller
+that passes a changing lambda into `CameraPreview`): backed by `rememberUpdatedState`, the returned
+function reference is `remember`ed exactly once (so passing it into the long-lived analyzer registration
+never itself triggers a rebind), while every *invocation* of that stable reference reads whichever
+`latest` lambda this composable most recently recomposed with. `CameraPreview` wraps all three of its own
+callback parameters through it before installing them.
+
+On the experiment side, the prior private sealed `ExperimentPhase` (`Binding`/`Bound`/`ExplicitBindFailed`
+— `Bound` bundled the binding *and* the frame together as one variant, so receiving one without the other
+required an awkward, easy-to-get-wrong intermediate representation) was replaced with a flat, pure data
+type: `ExperimentSessionState` (`bindingResolution`, `latestFrame`, `explicitBindFailureReason` as three
+independent, nullable fields) plus three reducer functions — `reduceCameraInfoResolved`, `reduceFrame`,
+`reduceExplicitBindFailure` (`mobile/src/internalDebug/.../camera/ExperimentSessionState.kt`). Each
+reducer: is a no-op unless its `attemptId` parameter matches the session's own `attemptId` (guards against
+a late callback from a superseded attempt — see Fix B); is a no-op once
+`ExperimentSessionState.isTerminallyFailed` (see Fix B); handles either callback order (a frame before
+`onCameraInfo`, or vice versa) by keeping `bindingResolution`/`latestFrame` independent; never regresses
+or erases an already-resolved `bindingResolution` (`reduceFrame` has no way to null it out); and
+recomputes the CAM-2c result (§3.10 Fix 2's `evidenceOnlySensorToBufferDomainProof` +
+`resolveCam2cForExplicitPhysicalCamera`, unchanged) once both a binding and a frame are present, using the
+*physical* camera's own active-array dimensions — never the logical camera's — exactly as before.
+
+New tests: `ExperimentSessionStateTest` (10 pure JVM tests) — a fresh session has no binding/frame/result;
+binding-before-frame and frame-before-binding both retain what they're given and reach the same
+`DomainNotProven` result once both are present (order independence); a later frame refreshes
+`latestFrame`/`cam2cResult` without erasing `bindingResolution`; a resolved binding never regresses;
+explicit failure is terminal (every later reducer call, including a second failure, is a no-op); a
+callback for a superseded `attemptId` never mutates the session; two independent attempts never
+cross-contaminate. `PhysicalCameraExperimentReportFormatTest` gained 3 new cases exercising
+`buildPhysicalCameraExperimentReportText` end-to-end: a `null` session renders `SELECTING_CANDIDATE`; the
+exact regression scenario the task specified — a fresh session renders `latestFrame=none yet`/
+`cam2cResult=awaiting frame`, still does after only a binding resolves, and renders a concrete
+`latestFrame=640x480`/`cam2cResult=DOMAIN_NOT_PROVEN` once a frame is folded in via the pure reducers,
+never leaving a stale "awaiting frame" behind; a terminally failed session renders the failure and omits
+binding/frame detail.
+
+A new instrumented Compose test, `ExperimentCallbackFreshnessTest` (`androidTestInternalDebug`), proves
+the fix end-to-end without needing real camera hardware (none is attached in this environment — see the
+Validation subsection below): a minimal `SimulatedCameraFrameSource` composable mirrors both
+`CameraPreview`'s own `DisposableEffect(Unit)`-installs-once pattern and `PhysicalCameraBindingSession`'s
+own fresh-lambda-every-recomposition pattern; the test installs a callback while the session is still
+`Binding`, transitions it to `Bound` **without** recreating the simulated analyzer (asserted via
+`assertSame` on the installed callback reference itself), invokes the *original* callback reference, and
+proves the report advances from `latestFrame=none yet`/`cam2cResult=awaiting frame` to a concrete frame
+and `DOMAIN_NOT_PROVEN` — the stale `Binding`-era value is never permanently captured. A second case in
+the same file proves the reverse order (frame before binding).
+
+**Fix B — terminal cleanup on explicit zoom/bind failure.** Before this fix, once `CameraPreview` reported
+an explicit zoom/bind failure, the experiment kept showing an `EXPLICIT_BIND_FAILED` banner while the
+camera/analyzer it had already bound (Preview + ImageAnalysis, per §4.4's lifecycle contract) stayed live
+indefinitely — no code path unbound it, and there was no in-app way back to candidate selection.
+
+Fixed by conditional composition, not a new unbind call: `PhysicalCameraBindingSession` now calls
+`CameraPreview` only while `!state.isTerminallyFailed`; once true, `CameraPreview` is removed from
+composition entirely, which runs its own `DisposableEffect`/`CameraSessionLifecycle` disposal path
+(§4.4's own exactly-once `cleanupAndShutdown`) and actually unbinds the camera — no second, ad-hoc unbind
+call was added, so `CameraSessionLifecycle`'s single-lock, exactly-once guarantee is unchanged. New
+"Retry"/"Back to candidates" actions (`testTag`s `physical_camera_experiment_retry`/
+`physical_camera_experiment_back_to_candidates`) give the user a way out of the terminal state.
+
+Attempt isolation — "callbacks from candidate A cannot mutate a later attempt for candidate B" — is now
+owned by a new pure `ExperimentUiModel` (`mobile/src/internalDebug/.../camera/ExperimentUiModel.kt`):
+`nextAttemptId` increases monotonically and is never reused; `startAttempt`/`retry`/`backToCandidates`
+are pure transitions over it; `updateSession(attemptId, reducer)` applies a reducer only if `attemptId`
+still matches the live session — the same guard `ExperimentSessionState`'s own reducers apply a second
+time, defense-in-depth against a callback already in flight when the UI moved on. At the Compose level,
+`key(session.attemptId) { PhysicalCameraBindingSession(...) }` forces a full subtree teardown/recreate on
+every new attempt (retry or a different candidate), so candidate A's CameraX session is fully torn down —
+never merely recomposed-over — before candidate B's session exists; this is the primary isolation
+mechanism, with the `attemptId` checks as a second, independent layer.
+
+New tests: `ExperimentUiModelTest` (8 pure JVM tests) — starting an attempt advances the counter; retry
+with no session is a no-op; retrying after a terminal failure starts a fresh, non-terminally-failed
+session with a new `attemptId` for the same candidate; `backToCandidates` discards the session but keeps
+the counter monotonic; `updateSession` is a no-op both with no live session and with a mismatched
+`attemptId`; **a callback from a superseded `attemptId` never overwrites the retried session** (the exact
+task-required scenario, reproduced through `ExperimentUiModel` itself, not just the underlying reducer).
+`ExperimentSessionLifecycleUiTest` (`androidTestInternalDebug`, Compose): rendering `PhysicalCameraBindingSession`
+with an already-terminally-failed `ExperimentSessionState` shows the failure banner and — by construction,
+since the `if (!state.isTerminallyFailed)` branch that calls `CameraPreview` is never taken for that state
+— never attempts to reach real camera hardware; Retry/Back actions each invoke their own callback exactly
+once; a retried `ExperimentUiModel` session starts clean (no binding, no frame, not terminally failed, a
+fresh `attemptId`).
+
+**Fix C — testable launch path.** §3.10 Fix 8's own launch-path test
+(`PhysicalCameraBindingExperimentActivityLaunchTest`) compared a reflected class name against a second,
+independently hand-written string literal — proving the two strings match, never that the in-app "Open
+physical-camera experiment" action actually launches the registered `Activity`. The `Intent(context,
+PhysicalCameraBindingExperimentActivity::class.java)` construction was also previously inlined directly
+inside the button's `onClick`, so no test could observe what a click actually launches.
+
+Fixed by extracting `buildPhysicalCameraBindingExperimentIntent(context: Context): Intent`
+(`PhysicalCameraBindingExperimentScreen.kt`) as the one function that ever constructs that `Intent`. The
+real button now routes through a new, injectable `onOpenPhysicalCameraExperiment: (() -> Unit)? = null`
+parameter on `CamDiagnosticFullReportDialog` — defaulting to the real
+`startActivity(buildPhysicalCameraBindingExperimentIntent(context))` call, the same optional-injection
+pattern the existing `actions: CamDiagnosticActions?` parameter already uses for Copy/Share. Two new
+`androidTestInternalDebug` tests, run against a real `Context`/`PackageManager`
+(`InstrumentationRegistry`), not a plain-JVM stub:
+- `ExperimentLaunchIntentTest` — the built `Intent`'s `component.className` is the experiment `Activity`'s
+  real reflected class name; `PackageManager.resolveActivity` (the same lookup a real `startActivity`
+  performs) actually resolves that exact component in this `internalDebug` build; `PackageManager.getActivityInfo`
+  reports `exported == false`, matching the manifest.
+- `CamDiagnosticPhysicalCameraExperimentLaunchUiTest` — a Compose click on "Open physical-camera
+  experiment" invokes an injected recording lambda exactly once, proving the button really does emit a
+  launch request.
+
+Neither test opens the `Activity` itself, and neither claims to — only a real Pixel 9 run (still pending)
+can claim that; these tests establish code/instrumentation-compilation-level confidence in the launch
+path, a distinct and lesser claim than a device run.
+
+**Validation (this session) — real Gradle, same provisioned JDK 17 + Android SDK + Gradle 8.14.3 as
+§3.10's own pass.**
+- `:mobile:testInternalDebugUnitTest`: **PASS, 472/472** (451 baseline + 21 new: 10
+  `ExperimentSessionStateTest` + 8 `ExperimentUiModelTest` + 3 new cases in the existing
+  `PhysicalCameraExperimentReportFormatTest`).
+- `:mobile:testPublicDebugUnitTest`: **PASS**, unchanged — confirms zero leakage of this pass's new code.
+- `:mobile:compileInternalDebugKotlin`/`compilePublicDebugKotlin`: **PASS**, zero new warnings.
+- `:mobile:compileInternalDebugAndroidTestKotlin`: **PASS** (4 new instrumented test files).
+- Instrumented/connected tests (`ExperimentCallbackFreshnessTest`, `ExperimentSessionLifecycleUiTest`,
+  `ExperimentLaunchIntentTest`, `CamDiagnosticPhysicalCameraExperimentLaunchUiTest`): compiled against a
+  real `androidx.compose.ui.test`/`InstrumentationRegistry` API surface, **not executed** — this
+  environment has no connected device/emulator to run `connectedInternalDebugAndroidTest` against. This is
+  a real, distinct gate from a plain-JVM compile: it proves these tests type-check against real Android
+  runtime APIs (`PackageManager`, `Context.startActivity`, Compose UI test node matchers), not merely that
+  they parse — but it is not the same claim as "these tests pass on a device," which remains pending.
+- Physical Pixel 9 validation: **still not executed** — no physical device or emulator is available in
+  this environment. This fix pass corrects code-level defects a careful review found and adds tests; it
+  does not, and cannot, newly establish device-level facts.
 
 ---
 

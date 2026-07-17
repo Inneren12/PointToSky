@@ -456,3 +456,61 @@ established — real-device `getPhysicalCameraInfos()` behavior, whether a bind 
 production, center/edge/corner residuals, and the sensor-to-buffer transform's real source domain — all
 remain exactly as unestablished as §5 recorded. This fix pass improves the correctness of code that has
 still never touched a physical camera.
+
+## 7. Runtime correctness fix — stale callbacks, terminal lifecycle, launch-path testability, still no
+new device evidence
+
+A further review, confined to `CameraPreview`'s callback delivery, the experiment's own session
+state/lifecycle, and its launch-path test coverage, found a runtime correctness gap: a stale-callback
+defect where a long-lived `CameraX` analyzer could keep invoking a lambda instance captured at an earlier
+composition rather than the current one; a resource-lifecycle gap where an explicit zoom/bind failure
+left a bound camera/analyzer live indefinitely with no in-app way back to candidate selection; and a
+launch-path test that proved only a reflected class name matched a hand-written string, never that the
+in-app action launches anything. All three are fixed
+(`docs/camera_coordinate_calibration_contract.md` §3.11, `docs/SPRINT_STATUS.md`'s "CAM-2c
+physical-camera provenance experiment — runtime correctness fix" entry). As with §6, read this section
+before treating anything above as more settled than it was: these fixes make the *mechanism* more
+correct and more thoroughly tested; they do not, and cannot, add real Pixel 9 evidence — no physical
+device or emulator has been attached in any pass, including this one.
+
+**Explicit statements this section exists to make unambiguous (matching this fix task's own requirement
+list):**
+
+- The prior P1 capability/domain defects (§6) remain closed; nothing in this pass reopens or revisits
+  them, and CAM-2a projection math, transform-domain policy, intrinsics math, the renderer, the detector,
+  the matcher, the catalog, and the ordinary logical-camera guard are all untouched by this pass.
+- Callback freshness (the stale-callback fix) and the terminal experiment lifecycle (removing
+  `CameraPreview` from composition on explicit failure, with Retry/Back actions and per-attempt
+  isolation) are now covered by new tests — pure JVM tests for every reducer/state-transition guarantee
+  (`ExperimentSessionStateTest`, `ExperimentUiModelTest`), and new instrumented Compose tests for the
+  Compose-level behavior itself (`ExperimentCallbackFreshnessTest`, `ExperimentSessionLifecycleUiTest`).
+- Build, compile, unit-test, and instrumentation-*compilation* gates are each real, and each is a
+  **distinct, lesser** claim than a physical-device run. In particular: "the instrumented tests compile
+  against real Android/Compose-test APIs" is not the same claim as "the instrumented tests pass on a
+  device" — this pass achieves only the former; no connected device/emulator exists in this environment
+  to run `connectedInternalDebugAndroidTest` and obtain the latter.
+- The in-app launch route (`buildPhysicalCameraBindingExperimentIntent` +
+  `CamDiagnosticFullReportDialog`'s "Open physical-camera experiment" button) is verified only to the
+  exact level actually tested: the built `Intent` targets the real, registered, `exported="false"`
+  `Activity` and `PackageManager` resolves it in this `internalDebug` build (`ExperimentLaunchIntentTest`,
+  instrumented, compiled but not run on a device), and a Compose click on the button invokes the launch
+  action (`CamDiagnosticPhysicalCameraExperimentLaunchUiTest`, same caveat). Neither test claims, and this
+  document does not claim, that the `Activity` was ever actually opened on a real Pixel 9 — that requires
+  a physical device run that has not occurred.
+- Physical binding remains **device-validation pending**, exactly as in §5 and §6. This pass fixes code
+  defects and adds tests; it establishes no new device-level fact.
+- Automatic sensor-to-buffer transform-domain proof remains unavailable in this codebase by design (§6's
+  Fix 2, unchanged by this pass): every real, current code path can only ever produce `Unresolved` or
+  `HypothesisMismatch`, never a `Proven*` variant. The expected current successful experiment outcome,
+  once a physical device is available, is therefore **verified physical binding plus
+  `DOMAIN_NOT_PROVEN`** — never `CAM-2c Resolved`.
+
+**Final status, this pass:**
+
+```
+CAM-2c PHYSICAL CAMERA EXPERIMENT CODE READY
+CALLBACK/LIFECYCLE PATH TESTED
+PHYSICAL BINDING DEVICE VALIDATION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF PENDING
+CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
+```
