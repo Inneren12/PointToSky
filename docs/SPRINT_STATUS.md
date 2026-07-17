@@ -842,13 +842,16 @@ the PR description / final report.**
   fields, either callback order is handled, a later frame never regresses or erases a resolved binding,
   and every reducer is a no-op for a stale/superseded `attemptId`. Covered by `ExperimentSessionStateTest`
   (11 pure JVM tests: order-independence, no-regression, superseded-attemptId no-op, terminal-failure
-  no-op, cross-attempt isolation) and a new instrumented Compose test,
-  `ExperimentCallbackFreshnessTest` (`androidTestInternalDebug`), that installs a callback while a session
-  is still `Binding`, transitions it to `Bound` **without** recreating the simulated analyzer, invokes the
-  original callback reference, and proves the report advances from `latestFrame=none yet`/
-  `cam2cResult=awaiting frame` to a concrete frame and `DOMAIN_NOT_PROVEN` - the old value is never
-  permanently captured. `buildPhysicalCameraExperimentReportText`'s own regression test in
-  `PhysicalCameraExperimentReportFormatTest` reproduces the same progression at the pure-state level.
+  no-op, cross-attempt isolation) - **executed and passing**, real JVM `Test` results, no device
+  required. A new instrumented Compose test, `ExperimentCallbackFreshnessTest` (`androidTestInternalDebug`),
+  installs a callback while a session is still `Binding`, transitions it to `Bound` **without** recreating
+  the simulated analyzer, invokes the original callback reference, and asserts the report advances from
+  `latestFrame=none yet`/`cam2cResult=awaiting frame` to a concrete frame and `DOMAIN_NOT_PROVEN` - the old
+  value is never permanently captured, *as written*; this test **compiles against real Android/Compose-test
+  APIs but has not been executed** - no device/emulator is available in this environment (see the
+  Validation subsection below). `buildPhysicalCameraExperimentReportText`'s own regression test in
+  `PhysicalCameraExperimentReportFormatTest` reproduces the same progression at the pure-state level and
+  **is** executed and passing (plain JVM).
 - **Fix B (terminal cleanup on explicit failure):** once `CameraPreview` reports an explicit zoom/bind
   failure, the session previously kept showing an `EXPLICIT_BIND_FAILED` banner while the camera/analyzer
   it had already bound stayed live indefinitely, with no in-app way back to candidate selection. Fixed:
@@ -861,12 +864,32 @@ the PR description / final report.**
   pure `ExperimentUiModel` (`startAttempt`/`retry`/`backToCandidates`/`updateSession`,
   `mobile/src/internalDebug/.../camera/ExperimentUiModel.kt`), plus `key(attemptId)` at the Compose level
   forcing a full subtree teardown/recreate on every new attempt - so a late callback from a failed or
-  superseded attempt can never mutate a retried session. Covered by `ExperimentUiModelTest` (7 pure JVM
-  tests, including "a callback from a superseded attemptId never overwrites the retried session") and
-  `ExperimentSessionLifecycleUiTest` (`androidTestInternalDebug`, Compose): the terminal-failure banner
-  renders and `CameraPreview` is never reached for that state (proven by code-path inspection - the
-  `if (!state.isTerminallyFailed)` branch that calls `CameraPreview` is not taken), and Retry/Back actions
-  invoke their callbacks exactly once.
+  superseded attempt can never mutate a retried session. Covered by `ExperimentUiModelTest` (8 pure JVM
+  tests, including "a callback from a superseded attemptId never overwrites the retried session") -
+  **executed and passing**. `ExperimentSessionLifecycleUiTest` (`androidTestInternalDebug`, Compose)
+  asserts, *as written*, that the terminal-failure banner renders, that `CameraPreview` is never reached
+  for that state (proven by code-path inspection - the `if (state.isTerminallyFailed)` early-return branch
+  never calls `CameraPreview`), and that Retry/Back actions each invoke their callback exactly once; this
+  test **compiles but has not been executed on a device or emulator** (see the Validation subsection).
+- **Fix B.1 (terminal-UI reachability, a follow-up review found this):** the terminal-failure layout above
+  rendered Retry/Back as the *first* child of a plain `Box`, then unconditionally rendered a
+  `fillMaxSize`, scrollable report layer as the *second* child - later `Box` children draw on top, so
+  that report layer visually covered Retry/Back and intercepted every pointer event over the whole
+  screen, making them physically unreachable despite existing in the semantics tree (a defect a prior
+  compiled-only instrumented test could not have caught, since it never scrolled or asserted visibility -
+  only that the nodes existed and `performClick()` succeeded against the semantics tree directly, which
+  does not require the node to be visually reachable). Fixed: `PhysicalCameraBindingSession` now renders
+  exactly one scrollable `Column` while terminally failed - failure banner, report text (now tagged
+  directly on the `Text` node, not the scroll container, so `hasText` assertions target a node whose own
+  semantics actually carry that text), Retry, then Back to candidates, as real siblings in one layout,
+  never two independently-`fillMaxSize`d layers stacked in a `Box`. `ExperimentSessionLifecycleUiTest` was
+  rewritten to prove this with real Compose UI test APIs: a small, fixed-size host (`320.dp x 480.dp`, well
+  under a typical device screen) forces genuine scrolling; `performScrollToNode` + `assertIsDisplayed`
+  reach and confirm visibility of the banner, the report, and both controls; `performClick()` on
+  Retry/Back is preceded by an explicit scroll-to-node and displayed-assertion, and each callback is
+  asserted to fire exactly once, with the *other* callback made to `error()` if it fires - proving no
+  cross-wiring. As with the rest of this pass's instrumented tests, this is compiled, not
+  device-executed.
 - **Fix C (testable launch path):** the prior launch-path test
   (`PhysicalCameraBindingExperimentActivityLaunchTest`) compared a reflected class name against a second,
   independently hand-written string - proving the two strings match, never that the in-app action
@@ -876,14 +899,17 @@ the PR description / final report.**
   new, injectable `onOpenPhysicalCameraExperiment` parameter (defaulting to the real
   `startActivity(buildPhysicalCameraBindingExperimentIntent(context))` call - the same optional-injection
   seam `actions: CamDiagnosticActions?` already uses for Copy/Share). Two new `androidTestInternalDebug`
-  tests, run against a real `Context`/`PackageManager`: `ExperimentLaunchIntentTest` asserts the built
-  `Intent`'s `component.className` matches the experiment `Activity`'s real class name, that
-  `PackageManager.resolveActivity` actually resolves that component in this `internalDebug` build (the
-  same lookup a real `startActivity` performs), and that `PackageManager.getActivityInfo` reports
-  `exported == false`; `CamDiagnosticPhysicalCameraExperimentLaunchUiTest` asserts a Compose click on
-  "Open physical-camera experiment" invokes an injected recording action exactly once. Neither test opens
-  the `Activity` itself on a real device - only a real Pixel 9 run (still pending, see below) can claim
-  that.
+  tests, written against a real `Context`/`PackageManager` (`InstrumentationRegistry`, not a plain-JVM
+  stub): `ExperimentLaunchIntentTest` asserts, *as written*, that the built `Intent`'s `component.className`
+  matches the experiment `Activity`'s real class name, that `PackageManager.resolveActivity` resolves that
+  component in this `internalDebug` build (the same lookup a real `startActivity` performs), and that
+  `PackageManager.getActivityInfo` reports `exported == false`; `CamDiagnosticPhysicalCameraExperimentLaunchUiTest`
+  asserts, *as written*, that a Compose click on "Open physical-camera experiment" invokes an injected
+  recording action exactly once. **Neither assertion has actually run and passed** - no
+  `connectedInternalDebugAndroidTest` execution has occurred in this environment (see the Validation
+  subsection); "PackageManager resolves it" and "the click invokes the action" describe what these tests
+  check when executed, not a result obtained so far. Neither test opens the `Activity` itself on a real
+  device either way - only a real Pixel 9 run (still pending, see below) can claim that.
 - **Boundary:** `CamDiagnosticsInternalDebugVariantBoundaryTest`/`CamDiagnosticsPublicVariantBoundaryTest`
   extended with every new class (`ExperimentSessionState`, `ExperimentUiModel`, and their Kt-file
   top-level reducer functions); `:mobile:compilePublicDebugKotlin` and `:mobile:testPublicDebugUnitTest`
@@ -895,30 +921,41 @@ the PR description / final report.**
     `PhysicalCameraExperimentReportFormatTest`).
   - *`:mobile:testPublicDebugUnitTest`*: **PASS**, unchanged - no publicDebug-visible code touched.
   - *`:mobile:compileInternalDebugKotlin`/`compilePublicDebugKotlin`*: **PASS**, zero new warnings.
-  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS** (3 new instrumented test files:
+  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS** (4 new instrumented test files:
     `ExperimentCallbackFreshnessTest`, `ExperimentSessionLifecycleUiTest`, `ExperimentLaunchIntentTest`,
     `CamDiagnosticPhysicalCameraExperimentLaunchUiTest`).
   - *Instrumented/connected tests* (`ExperimentCallbackFreshnessTest`, `ExperimentSessionLifecycleUiTest`,
-    `ExperimentLaunchIntentTest`, `CamDiagnosticPhysicalCameraExperimentLaunchUiTest`): compiled, **not
-    executed** - this environment has no connected device/emulator to run
-    `connectedInternalDebugAndroidTest` against. They are code/compilation verified only, exactly as far
-    as this pass can honestly claim.
+    `ExperimentLaunchIntentTest`, `CamDiagnosticPhysicalCameraExperimentLaunchUiTest`): **compile only -
+    not executed.** `connectedInternalDebugAndroidTest` was not run: `adb devices` reports no attached
+    device or emulator in this environment. Do not read "compiles against real Android/Compose-test APIs"
+    as "passes on a device" - those are different claims, and only the former is true here. The pure JVM
+    reducer/state-machine tests above (`ExperimentSessionStateTest`, `ExperimentUiModelTest`,
+    `PhysicalCameraExperimentReportFormatTest`) are the only tests in this pass that have actually
+    executed and passed.
   - *Physical Pixel 9 validation*: **still not executed** - no physical device or emulator is available in
     this environment. This fix pass corrects code-level defects found by review and adds tests; it does
     not, and cannot, newly establish device-level facts.
 
 **Overall CAM-2c physical-camera provenance experiment (runtime correctness fix) status: the stale-callback
-defect, the terminal-lifecycle gap, and the launch-path testability gap are all fixed and covered by new
-tests - pure JVM tests exercise every reducer/state-transition guarantee directly; new instrumented Compose
-tests exercise callback freshness, terminal cleanup, and the real launch `Intent`/`PackageManager`
-resolution, though those instrumented tests are themselves only compiled, not executed, in this
-device-less environment. Automatic transform-domain proof remains unavailable in this codebase by design
-(see the fix above), so the expected current successful experiment outcome, once a physical device is
-available, is verified physical binding plus `DOMAIN_NOT_PROVEN` - never `CAM-2c Resolved`. Final status:**
+defect, the terminal-lifecycle gap, and the launch-path testability gap are all fixed, and every fix's pure
+reducer/state-machine guarantee is executed and passing (real JVM `Test` results, no device required). New
+instrumented Compose tests are *written* to exercise callback freshness, terminal-UI reachability, and the
+real launch `Intent`/`PackageManager` resolution, and they compile against real Android/Compose-test APIs -
+but they have not been executed: no device or emulator is attached in this environment (`adb devices`
+reports none), so `connectedInternalDebugAndroidTest` has not run. "Compiles" and "tested" are different
+claims; only the former is true for the instrumented layer of this pass. Terminal cleanup itself
+(removing `CameraPreview` from composition on explicit failure) is structurally implemented and provable
+by code-path inspection, but the actual live camera-bind-then-fail-then-unbind transition, and the real
+`PackageManager` resolution the launch-path tests assert, have not been exercised on Android hardware or
+an emulator. Automatic transform-domain proof remains unavailable in this codebase by design (see the fix
+above), so the expected current successful experiment outcome, once a physical device is available, is
+verified physical binding plus `DOMAIN_NOT_PROVEN` - never `CAM-2c Resolved`. Final status:**
 
 ```
 CAM-2c PHYSICAL CAMERA EXPERIMENT CODE READY
-CALLBACK/LIFECYCLE PATH TESTED
+CALLBACK/LIFECYCLE LOGIC UNIT-TESTED
+INSTRUMENTED CALLBACK/LIFECYCLE TESTS COMPILE
+INSTRUMENTED EXECUTION PENDING
 PHYSICAL BINDING DEVICE VALIDATION PENDING
 SENSOR-TO-BUFFER DOMAIN PROOF PENDING
 CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
