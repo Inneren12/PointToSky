@@ -27,6 +27,28 @@ class CamDiagnosticsInternalDebugVariantBoundaryTest {
             "dev.pointtosky.mobile.ar.camera.WholeActiveArrayHypothesisVerdict",
             "dev.pointtosky.mobile.ar.camera.WholeActiveArrayMappingAssessment",
             "dev.pointtosky.mobile.ar.camera.WholeActiveArrayMappingHypothesisKt",
+            // CAM-2c physical-camera provenance experiment (physical-camera binding, topology recon,
+            // and the transform-domain-proof gate) - internalDebug-only, no production API surface.
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraProvenance",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingMethod",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraProvenanceConfidence",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingSource",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingResolution",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraInfoSelection",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraProvenanceKt",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingExperimentKt",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingExperimentActivity",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingExperimentScreenKt",
+            "dev.pointtosky.mobile.ar.camera.Cam2cPhysicalCameraResolution",
+            "dev.pointtosky.mobile.ar.camera.Cam2cPhysicalCameraResolutionKt",
+            "dev.pointtosky.mobile.ar.camera.SensorToBufferDomainProof",
+            "dev.pointtosky.mobile.ar.camera.SensorToBufferDomainProofKt",
+            "dev.pointtosky.mobile.ar.camera.CameraTopologyEntry",
+            "dev.pointtosky.mobile.ar.camera.PhysicalCameraTopologyEntry",
+            "dev.pointtosky.mobile.ar.camera.CameraTopologyReport",
+            "dev.pointtosky.mobile.ar.camera.CameraTopologyReportKt",
+            "dev.pointtosky.mobile.ar.camera.CameraTopologyBuilderKt",
+            "dev.pointtosky.mobile.ar.camera.CameraTopologyJsonKt",
         )
 
     @Test
