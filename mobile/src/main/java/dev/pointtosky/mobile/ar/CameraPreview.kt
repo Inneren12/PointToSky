@@ -15,12 +15,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.google.common.util.concurrent.ListenableFuture
 import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
 import dev.pointtosky.mobile.ar.camera.CameraFrameAnalyzer
 import dev.pointtosky.mobile.ar.camera.CameraFrameMetadataProvider
 import dev.pointtosky.mobile.ar.camera.CameraFrameMetadataSink
 import dev.pointtosky.mobile.ar.camera.CameraSessionLifecycle
 import dev.pointtosky.mobile.logging.MobileLog
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
@@ -37,14 +39,39 @@ private object CameraBindFailureReason {
     const val ILLEGAL_ARGUMENT_FALLBACK_FAILED = "illegal_argument_fallback_failed"
     const val EXPLICIT_SELECTOR_ILLEGAL_STATE = "explicit_selector_illegal_state"
     const val EXPLICIT_SELECTOR_ILLEGAL_ARGUMENT = "explicit_selector_illegal_argument"
+    const val EXPLICIT_SELECTOR_ZOOM_FAILED = "explicit_selector_zoom_failed"
 }
 
 /** CAM-2c physical-camera-binding experiment (internalDebug-only caller): a fixed, non-optical-zoom
  * ratio applied to a [cameraSelectorOverride] bind, so a zoom-triggered lens switch cannot silently
  * swap which physical sensor produces analyzed frames mid-session (task §9's "use a fixed supported
  * zoom ratio" mitigation - CameraX 1.4.2 exposes no per-frame physical-camera-identity callback to
- * detect such a switch directly; see `docs/camera_coordinate_calibration_contract.md`). */
+ * detect such a switch directly; see `docs/camera_coordinate_calibration_contract.md`). This is a
+ * mitigation only, not a proof: it removes the one lens-switch trigger (zoom) this codebase can
+ * control, but it does not, and cannot, rule out every possible OEM physical-camera-switching behavior
+ * (e.g. low-light or stabilization-triggered switches), since no CameraX API in this pinned version
+ * exposes live physical-camera identity to verify against. */
 internal const val EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO = 1.0f
+
+/**
+ * Suspends until this [ListenableFuture] completes, returning `Result.success(Unit)` on success or
+ * `Result.failure(cause)` otherwise - never blocking the calling thread, and never treating a
+ * still-pending future as complete. [CameraControl.setZoomRatio] (and `ProcessCameraProvider.getInstance`,
+ * see [getCameraProvider] below) both return `ListenableFuture`s from CameraX's own API; this is the
+ * one, shared suspend-adapter both use, so a caller never has to fire-and-forget an asynchronous camera
+ * operation and assume it already completed.
+ */
+private suspend fun ListenableFuture<*>.awaitCompletion(executor: Executor): Result<Unit> =
+    suspendCancellableCoroutine { continuation ->
+        addListener(
+            {
+                val result = runCatching { get() }.map { }
+                continuation.resume(result)
+            },
+            executor,
+        )
+        continuation.invokeOnCancellation { cancel(true) }
+    }
 
 /**
  * CAM-1c: binds CameraX `Preview` and `ImageAnalysis` together in one [ProcessCameraProvider.bindToLifecycle]
@@ -195,12 +222,35 @@ fun CameraPreview(
                         checkNotNull(boundCamera) { "boundCamera must be set once the combined bind succeeded" }
                     if (cameraSelectorOverride != null) {
                         // CAM-2c physical-camera experiment (task §9): fix zoom to a known ratio
-                        // before publishing CameraInfo, so no zoom-triggered lens switch can occur
-                        // between bind and the caller reading physical-camera provenance from it.
-                        camera.cameraControl.setZoomRatio(EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO)
+                        // *and await its actual completion* before publishing CameraInfo -
+                        // CameraControl.setZoomRatio returns an asynchronous ListenableFuture, so
+                        // firing it and immediately calling onCameraInfo (as a prior revision did)
+                        // would establish provenance before 1.0x was actually applied, not after.
+                        val zoomResult =
+                            camera.cameraControl
+                                .setZoomRatio(EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO)
+                                .awaitCompletion(ContextCompat.getMainExecutor(context))
+                        if (zoomResult.isFailure) {
+                            // Zoom is unsupported or application failed: never call onCameraInfo, so
+                            // no caller can mistake this bind for one with confirmed 1.0x zoom. The
+                            // already-bound use cases are left registered for the normal onDispose
+                            // cleanup path (CameraSessionLifecycle's cleanup is exactly-once and
+                            // already claimed by confirmBound above) - reporting a typed failure here
+                            // does not unbind a second time.
+                            MobileLog.cameraAnalysisBindFailed(CameraBindFailureReason.EXPLICIT_SELECTOR_ZOOM_FAILED)
+                            onExplicitBindFailure(CameraBindFailureReason.EXPLICIT_SELECTOR_ZOOM_FAILED)
+                            return@launch
+                        }
+                        // Awaiting the zoom future is itself a suspension point - re-check disposal
+                        // the same way every other suspension point in this file does, so a
+                        // disposal that raced with (and already unbound/cleaned-up via
+                        // cleanupAndShutdown) this session cannot still be reported as bound.
+                        if (session.isDisposed) return@launch
                     }
                     // CAM-1f: only for the confirmed-live session, never for a bind that lost the
-                    // late-dispose race (confirmBound already ran its cleanup and returned false above).
+                    // late-dispose race (confirmBound already ran its cleanup and returned false
+                    // above), and only once the physical-camera experiment's zoom future (if any) has
+                    // actually completed successfully.
                     onCameraInfo(camera.cameraInfo)
                 }
                 return@launch
