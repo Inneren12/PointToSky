@@ -54,6 +54,12 @@ class CamDiagnosticsPublicVariantBoundaryTest {
             "dev.pointtosky.mobile.ar.camera.CameraTopologyReportKt",
             "dev.pointtosky.mobile.ar.camera.CameraTopologyBuilderKt",
             "dev.pointtosky.mobile.ar.camera.CameraTopologyJsonKt",
+            // CAM-2c runtime correctness fix: the pure per-attempt session state machine and the
+            // screen-level attempt/retry model - internalDebug-only, must be absent here too.
+            "dev.pointtosky.mobile.ar.camera.ExperimentSessionState",
+            "dev.pointtosky.mobile.ar.camera.ExperimentSessionStateKt",
+            "dev.pointtosky.mobile.ar.camera.ExperimentUiModel",
+            "dev.pointtosky.mobile.ar.camera.ExperimentUiModelKt",
         )
 
     @Test
