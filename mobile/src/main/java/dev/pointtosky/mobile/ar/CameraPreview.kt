@@ -11,6 +11,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -52,6 +53,25 @@ private object CameraBindFailureReason {
  * (e.g. low-light or stabilization-triggered switches), since no CameraX API in this pinned version
  * exposes live physical-camera identity to verify against. */
 internal const val EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO = 1.0f
+
+/**
+ * Returns a function reference whose **identity never changes** across recompositions, but which
+ * always invokes the most recently supplied [latest] lambda when called (fix for a stale-callback
+ * defect: [CameraPreview]'s own bind coroutine and `ImageAnalysis.Analyzer` are installed once, inside
+ * a `DisposableEffect(Unit)` that runs exactly once per composition — a long-lived CameraX analyzer
+ * may retain whichever specific lambda object was captured when that effect first ran, and a later
+ * recomposition that passes a *different* lambda instance for e.g. [CameraPreview]'s `onFrameMetadata`
+ * does not, by itself, cause the already-installed analyzer to start invoking the new one). Backed by
+ * [rememberUpdatedState] (this is exactly that pattern, wrapped as a directly reusable, independently
+ * testable function value) — the returned function is `remember`ed once, so passing it into a
+ * long-lived callback/analyzer registration never itself triggers a rebind, while every *invocation* of
+ * that stable reference reads whichever [latest] this composable most recently recomposed with.
+ */
+@Composable
+internal fun <T> rememberStableCallback(latest: (T) -> Unit): (T) -> Unit {
+    val latestState = rememberUpdatedState(latest)
+    return remember { { value: T -> latestState.value(value) } }
+}
 
 /**
  * Suspends until this [ListenableFuture] completes, returning `Result.success(Unit)` on success or
@@ -142,6 +162,17 @@ fun CameraPreview(
             }
         }
     val metadataProvider = remember { CameraFrameMetadataProvider() }
+    // Fix for a stale-callback defect: DisposableEffect(Unit) below runs its body - including
+    // installing the ImageAnalysis.Analyzer and the bind coroutine's own closures - exactly once.
+    // Without these wrappers, a caller passing a new onFrameMetadata/onCameraInfo/onExplicitBindFailure
+    // lambda instance on a later recomposition (e.g. because it now closes over updated UI state) would
+    // never actually reach the long-lived analyzer/coroutine, which would keep invoking whichever
+    // lambda instance existed at the moment this effect first ran. Each wrapper's own identity is
+    // stable (remember-ed once) - installing it does not itself trigger a rebind - but every
+    // invocation reads the latest lambda this composable most recently recomposed with.
+    val currentOnFrameMetadata = rememberStableCallback(onFrameMetadata)
+    val currentOnCameraInfo = rememberStableCallback(onCameraInfo)
+    val currentOnExplicitBindFailure = rememberStableCallback(onExplicitBindFailure)
 
     DisposableEffect(Unit) {
         val job = Job()
@@ -171,7 +202,7 @@ fun CameraPreview(
                 object : CameraFrameMetadataSink {
                     override fun onFrame(metadata: CameraFrameMetadata) {
                         metadataProvider.onFrame(metadata)
-                        onFrameMetadata(metadata)
+                        currentOnFrameMetadata(metadata)
                     }
                 }
             val imageAnalysis =
@@ -238,7 +269,7 @@ fun CameraPreview(
                             // already claimed by confirmBound above) - reporting a typed failure here
                             // does not unbind a second time.
                             MobileLog.cameraAnalysisBindFailed(CameraBindFailureReason.EXPLICIT_SELECTOR_ZOOM_FAILED)
-                            onExplicitBindFailure(CameraBindFailureReason.EXPLICIT_SELECTOR_ZOOM_FAILED)
+                            currentOnExplicitBindFailure(CameraBindFailureReason.EXPLICIT_SELECTOR_ZOOM_FAILED)
                             return@launch
                         }
                         // Awaiting the zoom future is itself a suspension point - re-check disposal
@@ -251,7 +282,7 @@ fun CameraPreview(
                     // late-dispose race (confirmBound already ran its cleanup and returned false
                     // above), and only once the physical-camera experiment's zoom future (if any) has
                     // actually completed successfully.
-                    onCameraInfo(camera.cameraInfo)
+                    currentOnCameraInfo(camera.cameraInfo)
                 }
                 return@launch
             }
@@ -275,7 +306,7 @@ fun CameraPreview(
                         CameraBindFailureReason.EXPLICIT_SELECTOR_ILLEGAL_ARGUMENT
                     }
                 MobileLog.cameraAnalysisBindFailed(reason)
-                onExplicitBindFailure(reason)
+                currentOnExplicitBindFailure(reason)
                 return@launch
             }
 
@@ -321,7 +352,7 @@ fun CameraPreview(
                 }
             if (previewSessionIsActive) {
                 MobileLog.cameraPreviewBoundWithoutAnalysis()
-                onCameraInfo(previewCamera.cameraInfo)
+                currentOnCameraInfo(previewCamera.cameraInfo)
             }
         }
 

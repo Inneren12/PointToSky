@@ -1,6 +1,8 @@
 package dev.pointtosky.mobile.ar.camera
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,7 +36,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
 import dev.pointtosky.mobile.ar.CameraPreview
 
 /**
@@ -42,17 +44,21 @@ import dev.pointtosky.mobile.ar.CameraPreview
  * most devices only support one open camera session at a time and this experiment needs full control
  * over the [androidx.camera.core.CameraSelector] used for that one session.
  *
- * **Launch path (fix for a reachability defect).** This `Activity` is `android:exported="false"` (see
- * `mobile/src/internalDebug/AndroidManifest.xml`) — a prior revision of this file's own KDoc documented
- * launching it via `adb shell am start -n ...`, which is not a launch mechanism this codebase can stand
- * behind for a non-exported component. The actual, verified entry point is in-app: the existing CAM
- * diagnostics dialog (`CamDiagnosticFullReportDialog.kt`, `internalDebug`-only) has an "Open
- * physical-camera experiment" action that calls `context.startActivity(Intent(context,
- * PhysicalCameraBindingExperimentActivity::class.java))` — a same-app, same-process `Intent` this way
- * is always permitted regardless of `exported`, since that flag only restricts *other* apps/processes
- * from starting this component. [PHYSICAL_CAMERA_BINDING_EXPERIMENT_ACTIVITY_CLASS_NAME]/
- * `PhysicalCameraBindingExperimentActivityLaunchTest` guard against the class name drifting from the
- * manifest's own declared `android:name`.
+ * **Launch path (fix for a reachability defect, and later a testability defect).** This `Activity` is
+ * `android:exported="false"` (see `mobile/src/internalDebug/AndroidManifest.xml`) — a prior revision of
+ * this file's own KDoc documented launching it via `adb shell am start -n ...`, which is not a launch
+ * mechanism this codebase can stand behind for a non-exported component. The actual, verified entry
+ * point is in-app: the existing CAM diagnostics dialog (`CamDiagnosticFullReportDialog.kt`,
+ * `internalDebug`-only) has an "Open physical-camera experiment" action that calls
+ * `context.startActivity(buildPhysicalCameraBindingExperimentIntent(context))` — a same-app,
+ * same-process `Intent` this way is always permitted regardless of `exported`, since that flag only
+ * restricts *other* apps/processes from starting this component. [buildPhysicalCameraBindingExperimentIntent]
+ * is the one function that ever constructs that `Intent` (fix for a testability gap: a prior revision
+ * inlined the `Intent(...)` construction directly in the button's `onClick`, so no test could observe
+ * what it actually launches) — `ExperimentLaunchIntentTest`/`ExperimentLaunchIntentUiTest`
+ * (`androidTestInternalDebug`) assert its `component.className` resolves via `PackageManager` and that
+ * the underlying `Activity` stays `exported="false"`. [PHYSICAL_CAMERA_BINDING_EXPERIMENT_ACTIVITY_CLASS_NAME]
+ * guards against the class name itself drifting from the manifest's own declared `android:name`.
  *
  * Flow: enumerate the rear logical camera's declared physical candidates (never inferred from ID
  * ordering - task §4) &#8594; user taps a candidate &#8594; [CameraPreview] binds with an explicit
@@ -81,20 +87,19 @@ class PhysicalCameraBindingExperimentActivity : ComponentActivity() {
 internal val PHYSICAL_CAMERA_BINDING_EXPERIMENT_ACTIVITY_CLASS_NAME: String =
     PhysicalCameraBindingExperimentActivity::class.java.name
 
-private sealed interface ExperimentPhase {
-    data object SelectingCandidate : ExperimentPhase
-
-    data class Binding(val physicalCameraId: String) : ExperimentPhase
-
-    data class Bound(
-        val physicalCameraId: String,
-        val binding: PhysicalCameraBindingResolution,
-        val latestFrame: CameraFrameMetadata?,
-        val cam2cResult: Cam2cPhysicalCameraResolution?,
-    ) : ExperimentPhase
-
-    data class ExplicitBindFailed(val physicalCameraId: String, val reason: String) : ExperimentPhase
-}
+/**
+ * Builds the one explicit, same-app [Intent] that actually launches [PhysicalCameraBindingExperimentActivity]
+ * (fix for a launch-path testability gap: a prior revision inlined `Intent(context,
+ * PhysicalCameraBindingExperimentActivity::class.java)` directly inside `CamDiagnosticFullReportDialog`'s
+ * "Open physical-camera experiment" `onClick`, which meant no test could observe *what* that click
+ * actually launches - only that the reflected class name matched a hand-written string, which does not
+ * prove the in-app action launches the registered `Activity`). Both the real button
+ * (`CamDiagnosticFullReportDialog.kt`) and `PhysicalCameraExperimentLaunchTest`/
+ * `ExperimentLaunchIntentUiTest` (`androidTestInternalDebug`) call this exact function - never a second,
+ * independently hand-written `Intent(...)` construction that could silently drift from it.
+ */
+internal fun buildPhysicalCameraBindingExperimentIntent(context: Context): Intent =
+    Intent(context, PhysicalCameraBindingExperimentActivity::class.java)
 
 @Composable
 internal fun PhysicalCameraBindingExperimentScreen() {
@@ -111,7 +116,10 @@ internal fun PhysicalCameraBindingExperimentScreen() {
         }
     val topology = remember { buildCameraTopologyReport(context, boundCameraInfo = null) }
     val candidates = remember(topology) { topology.entries.flatMap { it.declaredPhysicalCameraIds }.distinct().sorted() }
-    var phase by remember { mutableStateOf<ExperimentPhase>(ExperimentPhase.SelectingCandidate) }
+    // All attempt/session transition logic ([ExperimentUiModel.startAttempt]/[retry]/[backToCandidates]/
+    // [updateSession]) lives in a pure, independently unit-tested type - this composable only owns the
+    // single `remember`ed value and wires Compose events to it.
+    var uiModel by remember { mutableStateOf(ExperimentUiModel()) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0A0A)) {
         if (!hasCameraPermission) {
@@ -129,21 +137,24 @@ internal fun PhysicalCameraBindingExperimentScreen() {
             return@Surface
         }
 
-        when (val currentPhase = phase) {
-            is ExperimentPhase.SelectingCandidate ->
-                CandidatePicker(candidates = candidates, onSelected = { phase = ExperimentPhase.Binding(it) })
-            is ExperimentPhase.Binding, is ExperimentPhase.Bound, is ExperimentPhase.ExplicitBindFailed ->
-                BindingSession(
-                    physicalCameraId =
-                        when (currentPhase) {
-                            is ExperimentPhase.Binding -> currentPhase.physicalCameraId
-                            is ExperimentPhase.Bound -> currentPhase.physicalCameraId
-                            is ExperimentPhase.ExplicitBindFailed -> currentPhase.physicalCameraId
-                            ExperimentPhase.SelectingCandidate -> error("unreachable")
-                        },
-                    phase = currentPhase,
-                    onPhaseChange = { phase = it },
+        val session = uiModel.session
+        if (session == null) {
+            CandidatePicker(candidates = candidates, onSelected = { uiModel = uiModel.startAttempt(it) })
+        } else {
+            // key(attemptId): a NEW attempt (retry, or a different candidate) always gets an entirely
+            // fresh composable subtree - a fresh CameraPreview, a fresh
+            // DisposableEffect/CameraSessionLifecycle, a fresh bind. This is the mechanism that
+            // guarantees candidate-A's CameraX session is fully torn down (never merely
+            // recomposed-over) before candidate-B's session exists - never relying on callback
+            // freshness alone to isolate one attempt from the next.
+            key(session.attemptId) {
+                PhysicalCameraBindingSession(
+                    state = session,
+                    onUpdateSession = { attemptId, reducer -> uiModel = uiModel.updateSession(attemptId, reducer) },
+                    onRetry = { uiModel = uiModel.retry() },
+                    onBackToCandidates = { uiModel = uiModel.backToCandidates() },
                 )
+            }
         }
     }
 }
@@ -178,72 +189,70 @@ private fun CandidatePicker(
     }
 }
 
+/**
+ * Renders exactly one attempt ([state]). While the attempt is not yet terminally failed, binds and
+ * shows the live [CameraPreview]; every event it reports is applied via [onUpdateSession] against the
+ * pure [ExperimentSessionState] reducers (`reduceCameraInfoResolved`/`reduceFrame`/
+ * `reduceExplicitBindFailure`) - never an ad-hoc, hand-rolled state mutation here.
+ *
+ * **Terminal cleanup (fix for a resource-lifecycle gap).** Once [ExperimentSessionState.isTerminallyFailed]
+ * is `true` (an explicit bind or zoom failure was reported), this composable stops calling
+ * [CameraPreview] entirely - the live camera/analyzer this attempt bound is not merely hidden behind a
+ * failure banner, it is fully removed from composition, which runs `CameraPreview`'s own
+ * `DisposableEffect`/`CameraSessionLifecycle` disposal path and actually unbinds the camera. No new,
+ * separate unbind call is added here - reusing the existing, already-idempotent disposal path avoids
+ * any risk of double-unbinding/double-shutting-down `CameraSessionLifecycle`. [onRetry]/[onBackToCandidates]
+ * give the user a way to leave this terminal state - retrying starts a brand new attempt (a new
+ * `attemptId`, so a late callback from this failed attempt can never mutate the retry's state; see
+ * [ExperimentSessionState]'s own KDoc).
+ */
 @Composable
-private fun BindingSession(
-    physicalCameraId: String,
-    phase: ExperimentPhase,
-    onPhaseChange: (ExperimentPhase) -> Unit,
+internal fun PhysicalCameraBindingSession(
+    state: ExperimentSessionState,
+    onUpdateSession: (attemptId: Long, reducer: (ExperimentSessionState) -> ExperimentSessionState) -> Unit,
+    onRetry: () -> Unit,
+    onBackToCandidates: () -> Unit,
 ) {
     val context = LocalContext.current
-    val selector = remember(physicalCameraId) { explicitPhysicalCameraSelector(physicalCameraId) }
+    val attemptId = state.attemptId
+    val physicalCameraId = state.physicalCameraId
 
     Box(modifier = Modifier.fillMaxSize()) {
-        CameraPreview(
-            modifier = Modifier.fillMaxSize(),
-            cameraSelectorOverride = selector,
-            onCameraInfo = { cameraInfo: CameraInfo ->
-                val binding = resolvePhysicalCameraBindingFromCameraInfo(cameraInfo, physicalCameraId, context)
-                onPhaseChange(
-                    ExperimentPhase.Bound(
-                        physicalCameraId = physicalCameraId,
-                        binding = binding,
-                        latestFrame = null,
-                        cam2cResult = null,
-                    ),
+        if (!state.isTerminallyFailed) {
+            val selector = remember(physicalCameraId) { explicitPhysicalCameraSelector(physicalCameraId) }
+            CameraPreview(
+                modifier = Modifier.fillMaxSize(),
+                cameraSelectorOverride = selector,
+                onCameraInfo = { cameraInfo: CameraInfo ->
+                    val binding = resolvePhysicalCameraBindingFromCameraInfo(cameraInfo, physicalCameraId, context)
+                    onUpdateSession(attemptId) { it.reduceCameraInfoResolved(attemptId, binding) }
+                },
+                onExplicitBindFailure = { reason ->
+                    onUpdateSession(attemptId) { it.reduceExplicitBindFailure(attemptId, reason) }
+                },
+                onFrameMetadata = { frame ->
+                    onUpdateSession(attemptId) { it.reduceFrame(attemptId, frame) }
+                },
+            )
+        } else {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Bind failed: ${state.explicitBindFailureReason} - camera unbound.",
+                    color = Color.White,
+                    modifier = Modifier.testTag("physical_camera_experiment_failed_banner"),
                 )
-            },
-            onExplicitBindFailure = { reason ->
-                onPhaseChange(ExperimentPhase.ExplicitBindFailed(physicalCameraId, reason))
-            },
-            onFrameMetadata = { frame ->
-                val current = phase
-                if (current is ExperimentPhase.Bound) {
-                    // The sensor-to-buffer transform's source domain is never assumed proven merely
-                    // because a physical camera was verified (fix for a P1 correctness gap) -
-                    // evidenceOnlySensorToBufferDomainProof runs the existing whole-active-array
-                    // hypothesis diagnostic as *evidence*, never proof; no automatic path here can
-                    // ever produce a Proven* result. The active-array dimensions used are the
-                    // *physical* camera's own (from the verified binding's snapshot), never the
-                    // logical camera's.
-                    val physicalSnapshot = (current.binding as? PhysicalCameraBindingResolution.Bound)?.physicalCharacteristicsSnapshot
-                    val activeArrayWidthPx =
-                        physicalSnapshot?.activeArrayLeftPx?.let { left ->
-                            physicalSnapshot.activeArrayRightPx?.let { right -> right - left }
-                        }
-                    val activeArrayHeightPx =
-                        physicalSnapshot?.activeArrayTopPx?.let { top ->
-                            physicalSnapshot.activeArrayBottomPx?.let { bottom -> bottom - top }
-                        }
-                    val domainProof =
-                        evidenceOnlySensorToBufferDomainProof(
-                            matrix = frame.sensorToBufferTransform,
-                            activeArrayWidthPx = activeArrayWidthPx,
-                            activeArrayHeightPx = activeArrayHeightPx,
-                            bufferWidthPx = frame.bufferWidthPx,
-                            bufferHeightPx = frame.bufferHeightPx,
-                        )
-                    val cam2c =
-                        resolveCam2cForExplicitPhysicalCamera(
-                            binding = current.binding,
-                            domainProof = domainProof,
-                            sensorToBufferTransform = frame.sensorToBufferTransform,
-                            bufferWidthPx = frame.bufferWidthPx,
-                            bufferHeightPx = frame.bufferHeightPx,
-                        )
-                    onPhaseChange(current.copy(latestFrame = frame, cam2cResult = cam2c))
-                }
-            },
-        )
+                Text(
+                    "Retry",
+                    color = Color.Cyan,
+                    modifier = Modifier.testTag("physical_camera_experiment_retry").clickable { onRetry() },
+                )
+                Text(
+                    "Back to candidates",
+                    color = Color.Cyan,
+                    modifier = Modifier.testTag("physical_camera_experiment_back_to_candidates").clickable { onBackToCandidates() },
+                )
+            }
+        }
 
         Column(
             modifier =
@@ -255,7 +264,7 @@ private fun BindingSession(
                     .testTag("physical_camera_experiment_report"),
         ) {
             Text(
-                text = buildPhysicalCameraExperimentReportText(physicalCameraId, phase),
+                text = buildPhysicalCameraExperimentReportText(state),
                 color = Color.White,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall,
@@ -264,9 +273,19 @@ private fun BindingSession(
     }
 }
 
-/** Deterministic, plain-text report of the current experiment [phase] - the same field set a device
- * validation run (task §10) needs: selected logical/physical IDs, binding method/source, provenance
- * status, transform source-domain proof, and the published buffer-space `K` or the exact typed block.
+/**
+ * Deterministic, plain-text report of the current experiment [session] (`null` means no candidate has
+ * been selected yet) - the same field set a device validation run (task §10) needs: attempt id,
+ * selected logical/physical IDs, binding method/source, provenance status, transform source-domain
+ * proof, and the published buffer-space `K` or the exact typed block. Directly testable with a plain
+ * [ExperimentSessionState] value - no private wrapper type stands between this function and its input,
+ * so a test can construct any binding/frame/failure combination and assert the exact rendered text.
+ *
+ * **Frame and binding are independent fields (fix for a runtime correctness gap - task §1).**
+ * [ExperimentSessionState.latestFrame] and [ExperimentSessionState.bindingResolution] are reported
+ * independently, in whichever order they actually became available - `latestFrame` can read a real
+ * frame size while `cam2cResult` still reads "awaiting frame" (binding not yet resolved), and vice
+ * versa; neither ever regresses or is erased once set (see [ExperimentSessionState]'s own KDoc).
  *
  * **Fix for a units defect:** a prior revision printed `CameraIntrinsics.focalLengthMm` (a physical,
  * millimetre-space quantity) labelled as `"K: fx="` — conflating it with the buffer-space pixel
@@ -275,23 +294,26 @@ private fun BindingSession(
  * `focalLengthMm` is printed separately, explicitly labelled in millimetres, never conflated with the
  * pixel-space fields.
  */
-internal fun buildPhysicalCameraExperimentReportText(
-    requestedPhysicalCameraId: String,
-    phase: Any?,
-): String =
+internal fun buildPhysicalCameraExperimentReportText(session: ExperimentSessionState?): String =
     buildString {
         appendLine("CAM-2c PHYSICAL CAMERA BINDING EXPERIMENT")
-        appendLine("requestedPhysicalCameraId=$requestedPhysicalCameraId")
-        when (phase) {
-            is ExperimentPhase.Binding -> appendLine("status=BINDING")
-            is ExperimentPhase.ExplicitBindFailed -> {
-                appendLine("status=EXPLICIT_BIND_FAILED")
-                appendLine("reason=${phase.reason}")
-            }
-            is ExperimentPhase.Bound -> {
+        if (session == null) {
+            appendLine("status=SELECTING_CANDIDATE")
+            return@buildString
+        }
+        appendLine("requestedPhysicalCameraId=${session.physicalCameraId}")
+        appendLine("attemptId=${session.attemptId}")
+        if (session.isTerminallyFailed) {
+            appendLine("status=EXPLICIT_BIND_FAILED")
+            appendLine("reason=${session.explicitBindFailureReason}")
+            return@buildString
+        }
+        when (val binding = session.bindingResolution) {
+            null -> appendLine("status=BINDING")
+            else -> {
                 appendLine("status=BOUND")
-                appendLine("binding=${phase.binding::class.simpleName}")
-                when (val binding = phase.binding) {
+                appendLine("binding=${binding::class.simpleName}")
+                when (binding) {
                     is PhysicalCameraBindingResolution.Bound -> {
                         // logicalCameraId is nullable and never fabricated - distinguish "known" from
                         // "unavailable" explicitly, never silently substitute the physical ID.
@@ -314,11 +336,10 @@ internal fun buildPhysicalCameraExperimentReportText(
                                 "actual=${binding.actualCameraId ?: "unavailable"}",
                         )
                 }
-                appendLine("latestFrame=${phase.latestFrame?.let { "${it.bufferWidthPx}x${it.bufferHeightPx}" } ?: "none yet"}")
-                append(formatCam2cResultLines(phase.cam2cResult))
             }
-            else -> Unit
         }
+        appendLine("latestFrame=${session.latestFrame?.let { "${it.bufferWidthPx}x${it.bufferHeightPx}" } ?: "none yet"}")
+        append(formatCam2cResultLines(session.cam2cResult))
     }
 
 /**
