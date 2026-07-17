@@ -30,10 +30,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.camera.core.CameraInfo
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticLiveness
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticJson
 import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticReportText
+import dev.pointtosky.mobile.ar.camera.buildCameraTopologyJson
+import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReport
+import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReportText
 import dev.pointtosky.mobile.ar.camera.formatCapturedAt
 
 /** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for the full-screen diagnostics
@@ -78,6 +82,10 @@ const val CAM_DIAGNOSTIC_SHARE_JSON_BUTTON_TEST_TAG = "cam_diagnostic_share_json
 /** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Close". */
 const val CAM_DIAGNOSTIC_CLOSE_BUTTON_TEST_TAG = "cam_diagnostic_close_button"
 
+/** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Share topology" (CAM-2c recon,
+ * task §3). */
+const val CAM_DIAGNOSTIC_SHARE_TOPOLOGY_BUTTON_TEST_TAG = "cam_diagnostic_share_topology_button"
+
 /** `internalDebug`-only. A small, tappable, monospace-free text "button" matching this HUD's existing
  * translucent-chip visual language - never a Material3 [androidx.compose.material3.Button]. */
 @Composable
@@ -121,6 +129,7 @@ fun CamDiagnosticFullReportDialog(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     actions: CamDiagnosticActions? = null,
+    boundCameraInfo: CameraInfo? = null,
 ) {
     var frozenSnapshot by remember { mutableStateOf<CamDiagnosticSnapshot?>(null) }
     val liveness = if (frozenSnapshot != null) CamDiagnosticLiveness.FROZEN else CamDiagnosticLiveness.LIVE
@@ -208,6 +217,16 @@ fun CamDiagnosticFullReportDialog(
                             effectiveActions.share("PointToSky CAM diagnostics (JSON)", jsonText)
                         },
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_SHARE_JSON_BUTTON_TEST_TAG),
+                    )
+                    CamDiagnosticActionChip(
+                        label = "Share topology",
+                        onClick = {
+                            val topology = buildCameraTopologyReport(context, boundCameraInfo)
+                            val text =
+                                buildCameraTopologyReportText(topology) + "\n\n" + buildCameraTopologyJson(topology)
+                            effectiveActions.share("PointToSky camera topology (CAM-2c recon)", text)
+                        },
+                        modifier = Modifier.testTag(CAM_DIAGNOSTIC_SHARE_TOPOLOGY_BUTTON_TEST_TAG),
                     )
                 }
 
