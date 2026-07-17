@@ -26,38 +26,24 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.pointtosky.mobile.ar.camera.CamDiagnosticsExportInput
+import dev.pointtosky.mobile.ar.camera.CamDiagnosticsExportUiProvider
 import dev.pointtosky.mobile.ar.camera.CameraCalibrationDiagnostics
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsDiagnosticState
-import dev.pointtosky.mobile.ar.camera.buildCameraCalibrationDiagnosticText
-import dev.pointtosky.mobile.ar.camera.buildCameraGeometryDiagnosticText
-import dev.pointtosky.mobile.ar.camera.buildCameraSessionIntrinsicsDiagnosticText
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayState
 import dev.pointtosky.mobile.ar.camera.prediction.name
 
 /**
- * [androidx.compose.ui.platform.testTag] for the CAM-1g geometry-diagnostic overlay's full-text [Text]
- * (shown only while the HUD's details are expanded), for Compose UI tests.
+ * [androidx.compose.ui.platform.testTag] for the CAM diagnostics export slot (architecture fix §1) -
+ * the container [CamDiagnosticsExportUiProvider.Content] renders into. Stable across every build
+ * variant (defined in `main`) even though the *content* inside it is variant-specific: `internalDebug`
+ * renders the compact summary + "Open diagnostics"; every other variant renders nothing at all (the
+ * no-op implementation). Shared, variant-independent tests assert on this slot's presence/position;
+ * variant-specific content assertions live in `mobile/src/androidTestInternalDebug`.
  */
-const val CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG = "camera_geometry_diagnostic_overlay"
-
-/**
- * [androidx.compose.ui.platform.testTag] for the CAM-2c calibration-diagnostic overlay's full-text
- * [Text] (shown only while the HUD's details are expanded, and only once a calibrated mapping has
- * resolved for this session).
- */
-const val CAMERA_CALIBRATION_DIAGNOSTIC_OVERLAY_TEST_TAG = "camera_calibration_diagnostic_overlay"
-
-/**
- * [androidx.compose.ui.platform.testTag] for the CAM-2c runtime-integration diagnostic overlay's
- * full-text [Text] (CAM-2c runtime integration fix §5) — shown only while the HUD's details are
- * expanded, but unlike [CAMERA_CALIBRATION_DIAGNOSTIC_OVERLAY_TEST_TAG] above, rendered whenever a
- * CAM-2c attempt has been made at all, whether it succeeded or failed. This is the overlay that
- * closes the "screen shows only PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED with no CAM-2c attempt"
- * gap.
- */
-const val CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG = "camera_session_intrinsics_diagnostic_overlay"
+const val CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG = "cam_diagnostic_export_slot"
 
 /** [androidx.compose.ui.platform.testTag] for the outer HUD container (header + summary/details). */
 const val CAM_DIAGNOSTIC_HUD_PANELS_TEST_TAG = "cam_diagnostic_hud_panels"
@@ -139,10 +125,14 @@ object CamDiagnosticHudLayout {
  * - While collapsed (`!detailsExpanded && !controlsExpanded`): a short, non-scrolling one-line CAM-1g
  *   category summary. No [androidx.compose.foundation.verticalScroll] container exists in this state at
  *   all, so it can never consume a drag gesture over the AR viewport - the previous version's bug.
- * - While expanded (`detailsExpanded` and/or `controlsExpanded`): the full CAM-1g/CAM-2b diagnostic text
- *   (gated on [detailsExpanded]) and the CAM-2b interactive controls body (gated on [controlsExpanded],
- *   via [controlsContent]) render inside a scrollable region that fills whatever height remains below
- *   the two header rows - never floating independently over the reticle or the bottom target-info card.
+ * - While expanded (`detailsExpanded` and/or `controlsExpanded`): [CamDiagnosticsExportUiProvider]'s own
+ *   content (gated on [detailsExpanded]; HUD redesign §6, architecture fix §1 - `internalDebug` renders
+ *   a bounded, few-line CAM diagnostics summary plus "Open diagnostics", never the giant per-domain text
+ *   blocks a physical-device tester previously had to scroll/screenshot through; every other build
+ *   variant renders nothing, since that implementation is not even compiled into those variants), the
+ *   CAM-2b panel, and the CAM-2b interactive controls body (gated on [controlsExpanded], via
+ *   [controlsContent]) render inside a scrollable region that fills whatever height remains below the
+ *   two header rows - never floating independently over the reticle or the bottom target-info card.
  *   Only in this state does any part of the HUD intercept pointer input, and only within that bounded
  *   region.
  *
@@ -280,20 +270,25 @@ fun CamDiagnosticTopPanels(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(CamDiagnosticHudLayout.TOP_HUD_PANEL_SPACING)) {
                         if (detailsExpanded) {
-                            if (cam1gSnapshot != null) {
-                                CameraGeometryDiagnosticOverlay(
-                                    snapshot = cam1gSnapshot,
-                                    sessionId = cam1gSessionId,
-                                    statusTransitionCount = cam1gStatusTransitionCount,
-                                    observedFrameCount = cam1gObservedFrameCount,
-                                    readyBundleCount = cam1gReadyBundleCount,
+                            // Architecture fix §1: never a direct reference to any internalDebug-only
+                            // snapshot/formatter/dialog class from this shared (`main`) file - only the
+                            // variant-resolved provider, through the variant-safe interface declared in
+                            // CamDiagnosticsExportUi.kt. See that file's own KDoc for the source-set split.
+                            Box(modifier = Modifier.fillMaxWidth().testTag(CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG)) {
+                                CamDiagnosticsExportUiProvider.Content(
+                                    input =
+                                        CamDiagnosticsExportInput(
+                                            sessionId = cam1gSessionId,
+                                            cam2bState = cam2bState,
+                                            cameraGeometryState = cam1gSnapshot,
+                                            cameraGeometryStatusTransitionCount = cam1gStatusTransitionCount,
+                                            cameraGeometryObservedFrameCount = cam1gObservedFrameCount,
+                                            cameraGeometryReadyBundleCount = cam1gReadyBundleCount,
+                                            cameraIntrinsicsState = intrinsicsDiagnosticState,
+                                            calibrationDiagnostics = calibrationDiagnostics,
+                                        ),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
-                            }
-                            if (intrinsicsDiagnosticState != null) {
-                                CameraSessionIntrinsicsDiagnosticOverlay(intrinsicsDiagnosticState)
-                            }
-                            if (calibrationDiagnostics != null) {
-                                CameraCalibrationDiagnosticOverlay(calibrationDiagnostics)
                             }
                             if (cam2bState != null) {
                                 PredictedStarOverlayPanel(state = cam2bState)
@@ -332,87 +327,3 @@ private fun cam2bSummaryLine(state: PredictedStarOverlayState?): String =
         }
     }
 
-/**
- * CAM-1g compact diagnostic overlay (§5) - translucent, monospace, non-clickable. Purely a display of
- * [CameraGeometryDiagnosticSnapshot]; touches no renderer/matcher/detector state. Width is bounded by
- * the parent [CamDiagnosticTopPanels] column, not here, so it never fights the shared HUD bound.
- */
-@Composable
-private fun CameraGeometryDiagnosticOverlay(
-    snapshot: CameraGeometryDiagnosticSnapshot,
-    sessionId: Long,
-    statusTransitionCount: Int,
-    observedFrameCount: Long,
-    readyBundleCount: Long,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text =
-            buildCameraGeometryDiagnosticText(
-                snapshot = snapshot,
-                sessionId = sessionId,
-                statusTransitionCount = statusTransitionCount,
-                observedFrameCount = observedFrameCount,
-                readyBundleCount = readyBundleCount,
-            ),
-        color = Color.White,
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-        modifier =
-            modifier
-                .testTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG)
-                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
-                .padding(8.dp),
-    )
-}
-
-/**
- * CAM-2c §9 compact diagnostic overlay - translucent, monospace, non-clickable. Purely a display of
- * [CameraCalibrationDiagnostics]; touches no renderer/matcher/detector state, no CAM-2a projection
- * math. Only rendered while this session's calibrated `AnalysisBuffer` mapping has actually
- * succeeded (`calibrationDiagnostics != null` at the call site) - never shown for a
- * `PhysicalSensor`/legacy-fallback session.
- */
-@Composable
-private fun CameraCalibrationDiagnosticOverlay(
-    diagnostics: CameraCalibrationDiagnostics,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = buildCameraCalibrationDiagnosticText(diagnostics),
-        color = Color.White,
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-        modifier =
-            modifier
-                .testTag(CAMERA_CALIBRATION_DIAGNOSTIC_OVERLAY_TEST_TAG)
-                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
-                .padding(8.dp),
-    )
-}
-
-/**
- * CAM-2c runtime-integration diagnostic overlay (fix §5) - translucent, monospace, non-clickable.
- * Purely a display of [CameraSessionIntrinsicsDiagnosticState]; touches no renderer/matcher/detector
- * state, no CAM-2a projection math. Unlike [CameraCalibrationDiagnosticOverlay] above, rendered
- * whenever a CAM-2c attempt has been made at all - it is the one place a physical-device tester can
- * see the CAM-2c root cause (e.g. `UnsupportedLogicalMultiCameraMapping`) even when this session
- * published a CAM-1b `PhysicalSensor` fallback instead.
- */
-@Composable
-private fun CameraSessionIntrinsicsDiagnosticOverlay(
-    state: CameraSessionIntrinsicsDiagnosticState,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = buildCameraSessionIntrinsicsDiagnosticText(state),
-        color = Color.White,
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodySmall,
-        modifier =
-            modifier
-                .testTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
-                .background(color = Color(0xAA000000), shape = RoundedCornerShape(8.dp))
-                .padding(8.dp),
-    )
-}

@@ -17,7 +17,7 @@ No" — it is never described as simply "tested," which would misstate what was 
 | CAM-1g | `internalDebug`-only camera-geometry diagnostics overlay; observable geometry result + debug counters | Yes | Yes | Yes (per that PR's own record) | Yes (per that PR's own record) | **No — `CAM-1g BLOCKED ON PHYSICAL DEVICE VALIDATION`** |
 | CAM-2a | Pure, Android-free star prediction (`projectStars`): catalog RA/Dec + observer location/time + magnetic declination + `CameraSessionGeometry` → predicted camera/image/display positions, with typed unavailable outcomes | Yes | Yes | Yes (388 tests, `:core:astro-core`, verified via a direct `kotlinc`/JUnit-console invocation — Gradle itself could not run; see `docs/camera_star_prediction_contract.md` §13) | Partial (`:core:astro-core` compilation confirmed this way; `:mobile` not attempted by that PR) | No — not wired into any renderer, no device claim |
 | CAM-2b | `internalDebug`-only predicted-star overlay: bounded catalog adapter, pure reducer, diagnostic state, Compose markers/panel/controls consuming `projectStars(...)` for visual diagnosis only, plus an explicit session/diagnostic-fallback intrinsics mode via a total, exact-copy `CameraSessionGeometry.withIntrinsics` substitution | Yes | Yes | **Yes — real Gradle, not a workaround.** `:core:astro-core:test` 388/388, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 271/271 each (incl. `PredictedStarOverlayReducerTest`/`Format`/`CatalogAdapterTest`), `androidTest` compilation for both flavors (after fixing one pre-existing, CAM-2b-unrelated compile bug — see below); connected instrumentation **not run** (no device/emulator in this environment); see below | **Yes for debug** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `lintInternalDebug`/`lintPublicDebug` (0 errors), `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green. Release: Kotlin/Java compile green for both flavors; APK packaging blocked only by a missing release signing keystore (`storeFile`), not a code defect; see below | **No — `CAM-2b BLOCKED ON PHYSICAL DEVICE VALIDATION`** (build gates now sufficiently verified; no physical device or emulator was available in this environment) |
-| CAM-2c | Calibrated Camera2-to-`ImageAnalysis`-buffer pinhole intrinsics over a general (not axis-aligned-only) sensor-to-buffer matrix: full `SensorToBufferMatrix3` + classification, active-array-local active-array intrinsics (`LENS_INTRINSIC_CALIBRATION` when coordinate-space- and skew-tolerance-verified, else focal-length-derived from `SENSOR_INFO_PIXEL_ARRAY_SIZE` pixel pitch — never the active array, which affects only the coordinate domain and centre approximation; see fix §P2 — neither translated by the active array's full-pixel-array placement, see fix round 3 §P1), matrix-composed buffer-space K′ with axis-swap/sign-normalization restricted to the proven `AXIS_ALIGNED_0` class in production (`ORTHOGONAL_90`/`180`/`270` return a typed `RotationOwnershipUnproven` outcome), typed `AnalysisBufferIntrinsicsResolution` (incl. `UnsupportedSensorToBufferTransform`/`RotationOwnershipUnproven`/`MissingPixelArraySize`), coordinator coherent-input gate, `CameraIntrinsics.source=CAMERA_CHARACTERISTICS`+`reference=AnalysisBuffer` accepted by CAM-2a unchanged, debug-only calibration diagnostics panel (incl. active rect, principal-point basis, pixel-array size/delta, focal derivation basis) — **blocked on any logical-multi-camera device, very plausibly including a real Pixel 9's rear camera; see below** | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 468/468, `:mobile:testInternalDebugUnitTest`/`testPublicDebugUnitTest` 341/341 each; see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; see below | **No — physical-device validation could not be attempted: no physical device or emulator is available in this environment. Expected to hit `UnsupportedLogicalMultiCameraMapping` (not a calibrated result) on a real Pixel 9's rear camera regardless — see the fix notes below** |
+| CAM-2c | Calibrated Camera2-to-`ImageAnalysis`-buffer pinhole intrinsics over a general (not axis-aligned-only) sensor-to-buffer matrix: full `SensorToBufferMatrix3` + classification, active-array-local active-array intrinsics (`LENS_INTRINSIC_CALIBRATION` when coordinate-space- and skew-tolerance-verified, else focal-length-derived from `SENSOR_INFO_PIXEL_ARRAY_SIZE` pixel pitch — never the active array, which affects only the coordinate domain and centre approximation; see fix §P2 — neither translated by the active array's full-pixel-array placement, see fix round 3 §P1), matrix-composed buffer-space K′ with axis-swap/sign-normalization restricted to the proven `AXIS_ALIGNED_0` class in production (`ORTHOGONAL_90`/`180`/`270` return a typed `RotationOwnershipUnproven` outcome), typed `AnalysisBufferIntrinsicsResolution` (incl. `UnsupportedSensorToBufferTransform`/`RotationOwnershipUnproven`/`MissingPixelArraySize`), coordinator coherent-input gate, `CameraIntrinsics.source=CAMERA_CHARACTERISTICS`+`reference=AnalysisBuffer` accepted by CAM-2a unchanged, debug-only calibration diagnostics panel (incl. active rect, principal-point basis, pixel-array size/delta, focal derivation basis) — **blocked on any logical-multi-camera device, very plausibly including a real Pixel 9's rear camera; see below** | Yes | Yes | **Yes — real Gradle.** `:core:astro-core:test` 468/468, `:mobile:testInternalDebugUnitTest` 394/394, `:mobile:testPublicDebugUnitTest` 369/369 (counts now differ - the CAM diagnostic export tests are `internalDebug`-only, see the architecture-fix pass below); see below | **Yes** — `compileInternalDebugKotlin`/`compilePublicDebugKotlin`, `compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` all real-Gradle green; see below | **Runtime diagnostics confirmed on a real Pixel 9 (via the previous screenshot-based HUD) — calibrated mapping still blocked.** `cameraId=0`, `logical=true`, `physicalIds=2,3,4`, `matrixClass=AXIS_ALIGNED_0`, `transformPresent=1115/1115`, `CAM-2c=UnsupportedLogicalMultiCameraMapping`, `publishedReference=PhysicalSensor` — exactly the outcome predicted below, now an actual observation rather than an expectation. A diagnostic export/freeze workflow (`CamDiagnosticSnapshot`/`buildCamDiagnosticReportText`/`buildCamDiagnosticJson`, `internalDebug`-only, compiled only into that variant via a variant-safe source-set split) was built *afterward* so future evidence collection does not require screenshot stitching — it did **not** collect the evidence above and has **not itself** been run on a physical device yet; see `docs/validation/cam_2c_pixel9_evidence.md`'s three separately-scoped sections for the full breakdown and what remains unverified |
 
 ## CAM-2c (original pass — see "CAM-2c fix" below for corrections)
 
@@ -386,6 +386,77 @@ validation remains unexecuted for lack of any device or emulator capability in t
 independently of that gap — is expected to hit the logical-multi-camera guard on a real Pixel 9's rear
 camera rather than reach a calibrated `AnalysisBuffer` result at all. See the final verdict in the PR
 description.**
+
+- **CAM diagnostic export/freeze workflow + architecture-fix pass (this session) — real Gradle**, same
+  provisioned JDK 17 + Android SDK as the prior passes. Replaces the screenshot-driven CAM diagnostics
+  HUD with a bounded snapshot/export workflow (`internalDebug`-only), then hardens it: the export
+  implementation moved to a genuine `internalDebug`-only Gradle source set (a no-op
+  `CamDiagnosticsExportUi` implementation is compiled into `publicDebug`/`internalRelease`/
+  `publicRelease` instead - no reflection, no reliance on R8), the snapshot became a deep-copied,
+  read-only export DTO tree (mutable `FloatArray`/`Set` inputs are normalized into fresh `List`s at
+  capture time, verified by mutation-regression tests; Kotlin's `List` is a read-only interface, not a
+  JVM-enforced immutability guarantee, so no field retains a reference to a caller-owned mutable
+  collection in the first place), the share `Intent` is now built by a pure,
+  independently testable function, the live snapshot's timestamp is throttled (recomputed only on an
+  actual input change or dialog-open, never every recomposition, never a timer), and the full-report
+  scroll/large-font tests now prove the scrollable container reaches a real end marker and each action
+  is individually reachable rather than merely present in the tree. See
+  `docs/validation/cam_2c_pixel9_evidence.md` for the full breakdown, including why the original Pixel 9
+  evidence and this workflow's own (not yet device-verified) implementation are kept in clearly
+  separate sections.
+  - *`:core:astro-core:test`*: **PASS, 468/468.**
+  - *`:mobile:testInternalDebugUnitTest`*: **PASS, 394/394** (0 failures/errors; includes the new
+    snapshot/format/JSON/mutation/variant-presence tests, `internalDebug`-only).
+  - *`:mobile:testPublicDebugUnitTest`*: **PASS, 369/369** (0 failures/errors; includes the new
+    `publicDebug`-only test proving the real export classes are absent from this variant's classpath).
+  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS.**
+  - *`:mobile:lintInternalDebug`/`lintPublicDebug`*: **PASS**, 0 errors, 30 warnings each (same
+    pre-existing warning count as prior passes; none attributable to this change).
+  - *`:mobile:assembleInternalDebug`/`assemblePublicDebug`*: **PASS**, both debug APKs built.
+  - *Confirmed unchanged:* CAM-2a projection math, CAM-2c intrinsics math, logical-multi-camera policy,
+    camera binding, renderer, detector, matcher, catalog - this pass only touches the debug-only
+    diagnostics export surface and its own source-set boundary.
+  - *Physical Pixel 9 run of the new export workflow itself (Freeze/Copy all/Share log/Share JSON)*:
+    **not executed** — no physical device or emulator is available in this environment. See
+    `docs/validation/cam_2c_pixel9_evidence.md` §3 for exactly what remains to be confirmed there;
+    this is distinct from the original, already-confirmed Pixel 9 evidence in that file's §1.
+
+- **Follow-up hardening pass (this session, round 3) — real Gradle**, same provisioned JDK 17 + Android
+  SDK. Fixes four defects found in the prior pass: (1) the `internalDebug` instrumented-test source set
+  was at the wrong path (`mobile/src/internalDebugAndroidTest` — a directory AGP silently never
+  compiled) and is now at AGP's real name, `mobile/src/androidTestInternalDebug` (component prefix
+  first); this move surfaced a real, previously-hidden compile error (two missing cross-package test-tag
+  imports) in `CamDiagnosticExportUiTest.kt`, now fixed — direct evidence the wrong path had been masking
+  a genuine bug. (2) "Copy all"/"Share log"/"Share JSON" now dispatch through an injectable
+  `CamDiagnosticActions` interface (`copy(label, text)`/`share(subject, text)`), defaulting to the real
+  `AndroidCamDiagnosticActions` (clipboard/chooser) in production; new Compose tests inject a recording
+  fake and assert the *exact* label/subject/payload each button sends — including a frozen-snapshot case
+  (freeze, advance the live input, then confirm Share log/Share JSON still describe the frozen values,
+  not the newer live ones) — closing a gap where a payload-swapping regression could have passed
+  unnoticed. (3) KDoc/docs wording that overclaimed the snapshot as "fully immutable" is corrected to
+  "deep-copied, read-only export DTO tree", noting explicitly that Kotlin's `List` is a read-only
+  interface, not a JVM-enforced immutability guarantee (Option A: wording fix only, no new
+  immutable-collections dependency). (4) removed the unused `openState` parameter from the test-only
+  `ReticleAndExportUiHost` composable and its call site.
+  - *`:core:astro-core:test`*: **PASS, 468/468.**
+  - *`:mobile:testInternalDebugUnitTest`*: **PASS, 394/394** (unchanged — this round's new tests are
+    instrumented, not JVM unit tests).
+  - *`:mobile:testPublicDebugUnitTest`*: **PASS, 369/369** (unchanged).
+  - *`:mobile:compileInternalDebugAndroidTestKotlin`*: **PASS** — confirmed via `:mobile:sourceSets`
+    that `androidTestInternalDebug` is AGP-registered (Kotlin/Java sources under
+    `mobile/src/androidTestInternalDebug/java`), and via the compiled `kotlin-classes` output that both
+    `CamDiagnosticActionsTest.class` and `CamDiagnosticExportUiTest.class` (plus the two new payload
+    tests' synthetic lambda classes) were actually produced.
+  - *`:mobile:lintInternalDebug`/`lintPublicDebug`*: **PASS**, 0 errors, 30 warnings each (identical
+    count to the prior pass; same baseline).
+  - *`:mobile:assembleInternalDebug`/`assemblePublicDebug`*: **PASS**, both debug APKs built.
+  - *Confirmed unchanged:* `git diff --stat` against the prior pass touches only this diagnostics-export
+    feature's own files plus two doc-comment path corrections in shared `androidTest`/`main` files - no
+    CAM-2a projection math, CAM-2c intrinsics math, logical-multi-camera policy, camera binding,
+    renderer, detector, matcher, or catalog code changed.
+  - *Physical device/emulator execution*: **not run** — no physical device or emulator is available in
+    this environment; this round's proofs are compile/lint/JVM-test/instrumented-test-*compile*
+    evidence only, never a claim of connected/device execution.
 
 ## CAM-2b (this sprint)
 

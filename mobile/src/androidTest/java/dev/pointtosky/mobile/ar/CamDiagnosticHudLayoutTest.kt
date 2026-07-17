@@ -25,20 +25,12 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.pointtosky.core.astro.projection.camera.CameraGeometryQuality
-import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
-import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
-import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution as CoreCameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.prediction.IntrinsicsMappingUnavailableReason
 import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionSummary
-import dev.pointtosky.mobile.ar.camera.AnalysisBufferIntrinsicsResolution
-import dev.pointtosky.mobile.ar.camera.CameraCharacteristicsSnapshot
 import dev.pointtosky.mobile.ar.camera.CameraGeometryCenterProbeSnapshot
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticCategory
 import dev.pointtosky.mobile.ar.camera.CameraGeometryDiagnosticSnapshot
-import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsCoordinatorState
-import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsDiagnosticState
-import dev.pointtosky.mobile.ar.camera.CameraSessionIntrinsicsFrameCounters
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayIntrinsicsMode
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayMetadata
 import dev.pointtosky.mobile.ar.camera.prediction.PredictedStarOverlayPoint
@@ -216,18 +208,22 @@ class CamDiagnosticHudLayoutTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG).assertExists()
+        // CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG is the variant-independent container the export UI
+        // renders into (architecture fix §1) - shared androidTest sources can assert its presence and
+        // position without depending on internalDebug-only content; see
+        // mobile/src/androidTestInternalDebug for the export UI's own content assertions.
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG).assertExists()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).assertExists()
 
-        val cam1gBounds = composeTestRule.onNodeWithTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG).getUnclippedBoundsInRoot()
+        val exportSlotBounds = composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG).getUnclippedBoundsInRoot()
         val cam2bBounds = composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).getUnclippedBoundsInRoot()
 
         // Stacked vertically in one shared column - never two independently-aligned overlays
         // colliding within the same top corner.
         assertTrue(
-            "expected CAM-2b panel to start at or below CAM-1g panel's bottom edge, " +
-                "was cam1g=$cam1gBounds cam2b=$cam2bBounds",
-            cam2bBounds.top >= cam1gBounds.bottom,
+            "expected CAM-2b panel to start at or below the export slot's bottom edge, " +
+                "was exportSlot=$exportSlotBounds cam2b=$cam2bBounds",
+            cam2bBounds.top >= exportSlotBounds.bottom,
         )
     }
 
@@ -399,91 +395,10 @@ class CamDiagnosticHudLayoutTest {
             .assert(hasText("CAM-2b: unavailable · PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED", substring = true))
     }
 
-    /**
-     * CAM-2c runtime integration fix - device acceptance §8 "safe block" scenario: a Pixel-9-like
-     * logical-multi-camera rear sensor rejects the calibrated CAM-2c mapping, CAM-1b publishes its
-     * PhysicalSensor fallback, and CAM-2b in turn reports PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED
-     * (a downstream symptom, not the root cause - see requirements §6). Expanding the HUD must show
-     * the CAM-2c attempt line, not just the CAM-2b symptom - a panel that shows only the latter does
-     * not pass.
-     */
-    @Test
-    fun expandedDiagnosticsShowTheCam2cAttemptAlongsideTheCam2bDownstreamSymptom() {
-        val physicalSensorIntrinsics =
-            CameraIntrinsics(
-                horizontalFovDeg = 70.7,
-                verticalFovDeg = 56.2,
-                focalLengthMm = 4.25,
-                sensorWidthMm = 5.76,
-                sensorHeightMm = 4.29,
-                principalPointXPx = null,
-                principalPointYPx = null,
-                source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
-                reference = CameraIntrinsicsReference.PhysicalSensor,
-            )
-        val intrinsicsDiagnosticState =
-            CameraSessionIntrinsicsDiagnosticState(
-                analysisBufferAttempt =
-                    AnalysisBufferIntrinsicsResolution.UnsupportedLogicalMultiCameraMapping(
-                        cameraId = "0",
-                        physicalCameraIdsForDiagnostics = setOf("1", "2"),
-                    ),
-                publishedIntrinsicsResolution = CoreCameraIntrinsicsResolution.Resolved(physicalSensorIntrinsics),
-                coordinatorState = CameraSessionIntrinsicsCoordinatorState.RESOLVED,
-                cameraCharacteristicsSnapshot =
-                    CameraCharacteristicsSnapshot(
-                        availableFocalLengthsMm = floatArrayOf(4.25f),
-                        sensorPhysicalWidthMm = 5.76f,
-                        sensorPhysicalHeightMm = 4.29f,
-                        isLogicalMultiCamera = true,
-                        cameraId = "0",
-                        physicalCameraIds = setOf("1", "2"),
-                    ),
-                frameCounters =
-                    CameraSessionIntrinsicsFrameCounters(
-                        framesAnalyzed = 30L,
-                        framesWithTransform = 30L,
-                        framesWithNullTransform = 0L,
-                        framesWithUsableTransform = 30L,
-                        coordinatorFramesWaited = 1,
-                        latestFrameTransform = null,
-                        latestFrameTransformClass = null,
-                    ),
-            )
-
-        composeTestRule.setContent {
-            BoundedHudHost {
-                CamDiagnosticTopPanels(
-                    cam1gSnapshot = null,
-                    cam1gSessionId = 1L,
-                    cam1gStatusTransitionCount = 0,
-                    cam1gObservedFrameCount = 0L,
-                    cam1gReadyBundleCount = 0L,
-                    cam2bState = PredictedStarOverlayState.Unavailable(IntrinsicsMappingUnavailableReason.PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED),
-                    detailsExpanded = true,
-                    onDetailsExpandedChange = {},
-                    controlsExpanded = false,
-                    onControlsExpandedChange = {},
-                    controlsContent = {},
-                    intrinsicsDiagnosticState = intrinsicsDiagnosticState,
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithTag(CAM2B_SUMMARY_TEST_TAG)
-            .assert(hasText("CAM-2b: unavailable · PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED", substring = true))
-        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
-            .assert(hasText("CAM-2c attempt: UnsupportedLogicalMultiCameraMapping", substring = true))
-        // Publication status ("Resolved" - CAM-1b successfully published a PhysicalSensor value) and
-        // intrinsic calibration quality are distinct, separately-labelled fields (CAM-2c runtime
-        // integration fix P2) - "Resolved" must never be read as if it were a calibration quality.
-        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
-            .assert(hasText("publication: Resolved", substring = true))
-        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
-            .assert(hasText("reference: PhysicalSensor", substring = true))
-        composeTestRule.onNodeWithTag(CAMERA_SESSION_INTRINSICS_DIAGNOSTIC_OVERLAY_TEST_TAG)
-            .assert(hasText("intrinsics quality: unavailable", substring = true))
-    }
+    // The CAM-2c-specific "compact summary surfaces the root cause / full report opens on tap" scenario
+    // now lives in mobile/src/androidTestInternalDebug/.../CamDiagnosticExportUiTest.kt (architecture
+    // fix §1/§7) - CamDiagnosticsExportUiProvider's real content is internalDebug-only, so shared
+    // androidTest sources (compiled for every flavor) can no longer assert on it directly.
 
     @Test
     fun cam2bCompactStatusIncludesFallbackModeAndVisibleCount() {
@@ -563,9 +478,11 @@ class CamDiagnosticHudLayoutTest {
         // Header stays visible even though the detail content below it is long enough to scroll.
         composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_HEADER_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_HUD_DETAILS_TEST_TAG).assertExists()
-        // Long CAM-1g/CAM-2b content is present in the semantics tree (may need scrolling to bring
-        // fully into view - assertExists, not assertIsDisplayed, checks presence not current visibility).
-        composeTestRule.onNodeWithTag(CAMERA_GEOMETRY_DIAGNOSTIC_OVERLAY_TEST_TAG).assertExists()
+        // Long CAM-2b content is present in the semantics tree (may need scrolling to bring fully into
+        // view - assertExists, not assertIsDisplayed, checks presence not current visibility). The CAM
+        // diagnostics export slot is variant-independent (architecture fix §1) - its internalDebug-only
+        // content is asserted separately in mobile/src/androidTestInternalDebug.
+        composeTestRule.onNodeWithTag(CAM_DIAGNOSTIC_EXPORT_SLOT_TEST_TAG).assertExists()
         composeTestRule.onNodeWithTag(PREDICTED_STAR_OVERLAY_PANEL_TEST_TAG).assertExists()
 
         assertWholeHudWithinExclusionSafeBounds()
