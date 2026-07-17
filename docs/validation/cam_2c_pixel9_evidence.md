@@ -347,3 +347,188 @@ Scoped to what this file actually establishes:
 See the accompanying review response for the overall `CAM DIAGNOSTIC EXPORT PASS` /
 `CAM DIAGNOSTIC EXPORT NEEDS FIX` verdict, which also accounts for the architecture/immutability/test
 fixes made alongside this documentation correction.
+
+## 5. CAM-2c physical-camera provenance experiment — code-only pass, no new device evidence
+
+**Read this section before assuming the CAM-2c block above is lifted.** Everything in §1-§4 above is
+**real, confirmed Pixel 9 device evidence**, gathered by hand on physical hardware before this pass
+began (the task that requested this pass supplied it as "current confirmed Pixel 9 evidence" — the
+exact `cameraId=0`/`physicalIds=2,3,4`/`sensorToBuffer=identity`/`CAM-2c=UnsupportedLogicalMultiCameraMapping`
+readings match §1/§3 above exactly). This section describes a **separate, code-only** pass that
+upgraded CameraX and built a physical-camera-binding mechanism on top of it — see
+`docs/camera_coordinate_calibration_contract.md` §3.9 and `docs/SPRINT_STATUS.md`'s "CAM-2c
+physical-camera provenance experiment" section for the full design and validation record. **This pass
+did not run on a Pixel 9 or any other physical device.** It ran in a Claude Code remote-execution
+container with real network access (used to install a JDK 17 toolchain, a real Android SDK, and run a
+genuine, non-fabricated Gradle build) — a different *kind* of sandboxed environment than every prior
+CAM-2c pass (which had no network access at all for provisioning), but still a cloud container with
+**no physical Android device or emulator attached**.
+
+**What this pass established (real, Gradle-verified, this session):**
+- CameraX `1.3.4` → `1.4.2` compiles clean under this project's existing `AGP 8.7.2`/`compileSdk 35`
+  with zero behavioral regressions (`:core:astro-core:test` 468/468 and
+  `:mobile:test{Internal,Public}DebugUnitTest` both unchanged from the pre-upgrade baseline).
+- `CameraSelector.Builder.setPhysicalCameraId(String)`, `CameraInfo.getPhysicalCameraInfos(): Set<CameraInfo>`,
+  and `Camera2CameraInfo.from(CameraInfo)`'s dual constructor (logical vs. physical impl) are all
+  confirmed present in the resolved `camera-core`/`camera-camera2` `1.4.2` API jars via direct `javap -p`
+  inspection of the compiled classes — not merely read from (occasionally truncated/unreliable) web
+  documentation.
+- A new, additive, `internalDebug`-only resolution path (`resolveCam2cForExplicitPhysicalCamera`)
+  reaches a calibrated `Resolved` `AnalysisBufferIntrinsicsResolution` against **fixture data** —
+  a `CameraCharacteristicsSnapshot` shaped like a physical Pixel 9 sub-camera (`cameraId="2"`,
+  `isLogicalMultiCamera=false`) resolves exactly like an ordinary single-sensor device would, proven by
+  14 new unit tests (`PhysicalCameraProvenanceTest`/`Cam2cPhysicalCameraResolutionTest`/
+  `CameraTopologyReportTest`).
+- `AnalysisBufferIntrinsicsResolver.kt`'s `UnsupportedLogicalMultiCameraMapping` guard (the exact one
+  §1/§3 above observed firing) is **unmodified** — zero lines changed. The new path works *around* it
+  by construction (feeding a physical camera's own, non-logical snapshot), not by weakening it.
+
+**What this pass did *not* establish — the honest gap:**
+- Whether a real Pixel 9's `CameraInfo.getPhysicalCameraInfos()` actually returns a non-empty `Set`
+  containing a `CameraInfo` resolvable to physical ID `2`, `3`, or `4` when bound via
+  `CameraSelector.Builder().setPhysicalCameraId("2")` (or `"3"`/`"4"`) — this is a real-device behavior
+  this session could not observe. The `1.4.2` API surface guarantees the *methods exist*; it does not
+  guarantee this exact device's HAL populates them the way this codebase's `resolvePhysicalCameraBindingFromCameraInfo`
+  expects.
+- Whether such a bind, if it succeeds, actually constrains the physical sensor that produces subsequent
+  `ImageAnalysis` frames (as opposed to merely accepting the selector but still routing through the
+  logical camera's own fusion pipeline) — no per-frame physical-camera-identity signal exists in this
+  CameraX version to verify this even in principle (`docs/camera_coordinate_calibration_contract.md`
+  §3.9's §9 subsection).
+- Any center/edge/corner residual data (task §10) — this requires a live camera pointed at real or
+  simulated stars, which no cloud container can do.
+- Whether the sensor-to-buffer transform's real source domain (§3/§4 above's still-open question) looks
+  any different for a physical-camera-bound session than the logical-camera-bound identity matrix this
+  file's §3 already recorded — untested, since no physical-camera-bound frame was ever captured.
+
+**Read the two kinds of evidence in this file as distinct classes, not a single narrative:** §1-§4 are
+device observations; §5 (this section) is code that is *ready to be run* on a device and has never been
+run on one. Do not cite this section as evidence the Pixel 9 block is lifted — it is evidence the
+mechanism that *could* lift it, pending real-device confirmation, now exists and compiles/tests green.
+
+## 6. Fix pass on §5's own mechanism — two P1 correctness blockers, still no new device evidence
+
+A review of §5's mechanism found two P1 correctness blockers and five evidence-integrity defects, fixed
+in a follow-up pass (`docs/camera_coordinate_calibration_contract.md` §3.10,
+`docs/SPRINT_STATUS.md`'s "CAM-2c physical-camera provenance experiment fix" entry). Read this section
+before treating anything in §5 as more settled than it was — the fixes make the *mechanism* more
+correct; they do not, and cannot, add real Pixel 9 evidence.
+
+**The two P1 blockers, in plain terms:**
+
+1. `CameraTopologyBuilder`'s capability-code mapping used a fabricated value (`29`) instead of the real
+   `CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA` constant (`11`, confirmed
+   via `javap` against this project's own pinned Android SDK jar). Any topology report this mechanism
+   produced before the fix could have silently mislabeled — or failed to label — a real device's
+   logical-multi-camera capability.
+2. `resolveCam2cForExplicitPhysicalCamera` could resolve calibrated `AnalysisBuffer` intrinsics from a
+   verified physical-camera binding **alone**, without independently proving the sensor-to-buffer
+   transform's own source domain. Concretely: had this mechanism been run against the real Pixel 9
+   identity matrix this file's §3 recorded, a verified physical binding could have resolved a
+   calibrated `K` despite that exact matrix already being known, from §3's own finding, not to match the
+   one hypothesis this codebase can currently test. This is now closed by a `SensorToBufferDomainProof`
+   gate — physical-sensor identity and transform-domain proof are independent, both-required conditions;
+   see the calibration contract doc for the full type.
+
+**Explicit statements this section exists to make unambiguous (matching the fix task's own requirement
+list):**
+
+- The CameraX physical-binding *code* is build/test-ready — every gate a real Gradle run in this
+  environment can check is green.
+- Physical binding is **not yet device-verified**. It never was, in §5 or here.
+- Sensor-to-buffer transform-domain proof is a **separate, independently required** gate, now made
+  explicit in code rather than implicit and unchecked.
+- A fixture reaching `Cam2cPhysicalCameraResolution.Resolved` in a unit test (constructed with an
+  explicitly-supplied `SensorToBufferDomainProof.ProvenActiveArrayLocal`, which no real code path in
+  this codebase can produce automatically) is **not** evidence that the real Pixel 9 identity matrix
+  this file's §3 recorded is usable. On every device this codebase can currently run on, the automatic
+  domain-proof computation can only ever produce `Unresolved` or `HypothesisMismatch` — never `Proven*` —
+  so `resolveCam2cForExplicitPhysicalCamera` cannot resolve automatically today, by design.
+- The fixed `1.0×` zoom mitigation (§5, unchanged by this fix pass except that it is now actually
+  *awaited* before provenance is established — see the calibration contract doc's Fix 5) removes one
+  lens-switch trigger this codebase can control. It does not prove, and was never claimed by this fix
+  pass to prove, frame-level physical-camera-identity stability against every possible OEM behavior.
+- No physical camera ID is selected by default anywhere in this codebase. The experiment screen requires
+  an explicit user tap on a candidate enumerated from real `CameraManager` topology.
+
+**Still true, unchanged by this fix pass:** everything §5 already said about what has *not* been
+established — real-device `getPhysicalCameraInfos()` behavior, whether a bind actually constrains frame
+production, center/edge/corner residuals, and the sensor-to-buffer transform's real source domain — all
+remain exactly as unestablished as §5 recorded. This fix pass improves the correctness of code that has
+still never touched a physical camera.
+
+## 7. Runtime correctness fix — stale callbacks, terminal lifecycle, terminal-UI reachability, launch-path
+testability, still no new device evidence
+
+A further review, confined to `CameraPreview`'s callback delivery, the experiment's own session
+state/lifecycle, and its launch-path test coverage, found a runtime correctness gap: a stale-callback
+defect where a long-lived `CameraX` analyzer could keep invoking a lambda instance captured at an earlier
+composition rather than the current one; a resource-lifecycle gap where an explicit zoom/bind failure
+left a bound camera/analyzer live indefinitely with no in-app way back to candidate selection; and a
+launch-path test that proved only a reflected class name matched a hand-written string, never that the
+in-app action launches anything. A follow-up review then found a **terminal-UI reachability defect** in
+the fix for the second gap: Retry/Back were rendered underneath a fullscreen scrollable report layer in a
+plain `Box`, which visually covered them and intercepted every pointer event, making them physically
+unreachable despite existing in the semantics tree. All four are fixed
+(`docs/camera_coordinate_calibration_contract.md` §3.11, `docs/SPRINT_STATUS.md`'s "CAM-2c
+physical-camera provenance experiment — runtime correctness fix" entry). As with §6, read this section
+before treating anything above as more settled than it was: these fixes make the *mechanism* more
+correct and more thoroughly covered by tests — the pure reducer/state-machine layer is executed and
+passing, the instrumented Compose/`PackageManager` layer is compiled but not executed — and they do not,
+and cannot, add real Pixel 9 evidence — no physical device or emulator has been attached in any pass,
+including this one.
+
+**Explicit statements this section exists to make unambiguous (matching this fix task's own requirement
+list):**
+
+- The prior P1 capability/domain defects (§6) remain closed; nothing in this pass reopens or revisits
+  them, and CAM-2a projection math, transform-domain policy, intrinsics math, the renderer, the detector,
+  the matcher, the catalog, and the ordinary logical-camera guard are all untouched by this pass.
+- Callback freshness (the stale-callback fix), the terminal experiment lifecycle (removing
+  `CameraPreview` from composition on explicit failure, with Retry/Back actions and per-attempt
+  isolation), and the terminal-UI reachability fix (Retry/Back are no longer covered by the report
+  overlay) are covered by new/updated tests: pure JVM tests for every reducer/state-transition guarantee
+  (`ExperimentSessionStateTest`, `ExperimentUiModelTest`) — **these have actually executed and passed** —
+  and instrumented Compose tests for the Compose-level behavior itself
+  (`ExperimentCallbackFreshnessTest`, `ExperimentSessionLifecycleUiTest`) — **these compile against real
+  Android/Compose-test APIs but have not been executed.**
+- Pure reducer/state-machine guarantees were **executed and passed** — real `Test` results from
+  `:mobile:testInternalDebugUnitTest`, no device required. Instrumented Compose/`PackageManager` tests
+  were **compiled only** — `:mobile:compileInternalDebugAndroidTestKotlin` passing proves they type-check
+  against real Android runtime APIs, never that they ran or passed. These are different, and this
+  document does not conflate them: "compiles" is not "tested," and neither is the same claim as "passes
+  on a device."
+- Terminal cleanup (removing `CameraPreview` from composition once `ExperimentSessionState.isTerminallyFailed`)
+  is **structurally implemented**, provable by code-path inspection (the terminal branch early-returns
+  before ever reaching the `CameraPreview` call) — but the full live transition (bind → explicit zoom/bind
+  failure → actual `CameraSessionLifecycle` unbind) has **not been executed on Android hardware or an
+  emulator**. No device run has observed the camera actually being released.
+- The in-app launch route (`buildPhysicalCameraBindingExperimentIntent` +
+  `CamDiagnosticFullReportDialog`'s "Open physical-camera experiment" button) is verified only to the
+  exact level actually tested: `ExperimentLaunchIntentTest` and
+  `CamDiagnosticPhysicalCameraExperimentLaunchUiTest` are written, and compile, to assert the built
+  `Intent` targets the real, registered, `exported="false"` `Activity`, that `PackageManager` resolves it
+  in this `internalDebug` build, and that a click invokes the launch action — but **neither test has been
+  device-executed, so none of those assertions have actually passed yet.** Neither test claims, and this
+  document does not claim, that the `Activity` was ever actually opened on a real Pixel 9, or that the
+  `PackageManager` resolution assertion has passed — both require a physical device or emulator run that
+  has not occurred.
+- Physical binding remains **device-validation pending**, exactly as in §5 and §6. This pass fixes code
+  defects, adds tests, and fixes a UI reachability bug; it establishes no new device-level fact.
+- Automatic sensor-to-buffer transform-domain proof remains unavailable in this codebase by design (§6's
+  Fix 2, unchanged by this pass): every real, current code path can only ever produce `Unresolved` or
+  `HypothesisMismatch`, never a `Proven*` variant. The expected current successful experiment outcome,
+  once a physical device is available, is therefore **verified physical binding plus
+  `DOMAIN_NOT_PROVEN`** — never `CAM-2c Resolved`.
+
+**Final status, this pass:**
+
+```
+CAM-2c PHYSICAL CAMERA EXPERIMENT CODE READY
+CALLBACK/LIFECYCLE LOGIC UNIT-TESTED
+INSTRUMENTED CALLBACK/LIFECYCLE TESTS COMPILE
+INSTRUMENTED EXECUTION PENDING
+PHYSICAL BINDING DEVICE VALIDATION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF PENDING
+CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
+```

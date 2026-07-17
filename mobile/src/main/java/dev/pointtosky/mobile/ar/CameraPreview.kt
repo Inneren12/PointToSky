@@ -11,16 +11,19 @@ import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.google.common.util.concurrent.ListenableFuture
 import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
 import dev.pointtosky.mobile.ar.camera.CameraFrameAnalyzer
 import dev.pointtosky.mobile.ar.camera.CameraFrameMetadataProvider
 import dev.pointtosky.mobile.ar.camera.CameraFrameMetadataSink
 import dev.pointtosky.mobile.ar.camera.CameraSessionLifecycle
 import dev.pointtosky.mobile.logging.MobileLog
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +38,60 @@ private object CameraBindFailureReason {
     const val ILLEGAL_ARGUMENT_FALLBACK_PREVIEW_ONLY = "illegal_argument_fallback_preview_only"
     const val ILLEGAL_STATE_FALLBACK_FAILED = "illegal_state_fallback_failed"
     const val ILLEGAL_ARGUMENT_FALLBACK_FAILED = "illegal_argument_fallback_failed"
+    const val EXPLICIT_SELECTOR_ILLEGAL_STATE = "explicit_selector_illegal_state"
+    const val EXPLICIT_SELECTOR_ILLEGAL_ARGUMENT = "explicit_selector_illegal_argument"
+    const val EXPLICIT_SELECTOR_ZOOM_FAILED = "explicit_selector_zoom_failed"
 }
+
+/** CAM-2c physical-camera-binding experiment (internalDebug-only caller): a fixed, non-optical-zoom
+ * ratio applied to a [cameraSelectorOverride] bind, so a zoom-triggered lens switch cannot silently
+ * swap which physical sensor produces analyzed frames mid-session (task §9's "use a fixed supported
+ * zoom ratio" mitigation - CameraX 1.4.2 exposes no per-frame physical-camera-identity callback to
+ * detect such a switch directly; see `docs/camera_coordinate_calibration_contract.md`). This is a
+ * mitigation only, not a proof: it removes the one lens-switch trigger (zoom) this codebase can
+ * control, but it does not, and cannot, rule out every possible OEM physical-camera-switching behavior
+ * (e.g. low-light or stabilization-triggered switches), since no CameraX API in this pinned version
+ * exposes live physical-camera identity to verify against. */
+internal const val EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO = 1.0f
+
+/**
+ * Returns a function reference whose **identity never changes** across recompositions, but which
+ * always invokes the most recently supplied [latest] lambda when called (fix for a stale-callback
+ * defect: [CameraPreview]'s own bind coroutine and `ImageAnalysis.Analyzer` are installed once, inside
+ * a `DisposableEffect(Unit)` that runs exactly once per composition — a long-lived CameraX analyzer
+ * may retain whichever specific lambda object was captured when that effect first ran, and a later
+ * recomposition that passes a *different* lambda instance for e.g. [CameraPreview]'s `onFrameMetadata`
+ * does not, by itself, cause the already-installed analyzer to start invoking the new one). Backed by
+ * [rememberUpdatedState] (this is exactly that pattern, wrapped as a directly reusable, independently
+ * testable function value) — the returned function is `remember`ed once, so passing it into a
+ * long-lived callback/analyzer registration never itself triggers a rebind, while every *invocation* of
+ * that stable reference reads whichever [latest] this composable most recently recomposed with.
+ */
+@Composable
+internal fun <T> rememberStableCallback(latest: (T) -> Unit): (T) -> Unit {
+    val latestState = rememberUpdatedState(latest)
+    return remember { { value: T -> latestState.value(value) } }
+}
+
+/**
+ * Suspends until this [ListenableFuture] completes, returning `Result.success(Unit)` on success or
+ * `Result.failure(cause)` otherwise - never blocking the calling thread, and never treating a
+ * still-pending future as complete. [CameraControl.setZoomRatio] (and `ProcessCameraProvider.getInstance`,
+ * see [getCameraProvider] below) both return `ListenableFuture`s from CameraX's own API; this is the
+ * one, shared suspend-adapter both use, so a caller never has to fire-and-forget an asynchronous camera
+ * operation and assume it already completed.
+ */
+private suspend fun ListenableFuture<*>.awaitCompletion(executor: Executor): Result<Unit> =
+    suspendCancellableCoroutine { continuation ->
+        addListener(
+            {
+                val result = runCatching { get() }.map { }
+                continuation.resume(result)
+            },
+            executor,
+        )
+        continuation.invokeOnCancellation { cancel(true) }
+    }
 
 /**
  * CAM-1c: binds CameraX `Preview` and `ImageAnalysis` together in one [ProcessCameraProvider.bindToLifecycle]
@@ -67,12 +123,35 @@ private object CameraBindFailureReason {
  * `dev.pointtosky.mobile.ar.camera.SessionScopedCameraIntrinsicsResolver` uses to resolve real
  * per-device intrinsics without this composable owning a second camera/sensor session. Defaults to
  * a no-op.
+ *
+ * [cameraSelectorOverride] (CAM-2c physical-camera provenance experiment) replaces
+ * [CameraSelector.DEFAULT_BACK_CAMERA] for the combined bind attempt when non-`null`. Defaults to
+ * `null`, so every existing call site (production and `internalDebug` alike) is unaffected - this
+ * parameter's *type* is plain CameraX API available to every build variant, but only an
+ * `internalDebug`-only call site (the physical-camera-binding experiment) is ever expected to
+ * construct a non-`DEFAULT_BACK_CAMERA` [CameraSelector] (e.g. via
+ * `CameraSelector.Builder().setPhysicalCameraId(...)`) and pass it here - the same
+ * shared-class-with-debug-only-caller pattern `CameraCharacteristicsSource`'s optional `Context`
+ * already uses in this codebase. When [cameraSelectorOverride] is non-`null` and the combined bind
+ * fails, this composable does **not** retry the [CameraSelector.DEFAULT_BACK_CAMERA] Preview-only
+ * fallback (that would silently substitute a different, unrequested camera/binding for an explicit
+ * physical-camera experiment) - it instead reports [onExplicitBindFailure] with a short,
+ * non-device-specific reason and leaves the preview surface unbound. When
+ * [cameraSelectorOverride] is non-`null` and the combined bind succeeds, the bound camera's zoom
+ * ratio is fixed to [EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO] before [onCameraInfo] fires, so a
+ * zoom-triggered lens switch cannot occur during the experiment session.
+ *
+ * [onExplicitBindFailure] is called with a short reason string exactly when [cameraSelectorOverride]
+ * is non-`null` and the combined bind throws. Never called when [cameraSelectorOverride] is `null`
+ * (the existing Preview-only-fallback path handles that case exactly as before). Defaults to a no-op.
  */
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
     onFrameMetadata: (CameraFrameMetadata) -> Unit = {},
     onCameraInfo: (CameraInfo) -> Unit = {},
+    cameraSelectorOverride: CameraSelector? = null,
+    onExplicitBindFailure: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -83,6 +162,17 @@ fun CameraPreview(
             }
         }
     val metadataProvider = remember { CameraFrameMetadataProvider() }
+    // Fix for a stale-callback defect: DisposableEffect(Unit) below runs its body - including
+    // installing the ImageAnalysis.Analyzer and the bind coroutine's own closures - exactly once.
+    // Without these wrappers, a caller passing a new onFrameMetadata/onCameraInfo/onExplicitBindFailure
+    // lambda instance on a later recomposition (e.g. because it now closes over updated UI state) would
+    // never actually reach the long-lived analyzer/coroutine, which would keep invoking whichever
+    // lambda instance existed at the moment this effect first ran. Each wrapper's own identity is
+    // stable (remember-ed once) - installing it does not itself trigger a rebind - but every
+    // invocation reads the latest lambda this composable most recently recomposed with.
+    val currentOnFrameMetadata = rememberStableCallback(onFrameMetadata)
+    val currentOnCameraInfo = rememberStableCallback(onCameraInfo)
+    val currentOnExplicitBindFailure = rememberStableCallback(onExplicitBindFailure)
 
     DisposableEffect(Unit) {
         val job = Job()
@@ -112,7 +202,7 @@ fun CameraPreview(
                 object : CameraFrameMetadataSink {
                     override fun onFrame(metadata: CameraFrameMetadata) {
                         metadataProvider.onFrame(metadata)
-                        onFrameMetadata(metadata)
+                        currentOnFrameMetadata(metadata)
                     }
                 }
             val imageAnalysis =
@@ -129,13 +219,14 @@ fun CameraPreview(
                         )
                     }
 
+            val effectiveSelector = cameraSelectorOverride ?: CameraSelector.DEFAULT_BACK_CAMERA
             var boundCamera: Camera? = null
             val combinedBindFailure: RuntimeException? =
                 try {
                     boundCamera =
                         cameraProvider.bindToLifecycle(
                             lifecycleOwner,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            effectiveSelector,
                             preview,
                             imageAnalysis,
                         )
@@ -158,10 +249,40 @@ fun CameraPreview(
                     }
                 if (boundSessionIsActive) {
                     MobileLog.cameraAnalysisBound()
+                    val camera =
+                        checkNotNull(boundCamera) { "boundCamera must be set once the combined bind succeeded" }
+                    if (cameraSelectorOverride != null) {
+                        // CAM-2c physical-camera experiment (task §9): fix zoom to a known ratio
+                        // *and await its actual completion* before publishing CameraInfo -
+                        // CameraControl.setZoomRatio returns an asynchronous ListenableFuture, so
+                        // firing it and immediately calling onCameraInfo (as a prior revision did)
+                        // would establish provenance before 1.0x was actually applied, not after.
+                        val zoomResult =
+                            camera.cameraControl
+                                .setZoomRatio(EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO)
+                                .awaitCompletion(ContextCompat.getMainExecutor(context))
+                        if (zoomResult.isFailure) {
+                            // Zoom is unsupported or application failed: never call onCameraInfo, so
+                            // no caller can mistake this bind for one with confirmed 1.0x zoom. The
+                            // already-bound use cases are left registered for the normal onDispose
+                            // cleanup path (CameraSessionLifecycle's cleanup is exactly-once and
+                            // already claimed by confirmBound above) - reporting a typed failure here
+                            // does not unbind a second time.
+                            MobileLog.cameraAnalysisBindFailed(CameraBindFailureReason.EXPLICIT_SELECTOR_ZOOM_FAILED)
+                            currentOnExplicitBindFailure(CameraBindFailureReason.EXPLICIT_SELECTOR_ZOOM_FAILED)
+                            return@launch
+                        }
+                        // Awaiting the zoom future is itself a suspension point - re-check disposal
+                        // the same way every other suspension point in this file does, so a
+                        // disposal that raced with (and already unbound/cleaned-up via
+                        // cleanupAndShutdown) this session cannot still be reported as bound.
+                        if (session.isDisposed) return@launch
+                    }
                     // CAM-1f: only for the confirmed-live session, never for a bind that lost the
-                    // late-dispose race (confirmBound already ran its cleanup and returned false above).
-                    checkNotNull(boundCamera) { "boundCamera must be set once the combined bind succeeded" }
-                        .let { onCameraInfo(it.cameraInfo) }
+                    // late-dispose race (confirmBound already ran its cleanup and returned false
+                    // above), and only once the physical-camera experiment's zoom future (if any) has
+                    // actually completed successfully.
+                    currentOnCameraInfo(camera.cameraInfo)
                 }
                 return@launch
             }
@@ -172,6 +293,22 @@ fun CameraPreview(
             // up with onDispose's own shutdown later, however this coroutine ends.
             imageAnalysis.clearAnalyzer()
             session.shutdownExecutorOnce { analysisExecutor.shutdownNow() }
+
+            if (cameraSelectorOverride != null) {
+                // CAM-2c physical-camera experiment: never silently fall back to
+                // CameraSelector.DEFAULT_BACK_CAMERA for an explicit physical-camera bind request -
+                // that would substitute a different, unrequested camera/binding and defeat the
+                // whole point of an explicit selection. Report a typed failure instead.
+                val reason =
+                    if (combinedBindFailure is IllegalStateException) {
+                        CameraBindFailureReason.EXPLICIT_SELECTOR_ILLEGAL_STATE
+                    } else {
+                        CameraBindFailureReason.EXPLICIT_SELECTOR_ILLEGAL_ARGUMENT
+                    }
+                MobileLog.cameraAnalysisBindFailed(reason)
+                currentOnExplicitBindFailure(reason)
+                return@launch
+            }
 
             if (combinedBindFailure is IllegalStateException) {
                 // Lifecycle might be stopped before binding; do not retry Preview-only, since the
@@ -215,7 +352,7 @@ fun CameraPreview(
                 }
             if (previewSessionIsActive) {
                 MobileLog.cameraPreviewBoundWithoutAnalysis()
-                onCameraInfo(previewCamera.cameraInfo)
+                currentOnCameraInfo(previewCamera.cameraInfo)
             }
         }
 

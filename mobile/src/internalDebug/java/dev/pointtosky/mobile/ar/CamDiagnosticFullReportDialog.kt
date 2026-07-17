@@ -30,10 +30,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.camera.core.CameraInfo
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticLiveness
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticSnapshot
 import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticJson
 import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticReportText
+import dev.pointtosky.mobile.ar.camera.buildCameraTopologyJson
+import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReport
+import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReportText
+import dev.pointtosky.mobile.ar.camera.buildPhysicalCameraBindingExperimentIntent
 import dev.pointtosky.mobile.ar.camera.formatCapturedAt
 
 /** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for the full-screen diagnostics
@@ -78,6 +83,16 @@ const val CAM_DIAGNOSTIC_SHARE_JSON_BUTTON_TEST_TAG = "cam_diagnostic_share_json
 /** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Close". */
 const val CAM_DIAGNOSTIC_CLOSE_BUTTON_TEST_TAG = "cam_diagnostic_close_button"
 
+/** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Share topology" (CAM-2c recon,
+ * task §3). */
+const val CAM_DIAGNOSTIC_SHARE_TOPOLOGY_BUTTON_TEST_TAG = "cam_diagnostic_share_topology_button"
+
+/** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Open physical-camera experiment"
+ * (CAM-2c physical-camera provenance experiment fix — reachability defect fix: this is the actual,
+ * verified in-app launch path for [PhysicalCameraBindingExperimentActivity], which is
+ * `android:exported="false"` and therefore not reliably reachable via `adb shell am start`). */
+const val CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG = "cam_diagnostic_open_physical_camera_experiment_button"
+
 /** `internalDebug`-only. A small, tappable, monospace-free text "button" matching this HUD's existing
  * translucent-chip visual language - never a Material3 [androidx.compose.material3.Button]. */
 @Composable
@@ -121,6 +136,8 @@ fun CamDiagnosticFullReportDialog(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     actions: CamDiagnosticActions? = null,
+    boundCameraInfo: CameraInfo? = null,
+    onOpenPhysicalCameraExperiment: (() -> Unit)? = null,
 ) {
     var frozenSnapshot by remember { mutableStateOf<CamDiagnosticSnapshot?>(null) }
     val liveness = if (frozenSnapshot != null) CamDiagnosticLiveness.FROZEN else CamDiagnosticLiveness.LIVE
@@ -131,6 +148,13 @@ fun CamDiagnosticFullReportDialog(
     // from buildCamDiagnosticShareIntent()'s own independent unit test.
     val effectiveActions = actions ?: remember(context) { AndroidCamDiagnosticActions(context) }
     val reportText = remember(displayedSnapshot, liveness) { buildCamDiagnosticReportText(displayedSnapshot, liveness) }
+    // Defaults to the one real launch path (fix for a launch-path testability gap - task §3): the exact
+    // same buildPhysicalCameraBindingExperimentIntent(context) a real tap would build; tests inject a
+    // recording lambda here instead, so a click is asserted to *emit the launch request* directly,
+    // rather than only inferred from a reflected-class-name comparison.
+    val effectiveOnOpenPhysicalCameraExperiment =
+        onOpenPhysicalCameraExperiment
+            ?: { context.startActivity(buildPhysicalCameraBindingExperimentIntent(context)) }
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -208,6 +232,21 @@ fun CamDiagnosticFullReportDialog(
                             effectiveActions.share("PointToSky CAM diagnostics (JSON)", jsonText)
                         },
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_SHARE_JSON_BUTTON_TEST_TAG),
+                    )
+                    CamDiagnosticActionChip(
+                        label = "Share topology",
+                        onClick = {
+                            val topology = buildCameraTopologyReport(context, boundCameraInfo)
+                            val text =
+                                buildCameraTopologyReportText(topology) + "\n\n" + buildCameraTopologyJson(topology)
+                            effectiveActions.share("PointToSky camera topology (CAM-2c recon)", text)
+                        },
+                        modifier = Modifier.testTag(CAM_DIAGNOSTIC_SHARE_TOPOLOGY_BUTTON_TEST_TAG),
+                    )
+                    CamDiagnosticActionChip(
+                        label = "Open physical-camera experiment",
+                        onClick = effectiveOnOpenPhysicalCameraExperiment,
+                        modifier = Modifier.testTag(CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG),
                     )
                 }
 
