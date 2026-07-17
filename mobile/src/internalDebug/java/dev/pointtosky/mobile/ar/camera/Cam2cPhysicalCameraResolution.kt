@@ -17,26 +17,48 @@ import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
  * 5. No unproven logical-camera metadata is substituted - [resolveAnalysisBufferIntrinsics] is called
  *    with the *physical* camera's own snapshot, never the logical camera's.
  *
+ * **A sixth, independent condition (fix for a P1 correctness gap): the sensor-to-buffer transform's
+ * source domain must also be proven**, via [SensorToBufferDomainProof] — see that type's own KDoc.
+ * Physical-sensor identity (conditions 1-5) says nothing about whether
+ * [resolveAnalysisBufferIntrinsics]'s own implicit active-array-local source-domain assumption holds
+ * for this device's real matrix. A verified physical binding with an *unresolved* domain (the honest,
+ * currently-universal state for every real device this codebase has run on) must **not** resolve, even
+ * when the reported matrix is a trivial identity matrix that superficially "looks fine" — see
+ * `docs/validation/cam_2c_pixel9_evidence.md` §3 for exactly the real-device case this guards against.
+ *
  * This does **not** change [resolveAnalysisBufferIntrinsics] or its `UnsupportedLogicalMultiCameraMapping`
  * guard at all - a session with no explicit, verified physical binding still resolves through the
  * unchanged `resolveCameraIntrinsicsPreferringCalibration`/`resolveAnalysisBufferIntrinsics` path and
  * still hits that guard exactly as before (task §6's "preserve old behavior" requirement). This
  * function is a second, independent entry point that a physical-camera-bound session uses instead.
  */
-sealed interface Cam2cPhysicalCameraResolution {
+internal sealed interface Cam2cPhysicalCameraResolution {
     data class Resolved(
         val intrinsics: dev.pointtosky.core.astro.projection.camera.CameraIntrinsics,
         val diagnostics: CameraCalibrationDiagnostics,
         val provenance: PhysicalCameraProvenance,
     ) : Cam2cPhysicalCameraResolution
 
-    /** The physical-camera binding itself never reached [PhysicalCameraBindingResolution.Bound]. */
+    /** The physical-camera binding itself never reached [PhysicalCameraBindingResolution.Bound]. Checked
+     * before [DomainNotProven] - a binding failure always wins, regardless of what [SensorToBufferDomainProof]
+     * a caller happened to supply. */
     data class BindingFailure(val binding: PhysicalCameraBindingResolution) : Cam2cPhysicalCameraResolution
 
-    /** Binding succeeded and was verified, but the underlying [AnalysisBufferIntrinsicsResolution]
-     * still did not resolve (e.g. missing focal length, unsupported transform class) - distinct from
-     * [BindingFailure]: the physical-camera identity itself was proven here, the *intrinsics* math
-     * failed for an unrelated reason any single-camera device could also hit. */
+    /** Binding was verified ([PhysicalCameraBindingResolution.Bound]), but [SensorToBufferDomainProof]
+     * was not one of the `Proven*` variants [resolveAnalysisBufferIntrinsics]'s own math requires -
+     * [resolveAnalysisBufferIntrinsics] was never called at all in this case (never merely discarded
+     * after the fact). Physical-sensor identity alone never publishes calibrated `AnalysisBuffer`
+     * intrinsics. */
+    data class DomainNotProven(
+        val proof: SensorToBufferDomainProof,
+        val provenance: PhysicalCameraProvenance,
+    ) : Cam2cPhysicalCameraResolution
+
+    /** Binding was verified and the transform domain was proven, but the underlying
+     * [AnalysisBufferIntrinsicsResolution] still did not resolve (e.g. missing focal length,
+     * unsupported transform class) - distinct from [BindingFailure]/[DomainNotProven]: both the
+     * physical-camera identity and the transform domain were proven here, the *intrinsics* math failed
+     * for an unrelated reason any single-camera device could also hit. */
     data class IntrinsicsFailure(
         val attempt: AnalysisBufferIntrinsicsResolution,
         val provenance: PhysicalCameraProvenance,
@@ -46,17 +68,24 @@ sealed interface Cam2cPhysicalCameraResolution {
 /**
  * Resolves CAM-2c calibrated intrinsics for an explicitly bound, verified physical camera. [binding]
  * must already be the outcome of `verifyPhysicalCameraProvenance`/`resolvePhysicalCameraBindingFromCameraInfo` -
- * this function performs no binding itself, only the final intrinsics resolution once provenance is
- * already proven (or not).
+ * this function performs no binding itself. [domainProof] must independently establish that
+ * [sensorToBufferTransform]'s source domain matches what [resolveAnalysisBufferIntrinsics] assumes -
+ * see [SensorToBufferDomainProof.unlocksAnalysisBufferResolution]. Order of checks matters: [binding]
+ * is checked first, so a binding failure always wins over an unresolved/mismatched domain, never the
+ * reverse.
  */
 internal fun resolveCam2cForExplicitPhysicalCamera(
     binding: PhysicalCameraBindingResolution,
+    domainProof: SensorToBufferDomainProof,
     sensorToBufferTransform: SensorToBufferMatrix3?,
     bufferWidthPx: Int,
     bufferHeightPx: Int,
 ): Cam2cPhysicalCameraResolution {
     if (binding !is PhysicalCameraBindingResolution.Bound) {
         return Cam2cPhysicalCameraResolution.BindingFailure(binding)
+    }
+    if (!domainProof.unlocksAnalysisBufferResolution()) {
+        return Cam2cPhysicalCameraResolution.DomainNotProven(domainProof, binding.provenance)
     }
     val attempt =
         resolveAnalysisBufferIntrinsics(
