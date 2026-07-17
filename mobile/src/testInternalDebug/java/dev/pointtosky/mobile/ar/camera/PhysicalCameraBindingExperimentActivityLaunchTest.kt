@@ -8,16 +8,20 @@ import kotlin.test.assertEquals
  * launching [PhysicalCameraBindingExperimentActivity] via `adb shell am start -n ...` while the
  * manifest declares it `android:exported="false"` — a launch mechanism this codebase cannot stand
  * behind for a non-exported component. The actual, verified entry point is now an in-app
- * `context.startActivity(Intent(context, PhysicalCameraBindingExperimentActivity::class.java))` call
- * from `CamDiagnosticFullReportDialog`'s "Open physical-camera experiment" action.
+ * `context.startActivity(buildPhysicalCameraBindingExperimentIntent(context))` call from
+ * `CamDiagnosticFullReportDialog`'s "Open physical-camera experiment" action.
  *
- * This test cannot exercise the real `Intent`/`Activity` launch without an Android runtime (this
- * project has no Robolectric dependency), so it isolates and unit-tests the one thing that *can* drift
- * silently and break that launch: the class name the `Intent` (implicitly, via
- * `PhysicalCameraBindingExperimentActivity::class.java`) resolves to must exactly match the manifest's
- * own declared `android:name` for that `<activity>` entry
- * (`mobile/src/internalDebug/AndroidManifest.xml`) — a class rename without updating the manifest
- * would compile successfully but fail to launch at runtime with an `ActivityNotFoundException`.
+ * This test cannot exercise the real `Intent`/`Activity`/`PackageManager` behavior without an Android
+ * runtime (this project has no Robolectric dependency), so it is limited to the one thing a plain JVM
+ * test *can* prove: the class name [PHYSICAL_CAMERA_BINDING_EXPERIMENT_ACTIVITY_CLASS_NAME] reflects must
+ * exactly match the manifest's own declared `android:name` for that `<activity>` entry
+ * (`mobile/src/internalDebug/AndroidManifest.xml`). By itself this does **not** prove the in-app action
+ * actually launches the registered `Activity` (fix for a launch-path testability gap) —
+ * `ExperimentLaunchIntentTest` (`mobile/src/androidTestInternalDebug/.../ar/camera/`) covers that with a
+ * real `Context`/`PackageManager`: the built `Intent`'s `component.className`, that `PackageManager`
+ * actually resolves it in this `internalDebug` build, and that it stays `exported=false`.
+ * `CamDiagnosticPhysicalCameraExperimentLaunchUiTest` (`.../ar/`) covers the remaining half: that
+ * tapping the real button actually invokes the launch action.
  */
 class PhysicalCameraBindingExperimentActivityLaunchTest {
     @Test

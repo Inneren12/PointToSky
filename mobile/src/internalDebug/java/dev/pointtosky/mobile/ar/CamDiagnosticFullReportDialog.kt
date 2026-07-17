@@ -30,16 +30,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import android.content.Intent
 import androidx.camera.core.CameraInfo
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticLiveness
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticSnapshot
-import dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingExperimentActivity
 import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticJson
 import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticReportText
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyJson
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReport
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReportText
+import dev.pointtosky.mobile.ar.camera.buildPhysicalCameraBindingExperimentIntent
 import dev.pointtosky.mobile.ar.camera.formatCapturedAt
 
 /** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for the full-screen diagnostics
@@ -138,6 +137,7 @@ fun CamDiagnosticFullReportDialog(
     modifier: Modifier = Modifier,
     actions: CamDiagnosticActions? = null,
     boundCameraInfo: CameraInfo? = null,
+    onOpenPhysicalCameraExperiment: (() -> Unit)? = null,
 ) {
     var frozenSnapshot by remember { mutableStateOf<CamDiagnosticSnapshot?>(null) }
     val liveness = if (frozenSnapshot != null) CamDiagnosticLiveness.FROZEN else CamDiagnosticLiveness.LIVE
@@ -148,6 +148,13 @@ fun CamDiagnosticFullReportDialog(
     // from buildCamDiagnosticShareIntent()'s own independent unit test.
     val effectiveActions = actions ?: remember(context) { AndroidCamDiagnosticActions(context) }
     val reportText = remember(displayedSnapshot, liveness) { buildCamDiagnosticReportText(displayedSnapshot, liveness) }
+    // Defaults to the one real launch path (fix for a launch-path testability gap - task §3): the exact
+    // same buildPhysicalCameraBindingExperimentIntent(context) a real tap would build; tests inject a
+    // recording lambda here instead, so a click is asserted to *emit the launch request* directly,
+    // rather than only inferred from a reflected-class-name comparison.
+    val effectiveOnOpenPhysicalCameraExperiment =
+        onOpenPhysicalCameraExperiment
+            ?: { context.startActivity(buildPhysicalCameraBindingExperimentIntent(context)) }
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -238,15 +245,7 @@ fun CamDiagnosticFullReportDialog(
                     )
                     CamDiagnosticActionChip(
                         label = "Open physical-camera experiment",
-                        onClick = {
-                            // Same-app, same-process Intent - always permitted regardless of the
-                            // target Activity's exported="false" (that flag restricts only other
-                            // apps/processes from starting this component). This is the one verified
-                            // launch path for PhysicalCameraBindingExperimentActivity; do not launch
-                            // it via `adb shell am start`, which cannot reliably reach a
-                            // non-exported component.
-                            context.startActivity(Intent(context, PhysicalCameraBindingExperimentActivity::class.java))
-                        },
+                        onClick = effectiveOnOpenPhysicalCameraExperiment,
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG),
                     )
                 }
