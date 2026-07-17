@@ -342,8 +342,9 @@ class AnalysisBufferIntrinsicsResolverTest {
     fun `the real Pixel 9 evidence fixture - logical multi-camera, identity matrix - still returns UnsupportedLogicalMultiCameraMapping and publishes no AnalysisBuffer intrinsics`() {
         // The exact real-device evidence from docs/validation/cam_2c_pixel9_evidence.md: cameraId=0,
         // physicalIds=2,3,4, a 4080x3072 active array, a 640x480 ImageAnalysis buffer, and an identity
-        // sensor-to-buffer matrix (AXIS_ALIGNED_0 structurally). The new domain-consistency diagnostic
-        // must never bypass or reorder this pre-existing, higher-precedence rejection.
+        // sensor-to-buffer matrix (AXIS_ALIGNED_0 structurally). The whole-active-array-mapping
+        // hypothesis diagnostic must never bypass or reorder this pre-existing, higher-precedence
+        // rejection.
         val source =
             sourceOf(
                 isLogicalMultiCamera = true,

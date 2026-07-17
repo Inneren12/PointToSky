@@ -182,6 +182,33 @@ class WholeActiveArrayMappingHypothesisTest {
     }
 
     @Test
+    fun `when both source and buffer metadata are invalid, BUFFER_METADATA_UNAVAILABLE wins - never SOURCE_METADATA_UNAVAILABLE with a null buffer rectangle`() {
+        val matrix = axisAlignedMatrix(1.0, 1.0)
+
+        for (result in
+            listOf(
+                // source missing + buffer missing
+                assessWholeActiveArrayMappingHypothesis(matrix, null, null, null, null),
+                assessWholeActiveArrayMappingHypothesis(matrix, null, 3072, null, 480),
+                assessWholeActiveArrayMappingHypothesis(matrix, 4080, null, 640, null),
+                // source non-positive + buffer non-positive
+                assessWholeActiveArrayMappingHypothesis(matrix, 0, -1, 0, -1),
+                assessWholeActiveArrayMappingHypothesis(matrix, -1, 3072, -1, 480),
+                assessWholeActiveArrayMappingHypothesis(matrix, 4080, 0, 640, 0),
+            )
+        ) {
+            // Buffer-first precedence: BUFFER_METADATA_UNAVAILABLE must win whenever the buffer is
+            // invalid, regardless of whether the source is also invalid - this is what
+            // WholeActiveArrayMappingAssessment.expectedBufferBoundsPx's own contract ("null only for
+            // BUFFER_METADATA_UNAVAILABLE") requires; SOURCE_METADATA_UNAVAILABLE must never be reached
+            // with a null buffer rectangle.
+            assertEquals(WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE, result.verdict)
+            assertNull(result.mappedAssumedSourceBoundsPx)
+            assertNull(result.expectedBufferBoundsPx)
+        }
+    }
+
+    @Test
     fun `a genuinely projective matrix is UNSUPPORTED_TRANSFORM_CLASS, with buffer bounds still preserved`() {
         val projective =
             SensorToBufferMatrix3(

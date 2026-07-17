@@ -12,9 +12,9 @@ provenance and different confidence levels:
 3. **New workflow device verification** — the export/freeze workflow (section 2) actually run on a
    physical Pixel 9. This is where the **identity-matrix finding** was discovered, and it corrects a
    claim made in section 1.
-4. **CAM-2c domain-consistency fix** — the diagnostics/validation-terminology/documentation response to
-   section 3's finding: a new, separate semantic-consistency check, renamed diagnostics, and what is and
-   is not gated as a result.
+4. **CAM-2c whole-active-array hypothesis diagnostic** — the diagnostics/validation-terminology/
+   documentation response to section 3's finding: a new, separate, explicitly hypothesis-scoped
+   diagnostic, renamed diagnostics, and what is and is not gated as a result.
 
 Do not read section 2 as having produced section 1's evidence. It did not. The workflow was built
 *after* section 1 was already observed, so that future evidence-gathering (CAM-2d or otherwise) would
@@ -306,6 +306,11 @@ This codebase now computes and surfaces one, explicitly-named hypothesis test in
   defect — that a future pass source-tracing or device-proving the real CameraX source-domain contract
   should resolve before CAM-2d (or any pass that lifts the logical-multi-camera block) publishes
   calibrated `AnalysisBuffer` intrinsics on the strength of an untested assumption.
+- **Buffer-first result precedence.** `assessWholeActiveArrayMappingHypothesis` validates the buffer
+  domain before the source domain, so `BUFFER_METADATA_UNAVAILABLE` always wins when both are invalid —
+  `SOURCE_METADATA_UNAVAILABLE` is only ever returned once a valid `expectedBufferBoundsPx` already
+  exists to preserve, matching `WholeActiveArrayMappingAssessment.expectedBufferBoundsPx`'s own documented
+  contract (`null` only for `BUFFER_METADATA_UNAVAILABLE`).
 
 See `docs/SPRINT_STATUS.md`'s CAM-2c row for the exact Gradle commands and test counts this fix's own
 pass ran.

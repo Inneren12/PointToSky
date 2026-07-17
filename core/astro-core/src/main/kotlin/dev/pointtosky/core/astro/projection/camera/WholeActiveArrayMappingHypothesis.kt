@@ -67,10 +67,19 @@ enum class WholeActiveArrayHypothesisVerdict {
      */
     MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS,
 
-    /** The reported source-domain (active-array) width/height was missing or not strictly positive. */
+    /**
+     * The reported source-domain (active-array) width/height was missing or not strictly positive.
+     * Only ever returned once the destination-buffer width/height has already been confirmed valid — if
+     * both are invalid, [BUFFER_METADATA_UNAVAILABLE] is returned instead (see
+     * [assessWholeActiveArrayMappingHypothesis]'s own "buffer-first precedence" note).
+     */
     SOURCE_METADATA_UNAVAILABLE,
 
-    /** The reported analysis-buffer width/height was missing or not strictly positive. */
+    /**
+     * The reported analysis-buffer width/height was missing or not strictly positive. Takes precedence
+     * over [SOURCE_METADATA_UNAVAILABLE]: when both the buffer and the source domain are invalid, this
+     * is the verdict returned.
+     */
     BUFFER_METADATA_UNAVAILABLE,
 
     /**
@@ -128,7 +137,11 @@ enum class WholeActiveArrayHypothesisVerdict {
  *   [WholeActiveArrayHypothesisVerdict.NON_FINITE_MAPPED_BOUNDS], since the buffer's own rectangle is
  *   independent of whether the source-side assessment could complete. `null` **only** for
  *   [WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE], where no valid buffer rectangle
- *   exists to report at all.
+ *   exists to report at all. [assessWholeActiveArrayMappingHypothesis] enforces this by validating the
+ *   buffer domain *before* the source domain: when both are invalid, the result is always
+ *   [WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE] (never
+ *   [WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE] with a `null` buffer rectangle it
+ *   would otherwise owe the reader).
  * @property reason a short, human-readable, non-device-specific explanation — never a raw exception
  *   message, always safe to surface in a diagnostics report, and never phrased as a claim that the
  *   matrix itself is invalid.
@@ -197,6 +210,16 @@ const val DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX: Double = 0.5
  * is compared, within [tolerancePx], against the buffer's own `[0, 0]` to `[bufferWidthPx,
  * bufferHeightPx]` rectangle ([WholeActiveArrayMappingAssessment.expectedBufferBoundsPx]).
  *
+ * ## Buffer-first precedence
+ * [bufferWidthPx]/[bufferHeightPx] are validated **before** [sourceWidthPx]/[sourceHeightPx]. This
+ * matters only when both are invalid: the result is always
+ * [WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE], never
+ * [WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE]. This is not an arbitrary ordering
+ * choice — it is required by [WholeActiveArrayMappingAssessment.expectedBufferBoundsPx]'s own documented
+ * contract (`null` **only** for `BUFFER_METADATA_UNAVAILABLE`): reaching `SOURCE_METADATA_UNAVAILABLE`
+ * while the buffer is also invalid would force a `null` `expectedBufferBoundsPx` that verdict's own
+ * contract does not allow.
+ *
  * ## Why the transform class is derived, not accepted as a parameter
  * [SensorToBufferTransformClass] is derived here via [classifySensorToBufferMatrix] applied to [matrix]
  * itself, rather than accepted as a second, independent parameter — so this assessment can never disagree
@@ -215,10 +238,14 @@ const val DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX: Double = 0.5
  * add real information about which source-domain hypothesis actually holds.
  *
  * @param sourceWidthPx the assumed source domain's width, active-array-local pixels — `null`/non-positive
- *   is reported as [WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE].
+ *   is reported as [WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE], but only once
+ *   [bufferWidthPx]/[bufferHeightPx] have already been confirmed valid — see [bufferWidthPx]'s own doc.
  * @param sourceHeightPx the assumed source domain's height, the [sourceWidthPx] analogue.
  * @param bufferWidthPx the destination analysis buffer's width, pixels — `null`/non-positive is reported
- *   as [WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE].
+ *   as [WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE]. Validated **before**
+ *   [sourceWidthPx]/[sourceHeightPx]: when both the buffer and the source are invalid, the result is
+ *   always [WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE], never
+ *   [WholeActiveArrayHypothesisVerdict.SOURCE_METADATA_UNAVAILABLE].
  * @param bufferHeightPx the destination analysis buffer's height, the [bufferWidthPx] analogue.
  * @param tolerancePx bounded, explicit comparison tolerance in pixels; see
  *   [DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX].
@@ -238,16 +265,27 @@ fun assessWholeActiveArrayMappingHypothesis(
 
     val basis = SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL
 
+    // Buffer-first precedence (see WholeActiveArrayMappingAssessment.expectedBufferBoundsPx's own KDoc
+    // contract): the buffer domain is validated - and, once valid, expectedBufferBoundsPx is
+    // constructed - before the source domain is even looked at. This guarantees
+    // BUFFER_METADATA_UNAVAILABLE wins whenever the buffer is invalid, regardless of whether the source
+    // is also invalid, and guarantees SOURCE_METADATA_UNAVAILABLE is only ever reached once a valid
+    // expectedBufferBoundsPx already exists to preserve. Checking source first (an earlier revision's
+    // bug) could return SOURCE_METADATA_UNAVAILABLE with expectedBufferBoundsPx=null when the buffer was
+    // ALSO invalid, violating that exact contract.
     val bufferValid = bufferWidthPx != null && bufferHeightPx != null && bufferWidthPx > 0 && bufferHeightPx > 0
-    // Computed as soon as the buffer domain is known valid, independent of the source-domain checks
-    // below - the buffer's own rectangle does not depend on whether the source-side assessment can
-    // complete (see WholeActiveArrayMappingAssessment.expectedBufferBoundsPx's own KDoc contract).
+    if (!bufferValid) {
+        return WholeActiveArrayMappingAssessment(
+            verdict = WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE,
+            sourceDomainBasis = basis,
+            mappedAssumedSourceBoundsPx = null,
+            expectedBufferBoundsPx = null,
+            reason = "analysis buffer width/height missing or not strictly positive " +
+                "(bufferWidthPx=$bufferWidthPx, bufferHeightPx=$bufferHeightPx)",
+        )
+    }
     val expectedBounds =
-        if (bufferValid) {
-            SensorToBufferDomainBounds(leftPx = 0.0, topPx = 0.0, rightPx = bufferWidthPx!!.toDouble(), bottomPx = bufferHeightPx!!.toDouble())
-        } else {
-            null
-        }
+        SensorToBufferDomainBounds(leftPx = 0.0, topPx = 0.0, rightPx = bufferWidthPx!!.toDouble(), bottomPx = bufferHeightPx!!.toDouble())
 
     if (sourceWidthPx == null || sourceHeightPx == null || sourceWidthPx <= 0 || sourceHeightPx <= 0) {
         return WholeActiveArrayMappingAssessment(
@@ -259,17 +297,6 @@ fun assessWholeActiveArrayMappingHypothesis(
                 "(sourceWidthPx=$sourceWidthPx, sourceHeightPx=$sourceHeightPx)",
         )
     }
-    if (!bufferValid) {
-        return WholeActiveArrayMappingAssessment(
-            verdict = WholeActiveArrayHypothesisVerdict.BUFFER_METADATA_UNAVAILABLE,
-            sourceDomainBasis = basis,
-            mappedAssumedSourceBoundsPx = null,
-            expectedBufferBoundsPx = null,
-            reason = "analysis buffer width/height missing or not strictly positive " +
-                "(bufferWidthPx=$bufferWidthPx, bufferHeightPx=$bufferHeightPx)",
-        )
-    }
-
     val transformClass = classifySensorToBufferMatrix(matrix)
     if (transformClass == SensorToBufferTransformClass.PROJECTIVE_UNSUPPORTED) {
         return WholeActiveArrayMappingAssessment(
@@ -304,7 +331,7 @@ fun assessWholeActiveArrayMappingHypothesis(
             rightPx = xs.max(),
             bottomPx = ys.max(),
         )
-    val expected = checkNotNull(expectedBounds) { "expectedBounds must be non-null once bufferValid has been confirmed" }
+    val expected = expectedBounds
     val matches =
         abs(mapped.leftPx - expected.leftPx) <= tolerancePx &&
             abs(mapped.topPx - expected.topPx) <= tolerancePx &&
