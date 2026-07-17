@@ -111,20 +111,44 @@ private fun buildPhysicalEntryOrNull(
     )
 }
 
-private const val CAPABILITY_LOGICAL_MULTI_CAMERA_LABEL = "LOGICAL_MULTI_CAMERA"
+internal const val CAPABILITY_LOGICAL_MULTI_CAMERA_LABEL = "LOGICAL_MULTI_CAMERA"
 
-private fun capabilityLabel(capability: Int): String =
-    when (capability) {
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE -> "BACKWARD_COMPATIBLE"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR -> "MANUAL_SENSOR"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_POST_PROCESSING -> "MANUAL_POST_PROCESSING"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW -> "RAW"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_READ_SENSOR_SETTINGS -> "READ_SENSOR_SETTINGS"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BURST_CAPTURE -> "BURST_CAPTURE"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_YUV_REPROCESSING -> "YUV_REPROCESSING"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_DEPTH_OUTPUT -> "DEPTH_OUTPUT"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_CONSTRAINED_HIGH_SPEED_VIDEO -> "CONSTRAINED_HIGH_SPEED_VIDEO"
-        29 -> CAPABILITY_LOGICAL_MULTI_CAMERA_LABEL // REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA (API 28+; avoid @RequiresApi field ref pre-28)
+/**
+ * Maps a raw `CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES` entry to a human-readable label.
+ *
+ * `REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA` is the real official constant — confirmed by
+ * `javap` inspection of this project's pinned `android-35` `android.jar`
+ * (`android.hardware.camera2.CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA = 11`),
+ * not the value this function previously (incorrectly) hardcoded as a magic `29`. Referencing the
+ * constant directly, guarded by an `apiLevel >= Build.VERSION_CODES.P` check, is the exact pattern
+ * `Camera2CharacteristicsSource.kt`'s own `isLogicalMultiCamera` derivation already uses in this
+ * codebase (there via the real `Build.VERSION.SDK_INT`) — avoids Android Lint's `InlinedApi` warning
+ * without inventing a second, unguarded literal.
+ *
+ * [apiLevel] defaults to the real device's [Build.VERSION.SDK_INT] for every production call site, but
+ * is an explicit parameter (not read internally) so this function is a pure, plain-JVM-unit-testable
+ * table — this project has no Robolectric dependency to fake `Build.VERSION.SDK_INT` itself, and every
+ * other Android-version-gated read in this codebase (`Camera2CharacteristicsSource.snapshot()`) is
+ * likewise never unit-tested at that exact boundary, only its pure downstream consumers are; this
+ * parameter is what makes *this* one directly testable instead.
+ */
+internal fun capabilityLabel(
+    capability: Int,
+    apiLevel: Int = Build.VERSION.SDK_INT,
+): String =
+    when {
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE -> "BACKWARD_COMPATIBLE"
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR -> "MANUAL_SENSOR"
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_POST_PROCESSING -> "MANUAL_POST_PROCESSING"
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW -> "RAW"
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_READ_SENSOR_SETTINGS -> "READ_SENSOR_SETTINGS"
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BURST_CAPTURE -> "BURST_CAPTURE"
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_YUV_REPROCESSING -> "YUV_REPROCESSING"
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_DEPTH_OUTPUT -> "DEPTH_OUTPUT"
+        capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_CONSTRAINED_HIGH_SPEED_VIDEO -> "CONSTRAINED_HIGH_SPEED_VIDEO"
+        apiLevel >= Build.VERSION_CODES.P &&
+            capability == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA ->
+            CAPABILITY_LOGICAL_MULTI_CAMERA_LABEL
         else -> "CAPABILITY_$capability"
     }
 
