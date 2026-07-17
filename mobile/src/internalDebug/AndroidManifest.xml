@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- CAM-2c physical-camera provenance experiment (task §4). internalDebug-only via AGP's
+         per-source-set manifest merge - never present in publicDebug/internalRelease/publicRelease.
+         Not exported: launched via `adb shell am start` against a debuggable build, or a future debug
+         menu entry, never by another app. -->
+    <application>
+        <activity
+            android:name="dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingExperimentActivity"
+            android:exported="false"
+            android:label="CAM-2c physical camera binding"
+            android:screenOrientation="portrait" />
+    </application>
+</manifest>
