@@ -55,10 +55,13 @@ import dev.pointtosky.mobile.ar.CameraPreview
  * restricts *other* apps/processes from starting this component. [buildPhysicalCameraBindingExperimentIntent]
  * is the one function that ever constructs that `Intent` (fix for a testability gap: a prior revision
  * inlined the `Intent(...)` construction directly in the button's `onClick`, so no test could observe
- * what it actually launches) — `ExperimentLaunchIntentTest`/`ExperimentLaunchIntentUiTest`
- * (`androidTestInternalDebug`) assert its `component.className` resolves via `PackageManager` and that
- * the underlying `Activity` stays `exported="false"`. [PHYSICAL_CAMERA_BINDING_EXPERIMENT_ACTIVITY_CLASS_NAME]
- * guards against the class name itself drifting from the manifest's own declared `android:name`.
+ * what it actually launches) — `ExperimentLaunchIntentTest`/`CamDiagnosticPhysicalCameraExperimentLaunchUiTest`
+ * (`androidTestInternalDebug`) assert its `component.className` and that `PackageManager` resolves it, and
+ * that the underlying `Activity` stays `exported="false"` - **compiled against real Android/`PackageManager`
+ * APIs, not yet executed on a device or emulator in this environment; see
+ * `docs/validation/cam_2c_pixel9_evidence.md` for the exact, honest claim.**
+ * [PHYSICAL_CAMERA_BINDING_EXPERIMENT_ACTIVITY_CLASS_NAME] guards against the class name itself drifting
+ * from the manifest's own declared `android:name`.
  *
  * Flow: enumerate the rear logical camera's declared physical candidates (never inferred from ID
  * ordering - task §4) &#8594; user taps a candidate &#8594; [CameraPreview] binds with an explicit
@@ -94,9 +97,10 @@ internal val PHYSICAL_CAMERA_BINDING_EXPERIMENT_ACTIVITY_CLASS_NAME: String =
  * "Open physical-camera experiment" `onClick`, which meant no test could observe *what* that click
  * actually launches - only that the reflected class name matched a hand-written string, which does not
  * prove the in-app action launches the registered `Activity`). Both the real button
- * (`CamDiagnosticFullReportDialog.kt`) and `PhysicalCameraExperimentLaunchTest`/
- * `ExperimentLaunchIntentUiTest` (`androidTestInternalDebug`) call this exact function - never a second,
- * independently hand-written `Intent(...)` construction that could silently drift from it.
+ * (`CamDiagnosticFullReportDialog.kt`) and `ExperimentLaunchIntentTest`/
+ * `CamDiagnosticPhysicalCameraExperimentLaunchUiTest` (`androidTestInternalDebug`) call this exact
+ * function - never a second, independently hand-written `Intent(...)` construction that could silently
+ * drift from it.
  */
 internal fun buildPhysicalCameraBindingExperimentIntent(context: Context): Intent =
     Intent(context, PhysicalCameraBindingExperimentActivity::class.java)
@@ -205,6 +209,19 @@ private fun CandidatePicker(
  * give the user a way to leave this terminal state - retrying starts a brand new attempt (a new
  * `attemptId`, so a late callback from this failed attempt can never mutate the retry's state; see
  * [ExperimentSessionState]'s own KDoc).
+ *
+ * **Terminal-UI reachability (fix for a layout defect).** A prior revision rendered the failure
+ * banner/Retry/Back controls as the *first* child of a plain [Box], then unconditionally rendered a
+ * `fillMaxSize`, scrollable report layer as the *second* child - later children draw on top in a `Box`,
+ * so that fullscreen report layer visually covered the controls underneath it and intercepted every
+ * pointer event over the whole screen, making Retry/Back physically unreachable. Fixed: while
+ * [ExperimentSessionState.isTerminallyFailed], this composable renders exactly one scrollable `Column`
+ * - failure banner, then the report text, then Retry, then Back to candidates - as sibling items in a
+ * single layout, never two independently-`fillMaxSize`d layers stacked in a `Box`. Every item is a real
+ * sibling in the scroll order, so on a small screen or with a long report, scrolling to the bottom always
+ * reaches Retry/Back - never blocked by an overlay drawn on top. The live (non-terminal) state is
+ * unaffected: it has no controls to obscure, so `CameraPreview` plus a translucent report overlay drawn
+ * on top of it (via `Box`) is unchanged.
  */
 @Composable
 internal fun PhysicalCameraBindingSession(
@@ -217,42 +234,64 @@ internal fun PhysicalCameraBindingSession(
     val attemptId = state.attemptId
     val physicalCameraId = state.physicalCameraId
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (!state.isTerminallyFailed) {
-            val selector = remember(physicalCameraId) { explicitPhysicalCameraSelector(physicalCameraId) }
-            CameraPreview(
-                modifier = Modifier.fillMaxSize(),
-                cameraSelectorOverride = selector,
-                onCameraInfo = { cameraInfo: CameraInfo ->
-                    val binding = resolvePhysicalCameraBindingFromCameraInfo(cameraInfo, physicalCameraId, context)
-                    onUpdateSession(attemptId) { it.reduceCameraInfoResolved(attemptId, binding) }
-                },
-                onExplicitBindFailure = { reason ->
-                    onUpdateSession(attemptId) { it.reduceExplicitBindFailure(attemptId, reason) }
-                },
-                onFrameMetadata = { frame ->
-                    onUpdateSession(attemptId) { it.reduceFrame(attemptId, frame) }
-                },
+    if (state.isTerminallyFailed) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .background(Color(0xFF0A0A0A))
+                    .padding(16.dp)
+                    // A distinct tag from physical_camera_experiment_report below - this is the
+                    // scrollable *container* a test scrolls, never the report text node itself, so
+                    // hasText assertions against the report tag below always target a node whose own
+                    // semantics actually carry that text, never a parent relying on merged-descendant
+                    // semantics this Column never opts into.
+                    .testTag("physical_camera_experiment_terminal_scroll"),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "Bind failed: ${state.explicitBindFailureReason} - camera unbound.",
+                color = Color.White,
+                modifier = Modifier.testTag("physical_camera_experiment_failed_banner"),
             )
-        } else {
-            Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Bind failed: ${state.explicitBindFailureReason} - camera unbound.",
-                    color = Color.White,
-                    modifier = Modifier.testTag("physical_camera_experiment_failed_banner"),
-                )
-                Text(
-                    "Retry",
-                    color = Color.Cyan,
-                    modifier = Modifier.testTag("physical_camera_experiment_retry").clickable { onRetry() },
-                )
-                Text(
-                    "Back to candidates",
-                    color = Color.Cyan,
-                    modifier = Modifier.testTag("physical_camera_experiment_back_to_candidates").clickable { onBackToCandidates() },
-                )
-            }
+            Text(
+                text = buildPhysicalCameraExperimentReportText(state),
+                color = Color.White,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("physical_camera_experiment_report"),
+            )
+            Text(
+                "Retry",
+                color = Color.Cyan,
+                modifier = Modifier.testTag("physical_camera_experiment_retry").clickable { onRetry() },
+            )
+            Text(
+                "Back to candidates",
+                color = Color.Cyan,
+                modifier = Modifier.testTag("physical_camera_experiment_back_to_candidates").clickable { onBackToCandidates() },
+            )
         }
+        return
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        val selector = remember(physicalCameraId) { explicitPhysicalCameraSelector(physicalCameraId) }
+        CameraPreview(
+            modifier = Modifier.fillMaxSize(),
+            cameraSelectorOverride = selector,
+            onCameraInfo = { cameraInfo: CameraInfo ->
+                val binding = resolvePhysicalCameraBindingFromCameraInfo(cameraInfo, physicalCameraId, context)
+                onUpdateSession(attemptId) { it.reduceCameraInfoResolved(attemptId, binding) }
+            },
+            onExplicitBindFailure = { reason ->
+                onUpdateSession(attemptId) { it.reduceExplicitBindFailure(attemptId, reason) }
+            },
+            onFrameMetadata = { frame ->
+                onUpdateSession(attemptId) { it.reduceFrame(attemptId, frame) }
+            },
+        )
 
         Column(
             modifier =
@@ -260,14 +299,14 @@ internal fun PhysicalCameraBindingSession(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .background(Color(0x99000000))
-                    .padding(12.dp)
-                    .testTag("physical_camera_experiment_report"),
+                    .padding(12.dp),
         ) {
             Text(
                 text = buildPhysicalCameraExperimentReportText(state),
                 color = Color.White,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("physical_camera_experiment_report"),
             )
         }
     }
