@@ -1,7 +1,9 @@
 package dev.pointtosky.mobile.ar.camera
 
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** Pure JVM tests for [buildCameraTopologyReportText]/[buildCameraTopologyJson] (task §3). */
@@ -64,6 +66,29 @@ class CameraTopologyReportTest {
 
         assertTrue(text.contains("no rear cameras discovered"))
         assertTrue(text.contains("boundPrimaryRearCamera2Id: unknown"))
+    }
+
+    @Test
+    fun `decimal formatting stays dot-separated under a comma-decimal default locale`() {
+        // Fix for a locale-determinism defect: a prior revision used the bare "%.2f".format(value)
+        // extension, which formats using the JVM's platform default locale - German (and many other
+        // locales) render that as "9,79" (comma decimal separator), silently corrupting this
+        // deterministic diagnostics export whenever a device's configured locale is not
+        // English/US-like. Locale.ROOT must be used explicitly, never inferred from the environment.
+        val previousDefault = Locale.getDefault()
+        Locale.setDefault(Locale.GERMANY)
+        try {
+            val report = CameraTopologyReport(entries = listOf(pixel9LikeEntry()), boundPrimaryRearCamera2Id = "0")
+
+            val text = buildCameraTopologyReportText(report)
+
+            assertTrue(text.contains("sensorPhysicalSizeMm=9.79x7.37"), "expected dot-decimal formatting, got:\n$text")
+            assertTrue(text.contains("sensorMm=9.79x7.37"), "expected dot-decimal formatting in physical entry, got:\n$text")
+            assertTrue(text.contains("focalLengthsMm=6.90"), "expected dot-decimal formatting, got:\n$text")
+            assertFalse(text.contains("9,79"), "must never use a comma decimal separator, got:\n$text")
+        } finally {
+            Locale.setDefault(previousDefault)
+        }
     }
 
     @Test

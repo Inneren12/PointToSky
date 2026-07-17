@@ -1,5 +1,7 @@
 package dev.pointtosky.mobile.ar.camera
 
+import java.util.Locale
+
 /**
  * CAM-2c topology recon (`internalDebug` only, task §3). One physical camera candidate declared
  * behind a logical rear camera - via `CameraManager.getCameraCharacteristics(physicalId)` for the
@@ -56,7 +58,12 @@ data class CameraTopologyReport(
     val boundPrimaryRearCamera2Id: String?,
 )
 
-private fun formatFocalLengths(values: List<Float>): String = if (values.isEmpty()) "unavailable" else values.joinToString(", ") { "%.2f".format(it) }
+/** `Locale.ROOT` — never the platform default locale — so this deterministic diagnostics text always
+ * uses a dot decimal separator, regardless of the device's configured locale (e.g. `de-DE`, which
+ * formats `%.2f` with a comma by default). */
+private fun formatDecimal(value: Float): String = String.format(Locale.ROOT, "%.2f", value)
+
+private fun formatFocalLengths(values: List<Float>): String = if (values.isEmpty()) "unavailable" else values.joinToString(", ") { formatDecimal(it) }
 
 private fun formatRect(
     left: Int?,
@@ -75,8 +82,8 @@ private fun formatPhysicalEntry(entry: PhysicalCameraTopologyEntry): String =
         append("    physical id=${entry.camera2Id}")
         append(" focalLengthsMm=${formatFocalLengths(entry.focalLengthsMm)}")
         append(
-            " sensorMm=${entry.sensorPhysicalWidthMm?.let { "%.2f".format(it) } ?: "unavailable"}" +
-                "x${entry.sensorPhysicalHeightMm?.let { "%.2f".format(it) } ?: "unavailable"}",
+            " sensorMm=${entry.sensorPhysicalWidthMm?.let { formatDecimal(it) } ?: "unavailable"}" +
+                "x${entry.sensorPhysicalHeightMm?.let { formatDecimal(it) } ?: "unavailable"}",
         )
         append(" pixelArray=${entry.pixelArrayWidthPx ?: "unavailable"}x${entry.pixelArrayHeightPx ?: "unavailable"}")
         append(
@@ -101,8 +108,8 @@ fun buildCameraTopologyReportText(report: CameraTopologyReport): String =
             appendLine("declaredPhysicalCameraIds=${entry.declaredPhysicalCameraIds.ifEmpty { listOf("none") }.joinToString(",")}")
             appendLine("focalLengthsMm=${formatFocalLengths(entry.focalLengthsMm)}")
             appendLine(
-                "sensorPhysicalSizeMm=${entry.sensorPhysicalWidthMm?.let { "%.2f".format(it) } ?: "unavailable"}" +
-                    "x${entry.sensorPhysicalHeightMm?.let { "%.2f".format(it) } ?: "unavailable"}",
+                "sensorPhysicalSizeMm=${entry.sensorPhysicalWidthMm?.let { formatDecimal(it) } ?: "unavailable"}" +
+                    "x${entry.sensorPhysicalHeightMm?.let { formatDecimal(it) } ?: "unavailable"}",
             )
             appendLine("pixelArray=${entry.pixelArrayWidthPx ?: "unavailable"}x${entry.pixelArrayHeightPx ?: "unavailable"}")
             appendLine(
