@@ -30,9 +30,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.content.Intent
 import androidx.camera.core.CameraInfo
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticLiveness
 import dev.pointtosky.mobile.ar.camera.CamDiagnosticSnapshot
+import dev.pointtosky.mobile.ar.camera.PhysicalCameraBindingExperimentActivity
 import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticJson
 import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticReportText
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyJson
@@ -85,6 +87,12 @@ const val CAM_DIAGNOSTIC_CLOSE_BUTTON_TEST_TAG = "cam_diagnostic_close_button"
 /** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Share topology" (CAM-2c recon,
  * task §3). */
 const val CAM_DIAGNOSTIC_SHARE_TOPOLOGY_BUTTON_TEST_TAG = "cam_diagnostic_share_topology_button"
+
+/** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Open physical-camera experiment"
+ * (CAM-2c physical-camera provenance experiment fix — reachability defect fix: this is the actual,
+ * verified in-app launch path for [PhysicalCameraBindingExperimentActivity], which is
+ * `android:exported="false"` and therefore not reliably reachable via `adb shell am start`). */
+const val CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG = "cam_diagnostic_open_physical_camera_experiment_button"
 
 /** `internalDebug`-only. A small, tappable, monospace-free text "button" matching this HUD's existing
  * translucent-chip visual language - never a Material3 [androidx.compose.material3.Button]. */
@@ -227,6 +235,19 @@ fun CamDiagnosticFullReportDialog(
                             effectiveActions.share("PointToSky camera topology (CAM-2c recon)", text)
                         },
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_SHARE_TOPOLOGY_BUTTON_TEST_TAG),
+                    )
+                    CamDiagnosticActionChip(
+                        label = "Open physical-camera experiment",
+                        onClick = {
+                            // Same-app, same-process Intent - always permitted regardless of the
+                            // target Activity's exported="false" (that flag restricts only other
+                            // apps/processes from starting this component). This is the one verified
+                            // launch path for PhysicalCameraBindingExperimentActivity; do not launch
+                            // it via `adb shell am start`, which cannot reliably reach a
+                            // non-exported component.
+                            context.startActivity(Intent(context, PhysicalCameraBindingExperimentActivity::class.java))
+                        },
+                        modifier = Modifier.testTag(CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG),
                     )
                 }
 
