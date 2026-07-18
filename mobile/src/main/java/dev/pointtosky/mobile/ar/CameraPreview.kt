@@ -1,11 +1,15 @@
 package dev.pointtosky.mobile.ar
 
 import android.content.Context
+import android.util.Size
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
@@ -144,6 +148,16 @@ private suspend fun ListenableFuture<*>.awaitCompletion(executor: Executor): Res
  * [onExplicitBindFailure] is called with a short reason string exactly when [cameraSelectorOverride]
  * is non-`null` and the combined bind throws. Never called when [cameraSelectorOverride] is `null`
  * (the existing Preview-only-fallback path handles that case exactly as before). Defaults to a no-op.
+ *
+ * [analysisResolutionOverride] (CAM-2c dual-basis experiment, task §11) requests an explicit
+ * `ImageAnalysis` resolution via CameraX's `ResolutionSelector`/`ResolutionStrategy` (bound size,
+ * closest-higher-then-lower fallback, aspect strategy matched to the requested size). Defaults to
+ * `null` — CameraX's own default (typically 640×480) — so every existing call site (production and
+ * `internalDebug` alike) is byte-for-byte unaffected; only the `internalDebug` physical-camera
+ * experiment ever passes a non-`null` value, following the exact shared-parameter-with-debug-only-caller
+ * pattern [cameraSelectorOverride] already established. The *requested* size is not a guarantee: the
+ * actually-bound buffer size is whatever each analyzed frame reports, and the experiment records both
+ * without conflating them.
  */
 @Composable
 fun CameraPreview(
@@ -152,6 +166,7 @@ fun CameraPreview(
     onCameraInfo: (CameraInfo) -> Unit = {},
     cameraSelectorOverride: CameraSelector? = null,
     onExplicitBindFailure: (String) -> Unit = {},
+    analysisResolutionOverride: Size? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -208,6 +223,31 @@ fun CameraPreview(
             val imageAnalysis =
                 ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .apply {
+                        if (analysisResolutionOverride != null) {
+                            // CAM-2c dual-basis experiment (task §11): request the explicit size with
+                            // an aspect strategy matching it, so the default 4:3 aspect preference
+                            // cannot silently redirect a 16:9 request to a 4:3 bucket. The bound size
+                            // remains device-decided; frames report the actual buffer dimensions.
+                            val aspectRatioStrategy =
+                                if (analysisResolutionOverride.width * 9 == analysisResolutionOverride.height * 16) {
+                                    AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
+                                } else {
+                                    AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
+                                }
+                            setResolutionSelector(
+                                ResolutionSelector.Builder()
+                                    .setAspectRatioStrategy(aspectRatioStrategy)
+                                    .setResolutionStrategy(
+                                        ResolutionStrategy(
+                                            analysisResolutionOverride,
+                                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                                        ),
+                                    )
+                                    .build(),
+                            )
+                        }
+                    }
                     .build()
                     .also { analysis ->
                         analysis.setAnalyzer(

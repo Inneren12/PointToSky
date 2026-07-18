@@ -151,15 +151,16 @@ class CamDiagnosticSnapshotJsonTest {
     }
 
     @Test
-    fun `the top-level envelope matches schemaVersion 3 and the task's own worked example`() {
+    fun `the top-level envelope matches schemaVersion 4 and the task's own worked example`() {
         val root = buildCamDiagnosticJsonElement(pixel9Snapshot, CamDiagnosticLiveness.LIVE)
 
         // Schema bumped 1 -> 2 -> 3: framesWithUsableTransform was renamed to
         // framesWithSupportedTransformClass, and the misleadingly general domainConsistency/
         // mappedSourceBoundsPx/consistencyReason fields were renamed to the hypothesis-specific
-        // sourceDomainBasis/wholeActiveArrayHypothesisVerdict/mappedAssumedSourceBoundsPx/hypothesisReason
-        // - see CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION's own KDoc.
-        assertEquals(3, root["schemaVersion"]!!.jsonPrimitive.int)
+        // sourceDomainBasis/wholeActiveArrayHypothesisVerdict/mappedAssumedSourceBoundsPx/hypothesisReason;
+        // 3 -> 4 added the finer wholeActiveArrayGeometryClass/wholeActiveArrayGeometryReason fields
+        // alongside the preserved binary verdict - see CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION's own KDoc.
+        assertEquals(4, root["schemaVersion"]!!.jsonPrimitive.int)
         assertEquals(1_700_000_000_000L, root["capturedAtEpochMillis"]!!.jsonPrimitive.long)
         assertEquals(9L, root["sessionId"]!!.jsonPrimitive.long)
 

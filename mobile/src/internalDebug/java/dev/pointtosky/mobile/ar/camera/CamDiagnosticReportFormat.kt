@@ -104,9 +104,13 @@ private fun formatMappedBounds(bounds: MappedBoundsExportSnapshot?): String =
  * section instead (see [countersSectionLines]).
  */
 private fun frameTransformSectionLines(frameTransform: FrameTransformExportSnapshot): List<String> {
+    // Full available precision (dual-basis slice, task §9): Double.toString, never a rounded %f -
+    // these are widened android.graphics.Matrix float32 values, and a bit-level comparison against
+    // the CameraX 1.4.2 implementation model needs every digit the platform reported. The rounded
+    // formatPx rendering remains for bounds lines only, where sub-pixel rounding is presentation.
     val matrixLine =
         frameTransform.matrix?.let { m ->
-            "matrix[9]: [${m.joinToString { formatPx(it) }}]"
+            "matrix[9]: [${m.joinToString { it.toString() }}]"
         } ?: "matrix[9]: $UNAVAILABLE"
     return listOf(
         "present: ${frameTransform.present}",
@@ -114,9 +118,13 @@ private fun frameTransformSectionLines(frameTransform: FrameTransformExportSnaps
         "class: ${frameTransform.transformClass ?: UNAVAILABLE}",
         "sourceDomainBasis: ${frameTransform.sourceDomainBasis ?: UNAVAILABLE}",
         "wholeActiveArrayHypothesisVerdict: ${frameTransform.wholeActiveArrayHypothesisVerdict ?: UNAVAILABLE}",
+        // Alongside - never replacing - the binary verdict above: which SHAPE the mapped-bounds
+        // relationship has (hypothesis-scoped evidence only; see WholeActiveArrayGeometry.kt).
+        "wholeActiveArrayGeometryClass: ${frameTransform.wholeActiveArrayGeometryClass ?: UNAVAILABLE}",
         "mappedAssumedSourceBounds: ${formatMappedBounds(frameTransform.mappedAssumedSourceBoundsPx)}",
         "expectedBufferBounds: ${formatMappedBounds(frameTransform.expectedBufferBoundsPx)}",
         "hypothesisReason: ${frameTransform.hypothesisReason ?: UNAVAILABLE}",
+        "geometryReason: ${frameTransform.wholeActiveArrayGeometryReason ?: UNAVAILABLE}",
     )
 }
 

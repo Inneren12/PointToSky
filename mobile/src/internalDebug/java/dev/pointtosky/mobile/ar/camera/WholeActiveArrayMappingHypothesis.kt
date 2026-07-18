@@ -35,12 +35,14 @@ internal data class SensorToBufferDomainBounds(
 
 /**
  * `internalDebug`-only. Which coordinate-space *assumption* [assessWholeActiveArrayMappingHypothesis]
- * tested as the source domain of a [SensorToBufferMatrix3]. This exists because the public CameraX/
- * Camera2 contract for `ImageInfo.getSensorToBufferTransformMatrix()`'s own source domain has **not**
- * been source-traced or device-proven in this codebase at the pinned
- * `androidx.camera:camera-camera2:1.3.4` version: it is not established here whether the matrix always
- * maps the *complete* `SENSOR_INFO_ACTIVE_ARRAY_SIZE`-local rectangle, or some already-cropped/
- * pre-normalized sub-region of it, into the analysis buffer. Every verdict
+ * tested as the source domain of a [SensorToBufferMatrix3]. Historical note: this type predates
+ * `docs/recon/cam_2c_sensor_to_buffer_domain_recon.md`, which has since source-traced the pinned
+ * CameraX 1.4.2 implementation (declared domain: the CameraX-opened camera's
+ * `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rect → full buffer, inverse `ScaleToFit.CENTER` — an intended
+ * center-crop for aspect-mismatched pairs, which this binary verdict by design reports as a
+ * mismatch; see `WholeActiveArrayGeometry.kt` for the finer classification added alongside). What
+ * remains unproven is *whose* basis applies under physical binding, and frame-content
+ * correspondence — so every verdict here stays hypothesis-scoped exactly as before. Every verdict
  * [assessWholeActiveArrayMappingHypothesis] returns is conditioned on whichever basis this field names —
  * a caller must read the verdict as "does this matrix match *this* hypothesis," never as "is this matrix
  * valid" in any absolute sense.
@@ -200,13 +202,18 @@ internal const val DEFAULT_WHOLE_ACTIVE_ARRAY_HYPOTHESIS_TOLERANCE_PX: Double = 
  * explicitly named assumption — it does not, and cannot yet, close it for every possible assumption.
  *
  * ## Scope and provenance — read this before treating a mismatch as a defect
- * The pinned `androidx.camera:camera-camera2:1.3.4` implementation's actual source-domain contract for
- * `ImageInfo.getSensorToBufferTransformMatrix()` has **not** been source-traced or device-proven in this
- * codebase. It is not established here whether that matrix always maps the *complete* active array, or
- * some already-cropped/pre-normalized sub-region of it (a legitimate, correctly-functioning device could
- * plausibly report an identity matrix if its own source domain were already normalized to match the
- * buffer before this matrix is even computed). [SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL] is
- * this function's one, explicit, named assumption — never a proven fact about CameraX. Consequently:
+ * Updated by `docs/recon/cam_2c_sensor_to_buffer_domain_recon.md`: the pinned CameraX **1.4.2**
+ * implementation has now been source-traced — its declared source domain is the CameraX-opened
+ * camera's `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rect, mapped via the inverse of
+ * `setRectToRect(bufferRect, activeArrayRect, ScaleToFit.CENTER)`, i.e. an *intended* symmetric
+ * center-crop whenever aspect ratios differ — a shape this binary bounds-to-bounds check reports as
+ * a mismatch by design (see `WholeActiveArrayGeometry.kt` for the finer classification carried
+ * alongside, and the recon's §2.8 for why the historical 1.3.4 identity matrix was an un-set
+ * ViewPort-gated default, not a pre-normalized domain). Still unproven, and why this stays
+ * hypothesis-scoped: whose active-array basis applies under an explicit physical binding (the opened
+ * logical camera's, predictably, per recon §2.3 — device-unconfirmed), and whether frame *content*
+ * follows the declared mapping at all. [SourceDomainBasis.ASSUMED_WHOLE_ACTIVE_ARRAY_LOCAL] is
+ * this function's one, explicit, named assumption — never a proven fact about a specific frame. Consequently:
  * - [WholeActiveArrayHypothesisVerdict.MATCHES_WHOLE_ACTIVE_ARRAY_HYPOTHESIS] is evidence *this*
  *   hypothesis holds for this matrix — still not a general "the matrix is correct" claim, since a
  *   coincidental match under a wrong hypothesis is not ruled out either.

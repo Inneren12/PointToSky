@@ -93,6 +93,72 @@ internal fun resolvePhysicalCameraBindingFromCameraInfo(
 }
 
 /**
+ * CAM-2c dual-basis diagnostic: resolves both identity halves of one binding attempt from the same
+ * bound [CameraInfo] — the existing physical-camera verification
+ * ([resolvePhysicalCameraBindingFromCameraInfo], unchanged) plus the **opened logical camera's own
+ * snapshot** (recon §2.3: CameraX 1.4.2 constructs the sensor-to-buffer matrix from the opened
+ * camera's active array, so the dual-basis assessment needs that camera's characteristics captured
+ * coherently alongside the physical candidate's, never inferred).
+ *
+ * Logical-parent identification (task §3's provenance rules — no ID ordering, no
+ * `DEFAULT_BACK_CAMERA` assumption, no focal-length/dimension matching):
+ * - the bound `CameraInfo`'s own Camera2 ID differs from the requested physical ID and the requested
+ *   ID is among its declared physical children → the bound `CameraInfo` **is** the opened logical
+ *   parent; its characteristics are read directly from it
+ *   ([OpenedLogicalCameraProvenance.BOUND_CAMERA_INFO_IS_OPENED_LOGICAL_PARENT]);
+ * - the bound `CameraInfo` is itself the requested physical camera → no logical parent `CameraInfo`
+ *   was identified in this shape; a typed [OpenedLogicalCameraSnapshotResolution.Unavailable] is
+ *   returned, never a guess;
+ * - the read itself failing is likewise a typed [OpenedLogicalCameraSnapshotResolution.Unavailable].
+ */
+@OptIn(ExperimentalCamera2Interop::class)
+internal fun resolveDualBasisBindingFromCameraInfo(
+    boundCameraInfo: CameraInfo,
+    requestedPhysicalCameraId: String,
+    context: Context?,
+): DualBasisBindingResolution {
+    val binding = resolvePhysicalCameraBindingFromCameraInfo(boundCameraInfo, requestedPhysicalCameraId, context)
+    val boundCamera2Id = runCatching { Camera2CameraInfo.from(boundCameraInfo).cameraId }.getOrNull()
+    val declaredPhysicalCameraInfoIds =
+        boundCameraInfo.physicalCameraInfos.mapNotNull { candidate ->
+            runCatching { Camera2CameraInfo.from(candidate).cameraId }.getOrNull()
+        }
+    val openedLogical: OpenedLogicalCameraSnapshotResolution =
+        when (
+            selectPhysicalCameraInfoSource(
+                boundCameraInfoCamera2Id = boundCamera2Id,
+                requestedPhysicalCameraId = requestedPhysicalCameraId,
+                declaredPhysicalCameraInfoIds = declaredPhysicalCameraInfoIds,
+            )
+        ) {
+            PhysicalCameraInfoSelection.UseDeclaredPhysicalCameraInfo -> {
+                val snapshot = Camera2CharacteristicsSource(boundCameraInfo, context).readSnapshotOrNull()
+                if (snapshot != null) {
+                    OpenedLogicalCameraSnapshotResolution.Captured(
+                        snapshot = snapshot,
+                        provenance = OpenedLogicalCameraProvenance.BOUND_CAMERA_INFO_IS_OPENED_LOGICAL_PARENT,
+                    )
+                } else {
+                    OpenedLogicalCameraSnapshotResolution.Unavailable(
+                        reason = "bound CameraInfo is the opened logical parent but its characteristics could not be read",
+                    )
+                }
+            }
+            PhysicalCameraInfoSelection.UseBoundCameraInfoDirectly ->
+                OpenedLogicalCameraSnapshotResolution.Unavailable(
+                    reason = "bound CameraInfo is itself the requested physical camera; no separate opened " +
+                        "logical parent CameraInfo was identified in this shape",
+                )
+            PhysicalCameraInfoSelection.NoMatch ->
+                OpenedLogicalCameraSnapshotResolution.Unavailable(
+                    reason = "requested physical camera could not be attributed to the bound CameraInfo under " +
+                        "either shape; the opened logical parent is not coherently identified",
+                )
+        }
+    return DualBasisBindingResolution(binding = binding, openedLogicalCamera = openedLogical)
+}
+
+/**
  * Rear physical-camera candidates declared by [logicalCameraInfo] (task §4's "enumerate supported
  * physical camera candidates"), each candidate's own Camera2 ID as reported by
  * `CameraInfo.getPhysicalCameraInfos()` - never inferred from ID ordering (task explicitly forbids

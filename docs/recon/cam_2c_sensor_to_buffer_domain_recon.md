@@ -354,6 +354,14 @@ correspondence.
 
 ## 6. Recommended implementation scope for a later PR (proposal only — nothing applied)
 
+> **Implementation status (dual-basis slice, after this recon):** items 1–3 below have since been
+> implemented `internalDebug`-only — the geometry classifier (`WholeActiveArrayGeometry.kt`, with the
+> recommended class set and separated tolerances), the docs corrections, and the dual-basis capture
+> (`CameraCoordinateBasis.kt`/`DualBasisMatrixEvidence.kt`/`OpenedLogicalCameraSnapshot.kt`, plus the
+> CameraX 1.4.2 implementation model `CameraX142MatrixModel.kt`). Item 4 (any `Proven*` decision)
+> remains deliberately untouched, pending §7's device evidence. See
+> `docs/camera_coordinate_calibration_contract.md` §3.12.
+
 1. **Diagnostic classification** (internalDebug only): add the geometry classifier of §5 as a pure
    function + enum next to `assessWholeActiveArrayMappingHypothesis`, surfaced as new fields in
    `CamDiagnosticSnapshot`/JSON (schema version bump), leaving the existing verdict fields intact.
