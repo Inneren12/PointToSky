@@ -3,14 +3,15 @@
 **Recon only.** This document changes no production behavior. It does not construct any
 `SensorToBufferDomainProof.Proven*` variant, does not modify `AnalysisBufferIntrinsicsResolver`,
 does not weaken `UnsupportedLogicalMultiCameraMapping`, and does not publish calibrated
-`AnalysisBuffer` intrinsics. See §10 for the explicit list of claims that remain prohibited.
+`AnalysisBuffer` intrinsics. See §8 for the explicit list of claims that remain prohibited.
 
 ---
 
 ## 1. Verdict
 
 ```
-GEOMETRY EXPLAINED, SOURCE DOMAIN STILL UNPROVEN
+CAMERAX TRANSFORM CONTRACT EXPLAINED;
+PHYSICAL/LOGICAL BASIS COMPATIBILITY AND FRAME-CONTENT CORRESPONDENCE UNPROVEN
 ```
 
 - The observed Pixel 9 matrix is **bit-for-bit identical** (float32-exact, see §4) to what CameraX
@@ -18,23 +19,28 @@ GEOMETRY EXPLAINED, SOURCE DOMAIN STILL UNPROVEN
   useCaseSize = 640×480)` computes. The "uniform scale + symmetric ~0.941 px vertical center crop"
   hypothesis is confirmed as the *intended construction*, not merely a plausible fit: the matrix is
   the float32 inverse of `Matrix.setRectToRect(bufferRect, activeArrayRect, ScaleToFit.CENTER)`.
-- The matrix's *declared* source domain in CameraX 1.4.2 is the bound camera's
-  `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rect — stated in public Javadoc (`ImageInfo`) and confirmed at the
-  implementation level (§2). For this Pixel 9 (active array `[0,0 — 4080,3072]`, zero offsets) that
-  coincides exactly with active-array-local coordinates.
-- **What is still unproven** (why the verdict is not `SOURCE DOMAIN PROVEN`):
-  1. CameraX computes this matrix **blindly** from static metadata (active array rect + stream
-     resolution). It never measures what the HAL actually put in the buffer. The matrix encodes
-     CameraX's *assumption* that the buffer contains the full-FOV, aspect-fill, centered crop of the
-     active array. No frame content has ever been checked against that assumption on this device
-     (no star/landmark residual data exists).
-  2. On a **logical multi-camera**, `getSensorRect()` returns the *logical* camera's active array
-     (§2.3). Whether per-frame content from physical sensors 2/3/4 is actually presented in the
-     logical camera's active-array coordinate system — and stays so across lens switches — is a HAL
-     behavior this codebase has never observed. Under the planned physical-binding experiment the
-     matrix will (predictably, §2.3/§9) still be computed from the **logical** camera's active array,
-     while `resolveAnalysisBufferIntrinsics` would be fed the **physical** camera's snapshot — a
-     coordinate-basis mismatch that must be resolved before any implementation.
+- **CameraX's declared source domain is established** — this is the verdict's first clause, and it
+  is a documented-contract fact, not an open question: public `ImageInfo` Javadoc (§2.7) declares
+  the transform's coordinate domain as the `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rect of the
+  **CameraX-opened camera**, and the 1.4.2 implementation (§2.1–§2.2) confirms it. For this
+  Pixel 9's logical bind, the implementation basis is **logical camera 0's active array**
+  (`[0,0 — 4080,3072]`, zero offsets — coinciding exactly with active-array-local coordinates).
+- **What remains unproven** — the verdict's second clause. These are device/HAL evidence gaps, not
+  ambiguity about the documented transform coordinate domain:
+  1. **Frame-content correspondence.** CameraX computes this matrix **blindly** from static
+     metadata (active array rect + stream resolution). It never measures what the HAL actually put
+     in the buffer. The matrix encodes CameraX's *assumption* that the buffer contains the
+     full-FOV, aspect-fill, centered crop of the active array. No frame content has ever been
+     checked against that assumption on this device (no star/landmark residual data exists) —
+     whether observed content actually follows the declared mapping is unmeasured.
+  2. **Physical/logical basis compatibility.** On a **logical multi-camera**, `getSensorRect()`
+     returns the *logical* camera's active array (§2.3). Whether per-frame content from physical
+     sensors 2/3/4 is actually represented in the logical camera's active-array basis — and stays
+     so across lens switches — is a HAL behavior this codebase has never observed. Under the
+     planned physical-binding experiment the matrix will (predictably, §2.3/§7) still be computed
+     from the **logical** camera's active array, while `resolveAnalysisBufferIntrinsics` would be
+     fed the **physical** camera's snapshot — whether physical intrinsics can be reconciled with
+     the logical basis is unresolved and must be settled before any implementation.
   3. Digital zoom (`SCALER_CROP_REGION` / `CONTROL_ZOOM_RATIO`) is **not** incorporated in the matrix
      (§2.6) — at any zoom ≠ 1.0× the matrix does not describe the frame content at all. The
      experiment's fixed 1.0× zoom mitigates but does not prove this away.
@@ -123,7 +129,7 @@ the matrix's input coordinates are the rect's own native (pixel-array-relative) 
 point at `(left, top)` maps to the buffer-side fit origin. Strictly, the source basis is
 "the active-array rect in its native position", which **equals active-array-local coordinates only
 when `left == top == 0`** — true for this Pixel 9 (`activeArray=[0,0 — 4080,3072]`), so the
-distinction is moot for this device but must be re-checked per device (capture the raw `Rect`, §9).
+distinction is moot for this device but must be re-checked per device (capture the raw `Rect`, §7).
 
 ### 2.3 Whose active array on a logical multi-camera / under physical binding
 
@@ -136,7 +142,7 @@ Javadoc states the physical ID is applied per-stream via
 `CaptureSession.java` lines 343/444/1007 (camera-camera2), which sets it on the
 `OutputConfigurationCompat`. The logical camera stays open, so:
 
-> **Prediction (falsifiable, §9):** in the physical-binding experiment (`setPhysicalCameraId("2")`
+> **Prediction (falsifiable, §7):** in the physical-binding experiment (`setPhysicalCameraId("2")`
 > etc.), `getSensorRect()` still returns the **logical** camera 0 active array `4080×3072`, and the
 > delivered matrix for a 640×480 buffer is **numerically identical** to the logical-bind matrix
 > observed here — even though the frames come from physical sensor 2/3/4. If a device run shows a
@@ -288,11 +294,15 @@ Float32 storage noise (≤ 2.3e−05 px across the full width) is three orders o
 0.941 px geometric crop — the two effects are cleanly separable and must not share one tolerance.
 
 **Is the center-crop interpretation supported?** Yes — and it is now more than an interpretation:
-it is the traced construction (§2.1). **Is the active-array-local source domain proven?** The
-matrix is *constructed from* the logical camera's active array rect (implementation fact), and for
-this device the rect's zero offsets make that identical to active-array-local. What remains
-unproven is that the **frame content** obeys the same mapping (§1, items 1–3) — CameraX asserts,
-never verifies, and no device measurement of content correspondence exists. Hence the verdict.
+it is the traced construction (§2.1). **Is the active-array-local source domain established?** As
+CameraX's *declared coordinate domain*, yes: public Javadoc (§2.7) plus the traced construction fix
+it to the CameraX-opened (logical) camera's active-array rect, which for this device's zero-offset
+rect is exactly active-array-local. What remains unproven is device/HAL-level, not contractual:
+whether physical-stream frame content is actually represented in that logical basis, whether
+physical intrinsics can be reconciled with it, and whether observed content follows the declared
+mapping (§1, items 1–3) — CameraX asserts, never verifies, and no device measurement of content
+correspondence exists. Hence the verdict's second clause — and none of this justifies constructing
+any `SensorToBufferDomainProof.Proven*` variant.
 
 ---
 
@@ -388,9 +398,10 @@ session containing:
 5. Stability: the nine values repeated across ≥ 100 frames (any variation frame-to-frame?); repeat
    after full lifecycle restart (unbind/rebind and process restart); repeat across at least two
    supported ImageAnalysis resolutions with different aspect ratios (e.g. 640×480 and a 16:9 size —
-   the §2.1 construction predicts *horizontal* overflow for 16:9 from a 4:3 array, a sharp
-   discriminator: for 1280×720 from 4080×3072 it predicts `s = 1/3.1875 ≈ 0.313725`,
-   `ty ≈ −121.88`).
+   the §2.1 construction predicts *vertical* (top/bottom) overflow for a 16:9 buffer from this
+   4080×3072 array too, but at a sharply different magnitude, a strong discriminator: for 1280×720
+   the buffer width fits exactly and it predicts `s = 1/3.1875 ≈ 0.313725`, `ty ≈ −121.88` —
+   symmetric vertical center-crop overflow of ≈121.88 px per side, vs. 0.941 px at 640×480).
 6. Zoom sanity check (diagnostic only): with zoom held at 1.0× confirm `CONTROL_ZOOM_RATIO`/crop
    region actually reported ≈ 1.0×/full; do **not** vary zoom in the evidence sessions.
 
