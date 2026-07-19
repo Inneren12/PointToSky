@@ -1,6 +1,8 @@
 package dev.pointtosky.mobile.ar.camera
 
-import dev.pointtosky.mobile.ar.CameraPreview
+import kotlin.metadata.Visibility
+import kotlin.metadata.jvm.KotlinClassMetadata
+import kotlin.metadata.visibility
 import kotlin.reflect.KVisibility
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -115,20 +117,42 @@ class CamDiagnosticsPublicVariantBoundaryTest {
      * it is present - and must stay non-public - in *every* variant, not just `internalDebug`):
      * [AnalysisResolutionRequest], [AnalysisResolutionFamily], the `aspectRatioStrategyFor` mapping,
      * and [dev.pointtosky.mobile.ar.CameraPreview] are all `internal`, never public production API.
-     * `KVisibility` (via `kotlin-reflect`) is the only reliable way to assert this - plain
-     * `Class.forName`/`java.lang.reflect` cannot distinguish `internal` from `public`, since both
-     * compile to a JVM-public class. Callable references (`::aspectRatioStrategyFor`,
-     * `::CameraPreview`) are used rather than `Class.forName(...).kotlin.staticFunctions` - the
-     * latter does not resolve top-level file-facade functions reliably; a direct reference to the
-     * (already-imported, friend-visible) declaration is unambiguous and does not require invoking
-     * it - `CameraPreview`'s `@Composable` context is only needed to *call* it, never to merely
-     * reference it for reflection.
+     * `KVisibility` (via `kotlin-reflect`) is the only reliable way to assert class visibility -
+     * plain `Class.forName`/`java.lang.reflect` cannot distinguish `internal` from `public`, since
+     * both compile to a JVM-public class. The two top-level *functions* are checked via
+     * [functionVisibility] (raw `kotlin.Metadata` parsing, `kotlin-metadata-jvm`) instead:
+     * `::aspectRatioStrategyFor` would work as a `kotlin-reflect` callable reference, but
+     * `::CameraPreview` does not compile at all - the Kotlin compiler categorically forbids taking
+     * a callable reference to a `@Composable` function - so both use the one technique that works
+     * for either.
      */
     @Test
     fun `the resolution-request seam types and mapping function are internal, never public API`() {
         assertEquals(KVisibility.INTERNAL, AnalysisResolutionFamily::class.visibility)
         assertEquals(KVisibility.INTERNAL, AnalysisResolutionRequest::class.visibility)
-        assertEquals(KVisibility.INTERNAL, (::aspectRatioStrategyFor).visibility)
-        assertEquals(KVisibility.INTERNAL, (::CameraPreview).visibility)
+        assertEquals(
+            Visibility.INTERNAL,
+            functionVisibility("dev.pointtosky.mobile.ar.camera.AnalysisResolutionRequestKt", "aspectRatioStrategyFor"),
+        )
+        assertEquals(Visibility.INTERNAL, functionVisibility("dev.pointtosky.mobile.ar.CameraPreviewKt", "CameraPreview"))
     }
+}
+
+/**
+ * The declared (source-level) [Visibility] of the top-level function named [functionName] in the
+ * file-facade class [facadeClassName] (e.g. `"...CameraPreviewKt"`), read directly from that
+ * class's `kotlin.Metadata` annotation via `kotlin-metadata-jvm` - never via `kotlin-reflect`
+ * callable references, which the Kotlin compiler refuses to create for `@Composable` functions.
+ */
+private fun functionVisibility(
+    facadeClassName: String,
+    functionName: String,
+): Visibility {
+    val metadataAnnotation =
+        checkNotNull(Class.forName(facadeClassName).getAnnotation(Metadata::class.java)) {
+            "$facadeClassName has no kotlin.Metadata annotation"
+        }
+    val classMetadata = KotlinClassMetadata.readStrict(metadataAnnotation)
+    check(classMetadata is KotlinClassMetadata.FileFacade) { "$facadeClassName is not a Kotlin file facade: $classMetadata" }
+    return classMetadata.kmPackage.functions.single { it.name == functionName }.visibility
 }

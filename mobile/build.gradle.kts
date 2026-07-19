@@ -152,6 +152,11 @@ dependencies {
 
     testImplementation(kotlin("test"))           // kotlin.test + JUnit binding
     testImplementation(kotlin("reflect"))         // KVisibility checks in the resolution-seam boundary tests
+    // Reads a class's raw kotlin.Metadata directly - the resolution-seam boundary test needs this
+    // (rather than kotlin-reflect) to check `CameraPreview`'s declared visibility, since it is
+    // @Composable and the Kotlin compiler categorically forbids taking a callable reference
+    // (`::CameraPreview`) to a @Composable function.
+    testImplementation("org.jetbrains.kotlin:kotlin-metadata-jvm:${libs.versions.kotlin.get()}")
     testImplementation("org.json:json:20240303") // real org.json for JVM unit tests (avoids android.jar stub)
     implementation(platform(libs.compose.bom))
 
