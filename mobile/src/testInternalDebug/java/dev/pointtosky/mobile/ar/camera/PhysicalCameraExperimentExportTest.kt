@@ -98,7 +98,7 @@ class PhysicalCameraExperimentExportTest {
         assertTrue(text.contains("requestedAnalysisResolutionFamily=NEAR_4_3"))
         assertTrue(text.contains("actualAnalysisResolution=640x480"))
         // Stability export is self-describing: threshold name/value and the two separated notions.
-        assertTrue(text.contains("bitwiseMatrixChanges=0"))
+        assertTrue(text.contains("exactValueMatrixChanges=0"))
         assertTrue(text.contains("mappedDisplacementChangesBeyondTolerance=0"))
         assertTrue(text.contains("MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX=0.001"))
         assertTrue(text.contains("zoomTargetRatio=1.0"))
@@ -163,7 +163,7 @@ class PhysicalCameraExperimentExportTest {
         val stability = session["matrixStability"]!!.jsonObject
         assertEquals(1, stability["framesObserved"]!!.jsonPrimitive.int)
         assertEquals(0, stability["framesWithNullTransform"]!!.jsonPrimitive.int)
-        assertEquals(0, stability["bitwiseMatrixChanges"]!!.jsonPrimitive.int)
+        assertEquals(0, stability["exactValueMatrixChanges"]!!.jsonPrimitive.int)
         assertEquals(0, stability["mappedDisplacementChangesBeyondTolerance"]!!.jsonPrimitive.int)
         // Self-describing thresholds (P2 fix): names, values, and the reference rectangle.
         assertEquals(1e-3, stability["mappedDisplacementTolerancePx"]!!.jsonPrimitive.double, 0.0)

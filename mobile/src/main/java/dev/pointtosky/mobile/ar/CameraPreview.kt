@@ -159,13 +159,23 @@ private suspend fun ListenableFuture<*>.awaitCompletion(executor: Executor): Res
  * strategy — the family is never re-inferred from exact integer ratios here. Defaults to `null` —
  * CameraX's own default (typically 640×480) — so every existing call site (production and
  * `internalDebug` alike) is byte-for-byte unaffected; only the `internalDebug` physical-camera
- * experiment ever passes a non-`null` value, following the exact shared-parameter-with-debug-only-caller
- * pattern [cameraSelectorOverride] already established. The *requested* size is not a guarantee: the
+ * experiment ever passes a non-`null` value. The *requested* size is not a guarantee: the
  * actually-bound buffer size is whatever each analyzed frame reports, and the experiment records both
  * without conflating them.
+ *
+ * **This composable, [AnalysisResolutionRequest], and [AnalysisResolutionFamily] are all
+ * `internal`** (architecture-leak fix): nothing outside this Gradle module has a legitimate reason
+ * to call [CameraPreview] or construct an [AnalysisResolutionRequest], so none of it belongs in the
+ * public production API surface. It remains in `main` — not `internalDebug` — only because this one
+ * composable executes the real CameraX bind that both [dev.pointtosky.mobile.ar.ArScreen] (the
+ * production caller, which never supplies [analysisResolutionOverride] or [cameraSelectorOverride])
+ * and the `internalDebug`-only physical-camera experiment share; `internal` visibility is scoped to
+ * the Gradle module, not the source set, so both callers see it across the `main`/`internalDebug`
+ * source-set split within one variant compilation, while every other module (and any future
+ * public-API consumer) cannot.
  */
 @Composable
-fun CameraPreview(
+internal fun CameraPreview(
     modifier: Modifier = Modifier,
     onFrameMetadata: (CameraFrameMetadata) -> Unit = {},
     onCameraInfo: (CameraInfo) -> Unit = {},

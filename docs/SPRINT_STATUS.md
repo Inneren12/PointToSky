@@ -1126,6 +1126,78 @@ SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
 CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
 ```
 
+## CAM-2c architecture-leak fix: the resolution-request seam is no longer public API (this sprint)
+
+A review of the dual-basis slice above found the `internalDebug`-only physical-camera experiment
+had unnecessarily expanded the `main` (production) public API surface: `AnalysisResolutionRequest`,
+`AnalysisResolutionFamily`, and `aspectRatioStrategyFor` (`AnalysisResolutionRequest.kt`), plus
+`CameraPreview`'s `analysisResolutionOverride` parameter, were all `public`, even though no
+production call site (`ArScreen`) ever constructs a request or supplies one, and neither
+`CameraPreview` nor these types have any legitimate consumer outside this Gradle module. Scope:
+the `main`↔`internalDebug` resolution-request seam only, plus variant-boundary tests and directly
+related docs - `CAM-2a` math, `AnalysisBufferIntrinsicsResolver`, `SensorToBufferDomainProof`
+semantics, physical-camera provenance resolution, dual-basis evidence math, geometry tolerances,
+matrix-stability behavior, the renderer, catalog, detector/matcher, and declination handling are
+untouched.
+
+**What changed (behavior preserved exactly - see `docs/camera_coordinate_calibration_contract.md`
+§3.14 for the full record):**
+
+- `CameraPreview` is now `internal` (no cross-module API consumer exists - its only two callers,
+  `ArScreen` (`main`) and the physical-camera experiment screen (`internalDebug`), already live in
+  this Gradle module). It stays in `main`, since `internal` visibility is module-scoped, not
+  source-set-scoped, so both callers still see it across the `main`/`internalDebug` split within
+  one variant compilation.
+- `AnalysisResolutionRequest` and `AnalysisResolutionFamily` are now `internal`, for the identical
+  reason.
+- `aspectRatioStrategyFor` is now an `internal` function (kept `internal`, not `private`, so
+  `AnalysisResolutionCandidatesTest` keeps exercising this pure mapping directly, without going
+  through `CameraPreview`'s CameraX bind) - CameraX's own `AspectRatioStrategy` is never exposed
+  through a public helper.
+- `AnalysisResolutionCandidate`/`AnalysisResolutionSize` (the diagnostic candidate-selection model)
+  were already `internalDebug`-only and stay exactly where they were - not moved into `main`.
+- Boundary tests (`CamDiagnosticsInternalDebugVariantBoundaryTest`/`CamDiagnosticsPublicVariantBoundaryTest`)
+  gained a shared assertion, via `kotlin-reflect`'s `KVisibility` (for the two class declarations)
+  and raw `kotlin.Metadata` parsing via `kotlin-metadata-jvm` (for the two top-level functions -
+  `kotlin-reflect` callable references work for `aspectRatioStrategyFor` but the Kotlin compiler
+  categorically forbids taking one to a `@Composable` function like `CameraPreview`), that all four
+  declarations are `internal` - `Class.forName`/plain Java reflection cannot distinguish `internal`
+  from `public`, since both compile to a JVM-public class, so a name-presence check alone cannot
+  prove this. `AnalysisResolutionSize` was also added to both variants' present/absent class-name
+  lists (it was already `internalDebug`-only in behavior, just not previously asserted by name).
+- Terminology-only cleanup, no behavior change: `MatrixStabilityCounters.bitwiseMatrixChanges` /
+  `bitwiseChangeCriterion` are renamed `exactValueMatrixChanges` / `exactValueChangeCriterion`
+  (experiment JSON schema `2` → `3`) - the comparison was always `Double` structural equality
+  (`matrix != previous`), never a raw-bits (`Double.toRawBits()`) comparison, so "bitwise"
+  overstated its precision. No other field, threshold, or metric changed.
+
+Preserved exactly, as required: a selected `NEAR_4_3` request still binds with
+`RATIO_4_3_FALLBACK_AUTO_STRATEGY`; a selected `NEAR_16_9` request (including non-exact sizes like
+`848x480`) still binds with `RATIO_16_9_FALLBACK_AUTO_STRATEGY`; the CameraX default remains no
+resolution override; requested family/dimensions stay fixed for one attempt; retry preserves both;
+actual bound dimensions remain frame-derived; changing resolution/family still starts a fresh
+generation. `ArScreen`'s production `CameraPreview` call (no override supplied) is byte-for-byte
+unaffected.
+
+**Validation (real Gradle 8.14.3/JDK 17, sandbox JDK/Android-SDK provisioned this session):**
+`:core:astro-core:test` (unaffected, unchanged), `:mobile:testInternalDebugUnitTest` 536/536 (+1),
+`:mobile:testPublicDebugUnitTest` 371/371 (+1), `compileInternalDebugKotlin`/
+`compilePublicDebugKotlin`/`compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/
+`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` - all green. No physical device or
+emulator was attached; no new device evidence exists; nothing about physical/logical basis
+compatibility or frame-content correspondence changed in this pass.
+
+```
+CAM-2c DUAL-BASIS DIAGNOSTIC CODE READY
+MODEL-MATCH STRUCTURAL SCOPE ENFORCED
+DUAL-ASPECT REQUEST FAMILY PRESERVED
+DIAGNOSTIC RESOLUTION SEAM NOT PUBLIC API
+PHYSICAL/LOGICAL BASIS COMPATIBILITY DEVICE VALIDATION PENDING
+FRAME-CONTENT CORRESPONDENCE UNMEASURED
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
+```
+
 ## CAM-2b (this sprint)
 
 - **Scope:** visualizes CAM-2a's output; never changes production star placement.

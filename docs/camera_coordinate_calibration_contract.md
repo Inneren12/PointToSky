@@ -1650,6 +1650,48 @@ contract-level statements this pass makes precise:
 - Unchanged: no `SensorToBufferDomainProof.Proven*` is constructed, frame-content correspondence
   remains unmeasured, `DomainNotProven` remains the automatic experiment outcome.
 
+### 3.14 Architecture-leak fix: the resolution-request seam is no longer public production API
+
+§3.12's dual-basis slice added `AnalysisResolutionRequest`/`AnalysisResolutionFamily` and the
+`aspectRatioStrategyFor` mapping to `main` (`AnalysisResolutionRequest.kt`) so `CameraPreview` — a
+shared, `main`-source composable — could carry an explicit `ImageAnalysis` resolution request for
+the `internalDebug`-only physical-camera experiment. All three declarations, and `CameraPreview`
+itself, were `public`, even though no production call site (`ArScreen`) ever constructed a request
+or supplied one, and no consumer outside this Gradle module had a legitimate reason to call
+`CameraPreview` or reference these types directly. This pass narrows that surface without changing
+behavior:
+
+- `CameraPreview` is now `internal` — there is no cross-module API consumer for it (its only two
+  callers, `ArScreen` (`main`) and the physical-camera experiment screen (`internalDebug`), already
+  live inside this same Gradle module). It stays in `main`, not `internalDebug`, only because it is
+  the one place both callers' CameraX binds are executed; `internal` visibility is scoped to the
+  module, not the source set, so both callers still see it across the `main`/`internalDebug` split
+  within one variant compilation.
+- `AnalysisResolutionRequest` and `AnalysisResolutionFamily` are now `internal` data class/enum, for
+  the identical reason — they exist only to be carried through `CameraPreview`'s
+  `analysisResolutionOverride` parameter by the `internalDebug` experiment.
+- `aspectRatioStrategyFor` (the family → `AspectRatioStrategy` mapping) is now an `internal`
+  function — kept `internal` rather than `private` specifically so it stays directly, purely
+  JVM-testable (`AnalysisResolutionCandidatesTest`) without going through `CameraPreview`'s CameraX
+  bind; it must never be reachable as public production API, and CameraX's own
+  `AspectRatioStrategy` type must never be exposed through a public helper.
+- `AnalysisResolutionCandidate`/`AnalysisResolutionSize` (the diagnostic candidate-selection model)
+  remain exactly where they were: `internalDebug`-only, never moved into `main`.
+- Boundary tests (`CamDiagnosticsInternalDebugVariantBoundaryTest`/`CamDiagnosticsPublicVariantBoundaryTest`)
+  now assert, via `kotlin-reflect`'s `KVisibility`, that all four declarations are `internal` —
+  `Class.forName`/plain Java reflection cannot distinguish `internal` from `public`, since both
+  compile to a JVM-public class, so a name-presence check alone cannot prove this.
+- Terminology-only cleanup, no behavior change: `MatrixStabilityCounters.bitwiseMatrixChanges` is
+  renamed `exactValueMatrixChanges` (experiment JSON schema `2` → `3`) — the comparison was always
+  `Double` structural equality (`matrix != previous`), never a raw-bits (`Double.toRawBits()`)
+  comparison, so "bitwise" overstated its precision.
+
+Unchanged: CAM-2a math, `AnalysisBufferIntrinsicsResolver`, `SensorToBufferDomainProof` semantics,
+physical-camera provenance resolution, dual-basis evidence math, every geometry tolerance,
+matrix-stability behavior/thresholds, the renderer, catalog, detector/matcher, and declination
+handling. `ArScreen`'s production `CameraPreview` call (no override supplied) is byte-for-byte
+unaffected. No `Proven*` is constructed anywhere; `DomainNotProven` remains the automatic outcome.
+
 ---
 
 ## 4. Timestamp & synchronization
