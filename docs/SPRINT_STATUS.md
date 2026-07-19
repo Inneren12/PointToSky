@@ -1198,6 +1198,244 @@ SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
 CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
 ```
 
+## CAM-2c frame-content correspondence experiment (this sprint)
+
+> **Corrected by "CAM-2c frame-content correspondence experiment fix — epistemic correctness" below,
+> before any device evidence was collected under this section's code.** A review found the experiment's
+> pose-fit-then-score design was circular: fitting pose under `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH` and then
+> scoring that same hypothesis against its own fitted pose biases any "path better" verdict toward the
+> hypothesis the pose was anchored to. The verdict enum, JSON schema, rotation-semantics documentation,
+> "calibrated" language, dot-grid correspondence identity, and frozen evidence metadata are all fixed
+> below — read that section, not this one, before citing this experiment's design.
+
+Every prior CAM-2c pass above is matrix-construction evidence only — §8's own dual-basis match, even a
+perfect one, is explicitly documented as "not frame-content proof." This pass adds the diagnostic that
+measures frame-content correspondence itself: whether real detected image points, for an explicitly
+bound physical camera, actually land where competing coordinate-basis hypotheses predict.
+
+**Scope:** new, additive, `internalDebug`-only files only
+(`mobile/src/internalDebug/java/dev/pointtosky/mobile/ar/camera/FrameContent*.kt`), a new manifest
+entry, a new "Open frame-content experiment" button alongside the existing physical-camera-experiment
+button in `CamDiagnosticFullReportDialog.kt`, and this doc plus
+`docs/validation/cam_2c_pixel9_evidence.md` §11. Production (`main`), `publicDebug`, CAM-2a's own
+star-projection pipeline, calibrated-intrinsics publication, and the existing physical-camera-binding
+experiment are all untouched.
+
+**What it adds (full detail in `docs/validation/cam_2c_pixel9_evidence.md` §11):** a new, minimal,
+first-of-its-kind planar dot-grid target and connected-component detector (no ChArUco/AprilTag/OpenCV
+exists anywhere in this codebase — confirmed by repo-wide search before this pass); a new, minimal
+planar-homography pose solver (no PnP/`solvePnP` code existed either), solved once per frame and reused
+unchanged across every competing hypothesis (`POSE_REUSED_UNCHANGED_ACROSS_ALL_MAPPING_HYPOTHESES=true`);
+three competing mapping hypotheses (`LOGICAL_CAMERAX_MATRIX_PATH`, `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH`,
+and `RECONCILED_PHYSICAL_TO_LOGICAL_PATH` — always `NOT_IMPLEMENTED`, no fabricated transform); per-point
+typed-rejection-reason residuals with center/edge/corner bucketing and RMS/median/p95/max summaries; and
+a conservative, evidence-only verdict gated on a minimum well-distributed point count and an exported,
+justified pixel margin. Neither hypothesis path calls `resolveAnalysisBufferIntrinsics`'s gated
+production entry point or `resolveCam2cForExplicitPhysicalCamera`, and none of this pass constructs any
+`SensorToBufferDomainProof` value.
+
+**Validation (real Gradle 8.14.3/JDK 17, sandbox JDK 17 + Android SDK 35 provisioned this session via
+`apt-get`/`sdkmanager` — same provisioning pattern as every prior CAM-2c pass that needed it):**
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (588/588, 44 new)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (publicDebug/production untouched)
+```
+
+No physical device or emulator was attached — this pass establishes measurement *machinery*, not a
+measurement. See `docs/validation/cam_2c_pixel9_evidence.md` §11.6 for the full, itemized "not
+established" list (detector real-world accuracy, pose-solver real-world accuracy, distortion never
+applied, verdict thresholds are documented placeholders, real-device detectability untested).
+
+```
+CAM-2c FRAME-CONTENT EXPERIMENT CODE READY
+PHYSICAL CAMERA 3 IS PRIMARY DISCRIMINATING CASE
+ONE FROZEN POSE REUSED ACROSS HYPOTHESES
+PER-POINT BUFFER RESIDUAL EXPORT READY
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
+```
+
+## CAM-2c frame-content correspondence experiment fix — epistemic correctness (this sprint)
+
+> **Corrected by "CAM-2c frame-content correspondence experiment fix round 2" below** (two further P1
+> issues found before any Pixel 9 device evidence was collected under this section's code: Freeze did not
+> actually pin a complete, immutable evidence snapshot, and the orientation marker's own measurements
+> were discarded instead of exported). Everything below remains otherwise accurate.
+
+**Trigger:** a review of the pass above, conducted before any Pixel 9 device evidence was collected,
+found the experiment's pose-fit-then-score design was circular — pose was solved once under
+`PHYSICAL_ACTIVE_ARRAY_MODEL_PATH`'s own resolved camera matrix, then that same hypothesis's residuals
+were compared against `LOGICAL_CAMERAX_MATRIX_PATH`'s to declare a "path winner." A verdict produced that
+way is not independent evidence the physical path is correct; it is largely an artifact of which
+hypothesis the pose was anchored to. **Verdict: DO NOT RUN DEVICE EVIDENCE under the prior section's code
+— fix first.** Full detail in `docs/validation/cam_2c_pixel9_evidence.md` §12.
+
+**Scope:** `internalDebug`-only, same files as the pass above
+(`mobile/src/internalDebug/java/dev/pointtosky/mobile/ar/camera/FrameContent*.kt` and their tests) plus
+this doc and `cam_2c_pixel9_evidence.md` §12. CAM-2a production projection, `publicDebug`/release, the
+existing physical-camera-binding experiment, `AnalysisBuffer` intrinsics publication, and every
+`SensorToBufferDomainProof` variant are all untouched — no file this pass touches imports
+`SensorToBufferDomainProof`.
+
+**What changed (full detail in `cam_2c_pixel9_evidence.md` §12):**
+
+1. **Circularity removed.** The pose model is renamed `CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_
+   PINHOLE_DOMAIN`; every pose solution now exports `POSE_REFERENCE_HYPOTHESIS =
+   PHYSICAL_ACTIVE_ARRAY_MODEL_PATH` and `CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION =
+   CONDITIONAL_ON_PHYSICAL_ANCHORED_POSE` explicitly. `FrameContentVerdict`'s enum can no longer contain
+   `LOGICAL_PATH_BETTER`/`PHYSICAL_PATH_BETTER`/`RECONCILED_PATH_BETTER` — replaced by `INSUFFICIENT_
+   POINTS`/`POSE_FIT_INVALID`/`CONDITIONAL_PATHS_NUMERICALLY_INDISTINGUISHABLE`/`CONDITIONAL_RESIDUALS_
+   DIFFER`/`MIXED_OR_INCONCLUSIVE`. The lower-residual hypothesis is still exported
+   (`lowerResidualHypothesisId`) but never asserted to be the *correct* one. A regression test proves a
+   physical-anchored fixture with a clean residual gap cannot produce a proof-like "PHYSICAL_PATH_BETTER"
+   verdict. What a non-circular experiment would actually require — an independently sourced pose/
+   reference, or joint multi-view/fixed-rig calibration — is documented, not implemented.
+2. **Rotation semantics corrected.** `rotationFoldedIn = false` for both implemented hypotheses (neither
+   ever reads `rotationDegrees`; Pixel 9 evidence shows `rotationDegrees=90` with `matrixClass=
+   AXIS_ALIGNED_0` — no rotation folded in), with an explicit, shared, exported unrotated-buffer
+   contract string. `whyOutputIsBufferCoordinates` no longer references `resolveAnalysisBufferIntrinsics`,
+   which neither hypothesis calls.
+3. **Placement/distance frozen as evidence metadata**, threaded into the snapshot at build time. Editing
+   after a snapshot exists patches that exact snapshot's metadata immediately, at the same generation,
+   leaving frame/detection/pose/hypotheses/residuals/verdict untouched — Copy and Share can never disagree
+   about what was on-screen at capture. A new attempt resets both to documented defaults.
+4. **JSON evidence schema completed** (bumped to version 2): exhaustive session/provenance, both
+   characteristics snapshots, K evidence, target/detection tolerances, every object/detected point, full
+   pose and per-hypothesis documentation/intrinsics/diagnostics, every residual point, and the full
+   verdict field set. New tests parse the JSON structurally (`kotlinx.serialization.json`), not by
+   substring matching.
+5. **"Calibrated" language removed.** The characteristics-derived K is renamed "characteristics-derived
+   approximate physical pinhole K" everywhere, with `usedLensIntrinsicCalibration=false` and an explicit
+   principal-point assumption exported alongside its focal-derivation inputs.
+6. **Dot-grid correspondence identity hardened.** A distinctly larger marker dot (default 2.5x area)
+   resolves the 180°-rotation ambiguity a plain symmetric grid cannot resolve from image content alone.
+   Detection additionally validates row separation, monotonic ordering, and spacing consistency, and
+   returns a new, explicit `OrientationAmbiguous` outcome — never a guess — for anything that does not
+   cleanly resolve. Detection is never accepted from blob count alone.
+7. **Refinement-status naming fixed.** `SUBPIXEL_REFINED`/`COARSE_ONLY` (which implied a refinement stage
+   that never ran) renamed to `WEIGHTED_CENTROID_SUBPIXEL_ESTIMATE`/`COARSE_CENTROID`, describing what the
+   code actually computes.
+8. **Camera/UI robustness.** The five placement controls are wrapped in a horizontally scrollable row so
+   they cannot overflow a portrait Pixel 9 layout; Copy/Share are `enabled=false` (not a silent no-op)
+   with no snapshot; the pose reference hypothesis and the CONDITIONAL verdict framing are shown in a
+   fixed, prominent header banner. Generation-scoped callback/cleanup behavior is unchanged.
+
+**Validation (real Gradle 8.14.3/JDK 17, same sandbox provisioning as every prior CAM-2c pass):**
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (596/596, 0 failures)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (371/371, publicDebug/production
+                                                             untouched)
+```
+
+No emulator/device is attached in this sandbox: instrumented (`androidTest`) sources compiled
+successfully but were not executed. Everything the pass above already listed as "not established"
+(detector/pose-solver real-world accuracy, distortion never applied, real-device detectability) remains
+equally unestablished here — this pass fixes the measurement machinery's epistemic correctness, it does
+not add a device measurement.
+
+```
+CAM-2c FRAME-CONTENT MEASUREMENT CODE READY
+SINGLE-FRAME RESIDUALS EXPLICITLY CONDITIONAL ON PHYSICAL-ANCHORED POSE
+NO INDEPENDENT PATH-WINNER VERDICT
+UNROTATED IMAGEPROXY BUFFER CONTRACT EXPLICIT
+PLACEMENT / DISTANCE FROZEN AND EXPORTED
+COMPLETE JSON EVIDENCE SCHEMA READY
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
+```
+
+## CAM-2c frame-content correspondence experiment fix round 2 (this sprint)
+
+**Trigger:** two further P1 issues found in the pass above before any Pixel 9 device evidence was
+collected under its code. Full detail in `docs/validation/cam_2c_pixel9_evidence.md` §13.
+
+1. **Freeze did not pin a complete, immutable evidence snapshot.** The live overlay stored an entire
+   frozen `FrameContentExperimentSessionState` locally, but `targetPlacementLabel`/`distanceLabelMm`
+   edits patch the *live* session's own `latestSnapshot` in place — so after Freeze, the displayed
+   selection could drift from what Copy/Share actually exported, or vice versa. Fixed by storing only
+   `frozenSnapshot: FrameContentCorrespondenceSnapshot?` (a single genuinely immutable value); every
+   read (header, report, Copy, Share) derives from one `displayedSnapshot = frozenSnapshot ?:
+   state.latestSnapshot`. Placement buttons and the distance field are now disabled outright while
+   frozen — editing them could never change what's displayed anyway. The header states
+   `liveFramesObserved`, `displayedGeneration`, and an explicit `liveness=LIVE|FROZEN` flag, so a frozen
+   generation is never implied to be the current live one. Resume immediately shows the latest live
+   snapshot.
+2. **The orientation marker's own measurements were discarded, not exported.** The marker is
+   load-bearing — it determines every detected point's semantic ID — but
+   `FrameContentDetectionResult.Detected` retained only the remapped points, discarding the raw
+   marker-centroid/area/corner-distance evidence that justified the orientation decision. A new
+   `FrameContentOrientationEvidence` and `FrameContentGridGeometryEvidence` are now frozen by the
+   detector itself, at detection time, and threaded unchanged through the snapshot into both the text
+   report and JSON — never recomputed downstream from the already-remapped points. The report explicitly
+   distinguishes three ratios that must never be conflated: the target's *design*
+   `markerAreaScaleFactor` (2.5x by default), the detector's own *acceptance* threshold
+   (`markerAreaRatioThreshold`, 1.5x), and the frame's actual *observed* `observedMarkerAreaRatio` —
+   clearing the acceptance threshold never implies the design ratio was what was actually photographed.
+
+**Also fixed in this pass (task §3, "make the physical target reproducible"):** `FrameContentTargetSpec`
+gained explicit printable geometry — `regularDotDiameterMm`, a `markerDiameterMm` derived from
+`markerAreaScaleFactor` (never independently settable, so the printed target and the detector's own
+acceptance ratio cannot silently drift apart), and `markerOffsetXMm`/`markerOffsetYMm` relative to
+`R0C0`, validated at construction to be strictly nearer `R0C0` than every other grid corner (a
+misconfigured offset now fails fast instead of producing a physically ambiguous printed target). A new
+deterministic `buildFrameContentTargetSvg` generator (`FrameContentTargetSvg.kt`) renders this exact
+geometry as a print-ready SVG, wired to a "Share target SVG" button on the candidate-picker screen (task
+§7's device workflow, before an attempt even starts) — the printed target used for a device run is always
+reproducible from code, never an ad hoc hand-drawn substitute.
+
+**Scope:** `internalDebug`-only, same file family as every prior CAM-2c pass
+(`mobile/src/internalDebug/java/dev/pointtosky/mobile/ar/camera/FrameContent*.kt`, one new file
+`FrameContentTargetSvg.kt`) plus their tests and this documentation. CAM-2a production projection,
+`publicDebug`/release, the existing physical-camera-binding experiment, `AnalysisBuffer` intrinsics
+publication, and every `SensorToBufferDomainProof` variant remain untouched.
+
+**Validation (real Gradle 8.14.3/JDK 17, same sandbox provisioning as every prior CAM-2c pass):**
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (609/609, 0 failures — 13 new tests:
+                                                             FrameContentTargetTest,
+                                                             FrameContentCornerDetectorTest)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED (new
+                                                             FrameContentExperimentLiveOverlayUiTest.kt
+                                                             compiled)
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (371/371, publicDebug/production
+                                                             untouched)
+```
+
+No emulator/device is attached in this sandbox: the new
+`FrameContentExperimentLiveOverlayUiTest` (Freeze/Resume, disabled-while-frozen controls,
+frozen-vs-live-snapshot Copy behavior) compiled successfully but was not executed. The new
+`FrameContentCornerDetectorTest` runs against a synthetically rendered `LumaBuffer` (flat-luma filled
+circles at exact, computable pixel positions derived from the target's own millimetre geometry) — proven
+to detect the right semantic point IDs for both an unrotated and a 180-degree-rotated render, and to
+report `OrientationAmbiguous` (never a guess) for an ambiguous marker size or an ambiguous corner
+confidence — but this is still not a real-device detection result; the detector's accuracy against an
+actual photograph remains as unestablished as every prior pass already recorded.
+
+```
+CAM-2c FRAME-CONTENT MEASUREMENT CODE READY
+SINGLE-FRAME RESIDUALS CONDITIONAL ON PHYSICAL-ANCHORED POSE
+FREEZE PINS COMPLETE EVIDENCE SNAPSHOT
+ORIENTATION DECISION FULLY AUDITABLE
+PRINTABLE TARGET GEOMETRY REPRODUCIBLE
+NO INDEPENDENT PATH-WINNER VERDICT
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
+```
+
 ## CAM-2b (this sprint)
 
 - **Scope:** visualizes CAM-2a's output; never changes production star placement.
