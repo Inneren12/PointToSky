@@ -37,7 +37,7 @@ internal fun buildFrameContentTargetSvg(
             """  <!-- cornerRows=${spec.cornerRows} cornerCols=${spec.cornerCols} dotSpacingMm=${spec.dotSpacingMm} """ +
                 """regularDotDiameterMm=${spec.regularDotDiameterMm} markerAreaScaleFactor=${spec.markerAreaScaleFactor} """ +
                 """markerDiameterMm=${spec.markerDiameterMm} markerOffsetXMm=${spec.markerOffsetXMm} """ +
-                """markerOffsetYMm=${spec.markerOffsetYMm} -->""",
+                """markerOffsetYMm=${spec.markerOffsetYMm} minimumBlobClearanceMm=${spec.minimumBlobClearanceMm} -->""",
         )
         appendLine("""  <rect x="0" y="0" width="$widthMm" height="$heightMm" fill="white"/>""")
         for (objectPoint in frameContentTargetObjectPoints(spec)) {

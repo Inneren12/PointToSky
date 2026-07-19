@@ -21,5 +21,27 @@
             android:exported="false"
             android:label="CAM-2c frame-content correspondence"
             android:screenOrientation="portrait" />
+
+        <!-- CAM-2c frame-content correspondence experiment: real image/svg+xml *file* sharing for the
+             printable target (FrameContentTargetSvgSharing.kt). The existing "${applicationId}.logs"
+             FileProvider (main manifest) only covers a files-path "crash/" subdirectory - it does not
+             cover any cache-path, so it cannot be reused for this cache-backed file. A dedicated
+             internalDebug-only provider is added instead, scoped by filepaths_cam2c_target.xml's
+             cache-path to only its own "cam2c_target/" cache subdirectory - never exported, never usable
+             by another app, grantUriPermissions=true so a temporary read grant can be extended to
+             whichever app the chooser launches. Uses a distinct FileProvider subclass
+             (FrameContentTargetSvgFileProvider), not androidx.core.content.FileProvider directly - AGP's
+             manifest merger keys <provider> by android:name alone, so a second bare
+             "androidx.core.content.FileProvider" entry collides with the existing ".logs" one even
+             though their authorities/resource differ. -->
+        <provider
+            android:name="dev.pointtosky.mobile.ar.camera.FrameContentTargetSvgFileProvider"
+            android:authorities="${applicationId}.cam2c.target"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths_cam2c_target" />
+        </provider>
     </application>
 </manifest>

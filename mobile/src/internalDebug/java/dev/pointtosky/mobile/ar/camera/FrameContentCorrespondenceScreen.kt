@@ -166,15 +166,11 @@ private fun CandidatePicker(
         Text("Select physical camera", color = Color.White)
         // Task §3: the printable target's exact geometry must be reproducible from code, not an ad hoc
         // hand-drawn substitute — exported here, before an attempt even starts, since the target should
-        // be printed and placed before the device workflow below needs it.
+        // be printed and placed before the device workflow below needs it. A real image/svg+xml *file*
+        // share (FrameContentTargetSvgSharing.kt) — never shareCamDiagnosticText's text/plain EXTRA_TEXT,
+        // which cannot be opened, previewed, or printed as an SVG by a receiving app.
         Button(
-            onClick = {
-                shareCamDiagnosticText(
-                    context,
-                    "CAM-2c frame-content target SVG",
-                    buildFrameContentTargetSvg(DEFAULT_FRAME_CONTENT_TARGET_SPEC),
-                )
-            },
+            onClick = { shareFrameContentTargetSvg(context, DEFAULT_FRAME_CONTENT_TARGET_SPEC) },
             modifier = Modifier.testTag(TAG_EXPORT_TARGET_SVG),
         ) { Text("Share target SVG") }
         LazyColumn {

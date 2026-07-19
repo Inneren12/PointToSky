@@ -1393,6 +1393,15 @@ geometry as a print-ready SVG, wired to a "Share target SVG" button on the candi
 §7's device workflow, before an attempt even starts) — the printed target used for a device run is always
 reproducible from code, never an ad hoc hand-drawn substitute.
 
+> **Superseded by the round-3 correction pass below (two P1 issues):** (1) the "Share target SVG" button
+> described here actually routed through `shareCamDiagnosticText` — `ACTION_SEND`/`text/plain`/
+> `EXTRA_TEXT` — never creating or attaching a real file, despite this section's own "print-ready SVG"
+> wording; fixed by a dedicated `image/svg+xml` file-sharing path. (2) `FrameContentTargetSpec.init`
+> validated marker-to-corner proximity only, never that the printed marker circle and printed dot circles
+> are physically separate — a marker could be strictly nearer `R0C0` than every other corner while still
+> overlapping `R0C0`'s own circle. Both fixed below; this paragraph's geometry/reproducibility claims
+> otherwise still stand.
+
 **Scope:** `internalDebug`-only, same file family as every prior CAM-2c pass
 (`mobile/src/internalDebug/java/dev/pointtosky/mobile/ar/camera/FrameContent*.kt`, one new file
 `FrameContentTargetSvg.kt`) plus their tests and this documentation. CAM-2a production projection,
@@ -1430,6 +1439,112 @@ SINGLE-FRAME RESIDUALS CONDITIONAL ON PHYSICAL-ANCHORED POSE
 FREEZE PINS COMPLETE EVIDENCE SNAPSHOT
 ORIENTATION DECISION FULLY AUDITABLE
 PRINTABLE TARGET GEOMETRY REPRODUCIBLE
+NO INDEPENDENT PATH-WINNER VERDICT
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
+```
+
+**Superseded by the round-3 correction pass immediately below** on the two points called out inline
+above (SVG text-only sharing, marker/dot overlap not validated) — every other line of this status block
+still stands unchanged.
+
+## CAM-2c printable-target workflow blockers, round 3 (this sprint)
+
+**Trigger:** two further P1 issues found before any Pixel 9 device evidence was collected — both in code
+this pass's own predecessor (round 2, immediately above) shipped. Full detail in
+`docs/validation/cam_2c_pixel9_evidence.md` §14.
+
+1. **"Share target SVG" never shared a real file.** `CandidatePicker` called
+   `shareCamDiagnosticText(context, "CAM-2c frame-content target SVG", buildFrameContentTargetSvg(...))` —
+   `shareCamDiagnosticText` always constructs `ACTION_SEND`/`type = "text/plain"`/`EXTRA_TEXT`. No file was
+   ever written or attached, despite the button label, this file's own round-2 KDoc ("print-ready SVG"),
+   and `FrameContentTargetSvg.kt`'s KDoc ("printing this exact file") all describing a real file. Fixed by
+   a dedicated file (new `FrameContentTargetSvgSharing.kt`, `internalDebug`-only):
+   `writeFrameContentTargetSvgToCache` writes `buildFrameContentTargetSvg`'s exact UTF-8 bytes to a
+   stable, app-owned cache file (`cam_2c_frame_content_target.svg`, inside a dedicated
+   `cam2c_target/` cache subdirectory); `buildFrameContentTargetSvgShareIntent` (pure — never launches
+   anything) builds an explicit `ACTION_SEND` with `type = "image/svg+xml"`, `EXTRA_STREAM` set to a
+   [FileProvider]-issued content `Uri`, `FLAG_GRANT_READ_URI_PERMISSION`, and a `ClipData` wrapping the
+   same `Uri` (some receiving apps only honour the grant via `ClipData`); `shareFrameContentTargetSvg`
+   wraps that in a chooser and is the only place this file starts an `Activity`. The existing
+   `${applicationId}.logs` `FileProvider` (`mobile/src/main/AndroidManifest.xml`) only covers a
+   `files-path "crash/"` — no `cache-path` at all — so it could not be reused; a new, narrowly-scoped
+   `internalDebug`-only provider (`${applicationId}.cam2c.target`, `exported="false"`,
+   `grantUriPermissions="true"`, `filepaths_cam2c_target.xml`'s `cache-path` covering only the
+   `cam2c_target/` subdirectory) was added instead. `CandidatePicker`'s "Share target SVG" button now
+   calls `shareFrameContentTargetSvg` directly — no external-storage permission is requested or needed,
+   since the file never leaves the app's own cache directory except via the `FileProvider` grant.
+2. **Overlapping target circles were never rejected.** `FrameContentTargetSpec.init` validated only that
+   the marker centre is non-zero and strictly closer to `R0C0` than to every other grid corner — it never
+   checked that the *printed marker circle* is spatially separate from the *printed `R0C0` dot circle* (or
+   from any other regular dot). A marker centre could satisfy "strictly nearer `R0C0`" while still
+   physically overlapping `R0C0`'s own circle, merging the two into one connected component and making the
+   detector's required `pointCount + 1` separate-component count structurally impossible — an
+   intrinsically undetectable target that the old constructor happily accepted. Fixed by a new physical
+   non-overlap invariant in `FrameContentTargetSpec.init`, using the real printed radii (never bare
+   centre-to-centre distance): for every regular object point, `centerDistanceMm > markerRadiusMm +
+   regularDotRadiusMm + minimumBlobClearanceMm`; and `dotSpacingMm > regularDotDiameterMm +
+   minimumBlobClearanceMm` so regular dots never overlap each other either. `minimumBlobClearanceMm` is a
+   new field on `FrameContentTargetSpec` (conservative default `FRAME_CONTENT_MINIMUM_BLOB_CLEARANCE_MM =
+   3.0`mm, a real positive margin, never merely `>=` the sum of the two radii), exported in both the text
+   report and the JSON (schema bumped to `4`) so a physical target reproduced from a report can never
+   silently drift into a physically-overlapping, undetectable configuration.
+
+**Scope:** `internalDebug`-only, same file family as every prior CAM-2c pass
+(`FrameContentTarget.kt`, `FrameContentTargetSvg.kt`, `FrameContentCorrespondenceExport.kt`,
+`FrameContentCorrespondenceScreen.kt`, one new file `FrameContentTargetSvgSharing.kt`, one new manifest
+`<provider>` + `res/xml/filepaths_cam2c_target.xml`) plus their tests and this documentation. CAM-2a
+production projection, `publicDebug`/release, the existing physical-camera-binding experiment,
+`AnalysisBuffer` intrinsics publication, and every `SensorToBufferDomainProof` variant remain untouched —
+the new `FileProvider` is declared only in `mobile/src/internalDebug/AndroidManifest.xml`, never merged
+into `publicDebug`/`internalRelease`/`publicRelease`.
+
+**Validation (real Gradle 8.14.3/JDK 17, freshly provisioned in this sandbox — Android SDK via
+`sdkmanager` against `dl.google.com`, `openjdk-17-jdk-headless` via `apt`, same substitution-for-the-
+missing-pinned-8.11.1-distribution deviation every prior CAM-2c pass has recorded):**
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (617/617, 0 failures — 15 tests in
+                                                             FrameContentTargetTest, 8 new; 1 new
+                                                             assertion in
+                                                             FrameContentCorrespondenceSnapshotTest)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED (new
+                                                             FrameContentTargetSvgSharingTest.kt, 10
+                                                             tests, compiled)
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors, 30 warnings — 147
+                                                             errors/23 warnings pre-filtered by the
+                                                             existing lint-baseline.xml; none
+                                                             attributable to this pass)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (371/371, publicDebug/production
+                                                             untouched)
+```
+
+One real, reproducible build defect was found and fixed along the way, not a code-review nit: AGP's
+manifest merger keys `<provider>` elements by `android:name` alone, so a second bare
+`<provider android:name="androidx.core.content.FileProvider" ...>` entry collided with the existing
+`${applicationId}.logs` provider even though their `android:authorities`/`android:resource` differ
+(`Attribute provider#androidx.core.content.FileProvider@authorities ... is also present at ...`). Fixed
+with the standard workaround: a trivial `FrameContentTargetSvgFileProvider : FileProvider()` subclass
+(no behavior of its own) so the two `<provider>` entries have distinct `android:name`s; the manifest's
+`android:name` now points at the subclass, `android:authorities`/`grantUriPermissions`/`exported`
+unchanged.
+
+No emulator/device is attached in this sandbox: the new `FrameContentTargetSvgSharingTest`
+(`androidTestInternalDebug`) — real-`Uri`/`FileProvider`/`PackageManager` coverage for every requirement
+this pass's issue #1 lists — compiled but was **not executed**; nothing in this pass claims instrumented
+execution, a real chooser having been opened, or a real SVG file having been opened/printed by an external
+app.
+
+```
+CAM-2c FRAME-CONTENT MEASUREMENT CODE READY
+FREEZE PINS COMPLETE EVIDENCE SNAPSHOT
+ORIENTATION DECISION FULLY AUDITABLE
+PRINTABLE TARGET GEOMETRY REPRODUCIBLE
+TARGET CIRCLES PHYSICALLY SEPARATED BY VALIDATED CLEARANCE
+TARGET SVG SHARED AS A REAL image/svg+xml FILE
+SINGLE-FRAME RESIDUALS CONDITIONAL ON PHYSICAL-ANCHORED POSE
 NO INDEPENDENT PATH-WINNER VERDICT
 INSTRUMENTED/DEVICE EXECUTION PENDING
 SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED

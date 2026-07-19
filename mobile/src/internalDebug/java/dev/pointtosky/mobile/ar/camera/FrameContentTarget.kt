@@ -3,6 +3,13 @@ package dev.pointtosky.mobile.ar.camera
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
+/** Conservative default for [FrameContentTargetSpec.minimumBlobClearanceMm] — a real positive physical
+ * gap (beyond the sum of the two circles' own radii) between any two printed circles on the target, so
+ * printed-ink spread, motion blur, or detector noise can never turn two idealized-tangent circles into
+ * one merged connected component in a real photograph. See [FrameContentTargetSpec]'s "Physical
+ * non-overlap invariant" KDoc below for the exact invariant this constant defaults into. */
+internal const val FRAME_CONTENT_MINIMUM_BLOB_CLEARANCE_MM: Double = 3.0
+
 /**
  * CAM-2c frame-content correspondence experiment (`internalDebug`-only).
  *
@@ -47,6 +54,25 @@ import kotlin.math.sqrt
  * corner, so a misconfigured offset that would make the physical marker ambiguous fails fast rather than
  * silently producing an unprintable/unusable target. [buildFrameContentTargetSvg] renders this exact
  * geometry as a checked-in-reproducible SVG file a real print run can use.
+ *
+ * ## Physical non-overlap invariant (printed-circle-overlap fix)
+ * Being strictly nearer `R0C0` than every other corner does **not** imply the marker circle is
+ * physically separate from the `R0C0` dot circle — a marker centre just barely nearer `R0C0` than the
+ * next corner can still sit close enough to `R0C0` that the two printed circles overlap. The detector
+ * ([detectFrameContentTargetCorners]) requires exactly `pointCount + 1` separate connected components; an
+ * overlapping marker/dot merges into one blob and makes the printed target intrinsically undetectable,
+ * regardless of anything else being correctly configured. [init] therefore also validates, using the
+ * *real printed radii* (never bare centre-to-centre distance alone), that:
+ * - the marker circle clears every regular dot circle by at least [minimumBlobClearanceMm]:
+ *   `centerDistanceMm > markerRadiusMm + regularDotRadiusMm + minimumBlobClearanceMm` for every regular
+ *   object point;
+ * - regular dot circles clear each other by the same margin: `dotSpacingMm > regularDotDiameterMm +
+ *   minimumBlobClearanceMm` (the closest any two regular dots ever get is one full [dotSpacingMm] apart,
+ *   along a row or column).
+ *
+ * [minimumBlobClearanceMm] is a real positive margin, not merely `>=` the sum of the two radii — printed
+ * ink spread, motion blur, and detector noise can all make two circles that are merely tangent in the
+ * idealized SVG geometry appear to touch or merge in a real photograph.
  */
 internal data class FrameContentTargetSpec(
     val cornerRows: Int = 4,
@@ -63,6 +89,11 @@ internal data class FrameContentTargetSpec(
     val markerOffsetXMm: Double = -15.0,
     /** The orientation marker's centre Y offset from `R0C0` (local `(0, 0)`) — see [markerOffsetXMm]. */
     val markerOffsetYMm: Double = -15.0,
+    /** The minimum real, physical gap — beyond the two printed circles' own radii — required between any
+     * two printed circles on the target (marker-to-dot and dot-to-dot alike). See this class's "Physical
+     * non-overlap invariant" KDoc above. Exported in both the text report and the JSON so the physical
+     * target a device report was captured against is fully reproducible, clearance included. */
+    val minimumBlobClearanceMm: Double = FRAME_CONTENT_MINIMUM_BLOB_CLEARANCE_MM,
 ) {
     init {
         require(cornerRows >= 2) { "cornerRows must be >= 2; was $cornerRows" }
@@ -76,6 +107,9 @@ internal data class FrameContentTargetSpec(
         }
         require(markerOffsetXMm.isFinite() && markerOffsetYMm.isFinite()) {
             "markerOffsetXMm/markerOffsetYMm must be finite; was ($markerOffsetXMm, $markerOffsetYMm)"
+        }
+        require(minimumBlobClearanceMm > 0.0 && minimumBlobClearanceMm.isFinite()) {
+            "minimumBlobClearanceMm must be finite and positive; was $minimumBlobClearanceMm"
         }
         // The marker must be unambiguously associated with R0C0 by construction (task §3) — validated
         // here, not merely documented, so a misconfigured spec fails fast rather than producing a
@@ -95,6 +129,35 @@ internal data class FrameContentTargetSpec(
                     "than to every other grid corner — was ${distanceToR0C0}mm from R0C0 vs " +
                     "${distanceToOtherCorner}mm from ($cornerXMm, $cornerYMm)"
             }
+        }
+
+        // Physical non-overlap invariant (printed-circle-overlap fix, see this file's "Physical
+        // non-overlap invariant" KDoc above) — the detector requires exactly pointCount + 1 separate
+        // connected components; an overlapping marker/dot silently merges into one blob. Computed here
+        // from the same row/col formula frameContentTargetObjectPoints uses (not via a call to that
+        // function, which would read a not-yet-fully-constructed `this`), using the real printed radii,
+        // never bare centre-to-centre distance alone.
+        val regularDotRadiusMm = regularDotDiameterMm / 2.0
+        val markerRadiusMm = markerDiameterMm / 2.0
+        for (row in 0 until cornerRows) {
+            for (col in 0 until cornerCols) {
+                val pointXMm = col * dotSpacingMm
+                val pointYMm = row * dotSpacingMm
+                val centerDistanceMm = hypot(markerOffsetXMm - pointXMm, markerOffsetYMm - pointYMm)
+                val requiredClearanceMm = markerRadiusMm + regularDotRadiusMm + minimumBlobClearanceMm
+                require(centerDistanceMm > requiredClearanceMm) {
+                    "marker circle (radius=${markerRadiusMm}mm, centre=($markerOffsetXMm, $markerOffsetYMm)) " +
+                        "must not overlap or touch regular dot R${row}C$col (radius=${regularDotRadiusMm}mm, " +
+                        "centre=($pointXMm, $pointYMm)) — required centreDistance > " +
+                        "${requiredClearanceMm}mm (radii + minimumBlobClearanceMm=$minimumBlobClearanceMm), " +
+                        "was ${centerDistanceMm}mm"
+                }
+            }
+        }
+        require(dotSpacingMm > regularDotDiameterMm + minimumBlobClearanceMm) {
+            "dotSpacingMm ($dotSpacingMm) must exceed regularDotDiameterMm + minimumBlobClearanceMm " +
+                "(${regularDotDiameterMm + minimumBlobClearanceMm}) so adjacent regular dots never overlap " +
+                "or touch"
         }
     }
 
