@@ -617,3 +617,169 @@ export (the comparison itself, its meaning, and every threshold/value are unchan
 overstated the precision — it was always `Double` structural equality, never a raw-bits
 (`Double.toRawBits()`) comparison). A report or captured JSON showing the older field names predates
 schema `3`.
+
+## 9. Mobile usability fix — action controls fixed, report body scrollable (UI-only, no new device evidence)
+
+**Code-only pass; no new device evidence.** A review of §8's own device workflow found the live
+overlay's Freeze/Resume, Copy report, and Share JSON controls rendered inside the *same*
+`verticalScroll`ed `Column` as the report text they sit above (`PhysicalCameraBindingSession`'s live,
+non-terminal branch). On a real device, §8's report — the requested/actual resolution, matrix
+stability counters, opened-logical-camera snapshot, and the full dual-basis matrix assessment — is
+long enough that this pushed the action controls below the viewport, and the overlay drew flush under
+the status bar (this codebase now targets `compileSdk`/`targetSdk 35`, which enforces edge-to-edge by
+default). Both defects made §8's own device workflow ("Freeze, Copy report + Share JSON" for each of
+three physical IDs, in two resolution bands) difficult or impossible to actually carry out on a phone.
+
+**What changed (`PhysicalCameraBindingExperimentScreen.kt` only):**
+
+- **Stable two-region layout.** The live overlay is now a fixed action header — a compact
+  `physicalId=…/attemptId=…/status=…/frames=…` summary of whichever state is displayed, then
+  Freeze/Resume, Copy report, Share JSON (`physical_camera_experiment_action_header`) — above a
+  separately-scrollable report body (`physical_camera_experiment_report_scroll`), never one shared
+  scroll container. The header is never itself scrollable and never resizes or is displaced by report
+  length.
+- **System insets.** The overlay applies `WindowInsets.safeDrawing` via `windowInsetsPadding`, so the
+  header clears the status bar and the bottom of the report body clears gesture/navigation insets.
+- **Long text behavior.** The report keeps its monospace formatting and wraps within the scrollable
+  body's width (never horizontally clipped); the report text is now wrapped in a `SelectionContainer`
+  (selectable, since that was trivial to add alongside the layout fix).
+- **Freeze/export semantics are unchanged.** Freeze still pins `displayedState`; Copy report and Share
+  JSON still always read `displayedState`; `frozenState` is still `remember`ed keyed to
+  `attemptId`, so a new attempt/generation still cannot inherit a frozen snapshot. Every byte
+  `buildPhysicalCameraExperimentReportText`/`buildPhysicalCameraExperimentJson` produce, the JSON
+  schema, `ExperimentSessionState`, the dual-basis evidence math, matrix stability, and
+  `CameraPreview`'s own binding behavior are all untouched — this is a layout-only fix, verified by the
+  fact that `PhysicalCameraExperimentExportTest`/`PhysicalCameraExperimentReportFormatTest` (pure JVM,
+  `mobile/src/testInternalDebug`) needed no changes.
+- **Extracted `PhysicalCameraExperimentLiveOverlay`.** The header+report layout was pulled out of
+  `PhysicalCameraBindingSession` into its own composable specifically so it can be exercised by Compose
+  UI tests without also binding a real `CameraPreview` (this container has no camera hardware — same
+  constraint as every prior pass in this file).
+- **New Compose UI tests** (`PhysicalCameraExperimentLiveOverlayUiTest`,
+  `mobile/src/androidTestInternalDebug`): Freeze is displayed on session start; Copy report and Share
+  JSON are displayed simultaneously; with a synthetic long report/session state on a deliberately small
+  viewport, all three action controls remain visible in the semantics tree with **no scrolling
+  performed** to reach them (the exact defect this fix corrects); the report scroll container carries a
+  real scroll action; tapping Freeze changes the label to "Resume live" and back; Copy report still
+  writes the frozen state's exact report text to the real Android clipboard after the live state
+  advances further; a new `attemptId` resets frozen state back to "Freeze".
+
+**Validation this pass actually ran (real Gradle, this session, mirroring §5/§7's own honesty
+convention):**
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (unit tests unaffected/unchanged)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED (new/updated Compose tests compile)
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+```
+
+**Not run in this pass, same as every prior CAM-2c pass in this file:** the new
+`PhysicalCameraExperimentLiveOverlayUiTest` Compose UI tests were compiled, never executed — no
+physical device or emulator was attached in this session. This pass adds and fixes no device-level
+fact; it does not claim the layout has been seen working on a real Pixel 9, only that it compiles,
+type-checks against real Compose UI test APIs, and leaves the underlying export/freeze/binding
+mechanism §1-§8 already established completely unchanged.
+
+**Final status, this pass (corrected by §10 below — the wording that used to be here, "CAM-2c PHYSICAL
+EXPERIMENT UI USABLE" / "ACTIONS FIXED ON SCREEN" / "DEVICE EVIDENCE COLLECTION MAY CONTINUE", stated
+runtime UI facts this pass's own "Not run" paragraph immediately above already said were never
+observed — an internal contradiction §10 fixes; read §10's final status block instead of this one):**
+
+```
+CAM-2c PHYSICAL EXPERIMENT UI CODE READY
+FIXED-HEADER / SCROLL-BODY LAYOUT IMPLEMENTED
+INSTRUMENTED UI TEST EXECUTION PENDING
+PIXEL 9 UI VALIDATION PENDING
+EXPORT CONTENT UNCHANGED
+DEVICE EVIDENCE NOT YET COLLECTED
+```
+
+## 10. Compact binding status honesty fix, and correcting §9's own overclaimed final status
+
+**Code-only pass; no new device evidence.** A review of §9's own compact action-header summary
+(`buildPhysicalCameraExperimentCompactSummaryText`) found two defects, one a correctness bug and one a
+documentation-honesty bug in §9 itself:
+
+1. **Compact status collapsed every non-`Bound` binding outcome into `"BOUND"`.** The prior derivation
+   was `status = if (bindingResolution == null) "BINDING" else "BOUND"`. `PhysicalCameraBindingResolution`
+   is a four-variant sealed interface — `Bound`, `PhysicalCameraBindingUnavailable`,
+   `PhysicalCameraIdentityUnverified`, `PhysicalCameraCharacteristicsMismatch` — and only `Bound` means
+   physical-camera identity was actually verified. The three non-`Bound` variants are each a *non-null*,
+   *unsuccessful* outcome the old `!= null` check silently reported as `"BOUND"`, even though
+   `resolveCam2cForExplicitPhysicalCamera` can only ever reach `Cam2cPhysicalCameraResolution.BindingFailure`
+   from any of them (`binding !is Bound` is its first, unconditional check). A device operator glancing
+   at the fixed header during §8's own workflow could have read "BOUND" and believed physical-camera
+   identity was proven when it was not.
+2. **§9's "Final status" block overclaimed runtime facts.** `CAM-2c PHYSICAL EXPERIMENT UI USABLE` /
+   `ACTIONS FIXED ON SCREEN` / `DEVICE EVIDENCE COLLECTION MAY CONTINUE` read as observed, working-UI
+   claims — but the same section's own "Not run in this pass" paragraph, one paragraph above, already
+   said the instrumented Compose tests were compiled, never executed, and no device or emulator was
+   attached. That final-status block contradicted the honesty the rest of §9 was careful about; it is
+   corrected in place above (pointing here) rather than left standing.
+
+**What changed (scope: `PhysicalCameraExperimentLiveOverlay`,
+`buildPhysicalCameraExperimentCompactSummaryText`, and the new `PhysicalExperimentCompactStatus` typed
+helper — same file, `PhysicalCameraBindingExperimentScreen.kt`):**
+
+- **`PhysicalExperimentCompactStatus`** (new, `internal enum class`): `BINDING`, `BOUND_VERIFIED`,
+  `BINDING_UNAVAILABLE`, `IDENTITY_UNVERIFIED`, `CHARACTERISTICS_MISMATCH`, `EXPLICIT_BIND_FAILED`. Every
+  `PhysicalCameraBindingResolution` variant maps to its own distinct case via an exhaustive `when`
+  (`physicalExperimentCompactStatus`) — `BOUND_VERIFIED` is emitted only for
+  `PhysicalCameraBindingResolution.Bound`, never inferred from "non-null."
+  `ExperimentSessionState.explicitBindFailureReason`, when present, wins over every binding-resolution
+  case — the classifier is a pure function of `ExperimentSessionState` and is correct for *any* state
+  handed to it, never dependent on `PhysicalCameraBindingSession`'s own terminal-branch early return to
+  keep it honest.
+- **`buildPhysicalCameraExperimentCompactSummaryText`** now renders `status.name` from
+  `physicalExperimentCompactStatus`, still one line, still carrying `physicalId`/`attemptId`/`frames`
+  unchanged.
+- **Nothing else changed.** The two-region layout (fixed header / weighted scroll body), the
+  `WindowInsets.safeDrawing` inset padding, `frozenState` keyed by `attemptId`, and Copy report/Share
+  JSON both reading the same `displayedState` are all exactly as §9 left them — this pass touched no
+  layout code, only the status classification.
+- **New pure JVM tests** (`PhysicalCameraExperimentCompactStatusTest`, `mobile/src/testInternalDebug`):
+  no binding resolution → `BINDING`; `Bound` → `BOUND_VERIFIED`; each of
+  `PhysicalCameraBindingUnavailable`/`PhysicalCameraIdentityUnverified`/`PhysicalCameraCharacteristicsMismatch`
+  → its own distinct status, never `BOUND_VERIFIED`; `explicitBindFailureReason` winning over a `Bound`
+  resolution and over a non-`Bound` resolution; `physicalId`/`attemptId`/`frames` staying present
+  regardless of status. The existing Compose assertion (`PhysicalCameraExperimentLiveOverlayUiTest`) was
+  updated from `status=BOUND` to `status=BOUND_VERIFIED`.
+
+**Established by code inspection / compilation, this pass:**
+
+- The compact-status classifier is exhaustive over `PhysicalCameraBindingResolution` (a `when` with no
+  `else` branch — the Kotlin compiler itself enforces exhaustiveness, so a future fifth variant fails to
+  compile here until handled).
+- The fixed-header / weighted-scroll-body layout from §9 is unchanged in structure; `WindowInsets.safeDrawing`
+  is still wired the same way.
+- `buildPhysicalCameraExperimentReportText`/`buildPhysicalCameraExperimentJson` and the JSON schema are
+  byte-for-byte unchanged — the new status classifier is called from nowhere near either export function.
+- `PhysicalCameraExperimentCompactStatusTest` (pure JVM) passed under real Gradle execution this
+  session — this **is** genuine execution evidence, but only for the pure classification logic, not for
+  any Compose/Android runtime behavior.
+- `PhysicalCameraExperimentLiveOverlayUiTest` (Compose/instrumented) compiles against real Android/Compose
+  test APIs under real Gradle execution this session.
+
+**Still pending, unchanged by this pass:**
+
+- Execution of the `PhysicalCameraExperimentLiveOverlayUiTest` Compose instrumented test suite — no
+  emulator or physical device was attached in this session, so these tests have never actually run.
+- Any emulator or physical-device observation of the fixed-header/scroll-body layout, the status text,
+  or `WindowInsets.safeDrawing`'s real on-screen effect.
+- Pixel 9 UI validation specifically — §8's own device workflow (Freeze/Copy/Share per physical ID, per
+  resolution band) remains not run on real hardware, exactly as §1-§9 already recorded.
+- Everything §1-§9 already listed as pending (physical-camera-binding device verification,
+  sensor-to-buffer domain proof, center/edge/corner residuals) remains exactly as pending as before —
+  this pass touches none of it.
+
+**Final status, this pass (supersedes §9's own final-status block):**
+
+```
+CAM-2c PHYSICAL EXPERIMENT UI CODE READY
+COMPACT BINDING STATUS HONEST
+ACTION HEADER / REPORT LAYOUT COMPILES
+INSTRUMENTED UI TEST EXECUTION PENDING
+PIXEL 9 UI VALIDATION PENDING
+EXPORT CONTENT UNCHANGED
+```
