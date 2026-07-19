@@ -219,7 +219,7 @@ private fun ResolutionPicker(
         )
         for (candidate in candidates) {
             Text(
-                text = "${candidate.label()} (aspect=${candidate.aspectRatio})",
+                text = "${candidate.label()} (family=${candidate.family}, aspect=${candidate.aspectRatio})",
                 color = Color.White,
                 modifier =
                     Modifier
@@ -353,10 +353,20 @@ internal fun PhysicalCameraBindingSession(
 
     Box(modifier = Modifier.fillMaxSize()) {
         val selector = remember(physicalCameraId) { explicitPhysicalCameraSelector(physicalCameraId) }
+        // The complete resolution request — dimensions plus the EXPLICIT family the selection band
+        // assigned (P1 fix) — never a bare Size the bind would have to re-infer a family from.
         val analysisResolutionOverride =
-            remember(state.requestedAnalysisResolutionWidthPx, state.requestedAnalysisResolutionHeightPx) {
+            remember(
+                state.requestedAnalysisResolutionWidthPx,
+                state.requestedAnalysisResolutionHeightPx,
+                state.requestedAnalysisResolutionFamily,
+            ) {
                 state.requestedAnalysisResolutionWidthPx?.let { width ->
-                    state.requestedAnalysisResolutionHeightPx?.let { height -> android.util.Size(width, height) }
+                    state.requestedAnalysisResolutionHeightPx?.let { height ->
+                        state.requestedAnalysisResolutionFamily?.let { family ->
+                            AnalysisResolutionRequest(widthPx = width, heightPx = height, family = family)
+                        }
+                    }
                 }
             }
         CameraPreview(

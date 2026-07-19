@@ -117,7 +117,7 @@ class DualBasisExperimentSessionTest {
 
         val afterBoth = afterFrame.reduceDualBasisBindingResolved(1L, dualBinding(), 1.0f, 1.0f)
         val evidence = assertNotNull(afterBoth.dualBasisEvidence)
-        assertEquals(DualBasisComparisonVerdict.MATCHES_BOTH_BASES_NUMERICALLY_INDISTINGUISHABLE, evidence.comparisonVerdict)
+        assertEquals(DualBasisComparisonVerdict.MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE, evidence.comparisonVerdict)
         assertTrue(evidence.basesNumericallyIndistinguishable)
     }
 
@@ -169,7 +169,7 @@ class DualBasisExperimentSessionTest {
     }
 
     @Test
-    fun `matrix stability counts frames, null transforms, and changes beyond float noise`() {
+    fun `matrix stability counts frames, null transforms, bitwise changes, and geometric changes`() {
         var state = initialExperimentSessionState(1L, "2")
         state = state.reduceFrame(1L, frame(timestampNanos = 1L))
         state = state.reduceFrame(1L, frame(timestampNanos = 2L))
@@ -177,18 +177,59 @@ class DualBasisExperimentSessionTest {
 
         assertEquals(3L, state.matrixStability.framesObserved)
         assertEquals(1L, state.matrixStability.framesWithNullTransform)
-        assertEquals(0L, state.matrixStability.changesBeyondFloatNoise)
+        assertEquals(0L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(0L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
         assertEquals(0.0, state.matrixStability.maxCoefficientDeltaFromFirst, 0.0)
+        assertEquals(0.0, state.matrixStability.maxMappedDisplacementFromFirstPx, 0.0)
         assertEquals(pixel9Matrix, state.matrixStability.firstMatrix)
         assertEquals(pixel9Matrix, state.matrixStability.latestMatrix)
 
+        // A ~0.44 px translation change is both a bitwise change and a geometrically meaningful one.
         val changed = pixel9Matrix.copy(m12 = -0.5)
         state = state.reduceFrame(1L, frame(timestampNanos = 4L, matrix = changed))
-        assertEquals(1L, state.matrixStability.changesBeyondFloatNoise)
+        assertEquals(1L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(1L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
         assertTrue(state.matrixStability.maxCoefficientDeltaFromFirst > 0.4)
+        assertTrue(state.matrixStability.maxMappedDisplacementFromFirstPx > 0.4)
         // The first valid matrix is never overwritten.
         assertEquals(pixel9Matrix, state.matrixStability.firstMatrix)
         assertEquals(changed, state.matrixStability.latestMatrix)
+    }
+
+    @Test
+    fun `a large-translation float32 ULP step is a bitwise change but not a geometric one`() {
+        // P2 fix boundary: at translation magnitude ~-121.88 (the 16:9 fixture), one float32 ULP is
+        // ~7.6e-6 — far above the old 1e-6 raw-coefficient bound, which would have mislabelled pure
+        // float storage as "change beyond float noise". The new design counts it as a bitwise change
+        // (the numbers really differ) but NOT as a geometrically meaningful mapped-pixel change.
+        val bigTranslation = pixel9Matrix.copy(m12 = (-121.88235f).toDouble())
+        val ulpStep = bigTranslation.copy(m12 = Math.nextUp((-121.88235f)).toDouble())
+
+        var state = initialExperimentSessionState(1L, "2")
+        state = state.reduceFrame(1L, frame(timestampNanos = 1L, matrix = bigTranslation))
+        state = state.reduceFrame(1L, frame(timestampNanos = 2L, matrix = ulpStep))
+
+        assertEquals(1L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(0L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
+        assertTrue(state.matrixStability.maxMappedDisplacementFromFirstPx < MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX)
+    }
+
+    @Test
+    fun `mapped-displacement threshold boundary - just below stays geometric-stable, just above counts`() {
+        val base = pixel9Matrix
+        // Pure translation displaces every reference-rect point by exactly the translation delta.
+        val justBelow = base.copy(m12 = base.m12 + MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX * 0.5)
+        val justAbove = base.copy(m12 = base.m12 + MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX * 2.0)
+
+        var state = initialExperimentSessionState(1L, "2")
+        state = state.reduceFrame(1L, frame(timestampNanos = 1L, matrix = base))
+        state = state.reduceFrame(1L, frame(timestampNanos = 2L, matrix = justBelow))
+        assertEquals(1L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(0L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
+
+        state = state.reduceFrame(1L, frame(timestampNanos = 3L, matrix = justAbove))
+        assertEquals(2L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(1L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
     }
 
     @Test
@@ -218,7 +259,7 @@ class DualBasisExperimentSessionTest {
 
     @Test
     fun `a new attempt starts with clean snapshots, counters, and evidence - no cross-generation contamination`() {
-        var uiModel = ExperimentUiModel().startAttempt("2", AnalysisResolutionCandidate(640, 480))
+        var uiModel = ExperimentUiModel().startAttempt("2", AnalysisResolutionCandidate(640, 480, AnalysisResolutionFamily.NEAR_4_3))
         val firstAttemptId = uiModel.session!!.attemptId
         uiModel =
             uiModel.updateSession(firstAttemptId) {
@@ -228,11 +269,12 @@ class DualBasisExperimentSessionTest {
         assertNotNull(uiModel.session!!.dualBasisEvidence)
 
         // Resolution/aspect switch = a NEW attempt (task §11) — never a mutation under an old snapshot.
-        uiModel = uiModel.startAttempt("2", AnalysisResolutionCandidate(1280, 720))
+        uiModel = uiModel.startAttempt("2", AnalysisResolutionCandidate(1280, 720, AnalysisResolutionFamily.NEAR_16_9))
         val second = uiModel.session!!
         assertTrue(second.attemptId != firstAttemptId)
         assertEquals(1280, second.requestedAnalysisResolutionWidthPx)
         assertEquals(720, second.requestedAnalysisResolutionHeightPx)
+        assertEquals(AnalysisResolutionFamily.NEAR_16_9, second.requestedAnalysisResolutionFamily)
         assertNull(second.bindingResolution)
         assertNull(second.openedLogicalCamera)
         assertNull(second.dualBasisEvidence)
@@ -244,14 +286,17 @@ class DualBasisExperimentSessionTest {
     }
 
     @Test
-    fun `retry preserves the requested resolution in a fresh generation`() {
-        var uiModel = ExperimentUiModel().startAttempt("2", AnalysisResolutionCandidate(1280, 720))
+    fun `retry preserves the requested resolution AND its family in a fresh generation`() {
+        // A non-exact near-16:9 size (848x480 fails width*9 == height*16) — the family must survive
+        // retry from the stored request, never be re-inferred from the dimensions (P1 family fix).
+        var uiModel = ExperimentUiModel().startAttempt("2", AnalysisResolutionCandidate(848, 480, AnalysisResolutionFamily.NEAR_16_9))
         val firstAttemptId = uiModel.session!!.attemptId
         uiModel = uiModel.retry()
         val retried = uiModel.session!!
         assertTrue(retried.attemptId != firstAttemptId)
-        assertEquals(1280, retried.requestedAnalysisResolutionWidthPx)
-        assertEquals(720, retried.requestedAnalysisResolutionHeightPx)
+        assertEquals(848, retried.requestedAnalysisResolutionWidthPx)
+        assertEquals(480, retried.requestedAnalysisResolutionHeightPx)
+        assertEquals(AnalysisResolutionFamily.NEAR_16_9, retried.requestedAnalysisResolutionFamily)
         assertEquals(0L, retried.matrixStability.framesObserved)
     }
 }

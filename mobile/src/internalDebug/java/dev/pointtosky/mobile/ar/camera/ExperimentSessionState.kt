@@ -38,11 +38,15 @@ import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
  *   waits here until [recomputeCam2cResult] has both inputs it needs.
  * @property cam2cResult the current CAM-2c resolution attempt, `null` ("awaiting") until both
  *   [bindingResolution] and [latestFrame] are present - see [recomputeCam2cResult].
- * @property requestedAnalysisResolutionWidthPx/`requestedAnalysisResolutionHeightPx` the explicit
- *   `ImageAnalysis` resolution this attempt requested (task §11), `null` = CameraX default. Fixed for
- *   the attempt's entire lifetime — switching resolution must start a *new* attempt/generation, never
- *   mutate this one (see [ExperimentUiModel.startAttempt]); the actually-bound resolution is whatever
- *   [latestFrame] reports, recorded separately and never conflated with the request.
+ * @property requestedAnalysisResolutionWidthPx/`requestedAnalysisResolutionHeightPx`/
+ *   `requestedAnalysisResolutionFamily` the explicit `ImageAnalysis` resolution this attempt
+ *   requested (task §11), `null` = CameraX default. The family is the aspect band that *selected*
+ *   the candidate ([AnalysisResolutionFamily], P1 fix) — carried explicitly through this state so
+ *   the CameraX bind and [ExperimentUiModel.retry] never re-infer it from exact integer ratios. All
+ *   three are fixed for the attempt's entire lifetime — switching resolution or family must start a
+ *   *new* attempt/generation, never mutate this one (see [ExperimentUiModel.startAttempt]); the
+ *   actually-bound resolution is whatever [latestFrame] reports, recorded separately and never
+ *   conflated with the request.
  * @property openedLogicalCamera the opened logical camera's own snapshot resolution for this attempt
  *   (dual-basis diagnostic, recon §2.3), captured by [reduceDualBasisBindingResolved] from the same
  *   bound `CameraInfo` as [bindingResolution] — `null` until that callback fires. Kept strictly
@@ -68,6 +72,7 @@ internal data class ExperimentSessionState(
     val cam2cResult: Cam2cPhysicalCameraResolution? = null,
     val requestedAnalysisResolutionWidthPx: Int? = null,
     val requestedAnalysisResolutionHeightPx: Int? = null,
+    val requestedAnalysisResolutionFamily: AnalysisResolutionFamily? = null,
     val openedLogicalCamera: OpenedLogicalCameraSnapshotResolution? = null,
     val zoomTargetRatio: Float? = null,
     val observedZoomRatio: Float? = null,
@@ -95,6 +100,7 @@ internal fun initialExperimentSessionState(
         physicalCameraId = physicalCameraId,
         requestedAnalysisResolutionWidthPx = requestedAnalysisResolution?.widthPx,
         requestedAnalysisResolutionHeightPx = requestedAnalysisResolution?.heightPx,
+        requestedAnalysisResolutionFamily = requestedAnalysisResolution?.family,
     )
 
 /**

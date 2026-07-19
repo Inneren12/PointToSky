@@ -50,7 +50,7 @@ class DualBasisMatrixEvidenceTest {
     fun `fixture 15 - equal logical and physical arrays match both bases and are marked numerically indistinguishable`() {
         val evidence = assessDualBasisMatrixEvidence(pixel9Matrix, logical4080, physical4080, 640, 480)
 
-        assertEquals(DualBasisComparisonVerdict.MATCHES_BOTH_BASES_NUMERICALLY_INDISTINGUISHABLE, evidence.comparisonVerdict)
+        assertEquals(DualBasisComparisonVerdict.MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE, evidence.comparisonVerdict)
         assertTrue(evidence.basesNumericallyIndistinguishable)
         // Identical rects -> identical residuals -> no "better" basis; a tie is never broken by guessing.
         assertNull(evidence.betterPredictingBasis)
@@ -58,6 +58,47 @@ class DualBasisMatrixEvidenceTest {
         assertTrue("NOT proof" in evidence.reason)
         assertTrue(evidence.evidenceLevels.contains(DualBasisEvidenceLevel.FRAME_CONTENT_CORRESPONDENCE_UNMEASURED))
         assertTrue(evidence.evidenceLevels.contains(DualBasisEvidenceLevel.CAMERAX_IMPLEMENTATION_MODEL_MATCH))
+    }
+
+    @Test
+    fun `the verdict decision separates equal-rect dual matches from differing-rect ambiguous matches`() {
+        // The pure verdict function covers all five outcomes, including the both-match/differing-
+        // rects case that integer fixtures cannot reach through the model itself (two differing
+        // integer rects always shift the prediction beyond the match tolerance — a real device is
+        // not bound by that arithmetic, so the verdict must stay honest regardless).
+        assertEquals(
+            DualBasisComparisonVerdict.MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE,
+            dualBasisComparisonVerdict(logicalMatches = true, physicalMatches = true, rectsEqual = true),
+        )
+        assertEquals(
+            DualBasisComparisonVerdict.MATCHES_BOTH_DIFFERING_RECTS_WITHIN_TOLERANCE,
+            dualBasisComparisonVerdict(logicalMatches = true, physicalMatches = true, rectsEqual = false),
+        )
+        assertEquals(
+            DualBasisComparisonVerdict.MATCHES_LOGICAL_BASIS_ONLY,
+            dualBasisComparisonVerdict(logicalMatches = true, physicalMatches = false, rectsEqual = false),
+        )
+        assertEquals(
+            DualBasisComparisonVerdict.MATCHES_PHYSICAL_BASIS_ONLY,
+            dualBasisComparisonVerdict(logicalMatches = false, physicalMatches = true, rectsEqual = false),
+        )
+        assertEquals(
+            DualBasisComparisonVerdict.MATCHES_NEITHER_BASIS,
+            dualBasisComparisonVerdict(logicalMatches = false, physicalMatches = false, rectsEqual = true),
+        )
+    }
+
+    @Test
+    fun `basesNumericallyIndistinguishable is pure rect identity, independent of match outcomes`() {
+        // Equal rects + a matrix that matches NEITHER basis (identity): the flag must still be true —
+        // it states the two candidate models are the same model, not that anything matched.
+        val neitherMatches = assessDualBasisMatrixEvidence(identityMatrix, logical4080, physical4080, 640, 480)
+        assertEquals(DualBasisComparisonVerdict.MATCHES_NEITHER_BASIS, neitherMatches.comparisonVerdict)
+        assertTrue(neitherMatches.basesNumericallyIndistinguishable)
+
+        // Differing rects: false, regardless of outcomes.
+        val differingRects = assessDualBasisMatrixEvidence(pixel9Matrix, logical4080, physical4000, 640, 480)
+        assertFalse(differingRects.basesNumericallyIndistinguishable)
     }
 
     @Test
@@ -112,6 +153,58 @@ class DualBasisMatrixEvidenceTest {
             DualBasisComparisonVerdict.INSUFFICIENT_INPUT,
             assessDualBasisMatrixEvidence(pixel9Matrix, logical4080, physical4080, 0, 480).comparisonVerdict,
         )
+    }
+
+    @Test
+    fun `a projective matrix with the predicted top two rows never matches the model`() {
+        // P1 fix: upper rows identical to the real construction, but m20 != 0 — a projective map.
+        // Comparing only the upper rows would give zero residual; the structural gate must refuse.
+        val projectiveTopRowsMatch = pixel9Matrix.copy(m20 = 0.001)
+        val evidence = assessDualBasisMatrixEvidence(projectiveTopRowsMatch, logical4080, physical4080, 640, 480)
+
+        val logical = assertNotNull(evidence.logical)
+        assertEquals(CameraX142ModelComparison.COMPARISON_UNSUPPORTED_STRUCTURE, logical.modelComparison)
+        assertEquals(false, logical.matchesCameraX142Model)
+        assertNull(logical.maxMappedPointResidualPx)
+        // Coefficient residuals stay available and expose the out-of-scope term itself.
+        assertEquals(0.001, logical.coefficientResiduals!![6], 1e-12)
+        assertEquals(DualBasisComparisonVerdict.MATCHES_NEITHER_BASIS, evidence.comparisonVerdict)
+        assertFalse(evidence.evidenceLevels.contains(DualBasisEvidenceLevel.CAMERAX_IMPLEMENTATION_MODEL_MATCH))
+    }
+
+    @Test
+    fun `a non-unit m22 never matches the model`() {
+        val nonUnitW = pixel9Matrix.copy(m22 = 1.001)
+        val evidence = assessDualBasisMatrixEvidence(nonUnitW, logical4080, physical4080, 640, 480)
+        assertEquals(CameraX142ModelComparison.COMPARISON_UNSUPPORTED_STRUCTURE, evidence.logical!!.modelComparison)
+        assertFalse(evidence.evidenceLevels.contains(DualBasisEvidenceLevel.CAMERAX_IMPLEMENTATION_MODEL_MATCH))
+    }
+
+    @Test
+    fun `a sheared or rotated matrix never matches the model`() {
+        val sheared = pixel9Matrix.copy(m01 = 0.01)
+        val evidence = assessDualBasisMatrixEvidence(sheared, logical4080, physical4080, 640, 480)
+        assertEquals(CameraX142ModelComparison.COMPARISON_UNSUPPORTED_STRUCTURE, evidence.logical!!.modelComparison)
+        assertEquals(false, evidence.logical!!.matchesCameraX142Model)
+        assertEquals(DualBasisComparisonVerdict.MATCHES_NEITHER_BASIS, evidence.comparisonVerdict)
+    }
+
+    @Test
+    fun `the real Pixel 9 axis-aligned fixture still matches after the structural gate`() {
+        val evidence = assessDualBasisMatrixEvidence(pixel9Matrix, logical4080, physical4080, 640, 480)
+        assertEquals(CameraX142ModelComparison.MATCHES_MODEL, evidence.logical!!.modelComparison)
+        assertEquals(true, evidence.logical!!.matchesCameraX142Model)
+        assertTrue(evidence.evidenceLevels.contains(DualBasisEvidenceLevel.CAMERAX_IMPLEMENTATION_MODEL_MATCH))
+    }
+
+    @Test
+    fun `the mapped-point residual is Euclidean, not max-axis`() {
+        // Shift the real construction by (3, 4) px: every mapped point displaces by exactly
+        // hypot(3, 4) = 5 px. A Chebyshev/max-axis metric would report 4.
+        val shifted = pixel9Matrix.copy(m02 = pixel9Matrix.m02 + 3.0, m12 = pixel9Matrix.m12 + 4.0)
+        val evidence = assessDualBasisMatrixEvidence(shifted, logical4080, physical4080, 640, 480)
+        assertEquals(5.0, evidence.logical!!.maxMappedPointResidualPx!!, 1e-9)
+        assertEquals(CameraX142ModelComparison.DIFFERS_FROM_MODEL, evidence.logical!!.modelComparison)
     }
 
     @Test

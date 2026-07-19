@@ -1619,6 +1619,37 @@ classification); the physical experiment's expected successful outcome remains
 `LOGICAL/PHYSICAL BASIS COMPARISON EXPORTED` + `CAM-2c DOMAIN NOT PROVEN`; calibrated Pixel 9
 `AnalysisBuffer` intrinsics remain blocked.
 
+### 3.13 Dual-basis diagnostic fix: model-match structural scope, explicit aspect family, verdict split, stability honesty
+
+A review of §3.12's slice found and fixed four diagnostic-correctness/evidence-integrity defects
+(see `docs/SPRINT_STATUS.md`'s "CAM-2c dual-basis diagnostic fix" for the full record). The
+contract-level statements this pass makes precise:
+
+- **Model matching is only valid inside the model's own structure.** The CameraX 1.4.2
+  implementation model is axis-aligned affine; a projective or sheared observed matrix cannot match
+  it merely because its top two rows resemble the prediction. The typed
+  `CameraX142ModelComparison` gate (reusing the geometry classifier's structural decisions) makes
+  out-of-scope structures a `COMPARISON_UNSUPPORTED_STRUCTURE` outcome that never emits the
+  `CAMERAX_IMPLEMENTATION_MODEL_MATCH` evidence level; the mapped-point residual is Euclidean and
+  is not computed for unsupported structures (applying only a projective matrix's upper rows is not
+  its mapping, and general projective matching is deliberately unimplemented).
+- **The requested aspect family is explicit and independent of exact `WxH` equality.** The family
+  (`NEAR_4_3`/`NEAR_16_9`) is assigned once by the selection band, travels intact through session
+  state and retry to the `AspectRatioStrategy` decision, and is exported separately from both the
+  requested and the actually-bound dimensions. Nothing re-infers it from integer ratios.
+- **A both-basis match with differing rects is ambiguous, not "numerically indistinguishable".**
+  `MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE` requires equal candidate native rects;
+  differing rects that both fall within tolerance are
+  `MATCHES_BOTH_DIFFERING_RECTS_WITHIN_TOLERANCE`. `basesNumericallyIndistinguishable` is pure rect
+  identity; the better-predicting ranking uses a documented tie tolerance.
+- **Stability counters separate raw-bit changes from geometrically meaningful changes.** Bitwise
+  change = exact inequality of widened float32 coefficients (no tolerance); geometric change = mapped
+  Euclidean displacement over a fixed 4096×3072 reference rectangle beyond a documented 1e-3 px
+  threshold; exports carry the threshold names/values. The retired single 1e-6 raw-coefficient bound
+  sat below the float32 ULP of large translations and was never honest "float noise".
+- Unchanged: no `SensorToBufferDomainProof.Proven*` is constructed, frame-content correspondence
+  remains unmeasured, `DomainNotProven` remains the automatic experiment outcome.
+
 ---
 
 ## 4. Timestamp & synchronization

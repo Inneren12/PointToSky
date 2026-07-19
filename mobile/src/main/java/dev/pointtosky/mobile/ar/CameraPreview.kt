@@ -7,9 +7,10 @@ import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
-import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
+import dev.pointtosky.mobile.ar.camera.AnalysisResolutionRequest
+import dev.pointtosky.mobile.ar.camera.aspectRatioStrategyFor
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
@@ -150,9 +151,13 @@ private suspend fun ListenableFuture<*>.awaitCompletion(executor: Executor): Res
  * (the existing Preview-only-fallback path handles that case exactly as before). Defaults to a no-op.
  *
  * [analysisResolutionOverride] (CAM-2c dual-basis experiment, task §11) requests an explicit
- * `ImageAnalysis` resolution via CameraX's `ResolutionSelector`/`ResolutionStrategy` (bound size,
- * closest-higher-then-lower fallback, aspect strategy matched to the requested size). Defaults to
- * `null` — CameraX's own default (typically 640×480) — so every existing call site (production and
+ * `ImageAnalysis` resolution via CameraX's `ResolutionSelector`/`ResolutionStrategy` — a complete
+ * [AnalysisResolutionRequest] (dimensions **plus** the aspect family of the band that selected
+ * them), never a bare `Size`: the aspect strategy comes from
+ * [dev.pointtosky.mobile.ar.camera.aspectRatioStrategyFor] applied to the request's explicit
+ * family, so a non-exact in-band size (e.g. `848x480`, near-16:9) still binds with the 16:9
+ * strategy — the family is never re-inferred from exact integer ratios here. Defaults to `null` —
+ * CameraX's own default (typically 640×480) — so every existing call site (production and
  * `internalDebug` alike) is byte-for-byte unaffected; only the `internalDebug` physical-camera
  * experiment ever passes a non-`null` value, following the exact shared-parameter-with-debug-only-caller
  * pattern [cameraSelectorOverride] already established. The *requested* size is not a guarantee: the
@@ -166,7 +171,7 @@ fun CameraPreview(
     onCameraInfo: (CameraInfo) -> Unit = {},
     cameraSelectorOverride: CameraSelector? = null,
     onExplicitBindFailure: (String) -> Unit = {},
-    analysisResolutionOverride: Size? = null,
+    analysisResolutionOverride: AnalysisResolutionRequest? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -225,22 +230,18 @@ fun CameraPreview(
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .apply {
                         if (analysisResolutionOverride != null) {
-                            // CAM-2c dual-basis experiment (task §11): request the explicit size with
-                            // an aspect strategy matching it, so the default 4:3 aspect preference
-                            // cannot silently redirect a 16:9 request to a 4:3 bucket. The bound size
+                            // CAM-2c dual-basis experiment (task §11, P1 family fix): the aspect
+                            // strategy is decided by the request's EXPLICIT family via the pure,
+                            // JVM-tested aspectRatioStrategyFor — never re-inferred from an exact
+                            // width*9 == height*16 integer check, which would silently send a valid
+                            // near-16:9 size (e.g. 848x480) with a 4:3 strategy. The bound size
                             // remains device-decided; frames report the actual buffer dimensions.
-                            val aspectRatioStrategy =
-                                if (analysisResolutionOverride.width * 9 == analysisResolutionOverride.height * 16) {
-                                    AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
-                                } else {
-                                    AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
-                                }
                             setResolutionSelector(
                                 ResolutionSelector.Builder()
-                                    .setAspectRatioStrategy(aspectRatioStrategy)
+                                    .setAspectRatioStrategy(aspectRatioStrategyFor(analysisResolutionOverride.family))
                                     .setResolutionStrategy(
                                         ResolutionStrategy(
-                                            analysisResolutionOverride,
+                                            Size(analysisResolutionOverride.widthPx, analysisResolutionOverride.heightPx),
                                             ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
                                         ),
                                     )

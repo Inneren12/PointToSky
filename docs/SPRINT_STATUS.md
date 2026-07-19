@@ -1057,6 +1057,75 @@ SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
 CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
 ```
 
+## CAM-2c dual-basis diagnostic fix — model-match scope, aspect family, verdict split, stability honesty (this sprint)
+
+A review of the dual-basis slice above found two P1 diagnostic-correctness defects and two P2
+evidence-integrity defects, all fixed in this pass (scope: `DualBasisMatrixEvidence`,
+resolution-candidate selection + `CameraPreview` resolution strategy, matrix-stability diagnostics,
+and their exports/tests/docs — nothing else touched):
+
+1. **P1 — model matching is now gated on the model's own structural scope.** `assessOneBasis`
+   previously mapped points through only the observed matrix's top two rows, so a *projective*
+   matrix whose upper rows equalled the predicted affine coefficients received zero residual and
+   `matchesCameraX142Model=true`. Now a typed `CameraX142ModelComparison` gate — reusing the same
+   classifier the geometry assessment uses, never a duplicate rule set — requires an affine bottom
+   row, no off-diagonal rotation/shear, and positive non-degenerate axis-aligned scale before any
+   match can be declared. Out-of-scope structures get `COMPARISON_UNSUPPORTED_STRUCTURE` (all nine
+   coefficient residuals retained diagnostically; no mapped-point residual, since applying only the
+   upper rows is not the matrix's actual mapping and general projective matching is deliberately not
+   implemented — the pinned model is axis-aligned affine), can never yield
+   `CAMERAX_IMPLEMENTATION_MODEL_MATCH`, and the "conservative lower bound" claim is removed. The
+   mapped-point residual is now genuinely **Euclidean** (`hypot`), matching its documented contract.
+2. **P1 — the requested aspect family is explicit end-to-end.** Selection previously accepted
+   near-16:9 sizes (band 1.70–1.85) but `CameraPreview` picked the 16:9 `AspectRatioStrategy` only
+   on exact `width*9 == height*16` — a valid `848x480` request was silently bound with a 4:3
+   strategy. Now `AnalysisResolutionFamily` (`NEAR_4_3`/`NEAR_16_9`) is assigned by the selecting
+   band, travels through `AnalysisResolutionCandidate` → session state → the shared
+   `AnalysisResolutionRequest` (main-source, `cameraSelectorOverride` pattern) → the pure,
+   JVM-tested `aspectRatioStrategyFor` mapping (`NEAR_16_9` → `RATIO_16_9_FALLBACK_AUTO_STRATEGY`,
+   `NEAR_4_3` → `RATIO_4_3_FALLBACK_AUTO_STRATEGY`); CameraX-default remains no override; retry
+   preserves the family; family/size changes still start a fresh generation; and family, requested
+   `WxH`, and actually-bound `WxH` are exported as three independent facts. The family is never
+   re-inferred from exact integer ratios anywhere.
+3. **P2 — the dual-match verdict is split honestly.** `MATCHES_BOTH_BASES_NUMERICALLY_INDISTINGUISHABLE`
+   became `MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE` (only when the complete candidate
+   native rects are equal) vs `MATCHES_BOTH_DIFFERING_RECTS_WITHIN_TOLERANCE` (ambiguous dual match —
+   reachable in principle on-device even though integer fixtures cannot construct it through the
+   pinned model, hence the pure, directly-tested `dualBasisComparisonVerdict`);
+   `basesNumericallyIndistinguishable` now means pure rect identity, independent of match outcomes;
+   `betterPredictingBasis` uses a documented residual tie tolerance
+   (`DUAL_BASIS_RESIDUAL_TIE_TOLERANCE_PX = 1e-6` px), never a raw `<`.
+4. **P2 — stability thresholds are unit- and magnitude-honest.** The old single
+   `MATRIX_STABILITY_FLOAT_NOISE_TOLERANCE = 1e-6` per raw coefficient sat *below* the float32 ULP of
+   large translations (~6e-5 at ±400 px) and was retired. `MatrixStabilityCounters` now separates
+   **bitwise changes** (exact inequality of the widened float32 values — no tolerance at all) from
+   **geometrically meaningful changes** (max Euclidean mapped-point displacement over a fixed
+   4096×3072 reference rectangle vs `MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX = 1e-3` px,
+   derived from float32 error at reference magnitudes), keeps first/latest matrices and
+   frame/null counters generation-scoped, retains the raw max-coefficient delta as an untolerated
+   diagnostic, and exports the threshold names/values/reference rect so device reports are
+   self-describing. Boundary tests cover just-below/just-above the threshold and a
+   large-translation float32-ULP fixture (bitwise change, not geometric).
+
+Experiment JSON schema bumped 1 → 2 (verdict value split, `modelComparison`, stability field
+renames, `requestedAnalysisResolutionFamily`). Safety unchanged: no `Proven*` constructed, no
+frame-content measurement, `DomainNotProven` remains the automatic outcome.
+
+**Validation (real Gradle 8.14.3/JDK 17, same environment notes as the slice above):**
+`:core:astro-core:test` 468/468, `:mobile:testInternalDebugUnitTest` 535/535 (+14 net new),
+`:mobile:testPublicDebugUnitTest` 370/370, both debug compiles, `compileInternalDebugAndroidTestKotlin`,
+both lints, both assembles green. No device attached; no new device evidence.
+
+```
+CAM-2c DUAL-BASIS DIAGNOSTIC CODE READY
+MODEL-MATCH STRUCTURAL SCOPE ENFORCED
+DUAL-ASPECT REQUEST FAMILY PRESERVED
+PHYSICAL/LOGICAL BASIS COMPATIBILITY DEVICE VALIDATION PENDING
+FRAME-CONTENT CORRESPONDENCE UNMEASURED
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
+```
+
 ## CAM-2b (this sprint)
 
 - **Scope:** visualizes CAM-2a's output; never changes production star placement.

@@ -590,3 +590,22 @@ CAM-2c DOMAIN NOT PROVEN
 A dual-basis model match — even a perfect one under both bases — is matrix-construction evidence
 only. It is **not** frame-content proof, it constructs no `SensorToBufferDomainProof.Proven*`
 variant, and calibrated Pixel 9 `AnalysisBuffer` intrinsics remain blocked.
+
+**Fix pass (read before interpreting any §8 export):** a review of this slice fixed four defects
+before any device run occurred, so no captured evidence predates them
+(`docs/camera_coordinate_calibration_contract.md` §3.13, experiment JSON schema now `2`):
+
+- A model match now requires the observed matrix to be inside the model's axis-aligned affine
+  structural scope — a projective/sheared matrix whose top two rows resemble the prediction reports
+  `modelComparison=COMPARISON_UNSUPPORTED_STRUCTURE`, never a match; `maxMappedPointResidualPx` is
+  Euclidean and absent for unsupported structures.
+- The requested aspect family (`requestedAnalysisResolutionFamily`) is explicit in every export and
+  independent of exact `WxH` equality — a near-16:9 size such as `848x480` is bound and reported as
+  `NEAR_16_9`.
+- `comparisonVerdict` distinguishes `MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE` (equal
+  candidate rects) from `MATCHES_BOTH_DIFFERING_RECTS_WITHIN_TOLERANCE` (ambiguous dual match);
+  `basesNumericallyIndistinguishable` is pure rect identity.
+- `matrixStability` reports `bitwiseMatrixChanges` (exact float32-value inequality) separately from
+  `mappedDisplacementChangesBeyondTolerance` (mapped-pixel displacement over the exported reference
+  rectangle vs the exported `MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX`); device reports are
+  self-describing about their thresholds.

@@ -71,7 +71,7 @@ class PhysicalCameraExperimentExportTest {
                 cropRectLeftPx = 0, cropRectTopPx = 0, cropRectRightPx = 640, cropRectBottomPx = 480,
                 sensorToBufferTransform = pixel9Matrix,
             )
-        return initialExperimentSessionState(7L, "2", AnalysisResolutionCandidate(640, 480))
+        return initialExperimentSessionState(7L, "2", AnalysisResolutionCandidate(640, 480, AnalysisResolutionFamily.NEAR_4_3))
             .reduceDualBasisBindingResolved(7L, dualBinding, zoomTargetRatio = 1.0f, observedZoomRatio = 1.0f)
             .reduceFrame(7L, frame)
     }
@@ -83,7 +83,8 @@ class PhysicalCameraExperimentExportTest {
         assertTrue(text.contains("LOGICAL_OPENED_CAMERA_BASIS"))
         assertTrue(text.contains("SELECTED_PHYSICAL_CAMERA_BASIS"))
         assertTrue(text.contains("geometryClass=UNIFORM_SCALE_CENTER_CROP"))
-        assertTrue(text.contains("comparisonVerdict=MATCHES_BOTH_BASES_NUMERICALLY_INDISTINGUISHABLE"))
+        assertTrue(text.contains("comparisonVerdict=MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE"))
+        assertTrue(text.contains("modelComparison=MATCHES_MODEL"))
         assertTrue(text.contains("FRAME_CONTENT_CORRESPONDENCE_UNMEASURED"))
         assertTrue(text.contains("cam2cResult=DOMAIN_NOT_PROVEN"))
         assertTrue(text.contains("geometryClassificationIsEvidenceOnly=true"))
@@ -92,7 +93,14 @@ class PhysicalCameraExperimentExportTest {
         assertTrue(text.contains("pinnedCameraXVersion=1.4.2"))
         // The opened logical camera is reported with its own identity, never merged into the physical.
         assertTrue(text.contains("OPENED LOGICAL CAMERA: captured(cameraId=0"))
+        // Requested family, requested WxH, and actual bound WxH are three independent lines.
         assertTrue(text.contains("requestedAnalysisResolution=640x480"))
+        assertTrue(text.contains("requestedAnalysisResolutionFamily=NEAR_4_3"))
+        assertTrue(text.contains("actualAnalysisResolution=640x480"))
+        // Stability export is self-describing: threshold name/value and the two separated notions.
+        assertTrue(text.contains("bitwiseMatrixChanges=0"))
+        assertTrue(text.contains("mappedDisplacementChangesBeyondTolerance=0"))
+        assertTrue(text.contains("MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX=0.001"))
         assertTrue(text.contains("zoomTargetRatio=1.0"))
         assertTrue(text.contains("observedZoomRatio=1.0"))
         // Full-precision matrix values (widened float32), never rounded for display.
@@ -127,7 +135,7 @@ class PhysicalCameraExperimentExportTest {
 
         val evidence = session["dualBasisEvidence"]!!.jsonObject
         assertEquals(
-            "MATCHES_BOTH_BASES_NUMERICALLY_INDISTINGUISHABLE",
+            "MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE",
             evidence["comparisonVerdict"]!!.jsonPrimitive.content,
         )
         val logical = evidence["logicalBasisAssessment"]!!.jsonObject
@@ -135,10 +143,16 @@ class PhysicalCameraExperimentExportTest {
         assertEquals("0", logical["cameraId"]!!.jsonPrimitive.content)
         assertEquals("ACTIVE_ARRAY_NATIVE", logical["coordinateSpace"]!!.jsonPrimitive.content)
         assertEquals("UNIFORM_SCALE_CENTER_CROP", logical["geometryClass"]!!.jsonPrimitive.content)
+        assertEquals("MATCHES_MODEL", logical["modelComparison"]!!.jsonPrimitive.content)
+        assertEquals("euclidean_hypot", logical["maxMappedPointResidualMetric"]!!.jsonPrimitive.content)
         assertEquals(true, logical["matchesCameraX142ImplementationModel"]!!.jsonPrimitive.boolean)
         val physical = evidence["physicalBasisAssessment"]!!.jsonObject
         assertEquals("SELECTED_PHYSICAL_CAMERA_BASIS", physical["basisLabel"]!!.jsonPrimitive.content)
         assertEquals("2", physical["cameraId"]!!.jsonPrimitive.content)
+
+        // Requested family is an independent JSON fact (P1 family fix).
+        assertEquals("NEAR_4_3", session["requestedAnalysisResolutionFamily"]!!.jsonPrimitive.content)
+        assertEquals(640, session["actualAnalysisResolutionWidthPx"]!!.jsonPrimitive.int)
 
         val safety = session["safetyState"]!!.jsonObject
         assertEquals("DomainNotProven", safety["cam2cResultType"]!!.jsonPrimitive.content)
@@ -149,6 +163,16 @@ class PhysicalCameraExperimentExportTest {
         val stability = session["matrixStability"]!!.jsonObject
         assertEquals(1, stability["framesObserved"]!!.jsonPrimitive.int)
         assertEquals(0, stability["framesWithNullTransform"]!!.jsonPrimitive.int)
+        assertEquals(0, stability["bitwiseMatrixChanges"]!!.jsonPrimitive.int)
+        assertEquals(0, stability["mappedDisplacementChangesBeyondTolerance"]!!.jsonPrimitive.int)
+        // Self-describing thresholds (P2 fix): names, values, and the reference rectangle.
+        assertEquals(1e-3, stability["mappedDisplacementTolerancePx"]!!.jsonPrimitive.double, 0.0)
+        assertEquals(
+            "MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX",
+            stability["mappedDisplacementToleranceName"]!!.jsonPrimitive.content,
+        )
+        assertEquals(4096, stability["referenceRectWidthPx"]!!.jsonPrimitive.int)
+        assertEquals(3072, stability["referenceRectHeightPx"]!!.jsonPrimitive.int)
     }
 
     @Test

@@ -49,7 +49,11 @@ internal fun ExperimentUiModel.retry(): ExperimentUiModel {
         requestedAnalysisResolution =
             current.requestedAnalysisResolutionWidthPx?.let { width ->
                 current.requestedAnalysisResolutionHeightPx?.let { height ->
-                    AnalysisResolutionCandidate(widthPx = width, heightPx = height)
+                    current.requestedAnalysisResolutionFamily?.let { family ->
+                        // The family is restored from the stored request (P1 fix) — never re-derived
+                        // from the dimensions' exact integer ratio.
+                        AnalysisResolutionCandidate(widthPx = width, heightPx = height, family = family)
+                    }
                 }
             },
     )

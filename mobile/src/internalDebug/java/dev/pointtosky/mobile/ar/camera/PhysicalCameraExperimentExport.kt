@@ -41,7 +41,10 @@ private fun matrixValues(m: dev.pointtosky.core.astro.projection.camera.SensorTo
  * are needed anywhere in this file. */
 internal fun formatDualBasisReportLines(session: ExperimentSessionState): String =
     buildString {
+        // Requested family, requested dimensions, and actually-bound dimensions are three separate
+        // facts (P1 family fix) — never merged or re-derived from one another.
         appendLine("requestedAnalysisResolution=" + (session.requestedAnalysisResolutionWidthPx?.let { w -> "${w}x${session.requestedAnalysisResolutionHeightPx}" } ?: "cameraXDefault"))
+        appendLine("requestedAnalysisResolutionFamily=" + (session.requestedAnalysisResolutionFamily?.name ?: "cameraXDefault"))
         appendLine("actualAnalysisResolution=" + (session.latestFrame?.let { "${it.bufferWidthPx}x${it.bufferHeightPx}" } ?: "none yet"))
         appendLine("zoomTargetRatio=" + (session.zoomTargetRatio?.toString() ?: "unavailable"))
         appendLine("observedZoomRatio=" + (session.observedZoomRatio?.toString() ?: "unavailable"))
@@ -50,8 +53,18 @@ internal fun formatDualBasisReportLines(session: ExperimentSessionState): String
         appendLine("MATRIX STABILITY (generation attemptId=${session.attemptId}):")
         appendLine("  framesObserved=${stability.framesObserved}")
         appendLine("  framesWithNullTransform=${stability.framesWithNullTransform}")
-        appendLine("  changesBeyondFloatNoise=${stability.changesBeyondFloatNoise}")
-        appendLine("  maxCoefficientDeltaFromFirst=${stability.maxCoefficientDeltaFromFirst}")
+        // Two explicitly separated change notions (P2 fix): exact bit inequality of the widened
+        // float32 values vs. mapped-pixel displacement over the fixed reference rectangle. The
+        // threshold and reference-rect values are printed so this report is self-describing.
+        appendLine("  bitwiseMatrixChanges=${stability.bitwiseMatrixChanges}")
+        appendLine("  mappedDisplacementChangesBeyondTolerance=${stability.mappedDisplacementChangesBeyondTolerance}")
+        appendLine("  maxMappedDisplacementFromFirstPx=${stability.maxMappedDisplacementFromFirstPx}")
+        appendLine("  maxCoefficientDeltaFromFirst=${stability.maxCoefficientDeltaFromFirst} (raw diagnostic; no threshold applied)")
+        appendLine(
+            "  stabilityThresholds: MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX=" +
+                "$MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX over reference rect " +
+                "${MATRIX_STABILITY_REFERENCE_WIDTH_PX}x$MATRIX_STABILITY_REFERENCE_HEIGHT_PX; bitwise changes use exact equality",
+        )
         appendLine("  dimensionsCropOrRotationChanged=${stability.dimensionsCropOrRotationChanged}")
         appendLine("  firstMatrix=" + (stability.firstMatrix?.let { matrixValues(it).toString() } ?: "none"))
         appendLine("  latestMatrix=" + (stability.latestMatrix?.let { matrixValues(it).toString() } ?: "none"))
@@ -127,7 +140,8 @@ private fun formatBasisAssessmentLines(
         appendLine("    predictedOverflowPerSidePx=${assessment.predicted?.expectedOverflowPerSidePx ?: "none"}")
         appendLine("    coefficientResiduals=" + (assessment.coefficientResiduals?.toString() ?: "none"))
         appendLine("    maxAbsCoefficientResidual=${assessment.maxAbsCoefficientResidual}")
-        appendLine("    maxMappedPointResidualPx=${assessment.maxMappedPointResidualPx}")
+        appendLine("    maxMappedPointResidualPx(euclidean)=${assessment.maxMappedPointResidualPx ?: "none"}")
+        appendLine("    modelComparison=${assessment.modelComparison.name}")
         appendLine("    matchesCameraX142ImplementationModel=${assessment.matchesCameraX142Model}")
     }
 
@@ -141,10 +155,21 @@ private fun describeDomainProof(cam2cResult: Cam2cPhysicalCameraResolution?): St
     }
 
 /**
- * `internalDebug`-only. Schema version for [buildPhysicalCameraExperimentJson]. `1`: initial
- * dual-basis experiment export (this slice). Bump on any rename/removal/reinterpretation.
+ * `internalDebug`-only. Schema version for [buildPhysicalCameraExperimentJson]. Bump on any
+ * rename/removal/reinterpretation.
+ *
+ * - `1`: initial dual-basis experiment export.
+ * - `2` (diagnostic-correctness fix pass): `comparisonVerdict`'s
+ *   `MATCHES_BOTH_BASES_NUMERICALLY_INDISTINGUISHABLE` value split into
+ *   `MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE` /
+ *   `MATCHES_BOTH_DIFFERING_RECTS_WITHIN_TOLERANCE`; `basesNumericallyIndistinguishable` now means
+ *   pure rect equality; basis assessments gained `modelComparison` (typed structural-scope gate —
+ *   `maxMappedPointResidualPx` is now Euclidean and `null` for unsupported structures);
+ *   `matrixStability` replaced `changesBeyondFloatNoise` with `bitwiseMatrixChanges` +
+ *   `mappedDisplacementChangesBeyondTolerance` + `maxMappedDisplacementFromFirstPx` and now exports
+ *   its threshold names/values; the session gained `requestedAnalysisResolutionFamily`.
  */
-const val PHYSICAL_CAMERA_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 1
+const val PHYSICAL_CAMERA_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 2
 
 private fun matrixJson(m: dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3?): JsonElement =
     m?.let { values -> buildJsonArray { matrixValues(values).forEach { add(it) } } } ?: JsonNull
@@ -194,7 +219,11 @@ private fun basisJson(assessment: BasisMatrixAssessment?): JsonElement {
             assessment.coefficientResiduals?.let { list -> buildJsonArray { list.forEach { add(it) } } } ?: JsonNull,
         )
         put("maxAbsCoefficientResidual", assessment.maxAbsCoefficientResidual)
+        // Euclidean (hypot) residual; null for COMPARISON_UNSUPPORTED_STRUCTURE — see
+        // BasisMatrixAssessment.maxMappedPointResidualPx's contract (schema v2).
         put("maxMappedPointResidualPx", assessment.maxMappedPointResidualPx)
+        put("maxMappedPointResidualMetric", "euclidean_hypot")
+        put("modelComparison", assessment.modelComparison.name)
         put("matchesCameraX142ImplementationModel", assessment.matchesCameraX142Model)
     }
 }
@@ -252,8 +281,12 @@ internal fun buildPhysicalCameraExperimentJson(
                 buildJsonObject {
                     put("attemptId", session.attemptId)
                     put("requestedPhysicalCameraId", session.physicalCameraId)
+                    // Requested family, requested WxH, and actual bound WxH are exported as three
+                    // independent facts (P1 family fix) — the family is the selection band's, never
+                    // re-derived from the dimensions.
                     put("requestedAnalysisResolutionWidthPx", session.requestedAnalysisResolutionWidthPx)
                     put("requestedAnalysisResolutionHeightPx", session.requestedAnalysisResolutionHeightPx)
+                    put("requestedAnalysisResolutionFamily", session.requestedAnalysisResolutionFamily?.name)
                     put("actualAnalysisResolutionWidthPx", session.latestFrame?.bufferWidthPx)
                     put("actualAnalysisResolutionHeightPx", session.latestFrame?.bufferHeightPx)
                     put("zoomTargetRatio", session.zoomTargetRatio?.toDouble())
@@ -295,8 +328,18 @@ internal fun buildPhysicalCameraExperimentJson(
                         buildJsonObject {
                             put("framesObserved", stability.framesObserved)
                             put("framesWithNullTransform", stability.framesWithNullTransform)
-                            put("changesBeyondFloatNoise", stability.changesBeyondFloatNoise)
+                            // Schema v2: raw-bit changes and geometrically meaningful mapped-pixel
+                            // changes are separate counters; threshold names/values are exported so
+                            // a device report is self-describing.
+                            put("bitwiseMatrixChanges", stability.bitwiseMatrixChanges)
+                            put("mappedDisplacementChangesBeyondTolerance", stability.mappedDisplacementChangesBeyondTolerance)
+                            put("maxMappedDisplacementFromFirstPx", stability.maxMappedDisplacementFromFirstPx)
                             put("maxCoefficientDeltaFromFirst", stability.maxCoefficientDeltaFromFirst)
+                            put("mappedDisplacementTolerancePx", MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX)
+                            put("mappedDisplacementToleranceName", "MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX")
+                            put("referenceRectWidthPx", MATRIX_STABILITY_REFERENCE_WIDTH_PX)
+                            put("referenceRectHeightPx", MATRIX_STABILITY_REFERENCE_HEIGHT_PX)
+                            put("bitwiseChangeCriterion", "exact inequality of widened float32 coefficients")
                             put("dimensionsCropOrRotationChanged", stability.dimensionsCropOrRotationChanged)
                             put("firstMatrix", matrixJson(stability.firstMatrix))
                             put("latestMatrix", matrixJson(stability.latestMatrix))

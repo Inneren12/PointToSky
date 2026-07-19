@@ -16,6 +16,7 @@ import kotlin.math.abs
 internal data class AnalysisResolutionCandidate(
     val widthPx: Int,
     val heightPx: Int,
+    val family: AnalysisResolutionFamily,
 ) {
     init {
         require(widthPx > 0 && heightPx > 0) { "resolution must be strictly positive; was ${widthPx}x$heightPx" }
@@ -24,6 +25,11 @@ internal data class AnalysisResolutionCandidate(
     val aspectRatio: Double get() = widthPx.toDouble() / heightPx.toDouble()
 
     fun label(): String = "${widthPx}x$heightPx"
+
+    /** The complete request handed to `CameraPreview` — dimensions plus the selecting band's family
+     * (P1 fix: the family travels explicitly; it is never re-inferred from exact integer ratios). */
+    fun toRequest(): AnalysisResolutionRequest =
+        AnalysisResolutionRequest(widthPx = widthPx, heightPx = heightPx, family = family)
 }
 
 private const val NEAR_4_3_MIN_ASPECT = 1.28
@@ -33,28 +39,45 @@ private const val NEAR_16_9_MAX_ASPECT = 1.85
 private const val PREFERRED_4_3_AREA = 640.0 * 480.0
 private const val PREFERRED_16_9_AREA = 1280.0 * 720.0
 
+/** A raw parsed `WxH` size, before any family band has selected it — deliberately not an
+ * [AnalysisResolutionCandidate], which always carries the family of the band that chose it. */
+internal data class AnalysisResolutionSize(
+    val widthPx: Int,
+    val heightPx: Int,
+) {
+    val aspectRatio: Double get() = widthPx.toDouble() / heightPx.toDouble()
+}
+
 /** Parses `"WxH"` strings (the exact format `CameraTopologyEntry.imageAnalysisStreamConfigurationsPx`
  * uses); silently skips malformed entries — an enumeration diagnostic must not throw on one odd row. */
-internal fun parseAnalysisResolutions(sizes: List<String>): List<AnalysisResolutionCandidate> =
+internal fun parseAnalysisResolutions(sizes: List<String>): List<AnalysisResolutionSize> =
     sizes.mapNotNull { size ->
         val parts = size.split("x")
         if (parts.size != 2) return@mapNotNull null
         val width = parts[0].toIntOrNull() ?: return@mapNotNull null
         val height = parts[1].toIntOrNull() ?: return@mapNotNull null
         if (width <= 0 || height <= 0) return@mapNotNull null
-        AnalysisResolutionCandidate(width, height)
+        AnalysisResolutionSize(width, height)
     }
 
 /**
  * Selects up to two deliberate, user-selectable candidates from the device-declared [supported]
  * sizes: the near-4:3 size closest (by area) to 640×480, and the near-16:9 size closest to 1280×720.
  * Deterministic (ties broken by smaller area, then smaller width); empty when the device declares
- * nothing in a band — never an invented size.
+ * nothing in a band — never an invented size. **Each candidate carries the
+ * [AnalysisResolutionFamily] of the band that selected it** (P1 fix) — so a non-exact in-band size
+ * like `848x480` is a [AnalysisResolutionFamily.NEAR_16_9] candidate and will be bound with the
+ * 16:9 aspect strategy, never silently downgraded to 4:3 by an exact-ratio check downstream.
  */
 internal fun selectAnalysisResolutionCandidates(
-    supported: List<AnalysisResolutionCandidate>,
+    supported: List<AnalysisResolutionSize>,
 ): List<AnalysisResolutionCandidate> {
-    fun best(minAspect: Double, maxAspect: Double, preferredArea: Double): AnalysisResolutionCandidate? =
+    fun best(
+        minAspect: Double,
+        maxAspect: Double,
+        preferredArea: Double,
+        family: AnalysisResolutionFamily,
+    ): AnalysisResolutionCandidate? =
         supported
             .filter { it.aspectRatio in minAspect..maxAspect }
             .minWithOrNull(
@@ -64,8 +87,9 @@ internal fun selectAnalysisResolutionCandidates(
                     { it.widthPx },
                 ),
             )
+            ?.let { AnalysisResolutionCandidate(widthPx = it.widthPx, heightPx = it.heightPx, family = family) }
 
-    val near43 = best(NEAR_4_3_MIN_ASPECT, NEAR_4_3_MAX_ASPECT, PREFERRED_4_3_AREA)
-    val near169 = best(NEAR_16_9_MIN_ASPECT, NEAR_16_9_MAX_ASPECT, PREFERRED_16_9_AREA)
-    return listOfNotNull(near43, near169).distinct()
+    val near43 = best(NEAR_4_3_MIN_ASPECT, NEAR_4_3_MAX_ASPECT, PREFERRED_4_3_AREA, AnalysisResolutionFamily.NEAR_4_3)
+    val near169 = best(NEAR_16_9_MIN_ASPECT, NEAR_16_9_MAX_ASPECT, PREFERRED_16_9_AREA, AnalysisResolutionFamily.NEAR_16_9)
+    return listOfNotNull(near43, near169)
 }
