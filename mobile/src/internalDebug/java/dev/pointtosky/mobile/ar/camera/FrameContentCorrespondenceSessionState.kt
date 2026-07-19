@@ -94,20 +94,37 @@ internal fun FrameContentExperimentSessionState.reduceFrame(
     ).recomputeSnapshot(capturedAtEpochMillis)
 }
 
+/**
+ * Applies a target-placement-label edit (task §3). Chosen, documented behavior for "editing
+ * placement/distance after a snapshot already exists": **recompute a metadata-identical snapshot
+ * immediately, using the exact same frame generation** — never silently show one label in the live UI
+ * while a stale value would export in Copy/Share. This is a cheap metadata patch (the frame, detection,
+ * pose, hypotheses, and residuals are all untouched — see [FrameContentCorrespondenceSnapshot.copy]
+ * call below), not a full recompute; the snapshot's own [FrameContentCorrespondenceSnapshot.generation]
+ * is intentionally unchanged, since the edit does not correspond to a new analyzed frame.
+ */
 internal fun FrameContentExperimentSessionState.reduceTargetPlacementLabel(
     attemptId: Long,
     label: TargetPlacementLabel,
 ): FrameContentExperimentSessionState {
     if (attemptId != this.attemptId || isTerminallyFailed) return this
-    return copy(targetPlacementLabel = label)
+    return copy(
+        targetPlacementLabel = label,
+        latestSnapshot = latestSnapshot?.copy(targetPlacementLabel = label),
+    )
 }
 
+/** The [distanceLabelMm] analogue of [reduceTargetPlacementLabel] — same metadata-identical,
+ * same-generation immediate-patch behavior. */
 internal fun FrameContentExperimentSessionState.reduceDistanceLabel(
     attemptId: Long,
     distanceMm: Double?,
 ): FrameContentExperimentSessionState {
     if (attemptId != this.attemptId || isTerminallyFailed) return this
-    return copy(distanceLabelMm = distanceMm)
+    return copy(
+        distanceLabelMm = distanceMm,
+        latestSnapshot = latestSnapshot?.copy(distanceLabelMm = distanceMm),
+    )
 }
 
 /** Recomputes [FrameContentExperimentSessionState.latestSnapshot] once a verified physical binding, a
@@ -130,6 +147,7 @@ private fun FrameContentExperimentSessionState.recomputeSnapshot(capturedAtEpoch
             selectedPhysicalCharacteristics = binding.physicalCharacteristicsSnapshot,
             requestedAnalysisResolutionWidthPx = requestedAnalysisResolutionWidthPx,
             requestedAnalysisResolutionHeightPx = requestedAnalysisResolutionHeightPx,
+            requestedAnalysisResolutionFamily = requestedAnalysisResolutionFamily,
             bufferWidthPx = frame.bufferWidthPx,
             bufferHeightPx = frame.bufferHeightPx,
             cropRectLeftPx = frame.cropRectLeftPx,
@@ -140,8 +158,11 @@ private fun FrameContentExperimentSessionState.recomputeSnapshot(capturedAtEpoch
             sensorToBufferTransformMatrix = frame.sensorToBufferTransform,
             zoomTargetRatio = zoomTargetRatio,
             observedZoomRatio = observedZoomRatio,
+            targetPlacementLabel = targetPlacementLabel,
+            distanceLabelMm = distanceLabelMm,
             detectionResult = detection,
             targetSpec = DEFAULT_FRAME_CONTENT_TARGET_SPEC,
+            detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,
             capturedAtEpochMillis = capturedAtEpochMillis,
         )
     return copy(latestSnapshot = snapshot)

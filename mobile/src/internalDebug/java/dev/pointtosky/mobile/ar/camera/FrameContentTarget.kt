@@ -13,9 +13,21 @@ package dev.pointtosky.mobile.ar.camera
  * correctly in pure Kotlin than checkerboard saddle-point detection, and because — unlike a plain
  * checkerboard — a fully-visible rectangular grid still permits deterministic row/column correspondence
  * by simple sort-and-chunk, without needing ArUco-style per-marker IDs. **This is not ChArUco or
- * AprilTag** — there is no per-point ID encoding, and correspondence assignment assumes the *entire*
- * grid is visible and not rotated far from upright. This is an explicit, documented scope limitation,
- * not a hidden one.
+ * AprilTag** — there is no per-point ID encoding.
+ *
+ * ## Orientation marker (correspondence-identity fix)
+ * A plain symmetric `cornerRows x cornerCols` dot grid has **no orientation identity**: viewed
+ * upside-down (a 180-degree in-plane rotation, physically realizable simply by rotating the printed
+ * card, and completely indistinguishable from the un-rotated view in the dot pattern alone), the grid
+ * looks identical, so sort-Y/chunk/sort-X would confidently assign a *plausible but silently wrong*
+ * row/column correspondence — each detected point paired with the wrong object point, point-symmetric
+ * around the grid center. This is now fixed by one extra, distinctly larger **orientation marker dot**
+ * printed near the (`row=0`, `col=0`) corner, offset diagonally outward from the grid's own bounding
+ * box (so it is never mistaken for a grid dot by position, and its larger area means it is never
+ * mistaken for one by size either — see [detectFrameContentTargetCorners]). [markerAreaScaleFactor]
+ * documents the printed marker's area relative to a regular grid dot; the exact millimetre offset does
+ * not matter for detection (only relative proximity to one grid corner matters), but a real printed
+ * target should place it clearly closer to the (0,0) corner than to any other corner.
  *
  * The target is a single flat plane (`zMm = 0` for every object point in its own local frame), so pose
  * can be estimated with a planar-homography model (see `FrameContentPoseMath.kt`) rather than a general
@@ -25,11 +37,18 @@ internal data class FrameContentTargetSpec(
     val cornerRows: Int = 4,
     val cornerCols: Int = 5,
     val dotSpacingMm: Double = 25.0,
+    /** The printed orientation marker dot's area, as a multiple of a regular grid dot's area — must be
+     * distinctly larger (see [FrameContentDetectionTolerances.markerAreaRatioThreshold]) so it can be
+     * identified by size alone, independent of its approximate position. */
+    val markerAreaScaleFactor: Double = 2.5,
 ) {
     init {
         require(cornerRows >= 2) { "cornerRows must be >= 2; was $cornerRows" }
         require(cornerCols >= 2) { "cornerCols must be >= 2; was $cornerCols" }
         require(dotSpacingMm > 0.0 && dotSpacingMm.isFinite()) { "dotSpacingMm must be finite and positive; was $dotSpacingMm" }
+        require(markerAreaScaleFactor > 1.0 && markerAreaScaleFactor.isFinite()) {
+            "markerAreaScaleFactor must be finite and > 1.0; was $markerAreaScaleFactor"
+        }
     }
 
     val pointCount: Int get() = cornerRows * cornerCols

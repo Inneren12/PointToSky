@@ -8,14 +8,36 @@ import kotlin.math.abs
  * used to publish `AnalysisBuffer` intrinsics, never a claim that CAM-2c calibrated projection is
  * unblocked. See `FrameContentCorrespondenceSnapshot.kt`'s file KDoc for the explicit "not proof"
  * statement this experiment's report always carries.
+ *
+ * ## Epistemic correctness fix — no independent path-winner verdict
+ * An earlier revision of this enum included `LOGICAL_PATH_BETTER`/`PHYSICAL_PATH_BETTER`/
+ * `RECONCILED_PATH_BETTER`. Those were removed: this experiment's one frozen pose is fit *using*
+ * [FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH]'s own camera matrix
+ * ([FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS]) against the very correspondences every hypothesis's
+ * residual is then measured against — a single-planar-target homography/pose solve can absorb part of
+ * any real intrinsics/mapping discrepancy into its own reference hypothesis's favor, so a lower
+ * residual for that hypothesis is expected *by construction*, not proof it is the better real-world
+ * mapping model. This file therefore can only ever report a residual *difference*, explicitly labelled
+ * [CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION] — never a semantic "X is better" claim. A stronger future
+ * experiment would require either an independently-sourced pose/reference (never derived from any
+ * hypothesis under comparison) or a multi-view/fixed-rig calibration procedure — not merely refitting
+ * each hypothesis's own pose independently (which stays circular for the same reason, applied
+ * symmetrically instead of asymmetrically).
  */
 internal enum class FrameContentVerdict {
     INSUFFICIENT_POINTS,
     POSE_FIT_INVALID,
-    LOGICAL_PATH_BETTER,
-    PHYSICAL_PATH_BETTER,
-    RECONCILED_PATH_BETTER,
-    PATHS_NUMERICALLY_INDISTINGUISHABLE,
+
+    /** The best and second-best hypothesis RMS residuals differ by less than the effective margin —
+     * conditional on the physical-anchored pose, same as every other non-degenerate verdict here. */
+    CONDITIONAL_PATHS_NUMERICALLY_INDISTINGUISHABLE,
+
+    /** The best and second-best hypothesis RMS residuals differ by more than the effective margin.
+     * [FrameContentVerdictResult.lowerResidualHypothesisId] names which hypothesis had the lower
+     * residual, for ranking/visualization only — this is **not** a claim that hypothesis is the better
+     * real-world mapping model (see this enum's own KDoc and
+     * [FrameContentVerdictResult.residualInterpretation]). */
+    CONDITIONAL_RESIDUALS_DIFFER,
     MIXED_OR_INCONCLUSIVE,
 }
 
@@ -59,7 +81,32 @@ internal data class FrameContentVerdictResult(
     val verdict: FrameContentVerdict,
     val reason: String,
     val thresholds: FrameContentVerdictThresholds,
+    /** Populated only for [FrameContentVerdict.CONDITIONAL_RESIDUALS_DIFFER] — which hypothesis had the
+     * lower RMS residual, for ranking/visualization only. Never read as "the better hypothesis": see
+     * [residualInterpretation]. */
+    val lowerResidualHypothesisId: FrameContentMappingHypothesisId? = null,
+    /** Always [CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION] — carried on every result (not just
+     * [FrameContentVerdict.CONDITIONAL_RESIDUALS_DIFFER]) so a reader never has to look elsewhere to
+     * find the caveat that applies to this whole file's verdicts. */
+    val residualInterpretation: String = CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION,
+    /** Always `false` for this implementation — no code path in this experiment sources a pose from
+     * anything other than [FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS]'s own camera matrix. Exported so a
+     * reader/JSON consumer never has to infer this from the absence of a field. */
+    val independentPoseReferenceAvailable: Boolean = false,
 )
+
+/** Fixed, exported description of what a *conclusive*, non-conditional path-winner verdict would
+ * require — task §1's "document what stronger future experiment would be required." Never constructed
+ * by this experiment; carried as a constant string so the report/JSON can state it without any reader
+ * having to consult this file's KDoc. */
+internal const val FRAME_CONTENT_STRONGER_EXPERIMENT_REQUIRED: String =
+    "An independent path-winner verdict would require either (a) a pose/reference sourced " +
+        "independently of every hypothesis under comparison (e.g. a fixed, externally-surveyed rig, or " +
+        "a separately-calibrated reference camera), or (b) a multi-view calibration experiment (e.g. " +
+        "Zhang's method over many frames/poses) that estimates intrinsics and pose jointly without " +
+        "anchoring either to one candidate hypothesis. Independently refitting pose under each " +
+        "hypothesis and comparing each hypothesis's own optimized residual is NOT sufficient — that " +
+        "remains circular, just symmetrically instead of asymmetrically so."
 
 private fun regionsRepresented(residuals: List<FrameContentPointResidual>): Set<PointRegion> =
     residuals.filterIsInstance<FrameContentPointResidual.Accepted>().map { it.region }.toSet()
@@ -117,18 +164,19 @@ internal fun computeFrameContentVerdict(
 
     if (margin < thresholds.effectiveMarginPx) {
         return FrameContentVerdictResult(
-            FrameContentVerdict.PATHS_NUMERICALLY_INDISTINGUISHABLE,
+            FrameContentVerdict.CONDITIONAL_PATHS_NUMERICALLY_INDISTINGUISHABLE,
             "Best RMS (${best.hypothesisId}=${best.rmsPx}) and second-best RMS " +
                 "(${secondBest.hypothesisId}=${secondBest.rmsPx}) differ by ${abs(margin)}px, below the " +
                 "effective margin of ${thresholds.effectiveMarginPx}px (max of minAbsolutePixelMarginPx=" +
-                "${thresholds.minAbsolutePixelMarginPx} and detectionNoiseMarginPx=${thresholds.detectionNoiseMarginPx}).",
+                "${thresholds.minAbsolutePixelMarginPx} and detectionNoiseMarginPx=${thresholds.detectionNoiseMarginPx}). " +
+                "$CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION.",
             thresholds,
         )
     }
 
     // Cross-check against corner-region RMS alone, when available for both leaders: a clean overall
     // winner that reverses in the corners (where geometric mapping errors are typically largest) is
-    // reported as mixed rather than a clean "better" verdict.
+    // reported as mixed rather than a clean residual-difference finding.
     val bestCornerRms = best.cornerRmsPx
     val secondCornerRms = secondBest.cornerRmsPx
     if (bestCornerRms != null && secondCornerRms != null && bestCornerRms.isFinite() && secondCornerRms.isFinite()) {
@@ -139,23 +187,25 @@ internal fun computeFrameContentVerdict(
                 "Overall RMS favors ${best.hypothesisId}, but corner-region RMS favors " +
                     "${secondBest.hypothesisId} by more than the effective margin " +
                     "(${thresholds.effectiveMarginPx}px) — the two hypotheses disagree by region, so no " +
-                    "single 'better' verdict is drawn.",
+                    "single residual-difference finding is drawn.",
                 thresholds,
             )
         }
     }
 
-    val verdict =
-        when (best.hypothesisId) {
-            FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH -> FrameContentVerdict.LOGICAL_PATH_BETTER
-            FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH -> FrameContentVerdict.PHYSICAL_PATH_BETTER
-            FrameContentMappingHypothesisId.RECONCILED_PHYSICAL_TO_LOGICAL_PATH -> FrameContentVerdict.RECONCILED_PATH_BETTER
-        }
+    // NEVER a semantic "X path is better" verdict (see this file's own KDoc): the lower-residual
+    // hypothesis is exported only as a ranking field, always alongside the explicit conditional
+    // interpretation and a pointer to what a real, non-circular experiment would require.
     return FrameContentVerdictResult(
-        verdict,
-        "${best.hypothesisId} has the lowest RMS residual (${best.rmsPx}px vs next-best " +
+        FrameContentVerdict.CONDITIONAL_RESIDUALS_DIFFER,
+        "${best.hypothesisId} has the lower RMS residual (${best.rmsPx}px vs next-best " +
             "${secondBest.hypothesisId}=${secondBest.rmsPx}px), a margin of ${abs(margin)}px exceeding the " +
-            "effective threshold of ${thresholds.effectiveMarginPx}px.",
+            "effective threshold of ${thresholds.effectiveMarginPx}px. $CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION: " +
+            "the pose was fit using ${FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS}'s own camera matrix against " +
+            "these same correspondences, so this difference is NOT an independent frame-content-basis " +
+            "verdict — it is expected to favor ${FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS} by construction, " +
+            "regardless of which hypothesis actually describes the real mapping. $FRAME_CONTENT_STRONGER_EXPERIMENT_REQUIRED",
         thresholds,
+        lowerResidualHypothesisId = best.hypothesisId,
     )
 }

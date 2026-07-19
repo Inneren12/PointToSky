@@ -18,7 +18,7 @@ private fun detected(
     bufferXPx = x,
     bufferYPx = y,
     confidence = 1.0,
-    refinementStatus = CornerRefinementStatus.SUBPIXEL_REFINED,
+    refinementStatus = CornerRefinementStatus.WEIGHTED_CENTROID_SUBPIXEL_ESTIMATE,
     region = classifyPointRegion(x, y, bufferWidthPx, bufferHeightPx),
 )
 

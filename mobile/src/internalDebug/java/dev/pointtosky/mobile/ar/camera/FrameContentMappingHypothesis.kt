@@ -49,6 +49,40 @@ internal const val FRAME_CONTENT_RECONCILED_NOT_IMPLEMENTED_REASON: String =
         "coordinate transform is source-traced or device-proven in this codebase; fabricating one " +
         "would misrepresent evidence as a verified model."
 
+/**
+ * Fixed, shared documentation of this experiment's unrotated-buffer contract (fix for a rotation
+ * -semantics correctness gap: an earlier revision of both implemented hypotheses claimed
+ * `rotationFoldedIn=true`, which contradicts both the documented CameraX/`ImageProxy` contract and the
+ * observed real Pixel 9 evidence — `ImageProxy.imageInfo.rotationDegrees` can be `90` while the very
+ * same frame's `sensorToBufferTransformMatrix` still classifies as `AXIS_ALIGNED_0`, i.e. the matrix
+ * itself carries no rotation component even when the platform reports a non-zero display rotation).
+ *
+ * Identical for both [FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH] and
+ * [FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH] — neither one folds rotation in,
+ * by construction, since neither one ever reads or applies `rotationDegrees`:
+ * - [detectFrameContentTargetCorners] reads detected points directly from the **unrotated**
+ *   `ImageProxy` analysis buffer (the luma plane exactly as CameraX delivers it) — never through
+ *   `PreviewView`/display coordinates.
+ * - Every hypothesis's predicted point ([projectObjectPoint]) is computed in that **exact same**
+ *   unrotated buffer coordinate space — the sensor-to-buffer matrix composition
+ *   ([dev.pointtosky.core.astro.projection.camera.mapActiveArrayIntrinsicsThroughMatrix]) never reads
+ *   `CameraFrameMetadata.rotationDegrees` at all.
+ * - `rotationDegrees` is captured on [FrameContentCorrespondenceSnapshot] purely as **metadata** — for
+ *   the report/JSON to show alongside the residuals, never consumed by any projection or detection
+ *   math in this experiment.
+ * - No display/`PreviewView` rotation (e.g. `CropScaleTransform`) is applied anywhere in this
+ *   experiment — that transform belongs to the production AR renderer's own display pipeline, entirely
+ *   separate from this diagnostic.
+ */
+internal const val FRAME_CONTENT_UNROTATED_BUFFER_CONTRACT: String =
+    "Detected points are read directly from the unrotated ImageProxy analysis buffer (the luma plane " +
+        "exactly as CameraX delivers it); every hypothesis's predicted points are computed in that " +
+        "exact same unrotated buffer coordinate space. CameraFrameMetadata.rotationDegrees " +
+        "(ImageProxy.imageInfo.rotationDegrees) is captured as metadata only and is never applied as a " +
+        "rotation to either detected or predicted points; no PreviewView/display rotation is applied " +
+        "anywhere in this experiment. This matches observed Pixel 9 evidence: rotationDegrees may be " +
+        "90 while the same frame's sensorToBufferTransformMatrix still classifies AXIS_ALIGNED_0."
+
 /** Documents, for one hypothesis, every field task §3 requires be documented — carried as data on the
  * hypothesis result itself (never left as an assumption a reader has to reconstruct from code). */
 internal data class FrameContentHypothesisDocumentation(
@@ -59,6 +93,7 @@ internal data class FrameContentHypothesisDocumentation(
     val rotationFoldedIn: Boolean,
     val cropRectFoldedIn: Boolean,
     val whyOutputIsBufferCoordinates: String,
+    val bufferRotationContract: String = FRAME_CONTENT_UNROTATED_BUFFER_CONTRACT,
 )
 
 /** `distortionBasis` shared by every hypothesis (task §5/§9 honesty convention): this codebase has no
@@ -258,23 +293,33 @@ internal fun computeFrameContentMappingHypotheses(
             id = FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH,
             documentation =
                 FrameContentHypothesisDocumentation(
-                    inputKBasis = "Physical camera's own calibrated K, active-array-local pixel basis " +
-                        "(SENSOR_INFO_ACTIVE_ARRAY_SIZE of the SELECTED physical camera)",
+                    inputKBasis = "Characteristics-derived approximate physical pinhole K " +
+                        "(CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_PINHOLE_DOMAIN), active-array-local " +
+                        "pixel basis (SENSOR_INFO_ACTIVE_ARRAY_SIZE of the SELECTED physical camera) — " +
+                        "derived from LENS_INFO_AVAILABLE_FOCAL_LENGTHS + SENSOR_INFO_PHYSICAL_SIZE + " +
+                        "SENSOR_INFO_PIXEL_ARRAY_SIZE with an assumed geometric-centre principal point " +
+                        "(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT); LENS_INTRINSIC_CALIBRATION " +
+                        "is NOT consulted by this path — never call this K \"calibrated\"",
                     distortionBasis = FRAME_CONTENT_DISTORTION_BASIS,
                     sourceCoordinateRect = activeArrayRect?.let { "physical active array $it" } ?: "unavailable",
                     transformsAppliedInOrder =
                         listOf(
-                            "1. Pinhole-project object point using physical camera's active-array-local K",
+                            "1. Pinhole-project object point using the characteristics-derived approximate " +
+                                "physical K, active-array-local basis",
                             "2. Apply the OBSERVED CameraX sensorToBufferTransformMatrix directly, with no " +
                                 "basis translation/correction — per its documented API contract, treating " +
                                 "the point as already being in the domain the matrix expects",
                         ),
-                    rotationFoldedIn = true,
+                    rotationFoldedIn = false,
                     cropRectFoldedIn = false,
                     whyOutputIsBufferCoordinates =
-                        "resolveAnalysisBufferIntrinsics labels its result CameraIntrinsicsReference." +
-                            "AnalysisBuffer(bufferWidthPx, bufferHeightPx) only when the full matrix " +
-                            "composition (steps above) succeeds and validates cleanly",
+                        "mapActiveArrayIntrinsicsThroughMatrix composes the active-array-local K directly " +
+                            "with the 3x3 sensor-to-buffer matrix (K' = M . K) for a buffer of exactly " +
+                            "bufferWidthPx x bufferHeightPx pixels — this path never calls " +
+                            "resolveAnalysisBufferIntrinsics (see resolveHypothesisIntrinsics's own KDoc for " +
+                            "why); the composed K' is buffer-space by direct construction of that matrix " +
+                            "product, not by any resolver's own labelling",
+                    bufferRotationContract = FRAME_CONTENT_UNROTATED_BUFFER_CONTRACT,
                 ),
             result = logicalPathResult,
         )
@@ -292,24 +337,34 @@ internal fun computeFrameContentMappingHypotheses(
             id = FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH,
             documentation =
                 FrameContentHypothesisDocumentation(
-                    inputKBasis = "Physical camera's own calibrated K, active-array-local pixel basis " +
-                        "(SENSOR_INFO_ACTIVE_ARRAY_SIZE of the SELECTED physical camera)",
+                    inputKBasis = "Characteristics-derived approximate physical pinhole K " +
+                        "(CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_PINHOLE_DOMAIN), active-array-local " +
+                        "pixel basis (SENSOR_INFO_ACTIVE_ARRAY_SIZE of the SELECTED physical camera) — " +
+                        "derived from LENS_INFO_AVAILABLE_FOCAL_LENGTHS + SENSOR_INFO_PHYSICAL_SIZE + " +
+                        "SENSOR_INFO_PIXEL_ARRAY_SIZE with an assumed geometric-centre principal point " +
+                        "(CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT); LENS_INTRINSIC_CALIBRATION " +
+                        "is NOT consulted by this path — never call this K \"calibrated\"",
                     distortionBasis = FRAME_CONTENT_DISTORTION_BASIS,
                     sourceCoordinateRect = activeArrayRect?.let { "physical active array $it" } ?: "unavailable",
                     transformsAppliedInOrder =
                         listOf(
-                            "1. Pinhole-project object point using physical camera's active-array-local K",
+                            "1. Pinhole-project object point using the characteristics-derived approximate " +
+                                "physical K, active-array-local basis",
                             "2. Apply a FRESHLY BUILT CameraX-1.4.2-style matrix " +
                                 "(predictCameraX142SensorToBufferMatrix), constructed FROM the physical " +
                                 "camera's own active array and this frame's real buffer dimensions — " +
                                 "never the observed matrix",
                         ),
-                    rotationFoldedIn = true,
+                    rotationFoldedIn = false,
                     cropRectFoldedIn = false,
                     whyOutputIsBufferCoordinates =
-                        "resolveAnalysisBufferIntrinsics labels its result CameraIntrinsicsReference." +
-                            "AnalysisBuffer(bufferWidthPx, bufferHeightPx) only when the full matrix " +
-                            "composition (steps above) succeeds and validates cleanly",
+                        "mapActiveArrayIntrinsicsThroughMatrix composes the active-array-local K directly " +
+                            "with the freshly-built 3x3 CameraX-1.4.2-style matrix (K' = M . K) for a buffer " +
+                            "of exactly bufferWidthPx x bufferHeightPx pixels — this path never calls " +
+                            "resolveAnalysisBufferIntrinsics (see resolveHypothesisIntrinsics's own KDoc for " +
+                            "why); the composed K' is buffer-space by direct construction of that matrix " +
+                            "product, not by any resolver's own labelling",
+                    bufferRotationContract = FRAME_CONTENT_UNROTATED_BUFFER_CONTRACT,
                 ),
             result = physicalPathResult,
         )
@@ -326,6 +381,7 @@ internal fun computeFrameContentMappingHypotheses(
                     rotationFoldedIn = false,
                     cropRectFoldedIn = false,
                     whyOutputIsBufferCoordinates = "N/A — not implemented",
+                    bufferRotationContract = "N/A — not implemented",
                 ),
             result = FrameContentHypothesisIntrinsicsResult.Unavailable(FRAME_CONTENT_RECONCILED_NOT_IMPLEMENTED_REASON),
         )

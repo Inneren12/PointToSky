@@ -21,7 +21,19 @@ import kotlin.math.sqrt
  * tractable in pure Kotlin than a general iterative (Levenberg-Marquardt) PnP solver, at the cost of
  * being a **first-cut, non-iteratively-refined** estimate — see [FrameContentPoseSolution]'s KDoc for
  * the honesty statement this experiment's report always carries alongside a solved pose
- * (`POSE_ESTIMATION_MODEL=PHYSICAL_CAMERA_CALIBRATED_DOMAIN`).
+ * (`POSE_ESTIMATION_MODEL=CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_PINHOLE_DOMAIN`).
+ *
+ * ## Epistemic correctness fix (device-evidence-blocking review)
+ * An earlier revision of this experiment permitted the residual comparison between
+ * [FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH] and
+ * [FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH] to be reported as a proof-like
+ * "PHYSICAL_PATH_BETTER"/"LOGICAL_PATH_BETTER" verdict. That was circular: the pose is *fit* using
+ * `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH`'s own camera matrix against the very same correspondences the
+ * residual comparison then evaluates, so with a single planar target the homography/pose solve can
+ * absorb part of any intrinsics or mapping discrepancy, biasing `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH`
+ * toward a lower residual *by construction*, not because it is a better model of the real mapping. See
+ * [CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION] and `FrameContentVerdict.kt`'s own KDoc for the resulting,
+ * strictly conservative verdict vocabulary.
  */
 
 /** A plain 3-vector, millimetres or a dimensionless ray depending on context — never implicitly mixed
@@ -98,23 +110,54 @@ internal data class RotationMatrix3(
  * [FrameContentObjectPoint].
  *
  * @property estimationModel a fixed, human-readable label for exactly which model produced this pose —
- *   always `"PHYSICAL_CAMERA_CALIBRATED_DOMAIN"` for this first implementation (task §4): pose is
+ *   always [FRAME_CONTENT_POSE_ESTIMATION_MODEL] for this first implementation (task §4): pose is
  *   solved once, from the detected `ImageAnalysis`-buffer points directly, using the
- *   `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH` hypothesis's own resolved buffer-space camera matrix (never a
- *   hypothesis-agnostic or logical-basis matrix) — chosen specifically so the pose solve and the
- *   observed points live in the same coordinate domain by construction. This same, frozen pose is then
- *   reused unchanged for every competing mapping hypothesis's residual computation (never refit) — see
- *   `FrameContentCorrespondenceSnapshot.kt`'s `POSE_REUSED_UNCHANGED_ACROSS_ALL_MAPPING_HYPOTHESES` flag.
+ *   [FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS] hypothesis's own resolved buffer-space camera matrix
+ *   (never a hypothesis-agnostic or logical-basis matrix) — chosen specifically so the pose solve and
+ *   the observed points live in the same coordinate domain by construction. This same, frozen pose is
+ *   then reused unchanged for every competing mapping hypothesis's residual computation (never refit) —
+ *   see `FrameContentCorrespondenceSnapshot.kt`'s `POSE_REUSED_UNCHANGED_ACROSS_ALL_MAPPING_HYPOTHESES`
+ *   flag. The word "calibrated" is deliberately never used here: the underlying K is derived from
+ *   `LENS_INFO_AVAILABLE_FOCAL_LENGTHS` + `SENSOR_INFO_PHYSICAL_SIZE` + `SENSOR_INFO_PIXEL_ARRAY_SIZE`
+ *   with an assumed geometric-centre principal point ([CameraIntrinsicsQuality.APPROXIMATE_PRINCIPAL_POINT])
+ *   — it never consumes a verified `LENS_INTRINSIC_CALIBRATION` matrix.
  */
 internal data class FrameContentPoseSolution(
     val rotation: RotationMatrix3,
     val translationMm: Vec3,
     val rodriguesRvec: Vec3,
     val estimationModel: String = FRAME_CONTENT_POSE_ESTIMATION_MODEL,
+    val referenceHypothesis: FrameContentMappingHypothesisId = FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS,
+    val residualInterpretation: String = CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION,
     val poseSolverRmsResidualPx: Double,
 )
 
-internal const val FRAME_CONTENT_POSE_ESTIMATION_MODEL: String = "PHYSICAL_CAMERA_CALIBRATED_DOMAIN"
+/** Honest label for the pose model (fix for a prior overstatement — see this file's own "Epistemic
+ * correctness fix" KDoc above): derived from Camera2 characteristics with an *approximate*, assumed
+ * geometric-centre principal point, never a verified `LENS_INTRINSIC_CALIBRATION` matrix. */
+internal const val FRAME_CONTENT_POSE_ESTIMATION_MODEL: String =
+    "CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_PINHOLE_DOMAIN"
+
+/** The one hypothesis this experiment's pose solver anchors to — see [FrameContentPoseSolution]'s KDoc
+ * for why, and `FrameContentVerdict.kt` for why this anchoring makes any residual comparison
+ * *conditional*, never an independent proof that this hypothesis is the better mapping model. */
+internal val FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS: FrameContentMappingHypothesisId =
+    FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH
+
+/**
+ * Fixed, exported label stating exactly how a cross-hypothesis residual difference must be read (task
+ * §1's epistemic-correctness fix): the pose was fit *using*
+ * [FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH]'s own camera matrix against the
+ * same correspondences every hypothesis's residual is then measured against. A lower residual for that
+ * same hypothesis is therefore expected *by construction* (the homography/pose solve can absorb part
+ * of any real intrinsics/mapping discrepancy for its own reference hypothesis) — it is conditional
+ * evidence, never an independent frame-content-basis verdict. A stronger future experiment would need
+ * either an independently-sourced pose/reference (not derived from any of the hypotheses being
+ * compared) or a multi-view/fixed-rig calibration procedure — never merely refitting each hypothesis's
+ * own pose independently and then comparing each hypothesis's own optimized residual (which would
+ * remain circular for the same reason, just symmetrically so).
+ */
+internal const val CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION: String = "CONDITIONAL_ON_PHYSICAL_ANCHORED_POSE"
 
 /** One 2D<->2D correspondence used to solve the planar homography: [objectXMm]/[objectYMm] on the
  * target's own plane, [imageUPx]/[imageVPx] the observed pixel location. */
@@ -342,7 +385,7 @@ private fun applyInverseK(
 /**
  * Solves one pose (rotation + translation from the target's local plane into the camera frame) from
  * [correspondences] via [solvePlanarHomography] followed by the standard `K^-1 H` planar-pose
- * decomposition (task §4's `PHYSICAL_CAMERA_CALIBRATED_DOMAIN` model — see [FrameContentPoseSolution]'s
+ * decomposition (task §4's [FRAME_CONTENT_POSE_ESTIMATION_MODEL] model — see [FrameContentPoseSolution]'s
  * KDoc): scale-normalize the first two homography columns through `K^-1`, cross-product the third axis,
  * Gram-Schmidt-orthogonalize (since the two DLT-derived columns are not perfectly orthonormal by
  * construction), then convert to Rodrigues form. [fxPx]/[fyPx]/[cxPx]/[cyPx] must already be expressed

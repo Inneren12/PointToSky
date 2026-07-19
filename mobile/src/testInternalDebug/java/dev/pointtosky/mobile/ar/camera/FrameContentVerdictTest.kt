@@ -2,6 +2,8 @@ package dev.pointtosky.mobile.ar.camera
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 private fun accepted(
     id: Int,
@@ -104,7 +106,8 @@ class FrameContentVerdictTest {
                 wellDistributedResiduals = wellDistributedResiduals(),
                 poseValid = true,
             )
-        assertEquals(FrameContentVerdict.PATHS_NUMERICALLY_INDISTINGUISHABLE, result.verdict)
+        assertEquals(FrameContentVerdict.CONDITIONAL_PATHS_NUMERICALLY_INDISTINGUISHABLE, result.verdict)
+        assertNull(result.lowerResidualHypothesisId)
     }
 
     @Test
@@ -120,11 +123,19 @@ class FrameContentVerdictTest {
                 poseValid = true,
                 thresholds = FrameContentVerdictThresholds(minAbsolutePixelMarginPx = 1.0, detectionNoiseMarginPx = 0.75),
             )
-        assertEquals(FrameContentVerdict.PATHS_NUMERICALLY_INDISTINGUISHABLE, result.verdict)
+        assertEquals(FrameContentVerdict.CONDITIONAL_PATHS_NUMERICALLY_INDISTINGUISHABLE, result.verdict)
     }
 
+    /**
+     * The epistemic-correctness regression test the fix task requires: a physical-anchored synthetic
+     * fixture (PHYSICAL_ACTIVE_ARRAY_MODEL_PATH has the clearly lower RMS, exactly the scenario an
+     * earlier revision reported as a semantic "PHYSICAL_PATH_BETTER" proof-like verdict) must NOT
+     * produce that claim merely because the pose was fit under the physical path. The enum no longer
+     * even contains a `PHYSICAL_PATH_BETTER`/`LOGICAL_PATH_BETTER` value — this test locks that
+     * structurally, then checks the conditional replacement's own honesty properties.
+     */
     @Test
-    fun `a clear physical-path win beyond the margin reports PHYSICAL_PATH_BETTER`() {
+    fun `a clear physical-anchored residual difference is reported as conditional, never a path-winner proof`() {
         val result =
             computeFrameContentVerdict(
                 summaries =
@@ -135,11 +146,19 @@ class FrameContentVerdictTest {
                 wellDistributedResiduals = wellDistributedResiduals(),
                 poseValid = true,
             )
-        assertEquals(FrameContentVerdict.PHYSICAL_PATH_BETTER, result.verdict)
+        assertEquals(FrameContentVerdict.CONDITIONAL_RESIDUALS_DIFFER, result.verdict)
+        // The enum's own declared values never include anything claiming a path is definitively better.
+        assertTrue(FrameContentVerdict.values().none { it.name.endsWith("_PATH_BETTER") })
+        // The lower-residual hypothesis is exported for ranking only, alongside the explicit caveat.
+        assertEquals(FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH, result.lowerResidualHypothesisId)
+        assertEquals(CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION, result.residualInterpretation)
+        assertTrue(result.reason.contains("NOT an independent frame-content-basis verdict"))
+        assertTrue(result.reason.contains(FRAME_CONTENT_STRONGER_EXPERIMENT_REQUIRED))
+        assertEquals(false, result.independentPoseReferenceAvailable)
     }
 
     @Test
-    fun `a clear logical-path win beyond the margin reports LOGICAL_PATH_BETTER`() {
+    fun `a clear logical-favoring residual difference is still only conditional, never LOGICAL_PATH_BETTER`() {
         val result =
             computeFrameContentVerdict(
                 summaries =
@@ -150,7 +169,8 @@ class FrameContentVerdictTest {
                 wellDistributedResiduals = wellDistributedResiduals(),
                 poseValid = true,
             )
-        assertEquals(FrameContentVerdict.LOGICAL_PATH_BETTER, result.verdict)
+        assertEquals(FrameContentVerdict.CONDITIONAL_RESIDUALS_DIFFER, result.verdict)
+        assertEquals(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, result.lowerResidualHypothesisId)
     }
 
     @Test

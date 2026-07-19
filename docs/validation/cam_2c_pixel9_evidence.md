@@ -790,6 +790,16 @@ EXPORT CONTENT UNCHANGED
 
 ## 11. CAM-2c frame-content correspondence experiment — a new, separate diagnostic; still no device evidence
 
+> **Corrected by §12 below, before any device evidence was collected.** A review found this section's
+> own experiment had a circularity defect: pose was fit under `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH` and
+> then that same hypothesis was scored against its own fitted pose — biasing any "path better" verdict
+> toward the hypothesis the pose was anchored to, regardless of which hypothesis is actually correct.
+> §12 removes every unconditional path-winner verdict, makes the pose-anchoring explicit and
+> inescapable in every export, and fixes several other correctness gaps found in the same review
+> (rotation-semantics honesty, "calibrated" language, orientation-ambiguous dot-grid correspondence,
+> frozen evidence metadata, and a complete JSON schema). **Device evidence collection was blocked on
+> this fix and never happened under this section's code.**
+
 **Code-only pass; no new device evidence.** Everything in §1-§10 above is matrix-construction evidence
 only — §8 says this explicitly: *"A dual-basis model match — even a perfect one under both bases — is
 matrix-construction evidence only. It is **not** frame-content proof."* This section adds the
@@ -971,6 +981,180 @@ CAM-2c FRAME-CONTENT EXPERIMENT CODE READY
 PHYSICAL CAMERA 3 IS PRIMARY DISCRIMINATING CASE
 ONE FROZEN POSE REUSED ACROSS HYPOTHESES
 PER-POINT BUFFER RESIDUAL EXPORT READY
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
+```
+
+## 12. CAM-2c frame-content correspondence experiment fix — epistemic correctness (this sprint, before any device evidence)
+
+**Code-only pass; still no device evidence — device evidence collection remains explicitly deferred
+until this fix landed.** A review of §11's experiment, conducted before any Pixel 9 run was attempted,
+found a circularity defect serious enough to invalidate any path-winner verdict the experiment could
+have produced, plus several smaller honesty gaps. This section fixes all of them. **Scope: internalDebug
+only** — the same `FrameContent*.kt` files §11 added, plus their tests and this documentation. CAM-2a
+production projection, `publicDebug`/release, the existing physical-camera-binding experiment,
+`AnalysisBuffer` intrinsics publication, and every `SensorToBufferDomainProof` variant are all untouched
+(same structural proof as §11: no file this pass touches imports `SensorToBufferDomainProof`).
+
+### 12.1 The circularity defect, and how it is fixed
+
+§11.2 solved pose once, against `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH`'s own resolved buffer-space camera
+matrix, then reused that pose "unchanged" across every hypothesis's residual computation. That reuse is
+real and still true — but §11 then let `FrameContentVerdict.kt` report `PHYSICAL_PATH_BETTER` or
+`LOGICAL_PATH_BETTER` from the resulting residuals. That is circular: a pose fit *under* one hypothesis
+will, by construction, tend to produce a lower residual for that same hypothesis, independent of which
+hypothesis actually describes the real coordinate mapping. A "physical path wins" verdict from that setup
+is not evidence the physical path is correct — it is largely evidence the pose was anchored to it.
+
+**Fix:**
+
+- `FrameContentPoseMath.kt` renames the pose model constant to
+  `CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_PINHOLE_DOMAIN` (removing the old, overclaiming
+  `_CALIBRATED_` naming — see §12.4) and exports two new, load-bearing constants on every pose solution:
+  `POSE_REFERENCE_HYPOTHESIS = PHYSICAL_ACTIVE_ARRAY_MODEL_PATH` (which hypothesis the pose was actually
+  anchored to, explicit rather than implied) and `CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION =
+  CONDITIONAL_ON_PHYSICAL_ANCHORED_POSE` (a machine-readable flag that every residual comparison across
+  hypotheses is conditional on that anchoring, never an independent measurement).
+- `FrameContentVerdict.kt`'s enum no longer has `LOGICAL_PATH_BETTER`, `PHYSICAL_PATH_BETTER`, or
+  `RECONCILED_PATH_BETTER` — those three overclaiming names cannot be emitted by any code path (locked by
+  a regression test, §12.6). The replacement set is `INSUFFICIENT_POINTS`, `POSE_FIT_INVALID`,
+  `CONDITIONAL_PATHS_NUMERICALLY_INDISTINGUISHABLE`, `CONDITIONAL_RESIDUALS_DIFFER`, and
+  `MIXED_OR_INCONCLUSIVE`. The lowest-residual hypothesis is still computed and exported
+  (`lowerResidualHypothesisId`) — ranking under the stated conditions remains useful evidence — but the
+  verdict never asserts that hypothesis is the *correct* one. Every verdict export carries
+  `residualInterpretation` and `independentPoseReferenceAvailable` (currently always `false`) alongside
+  it, so the conditional nature cannot be silently dropped downstream.
+- **What a stronger, non-circular experiment would require (documented, not implemented, in
+  `FRAME_CONTENT_STRONGER_EXPERIMENT_REQUIRED`):** either (a) a pose or reference position sourced
+  independently of every mapping hypothesis under test — e.g. a fixed, pre-surveyed rig position, an
+  external tracking system, or a target whose pose is known by physical placement rather than fit from
+  the same image points being scored — or (b) a multi-view/fixed-rig calibration that solves pose and
+  hypothesis parameters jointly across many frames with cross-validation, not independently refitting
+  each hypothesis to the same single-frame data (which merely relocates the circularity rather than
+  removing it).
+- A dedicated regression test in `FrameContentVerdictTest.kt` constructs a physical-anchored fixture with
+  a large, clean residual gap and asserts the result can never resemble a "PHYSICAL_PATH_BETTER"
+  proof-like verdict: no enum value ending in `_PATH_BETTER` exists at all, the verdict is
+  `CONDITIONAL_RESIDUALS_DIFFER`, `lowerResidualHypothesisId` is reported but `residualInterpretation`
+  and the reason text both state the conditional nature explicitly, and
+  `independentPoseReferenceAvailable` is `false`.
+
+### 12.2 Rotation-semantics correctness fix
+
+§11's exported `rotationFoldedIn = true` for both implemented hypotheses was wrong — neither hypothesis's
+math ever reads or applies `rotationDegrees` anywhere, and Pixel 9 evidence (§3/§8) shows
+`rotationDegrees = 90` while the real observed matrix class is `AXIS_ALIGNED_0` (no rotation folded in).
+`FrameContentMappingHypothesis.kt` now exports `rotationFoldedIn = false` for both `LOGICAL_CAMERAX_
+MATRIX_PATH` and `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH` (matching what the implementation has always actually
+done — this is a documentation-honesty fix, not a math change), keeps `cropRectFoldedIn = false`
+unchanged, and adds an explicit, shared `bufferRotationContract` string
+(`FRAME_CONTENT_UNROTATED_BUFFER_CONTRACT`) describing the unrotated-`ImageProxy`-buffer contract this
+experiment operates under. `whyOutputIsBufferCoordinates` no longer references
+`resolveAnalysisBufferIntrinsics`, since neither implemented hypothesis calls it (§11.3's correctness
+note already established this; the exported text simply said the wrong thing). Both facts are locked by
+a new regression test in `FrameContentMappingHypothesisTest.kt`.
+
+### 12.3 Frozen placement/distance evidence metadata
+
+§11's `targetPlacementLabel`/distance field existed in the UI but was never part of the frozen snapshot,
+so Copy/Share could silently export a stale or mismatched label relative to what was on-screen at capture
+time. `FrameContentCorrespondenceSnapshot.kt` now carries `targetPlacementLabel` and `distanceLabelMm` as
+frozen snapshot fields, threaded through from session state at build time. **Documented, chosen
+edit-after-freeze behavior:** editing placement or distance after a snapshot already exists immediately
+patches that exact snapshot's metadata in place, at the same generation and attemptId, leaving every
+other field (frame, detection, pose, hypotheses, residuals, verdict) untouched — never a second,
+re-derived snapshot, and never a live-UI value that could disagree with what Copy/Share actually exports.
+A new attempt resets both fields to their documented defaults (`CENTER`, `null`). All three behaviors are
+covered by new tests in `FrameContentCorrespondenceSessionStateTest.kt`.
+
+### 12.4 Complete JSON evidence schema
+
+§11's JSON export omitted several fields present in the text report and vice versa. `FrameContentCorrespondenceExport.kt`'s
+JSON schema version is bumped to `2` (documented changelog in-file) and now exports, exhaustively: full
+session/provenance identifiers, both characteristics snapshots, crop rect, requested resolution family,
+placement/distance metadata, the renamed approximate-pinhole-K evidence block, detection tolerances, every
+object point, every detected point, the pose (including `referenceHypothesis` and
+`crossHypothesisResidualInterpretation`), every hypothesis's full documentation/intrinsics/diagnostics and
+*every* residual point (not a summary only), and the verdict's full field set including
+`lowerResidualHypothesisId`, `residualInterpretation`, `independentPoseReferenceAvailable`, and
+`strongerExperimentRequired`. New tests in `FrameContentCorrespondenceSnapshotTest.kt` parse the JSON via
+`kotlinx.serialization.json.Json.parseToJsonElement` and assert on the parsed structure — never substring
+matching — so a future field rename or removal fails a test instead of silently degrading the evidence
+artifact.
+
+### 12.5 "Calibrated" language removed
+
+§11 called the characteristics-derived K "calibrated" in places, which overclaims: it is focal-length- and
+sensor-geometry-derived from `CameraCharacteristics`, not a measured lens calibration
+(`usedLensIntrinsicCalibration = false`, always). Every reference is renamed to "characteristics-derived
+approximate physical pinhole K" / `CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_PINHOLE_DOMAIN`, and the
+exported `FrameContentApproximatePinholeKEvidence` block now states `quality =
+APPROXIMATE_PRINCIPAL_POINT`, `usedLensIntrinsicCalibration = false`, and an explicit principal-point
+assumption string, alongside the focal-derivation inputs (focal length, sensor physical size, pixel/active
+array sizes) it was derived from. Locked by a regression test asserting the old "calibrated" wording is
+absent from every hypothesis's documentation.
+
+### 12.6 Hardened dot-grid correspondence identity
+
+§11.1 already documented its own scope limitation honestly ("assumes the whole grid is visible and not
+rotated far from upright") but did not actually detect or reject the 180°-rotation ambiguity a plain
+symmetric dot grid has no way to resolve from image content alone: a grid observed upside-down is
+indistinguishable, blob-for-blob, from the same grid right-side-up. This pass implements the preferred
+fix (an asymmetric orientation feature) rather than merely flagging the ambiguity as permanently unusable:
+`FrameContentTargetSpec` gains a `markerAreaScaleFactor` (default 2.5x), and the target now includes one
+distinctly larger marker dot. `FrameContentCornerDetector.kt` requires exactly `pointCount + 1` candidate
+blobs, identifies the single marker candidate by area ratio, resolves grid orientation from the marker's
+position relative to the four grid corners with an explicit confidence-ratio gate, and validates row
+separation, monotonic ordering, and spacing consistency before accepting a detection. Any case that does
+not cleanly resolve — wrong blob count, no single unambiguous marker, overlapping rows, inconsistent
+spacing — returns a new, explicit `FrameContentDetectionResult.OrientationAmbiguous` outcome (Option B,
+layered under Option A) rather than ever guessing. Detection is never accepted from blob count alone.
+Partial-grid support remains explicitly out of scope, as it was in §11.
+
+### 12.7 Honest refinement-status naming
+
+§11's `CornerRefinementStatus.SUBPIXEL_REFINED` implied a real subpixel refinement stage that did not
+exist — the value was actually derived from blob area alone. Renamed to `WEIGHTED_CENTROID_SUBPIXEL_
+ESTIMATE` / `COARSE_CENTROID`, describing what the code actually computes (a pixel-weighted centroid, which
+is a legitimate subpixel *estimate*, just not an iteratively refined one) rather than implying a
+refinement pass this experiment does not run.
+
+### 12.8 Camera/UI robustness
+
+`FrameContentCorrespondenceScreen.kt`'s five placement controls are wrapped in a horizontally scrollable
+row so they cannot overflow a portrait Pixel 9 layout. Copy report / Share JSON buttons are now `enabled
+= false` (not a silent no-op) when no snapshot exists yet. The pose reference hypothesis and the
+CONDITIONAL nature of the verdict are shown in a fixed, prominent header banner, alongside the verdict
+itself, so a device operator cannot miss the conditional framing while reading results live.
+Generation-scoped callback/cleanup behavior from §11 is unchanged.
+
+### 12.9 Validation (real Gradle 8.14.3/JDK 17, same sandbox provisioning as every prior CAM-2c pass)
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (596/596, 0 failures)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (371/371, publicDebug/production
+                                                             untouched)
+```
+
+No physical device or emulator was attached in this pass. **Instrumented (`androidTest`) sources compiled
+successfully but were not executed** — no emulator/device is available in this sandbox. Everything §11.6
+already listed as "not established" (detector real-world accuracy, pose-solver real-world accuracy,
+distortion never applied, real-device detectability) remains equally unestablished here; this pass adds
+epistemic correctness to the measurement machinery, not a device measurement.
+
+**Final status, this pass:**
+
+```
+CAM-2c FRAME-CONTENT MEASUREMENT CODE READY
+SINGLE-FRAME RESIDUALS EXPLICITLY CONDITIONAL ON PHYSICAL-ANCHORED POSE
+NO INDEPENDENT PATH-WINNER VERDICT
+UNROTATED IMAGEPROXY BUFFER CONTRACT EXPLICIT
+PLACEMENT / DISTANCE FROZEN AND EXPORTED
+COMPLETE JSON EVIDENCE SCHEMA READY
 INSTRUMENTED/DEVICE EXECUTION PENDING
 SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
 CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED

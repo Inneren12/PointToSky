@@ -105,6 +105,7 @@ class FrameContentCorrespondenceUiModelTest {
                     ),
                 requestedAnalysisResolutionWidthPx = 640,
                 requestedAnalysisResolutionHeightPx = 480,
+                requestedAnalysisResolutionFamily = AnalysisResolutionFamily.NEAR_4_3,
                 bufferWidthPx = 640,
                 bufferHeightPx = 480,
                 cropRectLeftPx = 0,
@@ -115,8 +116,11 @@ class FrameContentCorrespondenceUiModelTest {
                 sensorToBufferTransformMatrix = null,
                 zoomTargetRatio = 1.0f,
                 observedZoomRatio = 1.0f,
+                targetPlacementLabel = TargetPlacementLabel.TOP_LEFT,
+                distanceLabelMm = 250.0,
                 detectionResult = FrameContentDetectionResult.InsufficientOrAmbiguousGrid("no target in this fixture", 0),
                 targetSpec = DEFAULT_FRAME_CONTENT_TARGET_SPEC,
+                detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,
                 capturedAtEpochMillis = 123456L,
             )
 
@@ -126,5 +130,10 @@ class FrameContentCorrespondenceUiModelTest {
         assertNotNull(reportText.lineSequence().firstOrNull { it == "generation=7" })
         assertNotNull(json.let { if (it.contains("\"attemptId\":42")) it else null })
         assertNotNull(json.let { if (it.contains("\"generation\":7")) it else null })
+        // Placement/distance metadata must appear identically in both exports (task §3).
+        assertNotNull(reportText.lineSequence().firstOrNull { it == "  targetPlacementLabel=TOP_LEFT" })
+        assertNotNull(reportText.lineSequence().firstOrNull { it == "  distanceLabelMm=250.0" })
+        assertNotNull(json.let { if (it.contains("\"targetPlacementLabel\":\"TOP_LEFT\"")) it else null })
+        assertNotNull(json.let { if (it.contains("\"distanceLabelMm\":250.0")) it else null })
     }
 }

@@ -2,6 +2,7 @@ package dev.pointtosky.mobile.ar.camera
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -114,6 +115,54 @@ class FrameContentMappingHypothesisTest {
             assertTrue(hypothesis.documentation.inputKBasis.isNotBlank())
             assertTrue(hypothesis.documentation.distortionBasis.isNotBlank())
             assertTrue(hypothesis.documentation.whyOutputIsBufferCoordinates.isNotBlank())
+            assertTrue(hypothesis.documentation.bufferRotationContract.isNotBlank())
         }
+    }
+
+    /** Rotation-semantics correctness fix regression test (task §2): both implemented hypotheses must
+     * declare `rotationFoldedIn=false` and carry the identical, explicit unrotated-buffer-contract text
+     * — locked here so a future edit cannot silently reintroduce `rotationFoldedIn=true`. */
+    @Test
+    fun `both implemented hypotheses declare rotationFoldedIn=false and share the identical buffer rotation contract`() {
+        val hypotheses =
+            computeFrameContentMappingHypotheses(
+                physicalSnapshot = physicalCamera3Snapshot(),
+                observedCameraXMatrix = observedMatrixMatchingLogicalBasis(),
+                bufferWidthPx = bufferWidthPx,
+                bufferHeightPx = bufferHeightPx,
+            )
+        val logical = hypotheses.single { it.id == FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH }
+        val physical = hypotheses.single { it.id == FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH }
+
+        assertEquals(false, logical.documentation.rotationFoldedIn)
+        assertEquals(false, physical.documentation.rotationFoldedIn)
+        assertEquals(false, logical.documentation.cropRectFoldedIn)
+        assertEquals(false, physical.documentation.cropRectFoldedIn)
+        assertEquals(FRAME_CONTENT_UNROTATED_BUFFER_CONTRACT, logical.documentation.bufferRotationContract)
+        assertEquals(FRAME_CONTENT_UNROTATED_BUFFER_CONTRACT, physical.documentation.bufferRotationContract)
+        assertTrue(logical.documentation.bufferRotationContract.contains("unrotated"))
+        assertTrue(logical.documentation.bufferRotationContract.contains("AXIS_ALIGNED_0"))
+    }
+
+    /** Task §5's "stop calling the derived K 'calibrated'" fix — locked so the language never regresses. */
+    @Test
+    fun `neither implemented hypothesis's K basis description claims to be calibrated`() {
+        val hypotheses =
+            computeFrameContentMappingHypotheses(
+                physicalSnapshot = physicalCamera3Snapshot(),
+                observedCameraXMatrix = observedMatrixMatchingLogicalBasis(),
+                bufferWidthPx = bufferWidthPx,
+                bufferHeightPx = bufferHeightPx,
+            )
+        val logical = hypotheses.single { it.id == FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH }
+        val physical = hypotheses.single { it.id == FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH }
+        assertTrue(logical.documentation.inputKBasis.contains("CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_PINHOLE_DOMAIN"))
+        assertTrue(physical.documentation.inputKBasis.contains("CHARACTERISTICS_DERIVED_APPROXIMATE_PHYSICAL_PINHOLE_DOMAIN"))
+        assertFalse(logical.documentation.inputKBasis.contains("physical camera's own calibrated K"))
+        assertFalse(physical.documentation.inputKBasis.contains("physical camera's own calibrated K"))
+        // whyOutputIsBufferCoordinates must no longer reference the gated resolveAnalysisBufferIntrinsics
+        // production entry point, since neither implemented hypothesis ever calls it.
+        assertFalse(logical.documentation.whyOutputIsBufferCoordinates.contains("resolveAnalysisBufferIntrinsics labels"))
+        assertFalse(physical.documentation.whyOutputIsBufferCoordinates.contains("resolveAnalysisBufferIntrinsics labels"))
     }
 }

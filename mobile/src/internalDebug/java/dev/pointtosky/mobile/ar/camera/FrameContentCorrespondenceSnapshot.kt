@@ -10,8 +10,10 @@ import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
  * **What this file explicitly does not do:** it never constructs a [SensorToBufferDomainProof], never
  * calls [resolveCam2cForExplicitPhysicalCamera], never publishes `AnalysisBuffer` intrinsics, and its
  * [FrameContentCorrespondenceSnapshot.verdict] is evidence only (see [FrameContentVerdict]'s KDoc). A
- * hypothesis match here — even a strong one — is matrix-and-content-construction evidence for *this*
- * session only, never a proof this codebase's calibrated CAM-2c projection may be unblocked.
+ * residual difference here — even a large one — is matrix-and-content-construction evidence for *this*
+ * session only, **conditional on the physical-anchored pose** (see [CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION]),
+ * never a proof this codebase's calibrated CAM-2c projection may be unblocked, and never an independent
+ * verdict that one mapping hypothesis is the better real-world model.
  */
 
 /** Raw distortion coefficients captured for evidence only (task §2 "distortion model and coefficients")
@@ -27,7 +29,35 @@ internal data class FrameContentDistortionCapture(
 internal fun distortionCaptureFrom(snapshot: CameraCharacteristicsSnapshot): FrameContentDistortionCapture =
     FrameContentDistortionCapture(rawCoefficients = snapshot.lensDistortion?.map { it.toDouble() })
 
-/** One immutable correspondence snapshot (task §2's full field list). */
+/**
+ * Evidence for the characteristics-derived approximate physical pinhole K this experiment's pose solver
+ * used (task §5's "stop calling the derived K 'calibrated'" fix): every input that produced it, plus an
+ * explicit `usedLensIntrinsicCalibration=false` flag and a stated principal-point assumption, so a
+ * reader never has to infer these from field absence or from an overstated label.
+ */
+internal data class FrameContentApproximatePinholeKEvidence(
+    val sourceDescription: String,
+    val nativeBasisDescription: String,
+    val focalLengthMm: Double?,
+    val sensorWidthMm: Double?,
+    val sensorHeightMm: Double?,
+    val pixelArrayWidthPx: Int?,
+    val pixelArrayHeightPx: Int?,
+    val activeArrayWidthPx: Int?,
+    val activeArrayHeightPx: Int?,
+    val quality: String,
+    val usedLensIntrinsicCalibration: Boolean,
+    val principalPointAssumption: String,
+)
+
+private const val FRAME_CONTENT_PRINCIPAL_POINT_ASSUMPTION: String =
+    "Assumed geometric centre of the physical camera's own active array (activeArrayWidthPx/2, " +
+        "activeArrayHeightPx/2) — not a measured principal point; LENS_INTRINSIC_CALIBRATION is never " +
+        "consulted by this experiment's own K builder (resolveHypothesisIntrinsics always uses " +
+        "activeArrayIntrinsicsFromFocalLength)."
+
+/** One immutable correspondence snapshot (task §2's full field list, plus task §3's frozen
+ * targetPlacementLabel/distanceLabelMm evidence metadata). */
 internal data class FrameContentCorrespondenceSnapshot(
     val attemptId: Long,
     val generation: Long,
@@ -37,6 +67,7 @@ internal data class FrameContentCorrespondenceSnapshot(
     val selectedPhysicalCharacteristics: CameraCharacteristicsSnapshot,
     val requestedAnalysisResolutionWidthPx: Int?,
     val requestedAnalysisResolutionHeightPx: Int?,
+    val requestedAnalysisResolutionFamily: AnalysisResolutionFamily?,
     val bufferWidthPx: Int,
     val bufferHeightPx: Int,
     val cropRectLeftPx: Int?,
@@ -47,14 +78,18 @@ internal data class FrameContentCorrespondenceSnapshot(
     val sensorToBufferTransformMatrix: SensorToBufferMatrix3?,
     val zoomTargetRatio: Float?,
     val observedZoomRatio: Float?,
-    val physicalCameraKSourceDescription: String,
-    val physicalCameraKNativeBasisDescription: String,
+    val targetPlacementLabel: TargetPlacementLabel,
+    val distanceLabelMm: Double?,
+    val approximatePinholeKEvidence: FrameContentApproximatePinholeKEvidence,
     val distortion: FrameContentDistortionCapture,
     val targetSpec: FrameContentTargetSpec,
+    val detectionTolerances: FrameContentDetectionTolerances,
     val objectPoints: List<FrameContentObjectPoint>,
     val detectedPoints: List<DetectedTargetPoint>,
     val detectionOutcomeDescription: String,
     val pose: FrameContentPoseSolution?,
+    val poseReferenceHypothesis: FrameContentMappingHypothesisId,
+    val crossHypothesisResidualInterpretation: String,
     val hypotheses: List<FrameContentHypothesis>,
     val residualsByHypothesis: Map<FrameContentMappingHypothesisId, List<FrameContentPointResidual>>,
     val summariesByHypothesis: Map<FrameContentMappingHypothesisId, FrameContentResidualSummary>,
@@ -63,9 +98,9 @@ internal data class FrameContentCorrespondenceSnapshot(
 ) {
     companion object {
         /** The one hypothesis this experiment's pose solver anchors to (task §4) — see
-         * [FrameContentPoseSolution.estimationModel]'s KDoc for why. */
-        val POSE_REFERENCE_HYPOTHESIS: FrameContentMappingHypothesisId =
-            FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH
+         * [FrameContentPoseSolution.estimationModel]'s KDoc for why. Same value as
+         * [FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS]; kept as a member for call-site convenience. */
+        val POSE_REFERENCE_HYPOTHESIS: FrameContentMappingHypothesisId = FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS
     }
 }
 
@@ -89,6 +124,7 @@ internal fun buildFrameContentCorrespondenceSnapshot(
     selectedPhysicalCharacteristics: CameraCharacteristicsSnapshot,
     requestedAnalysisResolutionWidthPx: Int?,
     requestedAnalysisResolutionHeightPx: Int?,
+    requestedAnalysisResolutionFamily: AnalysisResolutionFamily?,
     bufferWidthPx: Int,
     bufferHeightPx: Int,
     cropRectLeftPx: Int?,
@@ -99,8 +135,11 @@ internal fun buildFrameContentCorrespondenceSnapshot(
     sensorToBufferTransformMatrix: SensorToBufferMatrix3?,
     zoomTargetRatio: Float?,
     observedZoomRatio: Float?,
+    targetPlacementLabel: TargetPlacementLabel,
+    distanceLabelMm: Double?,
     detectionResult: FrameContentDetectionResult,
     targetSpec: FrameContentTargetSpec,
+    detectionTolerances: FrameContentDetectionTolerances,
     capturedAtEpochMillis: Long,
     verdictThresholds: FrameContentVerdictThresholds = FrameContentVerdictThresholds(),
 ): FrameContentCorrespondenceSnapshot {
@@ -109,6 +148,7 @@ internal fun buildFrameContentCorrespondenceSnapshot(
         when (detectionResult) {
             is FrameContentDetectionResult.Detected -> detectionResult.points
             is FrameContentDetectionResult.InsufficientOrAmbiguousGrid -> emptyList()
+            is FrameContentDetectionResult.OrientationAmbiguous -> emptyList()
         }
     val detectionOutcomeDescription =
         when (detectionResult) {
@@ -116,6 +156,9 @@ internal fun buildFrameContentCorrespondenceSnapshot(
             is FrameContentDetectionResult.InsufficientOrAmbiguousGrid ->
                 "INSUFFICIENT_OR_AMBIGUOUS_GRID(rawBlobCount=${detectionResult.rawBlobCount}, " +
                     "reason=${detectionResult.reason})"
+            is FrameContentDetectionResult.OrientationAmbiguous ->
+                "ORIENTATION_AMBIGUOUS(rawBlobCount=${detectionResult.rawBlobCount}, " +
+                    "markerCandidateCount=${detectionResult.markerCandidateCount}, reason=${detectionResult.reason})"
         }
 
     val hypotheses =
@@ -185,7 +228,7 @@ internal fun buildFrameContentCorrespondenceSnapshot(
             thresholds = verdictThresholds,
         )
 
-    val physicalKDescription =
+    val approximatePinholeKSourceDescription =
         when (val result = poseReferenceHypothesis?.result) {
             is FrameContentHypothesisIntrinsicsResult.Available ->
                 "source=${result.diagnostics.focalDerivationBasis}, quality=${result.diagnostics.quality}, " +
@@ -194,10 +237,26 @@ internal fun buildFrameContentCorrespondenceSnapshot(
             is FrameContentHypothesisIntrinsicsResult.Unavailable -> "UNAVAILABLE(${result.reason})"
             null -> "UNAVAILABLE(hypothesis not computed)"
         }
-    val physicalKBasisDescription =
+    val approximatePinholeKNativeBasisDescription =
         "ACTIVE_ARRAY_LOCAL basis of the SELECTED PHYSICAL camera " +
             "(cameraId=${selectedPhysicalCharacteristics.cameraId}), principal point basis matches " +
             "CameraCalibrationDiagnostics.PRINCIPAL_POINT_BASIS_ACTIVE_ARRAY_LOCAL"
+    val availableDiagnostics = (poseReferenceHypothesis?.result as? FrameContentHypothesisIntrinsicsResult.Available)?.diagnostics
+    val approximatePinholeKEvidence =
+        FrameContentApproximatePinholeKEvidence(
+            sourceDescription = approximatePinholeKSourceDescription,
+            nativeBasisDescription = approximatePinholeKNativeBasisDescription,
+            focalLengthMm = availableDiagnostics?.focalLengthMm,
+            sensorWidthMm = availableDiagnostics?.sensorWidthMm,
+            sensorHeightMm = availableDiagnostics?.sensorHeightMm,
+            pixelArrayWidthPx = availableDiagnostics?.pixelArrayWidthPx,
+            pixelArrayHeightPx = availableDiagnostics?.pixelArrayHeightPx,
+            activeArrayWidthPx = availableDiagnostics?.activeArrayWidthPx,
+            activeArrayHeightPx = availableDiagnostics?.activeArrayHeightPx,
+            quality = availableDiagnostics?.quality?.name ?: "UNAVAILABLE",
+            usedLensIntrinsicCalibration = false,
+            principalPointAssumption = FRAME_CONTENT_PRINCIPAL_POINT_ASSUMPTION,
+        )
 
     return FrameContentCorrespondenceSnapshot(
         attemptId = attemptId,
@@ -208,6 +267,7 @@ internal fun buildFrameContentCorrespondenceSnapshot(
         selectedPhysicalCharacteristics = selectedPhysicalCharacteristics,
         requestedAnalysisResolutionWidthPx = requestedAnalysisResolutionWidthPx,
         requestedAnalysisResolutionHeightPx = requestedAnalysisResolutionHeightPx,
+        requestedAnalysisResolutionFamily = requestedAnalysisResolutionFamily,
         bufferWidthPx = bufferWidthPx,
         bufferHeightPx = bufferHeightPx,
         cropRectLeftPx = cropRectLeftPx,
@@ -218,14 +278,18 @@ internal fun buildFrameContentCorrespondenceSnapshot(
         sensorToBufferTransformMatrix = sensorToBufferTransformMatrix,
         zoomTargetRatio = zoomTargetRatio,
         observedZoomRatio = observedZoomRatio,
-        physicalCameraKSourceDescription = physicalKDescription,
-        physicalCameraKNativeBasisDescription = physicalKBasisDescription,
+        targetPlacementLabel = targetPlacementLabel,
+        distanceLabelMm = distanceLabelMm,
+        approximatePinholeKEvidence = approximatePinholeKEvidence,
         distortion = distortionCaptureFrom(selectedPhysicalCharacteristics),
         targetSpec = targetSpec,
+        detectionTolerances = detectionTolerances,
         objectPoints = objectPoints,
         detectedPoints = detectedPoints,
         detectionOutcomeDescription = detectionOutcomeDescription,
         pose = pose,
+        poseReferenceHypothesis = FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS,
+        crossHypothesisResidualInterpretation = CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION,
         hypotheses = hypotheses,
         residualsByHypothesis = residualsByHypothesis,
         summariesByHypothesis = summariesByHypothesis,

@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /** State-machine tests (task §8): freeze/generation atomicity, late-callback rejection, and clean
  * new-attempt resets — mirroring [ExperimentSessionStateTest]'s own conventions for the sibling
@@ -127,5 +128,50 @@ class FrameContentCorrespondenceSessionStateTest {
 
         val ignored = updated.reduceTargetPlacementLabel(5L, TargetPlacementLabel.BOTTOM_RIGHT)
         assertSame(updated, ignored)
+    }
+
+    /** Task §3's chosen, documented behavior: editing placement/distance after a snapshot already
+     * exists immediately patches that exact snapshot's metadata (same generation, same frame/
+     * detection/pose/hypotheses/residuals) — never a stale live-UI value that would export
+     * differently via Copy/Share. */
+    @Test
+    fun `editing placement or distance after a snapshot exists patches that snapshot immediately at the same generation`() {
+        var state = initialFrameContentExperimentSessionState(attemptId = 7L, physicalCameraId = "3")
+        state = state.reduceBindingResolved(7L, dualBinding(), 1.0f, 1.0f, 0L)
+        state = state.reduceFrame(7L, frame(), emptyDetection(), 100L)
+        val snapshotBefore = assertNotNull(state.latestSnapshot)
+        assertEquals(TargetPlacementLabel.CENTER, snapshotBefore.targetPlacementLabel)
+        assertNull(snapshotBefore.distanceLabelMm)
+
+        state = state.reduceTargetPlacementLabel(7L, TargetPlacementLabel.BOTTOM_RIGHT)
+        state = state.reduceDistanceLabel(7L, 425.0)
+
+        val snapshotAfter = assertNotNull(state.latestSnapshot)
+        assertEquals(TargetPlacementLabel.BOTTOM_RIGHT, snapshotAfter.targetPlacementLabel)
+        assertEquals(425.0, snapshotAfter.distanceLabelMm)
+        // Same generation — this is a metadata patch, not a new analyzed frame.
+        assertEquals(snapshotBefore.generation, snapshotAfter.generation)
+        assertEquals(snapshotBefore.attemptId, snapshotAfter.attemptId)
+        // Every other field (hypotheses, pose, residuals, verdict) is untouched by the metadata edit.
+        assertEquals(snapshotBefore.hypotheses, snapshotAfter.hypotheses)
+        assertEquals(snapshotBefore.verdict, snapshotAfter.verdict)
+        // Copy report and Share JSON exports reflect the edit immediately (never a stale label).
+        assertTrue(buildFrameContentCorrespondenceReportText(snapshotAfter).contains("BOTTOM_RIGHT"))
+        assertTrue(buildFrameContentCorrespondenceJson(snapshotAfter).contains("\"targetPlacementLabel\":\"BOTTOM_RIGHT\""))
+    }
+
+    @Test
+    fun `editing placement before any snapshot exists never fabricates one`() {
+        val state = initialFrameContentExperimentSessionState(attemptId = 8L, physicalCameraId = "3")
+        val updated = state.reduceTargetPlacementLabel(8L, TargetPlacementLabel.TOP_RIGHT)
+        assertNull(updated.latestSnapshot)
+        assertEquals(TargetPlacementLabel.TOP_RIGHT, updated.targetPlacementLabel)
+    }
+
+    @Test
+    fun `a new attempt resets placement and distance to documented defaults`() {
+        val fresh = initialFrameContentExperimentSessionState(attemptId = 9L, physicalCameraId = "3")
+        assertEquals(TargetPlacementLabel.CENTER, fresh.targetPlacementLabel)
+        assertNull(fresh.distanceLabelMm)
     }
 }

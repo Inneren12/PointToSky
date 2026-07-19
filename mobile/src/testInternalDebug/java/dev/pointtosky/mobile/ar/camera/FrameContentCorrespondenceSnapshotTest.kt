@@ -1,7 +1,15 @@
 package dev.pointtosky.mobile.ar.camera
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -65,7 +73,7 @@ class FrameContentCorrespondenceSnapshotTest {
                     bufferXPx = projection.xPx,
                     bufferYPx = projection.yPx,
                     confidence = 1.0,
-                    refinementStatus = CornerRefinementStatus.SUBPIXEL_REFINED,
+                    refinementStatus = CornerRefinementStatus.WEIGHTED_CENTROID_SUBPIXEL_ESTIMATE,
                     region = classifyPointRegion(projection.xPx, projection.yPx, bufferWidthPx, bufferHeightPx),
                 )
             }
@@ -79,6 +87,7 @@ class FrameContentCorrespondenceSnapshotTest {
             selectedPhysicalCharacteristics = physicalSnapshot,
             requestedAnalysisResolutionWidthPx = bufferWidthPx,
             requestedAnalysisResolutionHeightPx = bufferHeightPx,
+            requestedAnalysisResolutionFamily = AnalysisResolutionFamily.NEAR_4_3,
             bufferWidthPx = bufferWidthPx,
             bufferHeightPx = bufferHeightPx,
             cropRectLeftPx = 0,
@@ -89,8 +98,11 @@ class FrameContentCorrespondenceSnapshotTest {
             sensorToBufferTransformMatrix = matrix,
             zoomTargetRatio = 1.0f,
             observedZoomRatio = 1.0f,
+            targetPlacementLabel = TargetPlacementLabel.CENTER,
+            distanceLabelMm = 300.0,
             detectionResult = FrameContentDetectionResult.Detected(detectedPoints),
             targetSpec = DEFAULT_FRAME_CONTENT_TARGET_SPEC,
+            detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,
             capturedAtEpochMillis = 0L,
         )
     }
@@ -144,5 +156,93 @@ class FrameContentCorrespondenceSnapshotTest {
         // is no code path in buildFrameContentCorrespondenceSnapshot that reads any other attempt's data.
         assertEquals(snapshot.bufferWidthPx, bufferWidthPx)
         assertEquals(snapshot.bufferHeightPx, bufferHeightPx)
+    }
+
+    @Test
+    fun `snapshot carries the exact targetPlacementLabel and distanceLabelMm it was built with`() {
+        val snapshot = buildSyntheticSnapshot()
+        assertEquals(TargetPlacementLabel.CENTER, snapshot.targetPlacementLabel)
+        assertEquals(300.0, snapshot.distanceLabelMm)
+    }
+
+    @Test
+    fun `no path is ever called calibrated - the K evidence is explicitly approximate`() {
+        val snapshot = buildSyntheticSnapshot()
+        assertFalse(snapshot.approximatePinholeKEvidence.usedLensIntrinsicCalibration)
+        assertEquals("APPROXIMATE_PRINCIPAL_POINT", snapshot.approximatePinholeKEvidence.quality)
+        assertEquals(FRAME_CONTENT_POSE_ESTIMATION_MODEL, snapshot.pose!!.estimationModel)
+        assertTrue(FRAME_CONTENT_POSE_ESTIMATION_MODEL.startsWith("CHARACTERISTICS_DERIVED_APPROXIMATE"))
+    }
+
+    @Test
+    fun `JSON export is structurally parseable and contains every task-required top-level section`() {
+        val snapshot = buildSyntheticSnapshot()
+        val json = Json.parseToJsonElement(buildFrameContentCorrespondenceJson(snapshot)).jsonObject
+
+        assertEquals(FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION.toLong(), json.getValue("schemaVersion").jsonPrimitive.long)
+        assertEquals(1L, json.getValue("attemptId").jsonPrimitive.long)
+        assertEquals("3", json.getValue("requestedPhysicalCameraId").jsonPrimitive.content)
+        assertEquals("CENTER", json.getValue("targetPlacementLabel").jsonPrimitive.content)
+
+        val provenanceJson = json.getValue("provenance").jsonObject
+        assertEquals("3", provenanceJson.getValue("physicalCameraId").jsonPrimitive.content)
+
+        val selectedPhysical = json.getValue("selectedPhysicalCharacteristics").jsonObject
+        assertEquals("3", selectedPhysical.getValue("cameraId").jsonPrimitive.content)
+        assertEquals(JsonNull, json.getValue("openedLogicalCharacteristics"))
+
+        val kEvidence = json.getValue("approximatePinholeKEvidence").jsonObject
+        assertEquals(false, kEvidence.getValue("usedLensIntrinsicCalibration").jsonPrimitive.boolean)
+
+        val targetJson = json.getValue("target").jsonObject
+        assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.cornerRows.toLong(), targetJson.getValue("cornerRows").jsonPrimitive.long)
+        assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.cornerCols.toLong(), targetJson.getValue("cornerCols").jsonPrimitive.long)
+
+        val detectionTolerancesJson = json.getValue("detectionTolerances").jsonObject
+        assertTrue(detectionTolerancesJson.containsKey("markerAreaRatioThreshold"))
+
+        val objectPointsJson = json.getValue("objectPoints").jsonArray
+        assertEquals(snapshot.objectPoints.size, objectPointsJson.size)
+
+        val detectedPointsJson = json.getValue("detectedPoints").jsonArray
+        assertEquals(snapshot.detectedPoints.size, detectedPointsJson.size)
+        val firstDetected = detectedPointsJson.first().jsonObject
+        assertTrue(firstDetected.containsKey("refinementStatus"))
+        assertTrue(firstDetected.containsKey("region"))
+
+        val poseJson = json.getValue("pose").jsonObject
+        assertTrue(poseJson.containsKey("rvec"))
+        assertTrue(poseJson.containsKey("tvecMm"))
+        assertEquals(true, poseJson.getValue("poseReusedUnchangedAcrossAllMappingHypotheses").jsonPrimitive.boolean)
+
+        val hypothesesJson = json.getValue("hypotheses").jsonArray
+        assertEquals(3, hypothesesJson.size)
+        val physicalHypothesisJson =
+            hypothesesJson.first { it.jsonObject.getValue("id").jsonPrimitive.content == "PHYSICAL_ACTIVE_ARRAY_MODEL_PATH" }.jsonObject
+        assertEquals(false, physicalHypothesisJson.getValue("rotationFoldedIn").jsonPrimitive.boolean)
+        assertTrue(physicalHypothesisJson.containsKey("bufferRotationContract"))
+        assertTrue(physicalHypothesisJson.containsKey("transformsAppliedInOrder"))
+        assertTrue(physicalHypothesisJson.containsKey("intrinsics"))
+        assertTrue(physicalHypothesisJson.containsKey("diagnostics"))
+        assertTrue(physicalHypothesisJson.containsKey("residuals"))
+        val residualsJson = physicalHypothesisJson.getValue("residuals").jsonArray
+        assertTrue(residualsJson.isNotEmpty())
+        assertTrue(residualsJson.first().jsonObject.containsKey("status"))
+
+        val reconciledHypothesisJson =
+            hypothesesJson.first { it.jsonObject.getValue("id").jsonPrimitive.content == "RECONCILED_PHYSICAL_TO_LOGICAL_PATH" }.jsonObject
+        assertEquals(false, reconciledHypothesisJson.getValue("resultAvailable").jsonPrimitive.boolean)
+        assertTrue(reconciledHypothesisJson.getValue("unavailableReason").jsonPrimitive.content.startsWith("NOT_IMPLEMENTED"))
+
+        val verdictJson = json.getValue("verdict").jsonObject
+        assertTrue(verdictJson.containsKey("verdict"))
+        assertEquals(false, verdictJson.getValue("sensorToBufferDomainProofConstructed").jsonPrimitive.boolean)
+        assertEquals(false, verdictJson.getValue("analysisBufferIntrinsicsPublished").jsonPrimitive.boolean)
+        assertEquals(false, verdictJson.getValue("independentPoseReferenceAvailable").jsonPrimitive.boolean)
+        assertTrue(verdictJson.containsKey("thresholds"))
+
+        // Top-level convenience duplicates of the same safety flags.
+        assertEquals(false, json.getValue("sensorToBufferDomainProofConstructed").jsonPrimitive.boolean)
+        assertEquals(false, json.getValue("analysisBufferIntrinsicsPublished").jsonPrimitive.boolean)
     }
 }

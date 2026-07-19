@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -148,8 +149,11 @@ internal const val TAG_SHARE_JSON = "frame_content_experiment_share_json"
 internal const val TAG_REPORT_SCROLL = "frame_content_experiment_report_scroll"
 internal const val TAG_REPORT = "frame_content_experiment_report"
 internal const val TAG_PLACEMENT_PREFIX = "frame_content_experiment_placement_"
+internal const val TAG_PLACEMENT_ROW = "frame_content_experiment_placement_row"
 internal const val TAG_DISTANCE_INPUT = "frame_content_experiment_distance_input"
 internal const val TAG_LIVE_SUMMARY = "frame_content_experiment_live_summary"
+internal const val TAG_POSE_ANCHOR_BANNER = "frame_content_experiment_pose_anchor_banner"
+internal const val TAG_VERDICT_BANNER = "frame_content_experiment_verdict_banner"
 
 @Composable
 private fun CandidatePicker(
@@ -281,15 +285,38 @@ private fun FrameContentExperimentLiveOverlay(
                 color = Color.White,
                 modifier = Modifier.testTag(TAG_LIVE_SUMMARY),
             )
+            // Task §8: pose anchor and the conditional verdict must be prominent, not buried below the
+            // scrollable report — this is the one place a device operator must never miss the
+            // "not an independent path-winner" caveat.
+            Text(
+                "poseReferenceHypothesis=${snapshot?.poseReferenceHypothesis ?: FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS} " +
+                    "(MEASUREMENT-ONLY — residuals are CONDITIONAL_ON_PHYSICAL_ANCHORED_POSE, never an " +
+                    "independent path-winner verdict)",
+                color = Color.Cyan,
+                modifier = Modifier.testTag(TAG_POSE_ANCHOR_BANNER),
+            )
             if (snapshot != null) {
                 Text(
                     snapshot.summariesByHypothesis.entries.joinToString(" | ") { (id, summary) -> "$id rms=${summary.rmsPx}" },
                     color = Color.White,
                 )
-                Text("verdict=${snapshot.verdict.verdict}", color = Color.White)
+                Text(
+                    "verdict=${snapshot.verdict.verdict}",
+                    color = Color.Yellow,
+                    modifier = Modifier.testTag(TAG_VERDICT_BANNER),
+                )
             }
 
-            Row {
+            // Task §8: five placement controls must never overflow a portrait Pixel 9 screen — a
+            // horizontally scrollable row guarantees no clipping regardless of screen width/font scale.
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .testTag(TAG_PLACEMENT_ROW),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 TargetPlacementLabel.values().forEach { label ->
                     Button(
                         onClick = { onUpdateSession(state.attemptId) { it.reduceTargetPlacementLabel(state.attemptId, label) } },
@@ -312,6 +339,7 @@ private fun FrameContentExperimentLiveOverlay(
                 Button(onClick = { frozenState = if (frozenState == null) displayedState else null }, modifier = Modifier.testTag(TAG_FREEZE)) {
                     Text(if (frozenState == null) "Freeze" else "Resume live")
                 }
+                // Task §8: disabled (not a silent no-op) whenever there is no snapshot to export yet.
                 Button(
                     onClick = {
                         val snap = displayedState.latestSnapshot
@@ -319,6 +347,7 @@ private fun FrameContentExperimentLiveOverlay(
                             copyCamDiagnosticTextToClipboard(context, "CAM-2c frame content", buildFrameContentCorrespondenceReportText(snap))
                         }
                     },
+                    enabled = displayedState.latestSnapshot != null,
                     modifier = Modifier.testTag(TAG_COPY),
                 ) { Text("Copy report") }
                 Button(
@@ -328,6 +357,7 @@ private fun FrameContentExperimentLiveOverlay(
                             shareCamDiagnosticText(context, "CAM-2c frame content JSON", buildFrameContentCorrespondenceJson(snap))
                         }
                     },
+                    enabled = displayedState.latestSnapshot != null,
                     modifier = Modifier.testTag(TAG_SHARE_JSON),
                 ) { Text("Share JSON") }
             }
