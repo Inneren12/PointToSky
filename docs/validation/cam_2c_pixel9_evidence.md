@@ -1291,6 +1291,12 @@ file family uses. Every device report already exports the full target spec used 
 work); this generator is the corresponding physical artifact, so the printed target behind any future
 device run is always reproducible from code, never an ad hoc hand-drawn substitute.
 
+> **Superseded by §14 below:** `shareCamDiagnosticText` always builds `type = "text/plain"`/`EXTRA_TEXT`
+> — the "Share target SVG" button described in this paragraph never actually created or attached any
+> file, contradicting this same section's own "printing this exact file"/reproducibility framing. §14.1
+> replaces the button's wiring with a dedicated `image/svg+xml` file share. `buildFrameContentTargetSvg`
+> itself, and everything this paragraph says about its geometry, is unaffected.
+
 ### 13.4 Validation (real Gradle 8.14.3/JDK 17, same sandbox provisioning as every prior CAM-2c pass)
 
 ```
@@ -1327,6 +1333,234 @@ SINGLE-FRAME RESIDUALS CONDITIONAL ON PHYSICAL-ANCHORED POSE
 FREEZE PINS COMPLETE EVIDENCE SNAPSHOT
 ORIENTATION DECISION FULLY AUDITABLE
 PRINTABLE TARGET GEOMETRY REPRODUCIBLE
+NO INDEPENDENT PATH-WINNER VERDICT
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
+```
+
+**Superseded by §14 below** on the two points noted inline in §13.3 above (SVG text-only sharing, marker/
+dot overlap not validated) — every other line of this status block still stands unchanged.
+
+## 14. Printable-target workflow blockers, round 3: real SVG file sharing + printed-circle overlap rejection
+
+**Trigger:** two further P1 issues found in §13's own output, before any Pixel 9 device evidence was
+collected under its code.
+
+### 14.1 "Share target SVG" never shared a real file
+
+`CandidatePicker` (§13.3) called `shareCamDiagnosticText(context, "CAM-2c frame-content target SVG",
+buildFrameContentTargetSvg(DEFAULT_FRAME_CONTENT_TARGET_SPEC))`. `shareCamDiagnosticText`
+(`CamDiagnosticActions.kt`) unconditionally constructs `ACTION_SEND` with `type = "text/plain"` and
+`EXTRA_TEXT` — it has no file-writing or `FileProvider` code path at all. The result: no `.svg` file was
+ever created or attached; a receiving app was offered a plain-text blob it could paste somewhere, never
+something it could open as an SVG, preview as an image, or print at true millimetre scale — directly
+contradicting the UI's own "Share target SVG" label and §13.3's "printing this exact file"/"print-ready
+SVG" framing.
+
+**Fix — a dedicated `image/svg+xml` file-sharing path, `FrameContentTargetSvgSharing.kt`
+(`internalDebug`-only):**
+
+- `writeFrameContentTargetSvgToCache(context, spec)` writes `buildFrameContentTargetSvg(spec)`'s *exact*
+  UTF-8 bytes (`.toByteArray(Charsets.UTF_8)`, explicit charset, never platform-default) to
+  `<cacheDir>/cam2c_target/cam_2c_frame_content_target.svg` — a stable, descriptive filename; every call
+  overwrites the same file with the same deterministic bytes for the same `spec`, never a randomized or
+  timestamped name.
+- `buildFrameContentTargetSvgShareIntent(context, spec): Intent` — pure `Intent` construction (mirrors
+  `buildCamDiagnosticShareIntent`'s own testability rationale: never launches anything itself, never
+  wraps a chooser). Writing the cache file is unavoidable here (there is no `Uri` without the underlying
+  file existing), but nothing beyond that file write is a side effect the caller cannot predict. Builds an
+  explicit `ACTION_SEND` with:
+  - `type = "image/svg+xml"`
+  - `Intent.EXTRA_STREAM` = a `FileProvider`-issued content `Uri` for the written file — never a bare
+    `file://` `Uri`, which throws `FileUriExposedException` on API 24+ and which no other app's process
+    could read from directly regardless
+  - `Intent.FLAG_GRANT_READ_URI_PERMISSION`
+  - a `ClipData` (`ClipData.newUri`) wrapping the *same* `Uri` — some receiving apps only honour the
+    temporary read grant via `ClipData`, not `EXTRA_STREAM` alone
+- `shareFrameContentTargetSvg(context, spec)` wraps `buildFrameContentTargetSvgShareIntent`'s result in
+  `Intent.createChooser` and calls `context.startActivity` — the one place in this file that actually
+  launches anything, matching `shareCamDiagnosticText`'s own chooser-at-the-boundary convention (including
+  the same `FLAG_ACTIVITY_NEW_TASK`-for-non-`Activity`-context defensive check).
+
+**FileProvider:** the existing `${applicationId}.logs` provider (`mobile/src/main/AndroidManifest.xml`,
+`filepaths_logs.xml`) is scoped only to a `files-path name="crash_logs" path="crash/"` — it has **no**
+`cache-path` entry at all, so it cannot serve a cache-backed file; reusing it was not an option. A new,
+narrowly-scoped provider was added to `mobile/src/internalDebug/AndroidManifest.xml` instead:
+`android:authorities="${applicationId}.cam2c.target"`, `android:exported="false"`,
+`android:grantUriPermissions="true"`, pointing at a new `res/xml/filepaths_cam2c_target.xml` whose only
+entry is `<cache-path name="cam2c_target" path="cam2c_target/" />` — scoped to just the one subdirectory
+the SVG file lives in, never the whole cache directory. This provider is declared only in the
+`internalDebug` manifest source set, so it is never merged into `publicDebug`/`internalRelease`/
+`publicRelease` (same convention as both existing `internalDebug`-only `<activity>` entries in that file).
+No external-storage permission is requested anywhere in this fix — the file never leaves the app's own
+cache directory except through the `FileProvider`'s temporary read grant.
+
+A real, reproducible manifest-merge defect surfaced while wiring this up, not a code-review nit: AGP's
+manifest merger keys `<provider>` elements by `android:name` alone (never by `android:authorities`), so a
+second bare `<provider android:name="androidx.core.content.FileProvider" ...>` entry collided with the
+existing `.logs` provider (`Attribute provider#androidx.core.content.FileProvider@authorities ... is also
+present at ...`), even though every other attribute differs. Fixed with the standard workaround for
+declaring more than one `FileProvider` in the same app: a new, behavior-free
+`FrameContentTargetSvgFileProvider : FileProvider()` subclass, so the manifest's `android:name` differs
+between the two `<provider>` entries. `android:authorities`/`grantUriPermissions`/`exported` are otherwise
+unchanged from the description above.
+
+`CandidatePicker`'s "Share target SVG" button now calls `shareFrameContentTargetSvg(context,
+DEFAULT_FRAME_CONTENT_TARGET_SPEC)` directly; the label is unchanged because it is now factually accurate
+— tapping it does share a real `.svg` file.
+
+**New tests, `FrameContentTargetSvgSharingTest.kt` (`androidTestInternalDebug`)** — real `Uri`/
+`FileProvider`/`PackageManager` behavior requires a real Android runtime (this project has no Robolectric,
+matching every other `androidTest`-only file in this codebase), so every one of these lives in
+`androidTest`, mirroring `CamDiagnosticActionsTest`'s own precedent:
+
+- the generated file exists in cache after `buildFrameContentTargetSvgShareIntent`;
+- the filename is exactly `cam_2c_frame_content_target.svg` (ends in `.svg`);
+- the written bytes are exactly `buildFrameContentTargetSvg(spec).toByteArray(Charsets.UTF_8)`
+  (`contentEquals`, byte-for-byte);
+- the built `Intent`'s `action` is `ACTION_SEND`;
+- its `type` is `"image/svg+xml"`;
+- `EXTRA_STREAM` is a `content://` `Uri` whose authority is `${applicationId}.cam2c.target`;
+- `FLAG_GRANT_READ_URI_PERMISSION` is set on the built `Intent`'s flags;
+- the attached `ClipData` carries exactly one item, and that item's `Uri` equals `EXTRA_STREAM`'s;
+- `PackageManager.resolveContentProvider` resolves the authority, and `ContentResolver.openInputStream`
+  on the `Uri` returns the exact same bytes as the file on disk — the provider is genuinely readable, not
+  merely declared;
+- the resolved `ProviderInfo.exported` is `false` and `.grantUriPermissions` is `true`;
+- `PackageManager.getPackageInfo(..., GET_PERMISSIONS).requestedPermissions` contains neither
+  `WRITE_EXTERNAL_STORAGE` nor `READ_EXTERNAL_STORAGE`.
+
+These compiled (`:mobile:compileInternalDebugAndroidTestKotlin`) in this pass but were **not executed** —
+no emulator/device is attached in this sandbox (same limitation recorded for every `androidTest` file in
+every prior CAM-2c pass). This document does not claim instrumented execution, a real chooser having been
+opened, or a real SVG file having been opened or printed by an external application — none of those
+actions occurred in this environment.
+
+### 14.2 Overlapping target circles were never rejected
+
+`FrameContentTargetSpec.init` (§13.3 and earlier) validated only that the marker centre is non-zero and
+strictly closer to `R0C0` than to every other grid corner. It never checked that the *printed marker
+circle* is spatially separate from the *printed `R0C0` dot circle* — a marker centre can be strictly
+nearer `R0C0` than every other corner (satisfying every check that existed) while still sitting close
+enough to `R0C0` that the two printed circles overlap. `detectFrameContentTargetCorners` requires exactly
+`pointCount + 1` separate connected components; an overlapping marker/dot merges into one blob during
+flood fill, silently changing the total blob count and making the resulting printed target intrinsically
+undetectable — a configuration the old constructor happily accepted as valid.
+
+**Fix — a physical non-overlap invariant, based on the real printed radii, added to
+`FrameContentTargetSpec.init`:**
+
+- for every regular object point: `centerDistanceMm > markerRadiusMm + regularDotRadiusMm +
+  minimumBlobClearanceMm` (computed from the same row/col formula `frameContentTargetObjectPoints` uses,
+  inlined in `init` rather than calling that function with a not-yet-fully-constructed `this`);
+- regular dots clear each other by the same margin: `dotSpacingMm > regularDotDiameterMm +
+  minimumBlobClearanceMm` (the closest any two regular dots ever get is one full `dotSpacingMm` apart,
+  along a row or column, so this single inequality covers every dot-to-dot pair).
+
+`minimumBlobClearanceMm` is a new field on `FrameContentTargetSpec`, defaulting to a new named constant
+`FRAME_CONTENT_MINIMUM_BLOB_CLEARANCE_MM = 3.0` (mm) — a real, positive, documented margin, never merely
+`>=` the sum of the two radii (printed ink spread, motion blur, and detector noise can all turn two
+idealized-tangent circles into one merged blob in a real photograph). Both new `require`s use a strict
+`>`, matching every other geometric invariant already in this class (never `>=`): a clearance exactly
+equal to `minimumBlobClearanceMm` is rejected, only a clearance strictly greater than it is accepted.
+
+The default spec was re-verified against this invariant: the marker-to-`R0C0` distance (`≈21.21mm`) clears
+the required threshold (`markerRadiusMm≈6.32 + regularDotRadiusMm=4.0 + minimumBlobClearanceMm=3.0 ≈
+13.32mm`) by a wide margin, and `dotSpacingMm=25.0` clears `regularDotDiameterMm=8.0 +
+minimumBlobClearanceMm=3.0 = 11.0` comfortably — the default target needed no geometry changes.
+
+`minimumBlobClearanceMm` is exported in both the text report (`TARGET` section's `printableGeometry`
+line) and the JSON (`target.minimumBlobClearanceMm`; schema bumped `3` → `4`, §12.4/§13.2's schema-history
+convention continued) — a physical target reproduced from a report can never silently drift into a
+physically-overlapping, undetectable configuration. `buildFrameContentTargetSvg`'s own output is
+unaffected by this fix beyond an added `minimumBlobClearanceMm=` field in its metadata comment — its
+circle geometry already came directly from the (now more strictly validated) `spec`, so "SVG output
+reflects the validated geometry exactly" required no rendering changes.
+
+**New tests, `FrameContentTargetTest.kt` (`testInternalDebug`, plain JVM):**
+
+- the default target passes every physical separation invariant (marker-to-every-dot and dot-to-dot
+  alike);
+- a marker centre different from `(0, 0)` (so not the pre-existing "coincides with R0C0" case) but still
+  overlapping `R0C0`'s printed circle is rejected;
+- a marker exactly tangent to `R0C0`'s printed circle (zero clearance) is rejected;
+- a marker clearance just below `minimumBlobClearanceMm` is rejected;
+- a marker clearance exactly at the `minimumBlobClearanceMm` boundary is rejected, and a clearance
+  strictly above it is accepted — documenting the strict-`>` rule explicitly, in one test;
+- a `regularDotDiameterMm` too large for `dotSpacingMm` is rejected (marker offset pushed far out along
+  the same diagonal so only the dot-to-dot invariant, not the marker-to-dot one, is exercised);
+- a custom, non-default valid `FrameContentTargetSpec` still passes construction, renders via a local
+  synthetic-render helper (the same flat-luma filled-circle convention `FrameContentCornerDetectorTest`
+  uses), and is correctly detected by `detectFrameContentTargetCorners` — proving the new invariant does
+  not silently over-constrain valid custom targets;
+- every circle pair parsed out of `buildFrameContentTargetSvg(DEFAULT_FRAME_CONTENT_TARGET_SPEC)`'s own
+  `<circle cx cy r>` elements is separated (`centreDistance - r1 - r2`) by at least the spec's own exported
+  `minimumBlobClearanceMm` — checked against the rendered SVG text itself, not just the underlying spec
+  math.
+
+`FrameContentCorrespondenceSnapshotTest.kt`'s existing JSON-schema structural test gained one assertion:
+`target.minimumBlobClearanceMm` in the exported JSON equals `DEFAULT_FRAME_CONTENT_TARGET_SPEC.
+minimumBlobClearanceMm`.
+
+### 14.3 Scope
+
+`internalDebug`-only: `FrameContentTarget.kt`, `FrameContentTargetSvg.kt`,
+`FrameContentCorrespondenceExport.kt`, `FrameContentCorrespondenceScreen.kt`, one new file
+`FrameContentTargetSvgSharing.kt`, one new manifest `<provider>` entry, one new
+`res/xml/filepaths_cam2c_target.xml`, plus their tests (`FrameContentTargetTest.kt`,
+`FrameContentCorrespondenceSnapshotTest.kt`, new `FrameContentTargetSvgSharingTest.kt`) and this
+documentation. CAM-2a production projection, `publicDebug`/release, the existing
+physical-camera-binding experiment, `AnalysisBuffer` intrinsics publication, and every
+`SensorToBufferDomainProof` variant remain untouched — verified by scope: no file outside the list above
+was modified, and the new `<provider>` is declared only in `mobile/src/internalDebug/AndroidManifest.xml`.
+
+### 14.4 Validation (real Gradle 8.14.3/JDK 17)
+
+This sandbox started with neither an Android SDK nor a JDK 17 toolchain provisioned (a fresh environment,
+not a continuation of any prior pass's sandbox) — both were provisioned locally for this pass, matching
+every prior CAM-2c pass's own recorded deviation: an Android SDK (`platform-tools`,
+`platforms;android-35`, `build-tools;35.0.0`, via `sdkmanager` against the reachable `dl.google.com`
+through this environment's egress proxy) and `openjdk-17-jdk-headless` (via `apt`); the pinned Gradle
+8.11.1 distribution (`gradle/wrapper/gradle-wrapper.properties`) was again unreachable, so the
+preinstalled Gradle 8.14.3 binary was used in its place, as before. With those in place, every gate below
+is a real, executed Gradle result:
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (617/617, 0 failures/errors — 15
+                                                             tests in FrameContentTargetTest (8 new: the
+                                                             physical non-overlap invariant suite), 1 new
+                                                             assertion in
+                                                             FrameContentCorrespondenceSnapshotTest)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED (new
+                                                             FrameContentTargetSvgSharingTest.kt, 10
+                                                             tests, compiled)
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors, 30 warnings — 147
+                                                             errors/23 warnings pre-filtered by the
+                                                             existing lint-baseline.xml; none
+                                                             attributable to this pass)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (371/371, publicDebug/production
+                                                             untouched — proves the new internalDebug-only
+                                                             FileProvider/manifest changes are not merged
+                                                             into the public flavor)
+```
+
+No physical device or emulator was attached in this pass (same unresolved limitation every prior CAM-2c
+pass has recorded): `FrameContentTargetSvgSharingTest` compiled but was not executed; nothing in this
+section claims instrumented execution, successful external SVG opening/printing, or Pixel 9 device
+validation.
+
+**Final status, this pass:**
+
+```
+CAM-2c FRAME-CONTENT MEASUREMENT CODE READY
+FREEZE PINS COMPLETE EVIDENCE SNAPSHOT
+ORIENTATION DECISION FULLY AUDITABLE
+PRINTABLE TARGET GEOMETRY REPRODUCIBLE
+TARGET CIRCLES PHYSICALLY SEPARATED BY VALIDATED CLEARANCE
+TARGET SVG SHARED AS A REAL image/svg+xml FILE
+SINGLE-FRAME RESIDUALS CONDITIONAL ON PHYSICAL-ANCHORED POSE
 NO INDEPENDENT PATH-WINNER VERDICT
 INSTRUMENTED/DEVICE EXECUTION PENDING
 SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED

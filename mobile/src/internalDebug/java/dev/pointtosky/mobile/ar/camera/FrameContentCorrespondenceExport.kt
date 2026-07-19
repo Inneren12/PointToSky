@@ -27,13 +27,17 @@ import kotlinx.serialization.json.put
  *   with an explicit unrotated-buffer-contract statement, frozen targetPlacementLabel/distanceLabelMm,
  *   "characteristics-derived approximate physical pinhole K" wording (never "calibrated"), and a JSON
  *   schema that is a complete, self-contained evidence artifact.
- * - `3` (this revision): the orientation decision is fully auditable — `orientationEvidence`/
- *   `gridGeometryEvidence` export the exact marker/row/spacing measurements the detector froze for this
- *   frame, and `target` gains the printable target's full physical geometry
+ * - `3`: the orientation decision is fully auditable — `orientationEvidence`/`gridGeometryEvidence` export
+ *   the exact marker/row/spacing measurements the detector froze for this frame, and `target` gains the
+ *   printable target's full physical geometry
  *   (`regularDotDiameterMm`/`markerDiameterMm`/`markerOffsetXMm`/`markerOffsetYMm`/`printableBounds`) so
  *   the exact target a device report was captured against is reproducible from the report alone.
+ * - `4` (this revision): `target` gains `minimumBlobClearanceMm` — the real physical gap
+ *   [FrameContentTargetSpec.init] now validates between every pair of printed circles (marker-to-dot and
+ *   dot-to-dot), so a physical target reproduced from a report can never silently drift into a
+ *   physically-overlapping, undetectable configuration.
  */
-internal const val FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 3
+internal const val FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 4
 
 private fun matrixValuesOrNull(snapshot: FrameContentCorrespondenceSnapshot): List<Double>? =
     snapshot.sensorToBufferTransformMatrix?.let {
@@ -126,7 +130,10 @@ internal fun buildFrameContentCorrespondenceReportText(snapshot: FrameContentCor
                 "design ratio — see ORIENTATION EVIDENCE below for what was actually observed), " +
                 "markerDiameterMm=${snapshot.targetSpec.markerDiameterMm}, " +
                 "markerOffsetMm=(${snapshot.targetSpec.markerOffsetXMm}, ${snapshot.targetSpec.markerOffsetYMm}) " +
-                "relative to R0C0, printableBoundsMm=[${targetBounds.minXMm},${targetBounds.minYMm} — " +
+                "relative to R0C0, minimumBlobClearanceMm=${snapshot.targetSpec.minimumBlobClearanceMm} " +
+                "(validated minimum physical gap between every pair of printed circles — see " +
+                "FrameContentTargetSpec's \"Physical non-overlap invariant\"), " +
+                "printableBoundsMm=[${targetBounds.minXMm},${targetBounds.minYMm} — " +
                 "${targetBounds.maxXMm},${targetBounds.maxYMm}] (${targetBounds.widthMm}x${targetBounds.heightMm})",
         )
         appendLine(
@@ -409,6 +416,10 @@ internal fun buildFrameContentCorrespondenceJson(snapshot: FrameContentCorrespon
                     put("markerDiameterMm", snapshot.targetSpec.markerDiameterMm)
                     put("markerOffsetXMm", snapshot.targetSpec.markerOffsetXMm)
                     put("markerOffsetYMm", snapshot.targetSpec.markerOffsetYMm)
+                    // Validated minimum physical gap between every pair of printed circles (task
+                    // "reject overlapping target circles") — exported so the physical target is fully
+                    // reproducible, clearance included, from the JSON alone.
+                    put("minimumBlobClearanceMm", snapshot.targetSpec.minimumBlobClearanceMm)
                     val bounds = frameContentTargetPrintableBounds(snapshot.targetSpec)
                     put(
                         "printableBounds",

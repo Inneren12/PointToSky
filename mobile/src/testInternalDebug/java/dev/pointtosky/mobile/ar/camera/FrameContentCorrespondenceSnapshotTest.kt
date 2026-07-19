@@ -234,6 +234,12 @@ class FrameContentCorrespondenceSnapshotTest {
         assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.markerDiameterMm, targetJson.getValue("markerDiameterMm").jsonPrimitive.double)
         assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.markerOffsetXMm, targetJson.getValue("markerOffsetXMm").jsonPrimitive.double)
         assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.markerOffsetYMm, targetJson.getValue("markerOffsetYMm").jsonPrimitive.double)
+        // Physical non-overlap invariant's minimum clearance (printed-circle-overlap fix) — exported so
+        // the physical target is fully reproducible, clearance included.
+        assertEquals(
+            DEFAULT_FRAME_CONTENT_TARGET_SPEC.minimumBlobClearanceMm,
+            targetJson.getValue("minimumBlobClearanceMm").jsonPrimitive.double,
+        )
         // designMarkerAreaScaleFactor (task §2's "target design vs observed ratio must be separate
         // fields") is never confused with the detector's own acceptance threshold, exported separately
         // below in detectionTolerances.markerAreaRatioThreshold.

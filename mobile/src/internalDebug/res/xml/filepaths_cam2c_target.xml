@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- CAM-2c frame-content correspondence experiment: internalDebug-only FileProvider path config for
+         FrameContentTargetSvgSharing.kt. Scoped to only the "cam2c_target/" cache subdirectory the SVG
+         file is written into - never the whole cache directory - so this provider's grantUriPermissions
+         can never expose any other cached file. -->
+    <cache-path
+        name="cam2c_target"
+        path="cam2c_target/" />
+</paths>
