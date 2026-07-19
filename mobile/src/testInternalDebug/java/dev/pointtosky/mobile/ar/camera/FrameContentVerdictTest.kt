@@ -1,0 +1,182 @@
+package dev.pointtosky.mobile.ar.camera
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+private fun accepted(
+    id: Int,
+    residualPx: Double,
+    region: PointRegion,
+) = FrameContentPointResidual.Accepted(
+    pointId = FrameContentPointId(0, id),
+    observedXPx = 0.0,
+    observedYPx = 0.0,
+    predictedXPx = residualPx,
+    predictedYPx = 0.0,
+    dxPx = residualPx,
+    dyPx = 0.0,
+    euclideanResidualPx = residualPx,
+    normalizedResidual = residualPx / 800.0,
+    region = region,
+)
+
+/** Six points spanning CENTER/EDGE/CORNER — satisfies [MIN_WELL_DISTRIBUTED_POINTS_FOR_VERDICT] and
+ * [MIN_DISTINCT_REGIONS_FOR_VERDICT] with the default thresholds. */
+private fun wellDistributedResiduals(): List<FrameContentPointResidual> =
+    listOf(
+        accepted(0, 1.0, PointRegion.CENTER),
+        accepted(1, 1.0, PointRegion.CENTER),
+        accepted(2, 1.0, PointRegion.EDGE),
+        accepted(3, 1.0, PointRegion.EDGE),
+        accepted(4, 1.0, PointRegion.CORNER),
+        accepted(5, 1.0, PointRegion.CORNER),
+    )
+
+private fun summary(
+    id: FrameContentMappingHypothesisId,
+    rms: Double?,
+    cornerRms: Double? = rms,
+) = FrameContentResidualSummary(
+    hypothesisId = id,
+    acceptedCount = 6,
+    rejectedCounts = emptyMap(),
+    rmsPx = rms,
+    medianPx = rms,
+    p95Px = rms,
+    maxPx = rms,
+    centerRmsPx = rms,
+    edgeRmsPx = rms,
+    cornerRmsPx = cornerRms,
+)
+
+class FrameContentVerdictTest {
+    @Test
+    fun `pose invalid always wins regardless of point count`() {
+        val result =
+            computeFrameContentVerdict(
+                summaries = listOf(summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, 1.0)),
+                wellDistributedResiduals = wellDistributedResiduals(),
+                poseValid = false,
+            )
+        assertEquals(FrameContentVerdict.POSE_FIT_INVALID, result.verdict)
+    }
+
+    @Test
+    fun `too few points yields INSUFFICIENT_POINTS`() {
+        val result =
+            computeFrameContentVerdict(
+                summaries =
+                    listOf(
+                        summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, 1.0),
+                        summary(FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH, 5.0),
+                    ),
+                wellDistributedResiduals = listOf(accepted(0, 1.0, PointRegion.CENTER)),
+                poseValid = true,
+            )
+        assertEquals(FrameContentVerdict.INSUFFICIENT_POINTS, result.verdict)
+    }
+
+    @Test
+    fun `single region does not count as well-distributed even with enough points`() {
+        val allCenter = (0 until 6).map { accepted(it, 1.0, PointRegion.CENTER) }
+        val result =
+            computeFrameContentVerdict(
+                summaries =
+                    listOf(
+                        summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, 1.0),
+                        summary(FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH, 5.0),
+                    ),
+                wellDistributedResiduals = allCenter,
+                poseValid = true,
+            )
+        assertEquals(FrameContentVerdict.INSUFFICIENT_POINTS, result.verdict)
+    }
+
+    @Test
+    fun `equal residuals across hypotheses are numerically indistinguishable`() {
+        val result =
+            computeFrameContentVerdict(
+                summaries =
+                    listOf(
+                        summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, 2.0),
+                        summary(FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH, 2.0),
+                    ),
+                wellDistributedResiduals = wellDistributedResiduals(),
+                poseValid = true,
+            )
+        assertEquals(FrameContentVerdict.PATHS_NUMERICALLY_INDISTINGUISHABLE, result.verdict)
+    }
+
+    @Test
+    fun `residuals within the effective margin are indistinguishable, not a clean win`() {
+        val result =
+            computeFrameContentVerdict(
+                summaries =
+                    listOf(
+                        summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, 2.0),
+                        summary(FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH, 2.5),
+                    ),
+                wellDistributedResiduals = wellDistributedResiduals(),
+                poseValid = true,
+                thresholds = FrameContentVerdictThresholds(minAbsolutePixelMarginPx = 1.0, detectionNoiseMarginPx = 0.75),
+            )
+        assertEquals(FrameContentVerdict.PATHS_NUMERICALLY_INDISTINGUISHABLE, result.verdict)
+    }
+
+    @Test
+    fun `a clear physical-path win beyond the margin reports PHYSICAL_PATH_BETTER`() {
+        val result =
+            computeFrameContentVerdict(
+                summaries =
+                    listOf(
+                        summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, 20.0),
+                        summary(FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH, 2.0),
+                    ),
+                wellDistributedResiduals = wellDistributedResiduals(),
+                poseValid = true,
+            )
+        assertEquals(FrameContentVerdict.PHYSICAL_PATH_BETTER, result.verdict)
+    }
+
+    @Test
+    fun `a clear logical-path win beyond the margin reports LOGICAL_PATH_BETTER`() {
+        val result =
+            computeFrameContentVerdict(
+                summaries =
+                    listOf(
+                        summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, 2.0),
+                        summary(FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH, 20.0),
+                    ),
+                wellDistributedResiduals = wellDistributedResiduals(),
+                poseValid = true,
+            )
+        assertEquals(FrameContentVerdict.LOGICAL_PATH_BETTER, result.verdict)
+    }
+
+    @Test
+    fun `fewer than two usable hypotheses is mixed or inconclusive`() {
+        val result =
+            computeFrameContentVerdict(
+                summaries = listOf(summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, 2.0)),
+                wellDistributedResiduals = wellDistributedResiduals(),
+                poseValid = true,
+            )
+        assertEquals(FrameContentVerdict.MIXED_OR_INCONCLUSIVE, result.verdict)
+    }
+
+    @Test
+    fun `disagreement between overall RMS and corner RMS is reported as mixed`() {
+        val result =
+            computeFrameContentVerdict(
+                summaries =
+                    listOf(
+                        // Overall favors PHYSICAL, but corners favor LOGICAL by more than the margin.
+                        summary(FrameContentMappingHypothesisId.PHYSICAL_ACTIVE_ARRAY_MODEL_PATH, rms = 2.0, cornerRms = 20.0),
+                        summary(FrameContentMappingHypothesisId.LOGICAL_CAMERAX_MATRIX_PATH, rms = 5.0, cornerRms = 1.0),
+                    ),
+                wellDistributedResiduals = wellDistributedResiduals(),
+                poseValid = true,
+            )
+        assertEquals(FrameContentVerdict.MIXED_OR_INCONCLUSIVE, result.verdict)
+    }
+}

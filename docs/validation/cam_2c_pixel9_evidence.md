@@ -8,7 +8,11 @@
 > construction) and resolved §3's identity-matrix finding (CameraX 1.3.4 never set the matrix
 > without a ViewPort — the default identity leaked through; the "pre-normalized source domain"
 > speculation is retired). What remains unproven is narrower and named precisely: physical/logical
-> **basis compatibility** under `setPhysicalCameraId`, and **frame-content correspondence**. See §8.
+> **basis compatibility** under `setPhysicalCameraId`, and **frame-content correspondence**. See §8 for
+> the matrix-construction-only dual-basis evidence, and §11 for the frame-content-correspondence
+> measurement machinery (code-only; not yet run on a device) — §8's own dual-basis match, even a
+> perfect one, remains matrix-construction evidence only, never frame-content proof, until §11's
+> experiment is actually exercised on a real Pixel 9.
 
 This file has four distinct sections, kept deliberately separate because they have different
 provenance and different confidence levels:
@@ -782,4 +786,192 @@ ACTION HEADER / REPORT LAYOUT COMPILES
 INSTRUMENTED UI TEST EXECUTION PENDING
 PIXEL 9 UI VALIDATION PENDING
 EXPORT CONTENT UNCHANGED
+```
+
+## 11. CAM-2c frame-content correspondence experiment — a new, separate diagnostic; still no device evidence
+
+**Code-only pass; no new device evidence.** Everything in §1-§10 above is matrix-construction evidence
+only — §8 says this explicitly: *"A dual-basis model match — even a perfect one under both bases — is
+matrix-construction evidence only. It is **not** frame-content proof."* This section adds the
+diagnostic §8 itself asked for: an `internalDebug`-only experiment that measures whether **actual
+detected image points**, not just the matrix's own construction, correspond to projections under the
+competing coordinate-basis hypotheses. **Read the honesty statement below before citing this section —
+it establishes measurement machinery, not a measurement.**
+
+### 11.1 Why a new target/detector was required
+
+A repo-wide search before this pass began found **no ChArUco, AprilTag, ArUco, or checkerboard
+detection code anywhere in this codebase, no OpenCV dependency, no JNI/native module, and no
+PnP/pose-estimation code of any kind** — CAM-2a's own pipeline (`docs/camera_star_prediction_contract.md`)
+forward-projects known-direction *catalog stars*, never fiducial markers, and solves no pose from
+observed correspondences. Adding real ChArUco or AprilTag decoding would require a brand-new native
+computer-vision dependency, out of scope for one internal-debug diagnostic. This pass instead adds one
+new, minimal, first-of-its-kind **planar dot-grid target** (`FrameContentTarget.kt`, default 4x5 dots,
+25mm spacing) and a connected-component/weighted-centroid detector
+(`FrameContentCornerDetector.kt`) operating directly on the `ImageProxy` luma plane — never through
+`PreviewView`/display coordinates. **This is explicitly not ChArUco or AprilTag**: there is no
+per-point ID encoding, and row/column correspondence is assigned by sorting into rows only when the
+detected blob count exactly equals the target's full point count — an explicit, honest scope
+limitation (assumes the whole grid is visible and not rotated far from upright), not a hidden one.
+
+### 11.2 Why a new pose solver was required, and its documented scope
+
+The same search found no PnP/`solvePnP`/reprojection code anywhere. `FrameContentPoseMath.kt` adds one
+new, minimal **planar-homography pose solver** (Hartley-normalized DLT, `K^-1 H` decomposition,
+Gram-Schmidt orthogonalization, Rodrigues conversion) — a first-cut, non-iteratively-refined estimate,
+not a general Levenberg-Marquardt PnP solve. Every exported pose report carries
+`POSE_ESTIMATION_MODEL=PHYSICAL_CAMERA_CALIBRATED_DOMAIN` and
+`POSE_REUSED_UNCHANGED_ACROSS_ALL_MAPPING_HYPOTHESES=true` explicitly: pose is solved **once**, using
+detected `ImageAnalysis`-buffer points directly against the `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH`
+hypothesis's own resolved buffer-space camera matrix (chosen specifically so the pose solve and the
+observed points live in the same coordinate domain by construction), then reused **completely
+unchanged** when computing every competing hypothesis's own residuals — never independently refit per
+hypothesis, which task §4 identifies as a defect that would hide mapping errors behind each
+hypothesis's own optimized residual.
+
+### 11.3 The three competing hypotheses, and why the third reports NOT_IMPLEMENTED
+
+`FrameContentMappingHypothesis.kt` computes, for the same frozen object points and the same frozen
+pose:
+
+- **`LOGICAL_CAMERAX_MATRIX_PATH`** — the physical camera's own active-array-local pinhole projection,
+  mapped through the **observed** real CameraX `sensorToBufferTransformMatrix` directly, with no basis
+  correction — testing whether that direct application, despite the logical and physical active arrays
+  differing in size (§3's own `4080x3072` vs `4032x3024` finding), still lands correctly on real
+  detected content.
+- **`PHYSICAL_ACTIVE_ARRAY_MODEL_PATH`** — the same physical-basis projection, mapped through a
+  **freshly built** CameraX-1.4.2-style matrix (`predictCameraX142SensorToBufferMatrix`) constructed
+  from the physical camera's own active array and the real buffer dimensions — never the observed
+  matrix.
+- **`RECONCILED_PHYSICAL_TO_LOGICAL_PATH`** — always reports `NOT_IMPLEMENTED`. No mathematically
+  explicit physical-active-array-to-logical-active-array coordinate transform is source-traced or
+  device-proven anywhere in this codebase; task §3 explicitly requires reporting `NOT_IMPLEMENTED`
+  rather than fabricating one, and this pass does exactly that.
+
+**Correctness note from this pass's own review.** An earlier revision of hypothesis A/B routed through
+this codebase's existing, gated `resolveAnalysisBufferIntrinsics` resolver — the exact function
+§4-§10's own diagnostics reuse for matrix-construction evidence. That resolver's own crop-bounds
+safety check (its step 7: the matrix-implied source region must lie within the active array it is
+being validated against) would have silently made `LOGICAL_CAMERAX_MATRIX_PATH` `Unavailable` on
+*every* real device where the logical and physical active arrays differ in size — precisely the Pixel 9
+physical-camera-3 case this experiment exists to measure, defeating its own purpose. This pass composes
+the buffer-space camera matrix via the same underlying pure algebra
+(`activeArrayIntrinsicsFromFocalLength`, `mapActiveArrayIntrinsicsThroughMatrix`) but does **not** gate
+on crop-region containment: a domain mismatch is exactly the evidence this experiment reports, never a
+reason to hide the computation. Neither hypothesis path calls `resolveAnalysisBufferIntrinsics`,
+`resolveCam2cForExplicitPhysicalCamera`, or constructs any `SensorToBufferDomainProof` value — verified
+both by code review and by a dedicated pure-JVM regression test file
+(`FrameContentMappingHypothesisTest.kt`, `FrameContentCorrespondenceSnapshotTest.kt`) that never
+imports `SensorToBufferDomainProof` at all.
+
+### 11.4 Residuals, region bucketing, and the conservative verdict
+
+`FrameContentResidual.kt` computes, per detected point per hypothesis: observed/predicted buffer pixel
+coordinates, `dx`/`dy`, Euclidean residual, residual normalized by the buffer diagonal, and a
+CENTER/EDGE/CORNER region bucket (`FrameContentPointRegion.kt`, default 20%-of-axis edge band —
+exported and justified, never a hidden constant). Points behind the camera, outside the physical active
+array's own domain, outside the buffer bounds, or with a non-finite (invalid homogeneous-division)
+projection are never silently discarded — each gets a typed
+`FrameContentPointRejectionReason` and is counted, never merged into the accepted-point RMS/median/p95/
+max statistics. `FrameContentVerdict.kt` computes one of seven evidence-only verdicts
+(`INSUFFICIENT_POINTS`/`POSE_FIT_INVALID`/`LOGICAL_PATH_BETTER`/`PHYSICAL_PATH_BETTER`/
+`RECONCILED_PATH_BETTER`/`PATHS_NUMERICALLY_INDISTINGUISHABLE`/`MIXED_OR_INCONCLUSIVE`), requiring at
+least 6 accepted points spanning at least 2 distinct regions before any conclusive verdict, and
+requiring the RMS margin between the best and second-best hypothesis to exceed the larger of an
+exported absolute-pixel margin (`1.0px`) and an exported, explicitly-labelled-as-unmeasured detection
+-noise placeholder (`0.75px`) before calling one hypothesis meaningfully better than another. **This
+verdict is never converted into a `SensorToBufferDomainProof`, never publishes `AnalysisBuffer`
+intrinsics, and never unblocks CAM-2c calibrated projection** — every export (`FrameContentCorrespondenceExport.kt`)
+states this explicitly, in both the plain-text report and the JSON (`sensorToBufferDomainProofConstructed:
+false`, `analysisBufferIntrinsicsPublished: false`).
+
+### 11.5 The frozen snapshot, session state machine, and device workflow
+
+`FrameContentCorrespondenceSnapshot.kt` freezes one immutable snapshot per analyzed frame/generation —
+attempt/generation identifiers, requested/selected physical camera ID, verified physical-camera
+provenance, opened-logical and selected-physical characteristics, requested/actual analysis resolution,
+buffer dimensions, `cropRect`, `rotationDegrees`, the real CameraX matrix, zoom target/observed,
+physical-camera calibrated K source and native basis, captured (never applied) distortion coefficients,
+detected object/image points, and the one frozen pose — never mixing values across frames or
+generations, mirroring `CamDiagnosticSnapshot`'s own deep-copy-at-capture convention.
+`FrameContentCorrespondenceSessionState.kt`/`FrameContentCorrespondenceUiModel.kt` mirror
+`ExperimentSessionState`/`ExperimentUiModel`'s own generation-scoped no-op-unless-current-attempt
+pattern exactly: every reducer is a no-op for a stale `attemptId` or a terminally failed session, and a
+new attempt (`startAttempt`) always constructs a brand-new session, never mutating the previous one's
+snapshot. The device workflow (`FrameContentCorrespondenceScreen.kt`) is optimized for Pixel 9
+validation per task §7: physical camera 3 listed first among candidates, fixed 640x480/1280x720
+resolution buttons, Freeze/Resume, Copy report, Share JSON, a CENTER/TOP_LEFT/TOP_RIGHT/BOTTOM_LEFT/
+BOTTOM_RIGHT target-placement label, a freeform-millimetre distance field, and a live detected-point
+count plus per-hypothesis RMS in the action header. Launched in-app only, from a new "Open
+frame-content experiment" action alongside the existing physical-camera experiment's own button in
+`CamDiagnosticFullReportDialog`, registered `android:exported="false"` in
+`mobile/src/internalDebug/AndroidManifest.xml` — the same non-exported, in-app-launch-only convention
+every prior experiment in this file uses.
+
+### 11.6 What is honestly established by this pass, and what is not
+
+**Established, this pass (real Gradle execution, this session):**
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (588 tests, 0 failures — 44 new
+                                                             frame-content tests, all passing)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors, 30 pre-existing warnings
+                                                             unrelated to this pass)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (publicDebug/production untouched)
+```
+
+The 44 new pure-JVM tests cover: identical predicted/observed points producing zero residual; a known
+translation error reported exactly; a known scale error whose residual provably grows toward the
+buffer edges; center/edge/corner bucketing at both default and custom thresholds; RMS/median/p95/max
+against hand-computed values; rejected invalid-homogeneous-division points excluded from statistics but
+counted by reason; two hypotheses with equal RMS reported `PATHS_NUMERICALLY_INDISTINGUISHABLE`; the
+synthetic Pixel-9-physical-camera-3 case (`4080x3072` logical vs. `4032x3024` physical active array) in
+which `LOGICAL_CAMERAX_MATRIX_PATH` and `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH` both resolve but disagree
+by a measurable, non-trivial buffer-pixel amount; the `RECONCILED_PHYSICAL_TO_LOGICAL_PATH` always
+reporting `NOT_IMPLEMENTED`; one frozen pose reproducibly reused (bit-for-bit reprojection match)
+across every hypothesis's own residual computation; freeze/generation atomicity and late-callback
+rejection in the session state machine; and a new attempt cleanly clearing the previous attempt's
+snapshot.
+
+**Not established by this pass — the honest gap, matching every prior entry in this file's own
+convention:**
+
+- **No physical device or emulator has been attached in this pass, or any pass in this file.** Every
+  claim above is build/lint/unit-test verified in a cloud container; none of it is a real Pixel 9
+  observation.
+- **The detector's real-world accuracy on an actual printed dot-grid target, under real lighting, at a
+  real angle, is completely unverified.** The pure-JVM tests exercise the residual/hypothesis/verdict
+  *math* against synthetic, hand-constructed or self-consistently-generated points — none of them feed
+  the detector a real camera frame. `FrameContentCornerDetector.kt`'s own algorithm has not been proven
+  against any real image.
+- **The planar-homography pose solver's real-world accuracy is unverified** beyond the noiseless,
+  self-consistent synthetic round trip `FrameContentCorrespondenceSnapshotTest.kt` exercises. It is a
+  first-cut, non-iteratively-refined estimate by design (§11.2) — real detector noise, a real target
+  not perfectly planar/positioned, and real lens distortion (never applied — see below) will all degrade
+  it in ways this pass cannot measure without a device.
+- **Distortion is captured, never applied.** `FrameContentDistortionCapture` records Android's raw
+  `LENS_DISTORTION` coefficients as evidence only; this codebase has no verified interpretation of
+  their semantics (the division-model contract per API 29+ is not source-traced or device-proven here),
+  so every projection in this experiment is distortion-free pinhole math. A real device's residuals
+  will include whatever real lens distortion this omission cannot correct for.
+- **The conservative-verdict thresholds (`1.0px` absolute margin, `0.75px` detection-noise placeholder)
+  are not measured values from any real session** — no device has run this experiment yet to measure
+  real detection/pose noise. They are conservative, documented placeholders, exported alongside every
+  verdict so a reader can judge them, never presented as calibrated.
+- Whether a real Pixel 9 physical-camera-3 session even produces a detectable target at all — camera
+  focus, target size/distance, lighting, and the fixed-grid correspondence assumption (§11.1) are all
+  untested against real hardware.
+
+**Final status, this pass:**
+
+```
+CAM-2c FRAME-CONTENT EXPERIMENT CODE READY
+PHYSICAL CAMERA 3 IS PRIMARY DISCRIMINATING CASE
+ONE FROZEN POSE REUSED ACROSS HYPOTHESES
+PER-POINT BUFFER RESIDUAL EXPORT READY
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
 ```

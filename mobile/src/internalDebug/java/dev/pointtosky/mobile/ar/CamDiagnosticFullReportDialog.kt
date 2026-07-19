@@ -38,6 +38,7 @@ import dev.pointtosky.mobile.ar.camera.buildCamDiagnosticReportText
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyJson
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReport
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReportText
+import dev.pointtosky.mobile.ar.camera.buildFrameContentCorrespondenceExperimentIntent
 import dev.pointtosky.mobile.ar.camera.buildPhysicalCameraBindingExperimentIntent
 import dev.pointtosky.mobile.ar.camera.formatCapturedAt
 
@@ -93,6 +94,11 @@ const val CAM_DIAGNOSTIC_SHARE_TOPOLOGY_BUTTON_TEST_TAG = "cam_diagnostic_share_
  * `android:exported="false"` and therefore not reliably reachable via `adb shell am start`). */
 const val CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG = "cam_diagnostic_open_physical_camera_experiment_button"
 
+/** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Open frame-content correspondence
+ * experiment" (CAM-2c frame-content correspondence experiment) — same in-app-launch-only rationale as
+ * [CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG] above. */
+const val CAM_DIAGNOSTIC_OPEN_FRAME_CONTENT_EXPERIMENT_BUTTON_TEST_TAG = "cam_diagnostic_open_frame_content_experiment_button"
+
 /** `internalDebug`-only. A small, tappable, monospace-free text "button" matching this HUD's existing
  * translucent-chip visual language - never a Material3 [androidx.compose.material3.Button]. */
 @Composable
@@ -138,6 +144,7 @@ fun CamDiagnosticFullReportDialog(
     actions: CamDiagnosticActions? = null,
     boundCameraInfo: CameraInfo? = null,
     onOpenPhysicalCameraExperiment: (() -> Unit)? = null,
+    onOpenFrameContentExperiment: (() -> Unit)? = null,
 ) {
     var frozenSnapshot by remember { mutableStateOf<CamDiagnosticSnapshot?>(null) }
     val liveness = if (frozenSnapshot != null) CamDiagnosticLiveness.FROZEN else CamDiagnosticLiveness.LIVE
@@ -155,6 +162,9 @@ fun CamDiagnosticFullReportDialog(
     val effectiveOnOpenPhysicalCameraExperiment =
         onOpenPhysicalCameraExperiment
             ?: { context.startActivity(buildPhysicalCameraBindingExperimentIntent(context)) }
+    val effectiveOnOpenFrameContentExperiment =
+        onOpenFrameContentExperiment
+            ?: { context.startActivity(buildFrameContentCorrespondenceExperimentIntent(context)) }
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -247,6 +257,11 @@ fun CamDiagnosticFullReportDialog(
                         label = "Open physical-camera experiment",
                         onClick = effectiveOnOpenPhysicalCameraExperiment,
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG),
+                    )
+                    CamDiagnosticActionChip(
+                        label = "Open frame-content experiment",
+                        onClick = effectiveOnOpenFrameContentExperiment,
+                        modifier = Modifier.testTag(CAM_DIAGNOSTIC_OPEN_FRAME_CONTENT_EXPERIMENT_BUTTON_TEST_TAG),
                     )
                 }
 

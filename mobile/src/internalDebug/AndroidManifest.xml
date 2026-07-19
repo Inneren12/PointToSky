@@ -13,5 +13,13 @@
             android:exported="false"
             android:label="CAM-2c physical camera binding"
             android:screenOrientation="portrait" />
+
+        <!-- CAM-2c frame-content correspondence experiment: same internalDebug-only, non-exported,
+             in-app-launch-only convention as the physical-camera-binding experiment above. -->
+        <activity
+            android:name="dev.pointtosky.mobile.ar.camera.FrameContentCorrespondenceExperimentActivity"
+            android:exported="false"
+            android:label="CAM-2c frame-content correspondence"
+            android:screenOrientation="portrait" />
     </application>
 </manifest>

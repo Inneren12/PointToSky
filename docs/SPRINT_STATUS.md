@@ -1198,6 +1198,60 @@ SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
 CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
 ```
 
+## CAM-2c frame-content correspondence experiment (this sprint)
+
+Every prior CAM-2c pass above is matrix-construction evidence only — §8's own dual-basis match, even a
+perfect one, is explicitly documented as "not frame-content proof." This pass adds the diagnostic that
+measures frame-content correspondence itself: whether real detected image points, for an explicitly
+bound physical camera, actually land where competing coordinate-basis hypotheses predict.
+
+**Scope:** new, additive, `internalDebug`-only files only
+(`mobile/src/internalDebug/java/dev/pointtosky/mobile/ar/camera/FrameContent*.kt`), a new manifest
+entry, a new "Open frame-content experiment" button alongside the existing physical-camera-experiment
+button in `CamDiagnosticFullReportDialog.kt`, and this doc plus
+`docs/validation/cam_2c_pixel9_evidence.md` §11. Production (`main`), `publicDebug`, CAM-2a's own
+star-projection pipeline, calibrated-intrinsics publication, and the existing physical-camera-binding
+experiment are all untouched.
+
+**What it adds (full detail in `docs/validation/cam_2c_pixel9_evidence.md` §11):** a new, minimal,
+first-of-its-kind planar dot-grid target and connected-component detector (no ChArUco/AprilTag/OpenCV
+exists anywhere in this codebase — confirmed by repo-wide search before this pass); a new, minimal
+planar-homography pose solver (no PnP/`solvePnP` code existed either), solved once per frame and reused
+unchanged across every competing hypothesis (`POSE_REUSED_UNCHANGED_ACROSS_ALL_MAPPING_HYPOTHESES=true`);
+three competing mapping hypotheses (`LOGICAL_CAMERAX_MATRIX_PATH`, `PHYSICAL_ACTIVE_ARRAY_MODEL_PATH`,
+and `RECONCILED_PHYSICAL_TO_LOGICAL_PATH` — always `NOT_IMPLEMENTED`, no fabricated transform); per-point
+typed-rejection-reason residuals with center/edge/corner bucketing and RMS/median/p95/max summaries; and
+a conservative, evidence-only verdict gated on a minimum well-distributed point count and an exported,
+justified pixel margin. Neither hypothesis path calls `resolveAnalysisBufferIntrinsics`'s gated
+production entry point or `resolveCam2cForExplicitPhysicalCamera`, and none of this pass constructs any
+`SensorToBufferDomainProof` value.
+
+**Validation (real Gradle 8.14.3/JDK 17, sandbox JDK 17 + Android SDK 35 provisioned this session via
+`apt-get`/`sdkmanager` — same provisioning pattern as every prior CAM-2c pass that needed it):**
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (588/588, 44 new)
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (publicDebug/production untouched)
+```
+
+No physical device or emulator was attached — this pass establishes measurement *machinery*, not a
+measurement. See `docs/validation/cam_2c_pixel9_evidence.md` §11.6 for the full, itemized "not
+established" list (detector real-world accuracy, pose-solver real-world accuracy, distortion never
+applied, verdict thresholds are documented placeholders, real-device detectability untested).
+
+```
+CAM-2c FRAME-CONTENT EXPERIMENT CODE READY
+PHYSICAL CAMERA 3 IS PRIMARY DISCRIMINATING CASE
+ONE FROZEN POSE REUSED ACROSS HYPOTHESES
+PER-POINT BUFFER RESIDUAL EXPORT READY
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
+```
+
 ## CAM-2b (this sprint)
 
 - **Scope:** visualizes CAM-2a's output; never changes production star placement.
