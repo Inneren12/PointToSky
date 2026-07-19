@@ -521,18 +521,85 @@ internal fun PhysicalCameraExperimentLiveOverlay(state: ExperimentSessionState) 
 }
 
 /**
- * One-line summary shown in the live overlay's fixed action header (mobile-usability fix) - physical id,
- * attempt id, status, and observed frame count for whichever [state] the header is currently displaying
- * (the frozen snapshot when frozen, live state otherwise - same `displayedState` the header's Copy/Share
- * actions use). Never called by, and never affects, [buildPhysicalCameraExperimentReportText] or
- * [buildPhysicalCameraExperimentJson] - a separate, display-only string, not part of either export.
- * `status` here is always `BINDING`/`BOUND`: [PhysicalCameraBindingSession] only reaches this header once
- * [ExperimentSessionState.isTerminallyFailed] is `false` for good (its terminal branch returns earlier),
- * so `EXPLICIT_BIND_FAILED` never appears in this summary.
+ * Exhaustive, honest classification of one [ExperimentSessionState]'s status for the live overlay's
+ * compact action-header summary (correctness fix - a prior revision derived
+ * `status = if (bindingResolution == null) "BINDING" else "BOUND"`, which is wrong:
+ * [PhysicalCameraBindingResolution] has three non-[PhysicalCameraBindingResolution.Bound] variants -
+ * [PhysicalCameraBindingResolution.PhysicalCameraBindingUnavailable],
+ * [PhysicalCameraBindingResolution.PhysicalCameraIdentityUnverified],
+ * [PhysicalCameraBindingResolution.PhysicalCameraCharacteristicsMismatch] - each a *non-null*,
+ * *unsuccessful* outcome the old code's `!= null` check silently reported as `"BOUND"` even though
+ * physical-camera identity was never verified and [Cam2cPhysicalCameraResolution] can only ever reach
+ * [Cam2cPhysicalCameraResolution.BindingFailure] from any of them). Never inferred from
+ * "`bindingResolution` is non-null" alone - every [PhysicalCameraBindingResolution] variant maps to its
+ * own distinct, honestly-named status below.
+ *
+ * [ExperimentSessionState.explicitBindFailureReason] wins over every [PhysicalCameraBindingResolution]
+ * case when present - a terminal explicit bind/zoom failure is reported regardless of what (if
+ * anything) `bindingResolution` already held at the moment the failure was reported (see
+ * [ExperimentSessionState.reduceExplicitBindFailure]'s own no-op-after-terminal guarantee). This makes
+ * [physicalExperimentCompactStatus] correct for *any* [ExperimentSessionState] supplied to it -
+ * including a terminally-failed one - never dependent on the caller (e.g. [PhysicalCameraBindingSession]'s
+ * own `if (state.isTerminallyFailed)` early return) to only ever pass it a live, non-terminal state.
+ */
+internal enum class PhysicalExperimentCompactStatus {
+    /** No [ExperimentSessionState.bindingResolution] yet, and no
+     * [ExperimentSessionState.explicitBindFailureReason]. */
+    BINDING,
+
+    /** [ExperimentSessionState.bindingResolution] is [PhysicalCameraBindingResolution.Bound] - physical-camera
+     * identity was proven by [verifyPhysicalCameraProvenance]. The only status under which
+     * [ExperimentSessionState.cam2cResult] can be anything other than
+     * [Cam2cPhysicalCameraResolution.BindingFailure] once a frame is also present. */
+    BOUND_VERIFIED,
+
+    /** [PhysicalCameraBindingResolution.PhysicalCameraBindingUnavailable] - the explicit physical
+     * `CameraSelector` bind itself failed, or its `CameraInfo` was never obtained. */
+    BINDING_UNAVAILABLE,
+
+    /** [PhysicalCameraBindingResolution.PhysicalCameraIdentityUnverified] - the bound logical camera's
+     * declared physical candidates do not include a `CameraInfo` for the requested ID, so its identity
+     * could not be verified. */
+    IDENTITY_UNVERIFIED,
+
+    /** [PhysicalCameraBindingResolution.PhysicalCameraCharacteristicsMismatch] - a physical `CameraInfo`
+     * was found, but its own characteristics (camera ID, or `isLogicalMultiCamera`) did not match
+     * closely enough to trust. */
+    CHARACTERISTICS_MISMATCH,
+
+    /** [ExperimentSessionState.explicitBindFailureReason] is non-null - wins over every case above,
+     * regardless of what [ExperimentSessionState.bindingResolution] holds. */
+    EXPLICIT_BIND_FAILED,
+}
+
+/** The pure classification [buildPhysicalCameraExperimentCompactSummaryText] renders - see
+ * [PhysicalExperimentCompactStatus]'s own KDoc for why every [PhysicalCameraBindingResolution] variant
+ * gets its own case rather than a bare null-check. */
+internal fun physicalExperimentCompactStatus(state: ExperimentSessionState): PhysicalExperimentCompactStatus {
+    if (state.explicitBindFailureReason != null) return PhysicalExperimentCompactStatus.EXPLICIT_BIND_FAILED
+    return when (state.bindingResolution) {
+        null -> PhysicalExperimentCompactStatus.BINDING
+        is PhysicalCameraBindingResolution.Bound -> PhysicalExperimentCompactStatus.BOUND_VERIFIED
+        is PhysicalCameraBindingResolution.PhysicalCameraBindingUnavailable ->
+            PhysicalExperimentCompactStatus.BINDING_UNAVAILABLE
+        PhysicalCameraBindingResolution.PhysicalCameraIdentityUnverified ->
+            PhysicalExperimentCompactStatus.IDENTITY_UNVERIFIED
+        is PhysicalCameraBindingResolution.PhysicalCameraCharacteristicsMismatch ->
+            PhysicalExperimentCompactStatus.CHARACTERISTICS_MISMATCH
+    }
+}
+
+/**
+ * One-line summary shown in the live overlay's fixed action header - physical id, attempt id,
+ * [physicalExperimentCompactStatus], and observed frame count for whichever [state] the header is
+ * currently displaying (the frozen snapshot when frozen, live state otherwise - same `displayedState`
+ * the header's Copy/Share actions use). Never called by, and never affects,
+ * [buildPhysicalCameraExperimentReportText] or [buildPhysicalCameraExperimentJson] - a separate,
+ * display-only string, not part of either export.
  */
 internal fun buildPhysicalCameraExperimentCompactSummaryText(state: ExperimentSessionState): String {
-    val status = if (state.bindingResolution == null) "BINDING" else "BOUND"
-    return "physicalId=${state.physicalCameraId} attemptId=${state.attemptId} status=$status " +
+    val status = physicalExperimentCompactStatus(state)
+    return "physicalId=${state.physicalCameraId} attemptId=${state.attemptId} status=${status.name} " +
         "frames=${state.matrixStability.framesObserved}"
 }
 

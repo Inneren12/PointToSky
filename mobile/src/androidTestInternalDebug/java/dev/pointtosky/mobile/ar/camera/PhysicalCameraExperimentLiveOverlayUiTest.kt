@@ -166,7 +166,7 @@ class PhysicalCameraExperimentLiveOverlayUiTest {
             .assertIsDisplayed()
             .assert(hasText("physicalId=3", substring = true))
             .assert(hasText("attemptId=7", substring = true))
-            .assert(hasText("status=BOUND", substring = true))
+            .assert(hasText("status=BOUND_VERIFIED", substring = true))
             .assert(hasText("frames=12", substring = true))
     }
 
