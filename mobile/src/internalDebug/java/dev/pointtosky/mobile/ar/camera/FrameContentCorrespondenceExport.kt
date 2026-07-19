@@ -23,13 +23,17 @@ import kotlinx.serialization.json.put
  * - `1`: initial export (superseded — permitted a semantic path-winner verdict, `rotationFoldedIn=true`
  *   for both hypotheses, no targetPlacementLabel/distanceLabelMm, and far less JSON detail than task §4
  *   requires).
- * - `2` (this revision): conditional-only verdict vocabulary, `rotationFoldedIn=false` for both
- *   implemented hypotheses with an explicit unrotated-buffer-contract statement, frozen
- *   targetPlacementLabel/distanceLabelMm, "characteristics-derived approximate physical pinhole K"
- *   wording (never "calibrated"), and a JSON schema that is a complete, self-contained evidence
- *   artifact — every field task §4 lists, parseable and structurally checkable, not substring-matched.
+ * - `2`: conditional-only verdict vocabulary, `rotationFoldedIn=false` for both implemented hypotheses
+ *   with an explicit unrotated-buffer-contract statement, frozen targetPlacementLabel/distanceLabelMm,
+ *   "characteristics-derived approximate physical pinhole K" wording (never "calibrated"), and a JSON
+ *   schema that is a complete, self-contained evidence artifact.
+ * - `3` (this revision): the orientation decision is fully auditable — `orientationEvidence`/
+ *   `gridGeometryEvidence` export the exact marker/row/spacing measurements the detector froze for this
+ *   frame, and `target` gains the printable target's full physical geometry
+ *   (`regularDotDiameterMm`/`markerDiameterMm`/`markerOffsetXMm`/`markerOffsetYMm`/`printableBounds`) so
+ *   the exact target a device report was captured against is reproducible from the report alone.
  */
-internal const val FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 2
+internal const val FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 3
 
 private fun matrixValuesOrNull(snapshot: FrameContentCorrespondenceSnapshot): List<Double>? =
     snapshot.sensorToBufferTransformMatrix?.let {
@@ -111,16 +115,27 @@ internal fun buildFrameContentCorrespondenceReportText(snapshot: FrameContentCor
         appendLine("  distortionNote=${snapshot.distortion.note}")
         appendLine()
 
+        val targetBounds = frameContentTargetPrintableBounds(snapshot.targetSpec)
         appendLine(
             "TARGET (${snapshot.targetSpec.cornerRows}x${snapshot.targetSpec.cornerCols}, spacing=" +
-                "${snapshot.targetSpec.dotSpacingMm}mm, markerAreaScaleFactor=${snapshot.targetSpec.markerAreaScaleFactor})",
+                "${snapshot.targetSpec.dotSpacingMm}mm)",
+        )
+        appendLine(
+            "  printableGeometry: regularDotDiameterMm=${snapshot.targetSpec.regularDotDiameterMm}, " +
+                "designMarkerAreaScaleFactor=${snapshot.targetSpec.markerAreaScaleFactor} (printed target " +
+                "design ratio — see ORIENTATION EVIDENCE below for what was actually observed), " +
+                "markerDiameterMm=${snapshot.targetSpec.markerDiameterMm}, " +
+                "markerOffsetMm=(${snapshot.targetSpec.markerOffsetXMm}, ${snapshot.targetSpec.markerOffsetYMm}) " +
+                "relative to R0C0, printableBoundsMm=[${targetBounds.minXMm},${targetBounds.minYMm} — " +
+                "${targetBounds.maxXMm},${targetBounds.maxYMm}] (${targetBounds.widthMm}x${targetBounds.heightMm})",
         )
         appendLine(
             "  detectionTolerances: darkThreshold=${snapshot.detectionTolerances.darkThreshold}, " +
                 "minBlobAreaPx=${snapshot.detectionTolerances.minBlobAreaPx}, " +
                 "maxBlobAreaFractionOfImage=${snapshot.detectionTolerances.maxBlobAreaFractionOfImage}, " +
                 "subpixelMinBlobAreaPx=${snapshot.detectionTolerances.subpixelMinBlobAreaPx}, " +
-                "markerAreaRatioThreshold=${snapshot.detectionTolerances.markerAreaRatioThreshold}, " +
+                "markerAreaRatioThreshold=${snapshot.detectionTolerances.markerAreaRatioThreshold} " +
+                "(detector acceptance threshold — NOT the design ratio above), " +
                 "markerCornerConfidenceRatio=${snapshot.detectionTolerances.markerCornerConfidenceRatio}, " +
                 "spacingConsistencyRatio=[${snapshot.detectionTolerances.spacingConsistencyMinRatio}," +
                 "${snapshot.detectionTolerances.spacingConsistencyMaxRatio}]",
@@ -136,6 +151,52 @@ internal fun buildFrameContentCorrespondenceReportText(snapshot: FrameContentCor
             appendLine(
                 "    ${point.pointId.label}: bufferX=${point.bufferXPx}, bufferY=${point.bufferYPx}, " +
                     "confidence=${point.confidence}, refinement=${point.refinementStatus}, region=${point.region}",
+            )
+        }
+        appendLine()
+
+        appendLine("ORIENTATION EVIDENCE (task §2: the exact marker measurements that justified this frame's correspondence, frozen at detection time)")
+        val oe = snapshot.orientationEvidence
+        if (oe == null) {
+            appendLine("  unavailable (no accepted detection this frame)")
+        } else {
+            appendLine("  markerCentroid=(${oe.markerCentroidXPx}, ${oe.markerCentroidYPx}), markerAreaPx=${oe.markerAreaPx}")
+            appendLine("  medianGridDotAreaPx=${oe.medianGridDotAreaPx}")
+            appendLine(
+                "  observedMarkerAreaRatio=${oe.observedMarkerAreaRatio} (actual measured ratio this frame — " +
+                    "compare against designMarkerAreaScaleFactor=${snapshot.targetSpec.markerAreaScaleFactor} " +
+                    "above; only requirement enforced was clearing markerAreaRatioThreshold=" +
+                    "${snapshot.detectionTolerances.markerAreaRatioThreshold} — do not assume the design ratio " +
+                    "was what was actually observed)",
+            )
+            appendLine("  resolvedOriginCorner=${oe.resolvedOriginCorner}")
+            appendLine(
+                "  nearestCornerDistancePx=${oe.nearestCornerDistancePx}, " +
+                    "secondNearestCornerDistancePx=${oe.secondNearestCornerDistancePx}, " +
+                    "observedCornerConfidenceRatio=${oe.observedCornerConfidenceRatio} (required >= " +
+                    "${snapshot.detectionTolerances.markerCornerConfidenceRatio})",
+            )
+        }
+        appendLine()
+
+        appendLine("GRID GEOMETRY EVIDENCE (task §2: row/spacing measurements that justified accepting this frame's grid)")
+        val gge = snapshot.gridGeometryEvidence
+        if (gge == null) {
+            appendLine("  unavailable (no accepted detection this frame)")
+        } else {
+            appendLine("  minAdjacentRowSeparationPx=${gge.minAdjacentRowSeparationPx}")
+            appendLine(
+                "  withinRowGapPx: min=${gge.minWithinRowGapPx}, max=${gge.maxWithinRowGapPx}, " +
+                    "median=${gge.medianWithinRowGapPx}",
+            )
+            appendLine(
+                "  betweenRowGapPx: min=${gge.minBetweenRowGapPx}, max=${gge.maxBetweenRowGapPx}, " +
+                    "median=${gge.medianBetweenRowGapPx}",
+            )
+            appendLine("  medianGapPx=${gge.medianGapPx}")
+            appendLine(
+                "  configuredSpacingConsistencyLimits=[${gge.spacingConsistencyMinRatio}x, " +
+                    "${gge.spacingConsistencyMaxRatio}x] of medianGapPx",
             )
         }
         appendLine()
@@ -340,7 +401,26 @@ internal fun buildFrameContentCorrespondenceJson(snapshot: FrameContentCorrespon
                     put("cornerRows", snapshot.targetSpec.cornerRows)
                     put("cornerCols", snapshot.targetSpec.cornerCols)
                     put("dotSpacingMm", snapshot.targetSpec.dotSpacingMm)
-                    put("markerAreaScaleFactor", snapshot.targetSpec.markerAreaScaleFactor)
+                    // "design" ratio the physical target was printed to — never conflate with the
+                    // detector's own acceptance threshold (detectionTolerances.markerAreaRatioThreshold
+                    // below) or the actual observed ratio (orientationEvidence.observedMarkerAreaRatio).
+                    put("designMarkerAreaScaleFactor", snapshot.targetSpec.markerAreaScaleFactor)
+                    put("regularDotDiameterMm", snapshot.targetSpec.regularDotDiameterMm)
+                    put("markerDiameterMm", snapshot.targetSpec.markerDiameterMm)
+                    put("markerOffsetXMm", snapshot.targetSpec.markerOffsetXMm)
+                    put("markerOffsetYMm", snapshot.targetSpec.markerOffsetYMm)
+                    val bounds = frameContentTargetPrintableBounds(snapshot.targetSpec)
+                    put(
+                        "printableBounds",
+                        buildJsonObject {
+                            put("minXMm", bounds.minXMm)
+                            put("minYMm", bounds.minYMm)
+                            put("maxXMm", bounds.maxXMm)
+                            put("maxYMm", bounds.maxYMm)
+                            put("widthMm", bounds.widthMm)
+                            put("heightMm", bounds.heightMm)
+                        },
+                    )
                     put("regionEdgeFraction", DEFAULT_REGION_EDGE_FRACTION)
                 },
             )
@@ -390,6 +470,41 @@ internal fun buildFrameContentCorrespondenceJson(snapshot: FrameContentCorrespon
                         )
                     }
                 },
+            )
+            // Frozen exactly as the detector produced them for this frame (task §2) — never recomputed
+            // from detectedPoints. null whenever there was no accepted detection this frame.
+            put(
+                "orientationEvidence",
+                snapshot.orientationEvidence?.let { oe ->
+                    buildJsonObject {
+                        put("markerCentroidXPx", oe.markerCentroidXPx)
+                        put("markerCentroidYPx", oe.markerCentroidYPx)
+                        put("markerAreaPx", oe.markerAreaPx)
+                        put("medianGridDotAreaPx", oe.medianGridDotAreaPx)
+                        put("observedMarkerAreaRatio", oe.observedMarkerAreaRatio)
+                        put("resolvedOriginCorner", oe.resolvedOriginCorner.name)
+                        put("nearestCornerDistancePx", oe.nearestCornerDistancePx)
+                        put("secondNearestCornerDistancePx", oe.secondNearestCornerDistancePx)
+                        put("observedCornerConfidenceRatio", oe.observedCornerConfidenceRatio)
+                    }
+                } ?: JsonNull,
+            )
+            put(
+                "gridGeometryEvidence",
+                snapshot.gridGeometryEvidence?.let { gge ->
+                    buildJsonObject {
+                        put("minAdjacentRowSeparationPx", gge.minAdjacentRowSeparationPx)
+                        put("minWithinRowGapPx", gge.minWithinRowGapPx)
+                        put("maxWithinRowGapPx", gge.maxWithinRowGapPx)
+                        put("medianWithinRowGapPx", gge.medianWithinRowGapPx)
+                        put("minBetweenRowGapPx", gge.minBetweenRowGapPx)
+                        put("maxBetweenRowGapPx", gge.maxBetweenRowGapPx)
+                        put("medianBetweenRowGapPx", gge.medianBetweenRowGapPx)
+                        put("medianGapPx", gge.medianGapPx)
+                        put("spacingConsistencyMinRatio", gge.spacingConsistencyMinRatio)
+                        put("spacingConsistencyMaxRatio", gge.spacingConsistencyMaxRatio)
+                    }
+                } ?: JsonNull,
             )
 
             // --- pose ---

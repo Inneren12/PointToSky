@@ -3,6 +3,7 @@ package dev.pointtosky.mobile.ar.camera
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -33,6 +34,37 @@ class FrameContentCorrespondenceSnapshotTest {
             pixelArrayHeightPx = 3024,
             isLogicalMultiCamera = false,
             cameraId = "3",
+        )
+
+    /** This fixture's [detectedPoints] are forward-projected object points, not real detector output —
+     * there is no real blob/marker measurement to freeze here, so this evidence is a synthetic
+     * placeholder distinct enough (all zeros/TOP_LEFT) to be unmistakable in a failing assertion. Real
+     * orientation-evidence freezing is covered by `FrameContentCornerDetectorTest`. */
+    private fun syntheticOrientationEvidence() =
+        FrameContentOrientationEvidence(
+            markerCentroidXPx = 0.0,
+            markerCentroidYPx = 0.0,
+            markerAreaPx = 0,
+            medianGridDotAreaPx = 0.0,
+            observedMarkerAreaRatio = 0.0,
+            resolvedOriginCorner = GridCorner.TOP_LEFT,
+            nearestCornerDistancePx = 0.0,
+            secondNearestCornerDistancePx = 0.0,
+            observedCornerConfidenceRatio = 0.0,
+        )
+
+    private fun syntheticGridGeometryEvidence() =
+        FrameContentGridGeometryEvidence(
+            minAdjacentRowSeparationPx = 0.0,
+            minWithinRowGapPx = 0.0,
+            maxWithinRowGapPx = 0.0,
+            medianWithinRowGapPx = 0.0,
+            minBetweenRowGapPx = 0.0,
+            maxBetweenRowGapPx = 0.0,
+            medianBetweenRowGapPx = 0.0,
+            medianGapPx = 0.0,
+            spacingConsistencyMinRatio = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES.spacingConsistencyMinRatio,
+            spacingConsistencyMaxRatio = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES.spacingConsistencyMaxRatio,
         )
 
     private fun provenance() =
@@ -100,7 +132,7 @@ class FrameContentCorrespondenceSnapshotTest {
             observedZoomRatio = 1.0f,
             targetPlacementLabel = TargetPlacementLabel.CENTER,
             distanceLabelMm = 300.0,
-            detectionResult = FrameContentDetectionResult.Detected(detectedPoints),
+            detectionResult = FrameContentDetectionResult.Detected(detectedPoints, syntheticOrientationEvidence(), syntheticGridGeometryEvidence()),
             targetSpec = DEFAULT_FRAME_CONTENT_TARGET_SPEC,
             detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,
             capturedAtEpochMillis = 0L,
@@ -197,6 +229,21 @@ class FrameContentCorrespondenceSnapshotTest {
         val targetJson = json.getValue("target").jsonObject
         assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.cornerRows.toLong(), targetJson.getValue("cornerRows").jsonPrimitive.long)
         assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.cornerCols.toLong(), targetJson.getValue("cornerCols").jsonPrimitive.long)
+        // Printable target geometry (task §3) — reproducible from the JSON alone.
+        assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.regularDotDiameterMm, targetJson.getValue("regularDotDiameterMm").jsonPrimitive.double)
+        assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.markerDiameterMm, targetJson.getValue("markerDiameterMm").jsonPrimitive.double)
+        assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.markerOffsetXMm, targetJson.getValue("markerOffsetXMm").jsonPrimitive.double)
+        assertEquals(DEFAULT_FRAME_CONTENT_TARGET_SPEC.markerOffsetYMm, targetJson.getValue("markerOffsetYMm").jsonPrimitive.double)
+        // designMarkerAreaScaleFactor (task §2's "target design vs observed ratio must be separate
+        // fields") is never confused with the detector's own acceptance threshold, exported separately
+        // below in detectionTolerances.markerAreaRatioThreshold.
+        assertEquals(
+            DEFAULT_FRAME_CONTENT_TARGET_SPEC.markerAreaScaleFactor,
+            targetJson.getValue("designMarkerAreaScaleFactor").jsonPrimitive.double,
+        )
+        val printableBoundsJson = targetJson.getValue("printableBounds").jsonObject
+        assertTrue(printableBoundsJson.containsKey("widthMm"))
+        assertTrue(printableBoundsJson.containsKey("heightMm"))
 
         val detectionTolerancesJson = json.getValue("detectionTolerances").jsonObject
         assertTrue(detectionTolerancesJson.containsKey("markerAreaRatioThreshold"))
@@ -209,6 +256,16 @@ class FrameContentCorrespondenceSnapshotTest {
         val firstDetected = detectedPointsJson.first().jsonObject
         assertTrue(firstDetected.containsKey("refinementStatus"))
         assertTrue(firstDetected.containsKey("region"))
+
+        // Orientation/grid-geometry evidence (task §2) — this fixture uses a synthetic placeholder (see
+        // syntheticOrientationEvidence), but the JSON structure itself must always be present/parseable.
+        val orientationEvidenceJson = json.getValue("orientationEvidence").jsonObject
+        assertTrue(orientationEvidenceJson.containsKey("observedMarkerAreaRatio"))
+        assertTrue(orientationEvidenceJson.containsKey("resolvedOriginCorner"))
+        assertEquals("TOP_LEFT", orientationEvidenceJson.getValue("resolvedOriginCorner").jsonPrimitive.content)
+        val gridGeometryEvidenceJson = json.getValue("gridGeometryEvidence").jsonObject
+        assertTrue(gridGeometryEvidenceJson.containsKey("minAdjacentRowSeparationPx"))
+        assertTrue(gridGeometryEvidenceJson.containsKey("spacingConsistencyMinRatio"))
 
         val poseJson = json.getValue("pose").jsonObject
         assertTrue(poseJson.containsKey("rvec"))

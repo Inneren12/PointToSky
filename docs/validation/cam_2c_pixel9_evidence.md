@@ -988,6 +988,13 @@ CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
 
 ## 12. CAM-2c frame-content correspondence experiment fix — epistemic correctness (this sprint, before any device evidence)
 
+> **Corrected/extended by §13 below**, before any Pixel 9 device evidence was collected under this
+> section's code: Freeze did not actually pin a complete, immutable evidence snapshot (a placement/
+> distance edit after Freeze could still desynchronize the displayed selection from what Copy/Share
+> exported), and the orientation marker's own measurements were discarded instead of exported (so an
+> accepted detection's orientation decision could not be audited). Everything below remains otherwise
+> accurate.
+
 **Code-only pass; still no device evidence — device evidence collection remains explicitly deferred
 until this fix landed.** A review of §11's experiment, conducted before any Pixel 9 run was attempted,
 found a circularity defect serious enough to invalidate any path-winner verdict the experiment could
@@ -1155,6 +1162,172 @@ NO INDEPENDENT PATH-WINNER VERDICT
 UNROTATED IMAGEPROXY BUFFER CONTRACT EXPLICIT
 PLACEMENT / DISTANCE FROZEN AND EXPORTED
 COMPLETE JSON EVIDENCE SCHEMA READY
+INSTRUMENTED/DEVICE EXECUTION PENDING
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED
+```
+
+## 13. CAM-2c frame-content correspondence experiment fix round 2 — Freeze correctness and orientation auditability (this sprint, still before any device evidence)
+
+**Code-only pass; still no device evidence.** A review of §12's fixed experiment, conducted before any
+Pixel 9 run, found two further P1 issues: neither invalidates §12's own epistemic-correctness fix (the
+conditional-verdict vocabulary, rotation semantics, and "never calibrated" language all remain unchanged),
+but both were serious enough that device evidence collection stayed blocked until they were fixed.
+**Scope: `internalDebug` only** — the same `FrameContent*.kt` file family, one new file
+(`FrameContentTargetSvg.kt`), their tests, and this documentation. CAM-2a production projection,
+`publicDebug`/release, the existing physical-camera-binding experiment, `AnalysisBuffer` intrinsics
+publication, and every `SensorToBufferDomainProof` variant remain untouched.
+
+### 13.1 Freeze did not pin a complete, immutable evidence snapshot
+
+`FrameContentExperimentLiveOverlay` (`FrameContentCorrespondenceScreen.kt`) stored an entire frozen
+`FrameContentExperimentSessionState` locally in a `frozenState` variable, and derived
+`displayedState = frozenState ?: state`. That looks correct in isolation, but §12.3's own chosen
+placement/distance behavior patches the **live** session's `latestSnapshot` in place on every edit —
+so after Freeze, a stale live callback (or simply the operator continuing to tap a placement button,
+which §12 never disabled) could advance the live session's snapshot while the frozen copy's own nested
+snapshot silently diverged from what a device operator believed was displayed. The failure mode: Copy
+report/Share JSON could export a placement/distance value that disagreed with the frozen label rendered
+in the UI, or vice versa — precisely the "never silently show one label while exporting another" failure
+§12.3 itself set out to prevent, reintroduced by an incomplete Freeze.
+
+**Fix.** `FrameContentExperimentLiveOverlay` now stores only
+`frozenSnapshot: FrameContentCorrespondenceSnapshot?` — a single, genuinely immutable value, never a
+whole session state that could contain further-mutable-in-spirit nested fields. Every read in the overlay
+(header, report body, Copy, Share) derives from one value: `displayedSnapshot = frozenSnapshot ?:
+state.latestSnapshot`. Specifically:
+
+- **Freeze** pins `frozenSnapshot` to the exact `FrameContentCorrespondenceSnapshot` instance live at
+  that moment, including its own `targetPlacementLabel`/`distanceLabelMm` — not a reference to anything
+  that can change afterward.
+- **While frozen**, the five placement buttons and the distance text field are `enabled = false` —
+  editing them could never be reflected in what's displayed anyway, so the UI no longer implies it would
+  be. The displayed placement/distance value while frozen is read from `frozenSnapshot` itself, never
+  from the live session's own (possibly since-changed) fields.
+- **Copy report / Share JSON** always read `displayedSnapshot` — the frozen snapshot while frozen, the
+  live snapshot otherwise. There is no code path that can display one selection while exporting another.
+- **Resume** (`frozenSnapshot = null`) immediately shows whatever the live session's own snapshot is
+  now — never a stale intermediate value.
+- **The header** now states three facts explicitly, so a frozen generation is never implied to be the
+  current live one: `liveFramesObserved` (the live session's own frame count, which keeps advancing while
+  frozen), `displayedGeneration` (the generation of whichever snapshot is actually shown), and
+  `liveness=LIVE|FROZEN`.
+
+New Compose UI tests (`FrameContentExperimentLiveOverlayUiTest.kt`, `internalDebug` `androidTest`)
+exercise the full contract: a snapshot A exists; Freeze; placement/distance controls are disabled; a live
+callback publishes a second, different snapshot B while frozen; the displayed report/live-summary/Copy
+output all still describe snapshot A, never B; Resume switches the display to the latest live snapshot;
+and editing placement while live is reflected consistently in the report. A fifth test confirms Freeze
+itself is disabled (not a silent no-op) when there is no snapshot yet to freeze.
+
+### 13.2 The orientation marker's own measurements were discarded, not exported
+
+The orientation marker is load-bearing (§11.1's own "correspondence-identity fix" KDoc, §12's regression
+test for the 180-degree case) — it is the sole basis for deciding which raster corner is the target's true
+`R0C0`, and therefore for every detected point's semantic `FrameContentPointId`. But
+`FrameContentDetectionResult.Detected` retained only the final, remapped `points` list — the raw
+marker-centroid position, its measured area, the corner-distance comparison, and the row/spacing
+statistics that justified accepting the grid in the first place were computed inside
+`detectFrameContentTargetCorners` and then thrown away. A reviewer auditing an accepted detection had no
+way to check *why* it was accepted beyond re-deriving approximate values from the already-remapped
+points — which is not the same evidence, and is exactly the kind of downstream recomputation task §2
+explicitly rules out ("do not recompute these later from the remapped points").
+
+**Fix.** Two new frozen, immutable evidence types, populated by `detectFrameContentTargetCorners` itself
+at the exact point each value is computed — never recomputed afterward:
+
+- **`FrameContentOrientationEvidence`**: the marker blob's own centroid and pixel area, the candidate
+  set's median grid-dot area, the actual `observedMarkerAreaRatio` this frame achieved (marker area ÷
+  median grid-dot area), the resolved origin corner, the nearest/second-nearest raster-corner distances
+  to the marker, and the actual `observedCornerConfidenceRatio` this frame achieved.
+- **`FrameContentGridGeometryEvidence`**: the minimum adjacent-row separation, the min/max/median
+  within-row gap, the min/max/median between-row gap, the median gap used for the consistency check, and
+  the configured spacing-consistency limits it was validated against.
+
+Both are carried on `FrameContentDetectionResult.Detected` (nullable — `null` for any non-accepted
+outcome), threaded unchanged through `FrameContentCorrespondenceSnapshot`, and exported in both the text
+report (new `ORIENTATION EVIDENCE`/`GRID GEOMETRY EVIDENCE` sections) and the JSON (schema bumped to `3`;
+new `orientationEvidence`/`gridGeometryEvidence` objects, parsed structurally in
+`FrameContentCorrespondenceSnapshotTest.kt`, never substring-matched).
+
+**The report now explicitly distinguishes three ratios that must never be conflated** — a direct fix for
+the failure mode task §2 called out ("do not imply that a 2.5x design marker was observed merely because
+the detector accepted a value above the 1.5x threshold"):
+
+1. `FrameContentTargetSpec.markerAreaScaleFactor` (renamed `designMarkerAreaScaleFactor` in the JSON's
+   `target` object) — the physical target's *printed design* ratio, `2.5x` by default.
+2. `FrameContentDetectionTolerances.markerAreaRatioThreshold` — the detector's own *acceptance*
+   threshold, `1.5x` by default; this is the only ratio a detection is actually gated on.
+3. `FrameContentOrientationEvidence.observedMarkerAreaRatio` — the *actual measured* ratio for this
+   specific frame, which may legitimately differ from both of the above (perspective, lighting, and
+   detection noise all affect it).
+
+New tests in `FrameContentCornerDetectorTest.kt` render a marker at a deliberately different ratio
+(`1.8x`) than the target spec's own design ratio (`2.5x`) and confirm `observedMarkerAreaRatio` tracks the
+actual rendered value, never the spec's — proving these are genuinely independent, separately computed
+fields rather than one echoing the other.
+
+### 13.3 Printable target geometry (task §3's "make the physical target reproducible")
+
+`FrameContentTargetSpec` gained explicit printed-target geometry: `regularDotDiameterMm` (a real printed
+diameter, default `8.0mm`), `markerDiameterMm` (a computed property — `regularDotDiameterMm *
+sqrt(markerAreaScaleFactor)`, never an independently settable field, so the printed marker and the
+detector's own area-ratio math can never silently drift apart), and `markerOffsetXMm`/`markerOffsetYMm`
+placing the marker's centre relative to `R0C0`. `FrameContentTargetSpec.init` now validates the marker
+offset is strictly nearer `R0C0` than every other grid corner — a misconfigured spec fails fast at
+construction, rather than silently describing a physically ambiguous printed target (locked by two new
+`FrameContentTargetTest` regression tests). A new `frameContentTargetPrintableBounds` function computes
+the smallest rectangle containing every printed regular dot and the marker at their real radii — the
+"total printable target bounds" task §3 asked for, exported in both the text report and the JSON's
+`target.printableBounds` object.
+
+**A new deterministic SVG generator, `buildFrameContentTargetSvg`** (`FrameContentTargetSvg.kt`, Option A
+from task §3, preferred over a checked-in static asset) renders this exact geometry — every regular dot
+at its real printed diameter, the marker at its own derived diameter, at true millimetre scale (`width`/
+`height` in `mm`, so a compliant SVG viewer/printer reproduces the physical target exactly). Wired to a
+new "Share target SVG" button on the device workflow's candidate-picker screen (`FrameContentCorrespondenceScreen.kt`,
+before an attempt even starts) via the same `shareCamDiagnosticText` mechanism every other export in this
+file family uses. Every device report already exports the full target spec used (§12.4's JSON schema
+work); this generator is the corresponding physical artifact, so the printed target behind any future
+device run is always reproducible from code, never an ad hoc hand-drawn substitute.
+
+### 13.4 Validation (real Gradle 8.14.3/JDK 17, same sandbox provisioning as every prior CAM-2c pass)
+
+```
+./gradlew :mobile:testInternalDebugUnitTest              — PASSED (609/609, 0 failures — 13 new tests:
+                                                             FrameContentTargetTest (7),
+                                                             FrameContentCornerDetectorTest (6))
+./gradlew :mobile:compileInternalDebugAndroidTestKotlin   — PASSED (new
+                                                             FrameContentExperimentLiveOverlayUiTest.kt,
+                                                             5 tests, compiled)
+./gradlew :mobile:lintInternalDebug                       — PASSED (0 errors)
+./gradlew :mobile:assembleInternalDebug                   — PASSED
+./gradlew :mobile:testPublicDebugUnitTest                 — PASSED (371/371, publicDebug/production
+                                                             untouched)
+```
+
+`FrameContentCornerDetectorTest` is the first test file in this experiment to actually render and detect
+a target, rather than only exercising the residual/hypothesis/verdict math against hand-constructed
+`DetectedTargetPoint` fixtures: it synthesizes a `LumaBuffer` from flat-luma filled circles at exact,
+computable pixel positions derived from the target's own millimetre geometry (the same convention
+`buildFrameContentTargetSvg` uses), and proves the detector recovers the correct semantic point IDs — not
+merely the correct point *count* — for both an unrotated render and a 180-degree-rotated render of the
+identical physical target, and that an ambiguous marker size or an ambiguous corner-confidence render
+correctly falls back to `OrientationAmbiguous`, never a guess. This is still a synthetic render, not a
+real photograph: the detector's accuracy against actual camera noise, lighting, lens distortion, and
+imperfect target placement remains exactly as unestablished as every prior pass in this file already
+recorded. No physical device or emulator was attached in this pass; the new
+`FrameContentExperimentLiveOverlayUiTest` compiled successfully but was not executed.
+
+**Final status, this pass:**
+
+```
+CAM-2c FRAME-CONTENT MEASUREMENT CODE READY
+SINGLE-FRAME RESIDUALS CONDITIONAL ON PHYSICAL-ANCHORED POSE
+FREEZE PINS COMPLETE EVIDENCE SNAPSHOT
+ORIENTATION DECISION FULLY AUDITABLE
+PRINTABLE TARGET GEOMETRY REPRODUCIBLE
+NO INDEPENDENT PATH-WINNER VERDICT
 INSTRUMENTED/DEVICE EXECUTION PENDING
 SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
 CALIBRATED ANALYSISBUFFER PUBLICATION STILL BLOCKED

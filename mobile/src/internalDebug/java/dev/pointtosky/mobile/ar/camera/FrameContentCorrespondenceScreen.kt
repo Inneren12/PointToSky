@@ -154,14 +154,29 @@ internal const val TAG_DISTANCE_INPUT = "frame_content_experiment_distance_input
 internal const val TAG_LIVE_SUMMARY = "frame_content_experiment_live_summary"
 internal const val TAG_POSE_ANCHOR_BANNER = "frame_content_experiment_pose_anchor_banner"
 internal const val TAG_VERDICT_BANNER = "frame_content_experiment_verdict_banner"
+internal const val TAG_EXPORT_TARGET_SVG = "frame_content_experiment_export_target_svg"
 
 @Composable
 private fun CandidatePicker(
     candidates: List<String>,
     onSelected: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Select physical camera", color = Color.White)
+        // Task §3: the printable target's exact geometry must be reproducible from code, not an ad hoc
+        // hand-drawn substitute — exported here, before an attempt even starts, since the target should
+        // be printed and placed before the device workflow below needs it.
+        Button(
+            onClick = {
+                shareCamDiagnosticText(
+                    context,
+                    "CAM-2c frame-content target SVG",
+                    buildFrameContentTargetSvg(DEFAULT_FRAME_CONTENT_TARGET_SPEC),
+                )
+            },
+            modifier = Modifier.testTag(TAG_EXPORT_TARGET_SVG),
+        ) { Text("Share target SVG") }
         LazyColumn {
             items(candidates) { candidate ->
                 Button(
@@ -261,13 +276,40 @@ internal fun FrameContentCorrespondenceSession(
     }
 }
 
+/**
+ * The live (non-terminal) attempt's fixed action header + scrollable report body. `internal` (not
+ * `private`) — mirrors [PhysicalCameraExperimentLiveOverlay]'s own visibility, so this composable can be
+ * exercised directly by Compose UI tests without needing a real camera bind (see
+ * `docs/validation/cam_2c_pixel9_evidence.md`).
+ *
+ * ## Freeze semantics fix (P1)
+ * A prior revision stored an entire frozen [FrameContentExperimentSessionState] locally, but the
+ * placement/distance reducers patch the *live* session's own `latestSnapshot` — so after Freeze, a
+ * placement/distance edit from a stale live callback could update the frozen copy's nested snapshot in
+ * place (data classes copy by reference for unrelated fields, but the specific bug here was that the
+ * live `state` input kept advancing independent of `frozenState`, and several derived reads mixed the
+ * two). This revision stores only [FrameContentCorrespondenceSnapshot]? — a single, genuinely immutable
+ * value — as [frozenSnapshot], and [displayedSnapshot] is the *only* value every read below (header,
+ * report, Copy, Share) derives from. There is no code path here that can display one selection while
+ * exporting another:
+ * - Freeze pins [frozenSnapshot] to the exact [FrameContentCorrespondenceSnapshot] instance live at that
+ *   moment — including its own `targetPlacementLabel`/`distanceLabelMm`.
+ * - While frozen, the placement buttons and the distance field are disabled — editing metadata while
+ *   viewing a frozen snapshot could never be reflected in what's displayed anyway.
+ * - Copy report / Share JSON always read [displayedSnapshot] — the frozen snapshot while frozen, the
+ *   live snapshot otherwise.
+ * - Resume (`frozenSnapshot = null`) immediately shows whatever the live session's own snapshot is now.
+ * - The header always states live frame count, the *displayed* snapshot's own generation, and an
+ *   explicit `liveness=LIVE|FROZEN` flag — never implying the frozen generation is the current live one.
+ */
 @Composable
-private fun FrameContentExperimentLiveOverlay(
+internal fun FrameContentExperimentLiveOverlay(
     state: FrameContentExperimentSessionState,
     onUpdateSession: (Long, (FrameContentExperimentSessionState) -> FrameContentExperimentSessionState) -> Unit,
 ) {
-    var frozenState by remember(state.attemptId) { mutableStateOf<FrameContentExperimentSessionState?>(null) }
-    val displayedState = frozenState ?: state
+    var frozenSnapshot by remember(state.attemptId) { mutableStateOf<FrameContentCorrespondenceSnapshot?>(null) }
+    val isFrozen = frozenSnapshot != null
+    val displayedSnapshot = frozenSnapshot ?: state.latestSnapshot
     val context = LocalContext.current
 
     Column(
@@ -278,10 +320,12 @@ private fun FrameContentExperimentLiveOverlay(
                 .padding(8.dp),
     ) {
         Column(modifier = Modifier.testTag(TAG_ACTION_HEADER)) {
-            val snapshot = displayedState.latestSnapshot
             Text(
-                "physicalId=${displayedState.physicalCameraId} attemptId=${displayedState.attemptId} " +
-                    "frames=${displayedState.framesObserved} detectedPoints=${snapshot?.detectedPoints?.size ?: 0}",
+                "physicalId=${state.physicalCameraId} attemptId=${state.attemptId} " +
+                    "liveFramesObserved=${state.framesObserved} " +
+                    "displayedGeneration=${displayedSnapshot?.generation ?: "none"} " +
+                    "liveness=${if (isFrozen) "FROZEN" else "LIVE"} " +
+                    "detectedPoints=${displayedSnapshot?.detectedPoints?.size ?: 0}",
                 color = Color.White,
                 modifier = Modifier.testTag(TAG_LIVE_SUMMARY),
             )
@@ -289,23 +333,29 @@ private fun FrameContentExperimentLiveOverlay(
             // scrollable report — this is the one place a device operator must never miss the
             // "not an independent path-winner" caveat.
             Text(
-                "poseReferenceHypothesis=${snapshot?.poseReferenceHypothesis ?: FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS} " +
+                "poseReferenceHypothesis=${displayedSnapshot?.poseReferenceHypothesis ?: FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS} " +
                     "(MEASUREMENT-ONLY — residuals are CONDITIONAL_ON_PHYSICAL_ANCHORED_POSE, never an " +
                     "independent path-winner verdict)",
                 color = Color.Cyan,
                 modifier = Modifier.testTag(TAG_POSE_ANCHOR_BANNER),
             )
-            if (snapshot != null) {
+            if (displayedSnapshot != null) {
                 Text(
-                    snapshot.summariesByHypothesis.entries.joinToString(" | ") { (id, summary) -> "$id rms=${summary.rmsPx}" },
+                    displayedSnapshot.summariesByHypothesis.entries.joinToString(" | ") { (id, summary) -> "$id rms=${summary.rmsPx}" },
                     color = Color.White,
                 )
                 Text(
-                    "verdict=${snapshot.verdict.verdict}",
+                    "verdict=${displayedSnapshot.verdict.verdict}",
                     color = Color.Yellow,
                     modifier = Modifier.testTag(TAG_VERDICT_BANNER),
                 )
             }
+
+            // Metadata fix (P1): while frozen, these controls must never suggest editing them changes
+            // what's displayed — they are disabled outright, and they display the frozen snapshot's own
+            // placement/distance (never the live session's, which may have moved on since Freeze).
+            val displayedPlacementLabel = if (isFrozen) frozenSnapshot?.targetPlacementLabel else state.targetPlacementLabel
+            val displayedDistanceLabelMm = if (isFrozen) frozenSnapshot?.distanceLabelMm else state.distanceLabelMm
 
             // Task §8: five placement controls must never overflow a portrait Pixel 9 screen — a
             // horizontally scrollable row guarantees no clipping regardless of screen width/font scale.
@@ -320,50 +370,56 @@ private fun FrameContentExperimentLiveOverlay(
                 TargetPlacementLabel.values().forEach { label ->
                     Button(
                         onClick = { onUpdateSession(state.attemptId) { it.reduceTargetPlacementLabel(state.attemptId, label) } },
+                        enabled = !isFrozen,
                         modifier = Modifier.testTag(TAG_PLACEMENT_PREFIX + label.name),
                     ) {
-                        Text(label.name, color = if (state.targetPlacementLabel == label) Color.Yellow else Color.White)
+                        Text(label.name, color = if (displayedPlacementLabel == label) Color.Yellow else Color.White)
                     }
                 }
             }
             OutlinedTextField(
-                value = state.distanceLabelMm?.toString() ?: "",
+                value = displayedDistanceLabelMm?.toString() ?: "",
                 onValueChange = { text ->
                     onUpdateSession(state.attemptId) { it.reduceDistanceLabel(state.attemptId, text.toDoubleOrNull()) }
                 },
                 label = { Text("distance mm") },
+                enabled = !isFrozen,
                 modifier = Modifier.testTag(TAG_DISTANCE_INPUT),
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { frozenState = if (frozenState == null) displayedState else null }, modifier = Modifier.testTag(TAG_FREEZE)) {
-                    Text(if (frozenState == null) "Freeze" else "Resume live")
+                Button(
+                    onClick = { frozenSnapshot = if (frozenSnapshot == null) state.latestSnapshot else null },
+                    enabled = isFrozen || state.latestSnapshot != null,
+                    modifier = Modifier.testTag(TAG_FREEZE),
+                ) {
+                    Text(if (isFrozen) "Resume live" else "Freeze")
                 }
                 // Task §8: disabled (not a silent no-op) whenever there is no snapshot to export yet.
                 Button(
                     onClick = {
-                        val snap = displayedState.latestSnapshot
+                        val snap = displayedSnapshot
                         if (snap != null) {
                             copyCamDiagnosticTextToClipboard(context, "CAM-2c frame content", buildFrameContentCorrespondenceReportText(snap))
                         }
                     },
-                    enabled = displayedState.latestSnapshot != null,
+                    enabled = displayedSnapshot != null,
                     modifier = Modifier.testTag(TAG_COPY),
                 ) { Text("Copy report") }
                 Button(
                     onClick = {
-                        val snap = displayedState.latestSnapshot
+                        val snap = displayedSnapshot
                         if (snap != null) {
                             shareCamDiagnosticText(context, "CAM-2c frame content JSON", buildFrameContentCorrespondenceJson(snap))
                         }
                     },
-                    enabled = displayedState.latestSnapshot != null,
+                    enabled = displayedSnapshot != null,
                     modifier = Modifier.testTag(TAG_SHARE_JSON),
                 ) { Text("Share JSON") }
             }
         }
 
-        val reportText = displayedState.latestSnapshot?.let { buildFrameContentCorrespondenceReportText(it) } ?: "awaiting frame/binding"
+        val reportText = displayedSnapshot?.let { buildFrameContentCorrespondenceReportText(it) } ?: "awaiting frame/binding"
         Column(
             modifier =
                 Modifier

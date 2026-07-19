@@ -87,6 +87,13 @@ internal data class FrameContentCorrespondenceSnapshot(
     val objectPoints: List<FrameContentObjectPoint>,
     val detectedPoints: List<DetectedTargetPoint>,
     val detectionOutcomeDescription: String,
+    /** The exact orientation evidence the detector froze for this frame's accepted detection (task §2)
+     * — `null` whenever [detectedPoints] is empty (no accepted [FrameContentDetectionResult.Detected]
+     * this frame), never recomputed from [detectedPoints] after the fact. */
+    val orientationEvidence: FrameContentOrientationEvidence?,
+    /** The exact row/spacing geometry evidence the detector froze for this frame's accepted detection
+     * (task §2) — `null` under the same condition as [orientationEvidence]. */
+    val gridGeometryEvidence: FrameContentGridGeometryEvidence?,
     val pose: FrameContentPoseSolution?,
     val poseReferenceHypothesis: FrameContentMappingHypothesisId,
     val crossHypothesisResidualInterpretation: String,
@@ -150,6 +157,10 @@ internal fun buildFrameContentCorrespondenceSnapshot(
             is FrameContentDetectionResult.InsufficientOrAmbiguousGrid -> emptyList()
             is FrameContentDetectionResult.OrientationAmbiguous -> emptyList()
         }
+    // Frozen exactly as the detector produced them for this frame (task §2) — never recomputed from
+    // detectedPoints/trueRow-trueCol assignments after the fact.
+    val orientationEvidence = (detectionResult as? FrameContentDetectionResult.Detected)?.orientationEvidence
+    val gridGeometryEvidence = (detectionResult as? FrameContentDetectionResult.Detected)?.gridGeometryEvidence
     val detectionOutcomeDescription =
         when (detectionResult) {
             is FrameContentDetectionResult.Detected -> "DETECTED(${detectionResult.points.size} points)"
@@ -287,6 +298,8 @@ internal fun buildFrameContentCorrespondenceSnapshot(
         objectPoints = objectPoints,
         detectedPoints = detectedPoints,
         detectionOutcomeDescription = detectionOutcomeDescription,
+        orientationEvidence = orientationEvidence,
+        gridGeometryEvidence = gridGeometryEvidence,
         pose = pose,
         poseReferenceHypothesis = FRAME_CONTENT_POSE_REFERENCE_HYPOTHESIS,
         crossHypothesisResidualInterpretation = CROSS_HYPOTHESIS_RESIDUAL_INTERPRETATION,

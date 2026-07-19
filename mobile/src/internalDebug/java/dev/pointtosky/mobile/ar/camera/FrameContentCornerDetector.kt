@@ -137,9 +137,56 @@ internal data class FrameContentDetectionTolerances(
 
 internal val DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES = FrameContentDetectionTolerances()
 
+/**
+ * Frozen evidence for the orientation decision one accepted [FrameContentDetectionResult.Detected]
+ * actually made (task §2's "the orientation marker is load-bearing... do not recompute these later from
+ * the remapped points" fix). Every field here is the exact value [detectFrameContentTargetCorners]
+ * computed for *this* frame — never re-derived downstream from [DetectedTargetPoint.pointId] assignments
+ * after the fact, which would no longer be traceable to the raw blob measurements that justified them.
+ */
+internal data class FrameContentOrientationEvidence(
+    val markerCentroidXPx: Double,
+    val markerCentroidYPx: Double,
+    val markerAreaPx: Int,
+    val medianGridDotAreaPx: Double,
+    /** The marker blob's actual observed area, as a multiple of [medianGridDotAreaPx] — this is what the
+     * detector's [FrameContentDetectionTolerances.markerAreaRatioThreshold] gate was actually evaluated
+     * against, and is **not** the same thing as [FrameContentTargetSpec.markerAreaScaleFactor] (the
+     * printed target's *design* ratio). A report must never imply the design ratio was observed merely
+     * because this value cleared the acceptance threshold. */
+    val observedMarkerAreaRatio: Double,
+    val resolvedOriginCorner: GridCorner,
+    val nearestCornerDistancePx: Double,
+    val secondNearestCornerDistancePx: Double,
+    /** `secondNearestCornerDistancePx / nearestCornerDistancePx` — the actual observed confidence this
+     * frame's orientation resolution achieved, evaluated against
+     * [FrameContentDetectionTolerances.markerCornerConfidenceRatio]. */
+    val observedCornerConfidenceRatio: Double,
+)
+
+/** Frozen row/spacing geometry evidence for one accepted [FrameContentDetectionResult.Detected] (task
+ * §2's "export the row/spacing validation evidence needed to audit an accepted detection" requirement) —
+ * the exact statistics [detectFrameContentTargetCorners] validated this frame's grid against, alongside
+ * the configured limits it validated them with, so a reviewer can audit *why* a detection was accepted
+ * without re-deriving these numbers from the (already remapped) [DetectedTargetPoint] list. */
+internal data class FrameContentGridGeometryEvidence(
+    val minAdjacentRowSeparationPx: Double,
+    val minWithinRowGapPx: Double,
+    val maxWithinRowGapPx: Double,
+    val medianWithinRowGapPx: Double,
+    val minBetweenRowGapPx: Double,
+    val maxBetweenRowGapPx: Double,
+    val medianBetweenRowGapPx: Double,
+    val medianGapPx: Double,
+    val spacingConsistencyMinRatio: Double,
+    val spacingConsistencyMaxRatio: Double,
+)
+
 internal sealed interface FrameContentDetectionResult {
     data class Detected(
         val points: List<DetectedTargetPoint>,
+        val orientationEvidence: FrameContentOrientationEvidence,
+        val gridGeometryEvidence: FrameContentGridGeometryEvidence,
     ) : FrameContentDetectionResult
 
     data class InsufficientOrAmbiguousGrid(
@@ -328,10 +375,14 @@ internal fun detectFrameContentTargetCorners(
     }
 
     // Row separation: adjacent raster rows must not overlap in Y — rejects strong perspective / row
-    // -interleaving rather than silently sorting mixed-row points together (task §6).
+    // -interleaving rather than silently sorting mixed-row points together (task §6). Every separation is
+    // retained (not just the pass/fail outcome) so an accepted detection's own row-separation evidence
+    // can be audited later (task §2).
+    val rowSeparationsPx = mutableListOf<Double>()
     for (i in 0 until rasterRows.size - 1) {
         val maxYThisRow = rasterRows[i].maxOf { it.weightedCentroidY }
         val minYNextRow = rasterRows[i + 1].minOf { it.weightedCentroidY }
+        rowSeparationsPx.add(minYNextRow - maxYThisRow)
         if (maxYThisRow >= minYNextRow) {
             return FrameContentDetectionResult.InsufficientOrAmbiguousGrid(
                 reason = "raster row $i and row ${i + 1} overlap in Y ($maxYThisRow >= $minYNextRow) — rows " +
@@ -366,6 +417,19 @@ internal fun detectFrameContentTargetCorners(
             rawBlobCount = candidateBlobs.size,
         )
     }
+    val gridGeometryEvidence =
+        FrameContentGridGeometryEvidence(
+            minAdjacentRowSeparationPx = rowSeparationsPx.min(),
+            minWithinRowGapPx = withinRowGaps.min(),
+            maxWithinRowGapPx = withinRowGaps.max(),
+            medianWithinRowGapPx = median(withinRowGaps),
+            minBetweenRowGapPx = betweenRowGaps.min(),
+            maxBetweenRowGapPx = betweenRowGaps.max(),
+            medianBetweenRowGapPx = median(betweenRowGaps),
+            medianGapPx = medianGap,
+            spacingConsistencyMinRatio = tolerances.spacingConsistencyMinRatio,
+            spacingConsistencyMaxRatio = tolerances.spacingConsistencyMaxRatio,
+        )
 
     // Orientation resolution: which raster corner is the marker nearest to, with a required confidence
     // margin over the second-nearest corner (task §6 — this is what resolves the 180-degree ambiguity a
@@ -395,6 +459,18 @@ internal fun detectFrameContentTargetCorners(
         )
     }
     val originCorner = nearest.first
+    val orientationEvidence =
+        FrameContentOrientationEvidence(
+            markerCentroidXPx = markerBlob.weightedCentroidX,
+            markerCentroidYPx = markerBlob.weightedCentroidY,
+            markerAreaPx = markerBlob.pixelCount,
+            medianGridDotAreaPx = medianAreaPx,
+            observedMarkerAreaRatio = markerBlob.pixelCount / medianAreaPx,
+            resolvedOriginCorner = originCorner,
+            nearestCornerDistancePx = nearest.second,
+            secondNearestCornerDistancePx = secondNearest.second,
+            observedCornerConfidenceRatio = secondNearest.second / nearest.second,
+        )
 
     val points =
         rasterRowsSortedByX.flatMapIndexed { rasterRow, row ->
@@ -404,7 +480,16 @@ internal fun detectFrameContentTargetCorners(
             }
         }
 
-    return FrameContentDetectionResult.Detected(points)
+    return FrameContentDetectionResult.Detected(points, orientationEvidence, gridGeometryEvidence)
+}
+
+/** Plain median (average of the two middle values for an even-sized list) — used only for this file's
+ * own row/spacing geometry evidence; the residual-summary median in `FrameContentResidual.kt` is a
+ * separate, independently-tested implementation over a different value domain, kept unshared on purpose. */
+private fun median(values: List<Double>): Double {
+    val sorted = values.sorted()
+    val mid = sorted.size / 2
+    return if (sorted.size % 2 == 0) (sorted[mid - 1] + sorted[mid]) / 2.0 else sorted[mid]
 }
 
 /** Unused directly by detection math; retained so callers computing an expected dot pixel radius from
