@@ -1,5 +1,15 @@
 # CAM-2c: real Pixel 9 evidence, and the CAM diagnostic export/freeze workflow
 
+> **Epistemic update (dual-basis slice).** Sections 1–7 below predate
+> `docs/recon/cam_2c_sensor_to_buffer_domain_recon.md`. Where they say the pinned CameraX version's
+> sensor-to-buffer source-domain contract "has not been source-traced", read that as historical: the
+> recon **has** since traced CameraX 1.4.2 (declared domain = the CameraX-opened camera's
+> `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rect → full unrotated buffer, inverse `ScaleToFit.CENTER`
+> construction) and resolved §3's identity-matrix finding (CameraX 1.3.4 never set the matrix
+> without a ViewPort — the default identity leaked through; the "pre-normalized source domain"
+> speculation is retired). What remains unproven is narrower and named precisely: physical/logical
+> **basis compatibility** under `setPhysicalCameraId`, and **frame-content correspondence**. See §8.
+
 This file has four distinct sections, kept deliberately separate because they have different
 provenance and different confidence levels:
 
@@ -532,3 +542,70 @@ PHYSICAL BINDING DEVICE VALIDATION PENDING
 SENSOR-TO-BUFFER DOMAIN PROOF PENDING
 CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
 ```
+
+## 8. Dual-basis diagnostic slice — evidence-capture machinery, and the exact device runs it enables
+
+**Code-only pass; no new device evidence.** Building on the recon (see the epistemic-update note at
+the top of this file), this slice added the `internalDebug`-only dual-basis diagnostic:
+per-frame assessment of the observed matrix under **both** the opened logical camera's and the
+selected physical camera's active-array bases (each fully labelled — camera ID, role, coordinate
+space, full native rect, metadata source), the `WholeActiveArrayGeometryClass` classifier (the real
+Pixel 9 1.4.2 matrix classifies `UNIFORM_SCALE_CENTER_CROP` in unit fixtures; the historical 1.3.4
+identity classifies `UNEXPLAINED`), the pure CameraX 1.4.2 implementation-model prediction with
+per-coefficient/mapped-point residuals, opened-logical-camera snapshot capture from the same bound
+`CameraInfo` (typed `Unavailable` when unidentifiable), per-attempt matrix-stability counters,
+near-4:3/16:9 resolution selection from device-declared sizes (each switch a fresh generation), and
+deterministic text/JSON export at full available precision (widened float32 documented as such).
+See `docs/SPRINT_STATUS.md`'s "CAM-2c dual-basis diagnostic slice" and
+`docs/camera_coordinate_calibration_contract.md` §3.12 for the full inventory and validation record.
+
+**The device workflow this enables (not yet run — no device has been attached in any pass):**
+
+For each physical ID `2`, `3`, `4`:
+
+- **A. near-4:3 session** — select the candidate, select 640×480 (or the actual supported
+  equivalent), wait ≥ 100 valid frames, Freeze, Copy report + Share JSON.
+- **B. 16:9 session** — Back to candidates (fresh generation), same candidate, select the supported
+  16:9 size (e.g. 1280×720), wait ≥ 100 valid frames, Freeze, export. The 1.4.2 model predicts the
+  crop magnitude flips from ≈ 0.94 px/side (4:3) to ≈ 121.88 px/side (16:9, vertical) for a
+  4080×3072 basis — a sharp, falsifiable discriminator.
+- **C. restart** — fully leave and reopen the experiment; repeat one session for lifecycle
+  reproducibility.
+
+Each export answers: did binding reach `Bound`; which `CameraInfo` shape; which logical camera
+remained open; matrix stability across frames; does the matrix match the logical-basis model, the
+physical-basis model, both (numerically indistinguishable — never "proven equal"), or neither; does
+the aspect switch flip the crop geometry as predicted; is fixed zoom actually reported ≈ 1.0×; and
+that CAM-2c remains `DomainNotProven`.
+
+**Expected current outcome after a successful physical bind:**
+
+```
+PHYSICAL CAMERA BINDING VERIFIED
+TRANSFORM GEOMETRY CLASSIFIED
+LOGICAL/PHYSICAL BASIS COMPARISON EXPORTED
+CAM-2c DOMAIN NOT PROVEN
+```
+
+A dual-basis model match — even a perfect one under both bases — is matrix-construction evidence
+only. It is **not** frame-content proof, it constructs no `SensorToBufferDomainProof.Proven*`
+variant, and calibrated Pixel 9 `AnalysisBuffer` intrinsics remain blocked.
+
+**Fix pass (read before interpreting any §8 export):** a review of this slice fixed four defects
+before any device run occurred, so no captured evidence predates them
+(`docs/camera_coordinate_calibration_contract.md` §3.13, experiment JSON schema now `2`):
+
+- A model match now requires the observed matrix to be inside the model's axis-aligned affine
+  structural scope — a projective/sheared matrix whose top two rows resemble the prediction reports
+  `modelComparison=COMPARISON_UNSUPPORTED_STRUCTURE`, never a match; `maxMappedPointResidualPx` is
+  Euclidean and absent for unsupported structures.
+- The requested aspect family (`requestedAnalysisResolutionFamily`) is explicit in every export and
+  independent of exact `WxH` equality — a near-16:9 size such as `848x480` is bound and reported as
+  `NEAR_16_9`.
+- `comparisonVerdict` distinguishes `MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE` (equal
+  candidate rects) from `MATCHES_BOTH_DIFFERING_RECTS_WITHIN_TOLERANCE` (ambiguous dual match);
+  `basesNumericallyIndistinguishable` is pure rect identity.
+- `matrixStability` reports `bitwiseMatrixChanges` (exact float32-value inequality) separately from
+  `mappedDisplacementChangesBeyondTolerance` (mapped-pixel displacement over the exported reference
+  rectangle vs the exported `MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX`); device reports are
+  self-describing about their thresholds.

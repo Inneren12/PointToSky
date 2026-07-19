@@ -85,6 +85,41 @@ class SensorToBufferDomainProofTest {
     }
 
     @Test
+    fun `the real Pixel 9 CameraX 142 center-crop matrix still never yields a Proven variant`() {
+        // Dual-basis slice, recon fixture 17: this matrix classifies as UNIFORM_SCALE_CENTER_CROP
+        // (exactly the traced CameraX 1.4.2 construction) — and the automatic evidence path must
+        // STILL only ever produce Unresolved or HypothesisMismatch, never any Proven* variant.
+        val pixel9CameraX142Matrix =
+            SensorToBufferMatrix3(
+                m00 = 0.1568627506494522, m01 = 0.0, m02 = 0.0,
+                m10 = 0.0, m11 = 0.1568627506494522, m12 = -0.9411764740943909,
+                m20 = 0.0, m21 = 0.0, m22 = 1.0,
+            )
+        val geometry =
+            assessWholeActiveArrayGeometry(
+                matrix = pixel9CameraX142Matrix,
+                sourceLeftPx = 0, sourceTopPx = 0, sourceWidthPx = 4080, sourceHeightPx = 3072,
+                bufferWidthPx = 640, bufferHeightPx = 480,
+            )
+        assertEquals(WholeActiveArrayGeometryClass.UNIFORM_SCALE_CENTER_CROP, geometry.geometryClass)
+
+        val proof =
+            evidenceOnlySensorToBufferDomainProof(
+                matrix = pixel9CameraX142Matrix,
+                activeArrayWidthPx = 4080,
+                activeArrayHeightPx = 3072,
+                bufferWidthPx = 640,
+                bufferHeightPx = 480,
+            )
+
+        // The 0.941 px symmetric overflow exceeds the binary verdict's 0.5 px tolerance, so the
+        // preserved binary check reports HypothesisMismatch — and either way, nothing here unlocks
+        // calibrated resolution.
+        assertIs<SensorToBufferDomainProof.HypothesisMismatch>(proof)
+        assertFalse(proof.unlocksAnalysisBufferResolution())
+    }
+
+    @Test
     fun `missing active array dimensions are Unresolved, not a crash or a fabricated match`() {
         val identityMatrix = SensorToBufferMatrix3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 

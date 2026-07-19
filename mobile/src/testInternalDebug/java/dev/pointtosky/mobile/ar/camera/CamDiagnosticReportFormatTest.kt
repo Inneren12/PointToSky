@@ -312,10 +312,12 @@ class CamDiagnosticReportFormatTest {
             val text = buildCamDiagnosticReportText(pixel9Snapshot, CamDiagnosticLiveness.LIVE)
 
             // Locale.GERMANY renders Double via a bare String.format("%.1f", ...) as "0,2" (comma
-            // decimal) - this report must still read "0.2" (dot decimal) regardless, proving every
-            // numeric formatter here is pinned to Locale.ROOT rather than the JVM default.
-            assertTrue(text.contains("0.2, 0.0, 0.0"), "expected a dot-decimal matrix value even under a comma-decimal default locale")
-            assertFalse(text.contains("0,2"), "must never render the German comma-decimal form of this matrix value")
+            // decimal) - this report must still use dot decimals regardless. Matrix values are now
+            // rendered at full precision via Double.toString (dual-basis slice, task §9 - bit-level
+            // comparison against the CameraX 1.4.2 model needs every digit), which is itself
+            // locale-independent by specification.
+            assertTrue(text.contains("0.15686, 0.0, 0.0"), "expected a dot-decimal matrix value even under a comma-decimal default locale")
+            assertFalse(text.contains("0,15686"), "must never render the German comma-decimal form of this matrix value")
             assertFalse(text.contains("9,80"), "must never render the German comma-decimal form of the sensor size")
         } finally {
             Locale.setDefault(defaultLocale)

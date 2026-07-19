@@ -961,6 +961,171 @@ SENSOR-TO-BUFFER DOMAIN PROOF PENDING
 CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
 ```
 
+## CAM-2c dual-basis diagnostic slice (this sprint)
+
+Follow-up to the CameraX 1.4.2 sensor-to-buffer recon (`docs/recon/cam_2c_sensor_to_buffer_domain_recon.md`),
+which **established the declared transform coordinate domain** (public `ImageInfo` Javadoc + 1.4.2
+implementation trace: the CameraX-opened camera's `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rect → full
+unrotated buffer, via the inverse of `Matrix.setRectToRect(bufferRect, activeArrayRect,
+ScaleToFit.CENTER)`), explained the historical 1.3.4 identity matrix (matrix never set without a
+ViewPort), and left two device-level gaps: **physical/logical basis compatibility** (under
+`setPhysicalCameraId` the matrix is predictably built from the *opened logical* camera's active array
+while the physical path resolves intrinsics from the *selected physical* camera's characteristics)
+and **frame-content correspondence** (CameraX asserts the mapping; nothing measures what the HAL put
+in the buffer). This slice is evidence-capture and reconciliation *preparation* — it authorizes no
+calibrated publication.
+
+**What was added (`internalDebug` only unless noted):**
+
+- **Explicit coordinate-basis identity model** (`CameraCoordinateBasis.kt`): camera ID + role
+  (`OPENED_LOGICAL_CAMERA`/`SELECTED_PHYSICAL_CAMERA`) + coordinate space (`ACTIVE_ARRAY_NATIVE`/…) +
+  full native rect + metadata source. No diagnostic in this slice can emit an unqualified
+  "ACTIVE_ARRAY_LOCAL" label without camera identity — the exact ambiguity the recon flagged in
+  `SensorToBufferDomainProof.ProvenActiveArrayLocal`'s name.
+- **Geometry classifier** (`WholeActiveArrayGeometry.kt`): `WholeActiveArrayGeometryClass`
+  (`EXACT_BOUNDS_FIT`/`UNIFORM_SCALE_CENTER_CROP`/`UNIFORM_SCALE_ASYMMETRIC_CROP`/
+  `UNIFORM_SCALE_LETTERBOX`/`NON_UNIFORM_SCALE`/`SHEAR_OR_PERSPECTIVE`/`DEGENERATE`/
+  `INSUFFICIENT_INPUT`/`UNEXPLAINED`) with four **separate, documented tolerances**
+  (`FLOAT_NOISE_TOLERANCE_PX=1e-3`, `GEOMETRIC_MAGNITUDE_TOLERANCE_PX=1e-2`,
+  `SCALE_ISOTROPY_RELATIVE_TOLERANCE=1e-4`, `AFFINE_STRUCTURE_TOLERANCE=1e-6`) — float32-storage
+  noise (~2.3e-5 px on the real Pixel 9 matrix) and geometric crop (~0.941 px/side) are cleanly
+  separated. The existing binary `assessWholeActiveArrayMappingHypothesis` verdict and every exported
+  field are preserved unchanged; the geometry class is additive (main CAM JSON schema 3 → 4).
+- **CAMERAX_1_4_2_IMPLEMENTATION_MODEL** (`CameraX142MatrixModel.kt`): pure, Android-free
+  reproduction of the traced construction (float32-rounded steps, native-offset handling, fit axis,
+  overflow direction, expected crop magnitude) — explicitly a model of the pinned 1.4.2
+  implementation, never a cross-version guarantee, never production projection math.
+- **Dual-basis evidence** (`DualBasisMatrixEvidence.kt`): each observed matrix is assessed
+  independently under the **labelled** logical and physical active-array bases
+  (`LOGICAL_OPENED_CAMERA_BASIS`/`SELECTED_PHYSICAL_CAMERA_BASIS`), with per-coefficient and
+  mapped-point residuals against the model, a typed comparison verdict
+  (`MATCHES_LOGICAL_BASIS_ONLY`/`MATCHES_PHYSICAL_BASIS_ONLY`/
+  `MATCHES_BOTH_BASES_NUMERICALLY_INDISTINGUISHABLE`/`MATCHES_NEITHER_BASIS`/`INSUFFICIENT_INPUT`),
+  and explicit evidence levels (`API_DECLARED_DOMAIN`/`DEVICE_MATRIX_OBSERVED`/
+  `CAMERAX_IMPLEMENTATION_MODEL_MATCH`/`FRAME_CONTENT_CORRESPONDENCE_UNMEASURED` — no stronger label
+  exists). Matrix-construction fit is never conflated with frame-content proof.
+- **Opened-logical-camera snapshot** (`OpenedLogicalCameraSnapshot.kt` +
+  `resolveDualBasisBindingFromCameraInfo`): captured from the *same* bound `CameraInfo` as the
+  physical verification, identified only via the bound-CameraInfo shape (never ID ordering /
+  `DEFAULT_BACK_CAMERA` assumptions / focal-length or dimension matching), with a typed
+  `Unavailable` state when the logical parent cannot be identified. Logical and physical snapshots
+  stay in separate fields; neither substitutes for the other.
+- **Per-attempt matrix stability** (`MatrixStabilityCounters.kt`): first/latest matrix, frames
+  observed, null transforms, changes beyond float noise, max coefficient delta, and a
+  dimensions/crop/rotation-changed flag — generation-scoped by the existing `attemptId` guards.
+- **Deliberate dual-aspect resolutions** (`AnalysisResolutionCandidates.kt` + a new, default-`null`
+  `analysisResolutionOverride` parameter on the shared `CameraPreview`, exactly the
+  `cameraSelectorOverride` pattern — production call sites byte-for-byte unaffected): near-4:3 and
+  16:9 candidates selected from the device-declared `YUV_420_888` sizes, requested vs. actually-bound
+  resolution both recorded, and every resolution switch starts a **new attempt/generation**.
+- **Experiment export** (`PhysicalCameraExperimentExport.kt`): deterministic text + JSON
+  (`PHYSICAL_CAMERA_EXPERIMENT_JSON_SCHEMA_VERSION=1`) with full-precision matrix values
+  (`Double.toString` of the widened `android.graphics.Matrix` float32 storage — documented as such,
+  never claimed to be native double-precision measurements), explicit value order, session identity,
+  zoom target/observed, both basis assessments, stability counters, and a mandatory safety block
+  (`geometryClassificationIsEvidenceOnly=true`, `frameContentCorrespondenceMeasured=false`,
+  `provenDomainVariantConstructed=false`). The experiment screen gained a resolution-pick step and
+  Freeze/Copy report/Share JSON actions (generation-keyed, so a new attempt never inherits a frozen
+  snapshot).
+
+**What is unchanged (safety boundaries):** CAM-2a math, declination, device-to-optical mapping,
+renderer, catalog, detector/matcher, `AnalysisBufferIntrinsicsResolver` production math, the
+`UnsupportedLogicalMultiCameraMapping` guard, publicDebug/release camera behavior, production
+intrinsics publication, and `SensorToBufferDomainProof` semantics. No `Proven*` variant is
+constructed anywhere; `evidenceOnlySensorToBufferDomainProof` still only ever yields
+`Unresolved`/`HypothesisMismatch` (a new test proves this holds even when the geometry class is
+`UNIFORM_SCALE_CENTER_CROP`), and the automatic physical-camera experiment outcome remains
+`DomainNotProven`.
+
+**Validation (real Gradle, this session — local Gradle 8.14.3 used because the session's network
+proxy blocks the wrapper's `services.gradle.org`→GitHub redirect; AGP 8.7.2 accepts ≥ 8.9):**
+`:core:astro-core:test` 468/468 (unchanged), `:mobile:testInternalDebugUnitTest` 521/521 (+49 new),
+`:mobile:testPublicDebugUnitTest` 370/370 (unchanged), `compileInternalDebugKotlin`/
+`compilePublicDebugKotlin`/`compileInternalDebugAndroidTestKotlin`, `lintInternalDebug`/
+`lintPublicDebug`, `assembleInternalDebug`/`assemblePublicDebug` — see the row above and the final
+status block. **No physical device or emulator was attached; no new device evidence exists.** The
+device-validation workflow this slice enables (per physical ID 2/3/4: near-4:3 session ≥ 100 frames →
+freeze → export; fresh-generation 16:9 session; full restart repeat) is specified in
+`docs/validation/cam_2c_pixel9_evidence.md` §8.
+
+```
+CAM-2c DUAL-BASIS DIAGNOSTIC CODE READY
+CAMERAX TRANSFORM CONTRACT EXPLAINED
+PHYSICAL/LOGICAL BASIS COMPATIBILITY DEVICE VALIDATION PENDING
+FRAME-CONTENT CORRESPONDENCE UNMEASURED
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
+```
+
+## CAM-2c dual-basis diagnostic fix — model-match scope, aspect family, verdict split, stability honesty (this sprint)
+
+A review of the dual-basis slice above found two P1 diagnostic-correctness defects and two P2
+evidence-integrity defects, all fixed in this pass (scope: `DualBasisMatrixEvidence`,
+resolution-candidate selection + `CameraPreview` resolution strategy, matrix-stability diagnostics,
+and their exports/tests/docs — nothing else touched):
+
+1. **P1 — model matching is now gated on the model's own structural scope.** `assessOneBasis`
+   previously mapped points through only the observed matrix's top two rows, so a *projective*
+   matrix whose upper rows equalled the predicted affine coefficients received zero residual and
+   `matchesCameraX142Model=true`. Now a typed `CameraX142ModelComparison` gate — reusing the same
+   classifier the geometry assessment uses, never a duplicate rule set — requires an affine bottom
+   row, no off-diagonal rotation/shear, and positive non-degenerate axis-aligned scale before any
+   match can be declared. Out-of-scope structures get `COMPARISON_UNSUPPORTED_STRUCTURE` (all nine
+   coefficient residuals retained diagnostically; no mapped-point residual, since applying only the
+   upper rows is not the matrix's actual mapping and general projective matching is deliberately not
+   implemented — the pinned model is axis-aligned affine), can never yield
+   `CAMERAX_IMPLEMENTATION_MODEL_MATCH`, and the "conservative lower bound" claim is removed. The
+   mapped-point residual is now genuinely **Euclidean** (`hypot`), matching its documented contract.
+2. **P1 — the requested aspect family is explicit end-to-end.** Selection previously accepted
+   near-16:9 sizes (band 1.70–1.85) but `CameraPreview` picked the 16:9 `AspectRatioStrategy` only
+   on exact `width*9 == height*16` — a valid `848x480` request was silently bound with a 4:3
+   strategy. Now `AnalysisResolutionFamily` (`NEAR_4_3`/`NEAR_16_9`) is assigned by the selecting
+   band, travels through `AnalysisResolutionCandidate` → session state → the shared
+   `AnalysisResolutionRequest` (main-source, `cameraSelectorOverride` pattern) → the pure,
+   JVM-tested `aspectRatioStrategyFor` mapping (`NEAR_16_9` → `RATIO_16_9_FALLBACK_AUTO_STRATEGY`,
+   `NEAR_4_3` → `RATIO_4_3_FALLBACK_AUTO_STRATEGY`); CameraX-default remains no override; retry
+   preserves the family; family/size changes still start a fresh generation; and family, requested
+   `WxH`, and actually-bound `WxH` are exported as three independent facts. The family is never
+   re-inferred from exact integer ratios anywhere.
+3. **P2 — the dual-match verdict is split honestly.** `MATCHES_BOTH_BASES_NUMERICALLY_INDISTINGUISHABLE`
+   became `MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE` (only when the complete candidate
+   native rects are equal) vs `MATCHES_BOTH_DIFFERING_RECTS_WITHIN_TOLERANCE` (ambiguous dual match —
+   reachable in principle on-device even though integer fixtures cannot construct it through the
+   pinned model, hence the pure, directly-tested `dualBasisComparisonVerdict`);
+   `basesNumericallyIndistinguishable` now means pure rect identity, independent of match outcomes;
+   `betterPredictingBasis` uses a documented residual tie tolerance
+   (`DUAL_BASIS_RESIDUAL_TIE_TOLERANCE_PX = 1e-6` px), never a raw `<`.
+4. **P2 — stability thresholds are unit- and magnitude-honest.** The old single
+   `MATRIX_STABILITY_FLOAT_NOISE_TOLERANCE = 1e-6` per raw coefficient sat *below* the float32 ULP of
+   large translations (~6e-5 at ±400 px) and was retired. `MatrixStabilityCounters` now separates
+   **bitwise changes** (exact inequality of the widened float32 values — no tolerance at all) from
+   **geometrically meaningful changes** (max Euclidean mapped-point displacement over a fixed
+   4096×3072 reference rectangle vs `MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX = 1e-3` px,
+   derived from float32 error at reference magnitudes), keeps first/latest matrices and
+   frame/null counters generation-scoped, retains the raw max-coefficient delta as an untolerated
+   diagnostic, and exports the threshold names/values/reference rect so device reports are
+   self-describing. Boundary tests cover just-below/just-above the threshold and a
+   large-translation float32-ULP fixture (bitwise change, not geometric).
+
+Experiment JSON schema bumped 1 → 2 (verdict value split, `modelComparison`, stability field
+renames, `requestedAnalysisResolutionFamily`). Safety unchanged: no `Proven*` constructed, no
+frame-content measurement, `DomainNotProven` remains the automatic outcome.
+
+**Validation (real Gradle 8.14.3/JDK 17, same environment notes as the slice above):**
+`:core:astro-core:test` 468/468, `:mobile:testInternalDebugUnitTest` 535/535 (+14 net new),
+`:mobile:testPublicDebugUnitTest` 370/370, both debug compiles, `compileInternalDebugAndroidTestKotlin`,
+both lints, both assembles green. No device attached; no new device evidence.
+
+```
+CAM-2c DUAL-BASIS DIAGNOSTIC CODE READY
+MODEL-MATCH STRUCTURAL SCOPE ENFORCED
+DUAL-ASPECT REQUEST FAMILY PRESERVED
+PHYSICAL/LOGICAL BASIS COMPATIBILITY DEVICE VALIDATION PENDING
+FRAME-CONTENT CORRESPONDENCE UNMEASURED
+SENSOR-TO-BUFFER DOMAIN PROOF NOT CONSTRUCTED
+CAM-2c CALIBRATED PIXEL 9 RESULT NOT YET ESTABLISHED
+```
+
 ## CAM-2b (this sprint)
 
 - **Scope:** visualizes CAM-2a's output; never changes production star placement.

@@ -23,8 +23,13 @@ import kotlinx.serialization.json.put
  *   that only one, specific, unproven source-domain hypothesis is being tested — see
  *   [assessWholeActiveArrayMappingHypothesis]'s own KDoc. `sourceDomainBasis` was added to name that
  *   hypothesis explicitly.
+ * - `4` (dual-basis slice): added `cam2c.frameTransform.wholeActiveArrayGeometryClass`/`geometryReason`
+ *   — the finer-grained, still hypothesis-scoped geometry classification
+ *   ([assessWholeActiveArrayGeometry]) alongside the preserved binary verdict, which by design reports
+ *   CameraX 1.4.2's own intended center-crop construction as a mismatch (see
+ *   `docs/recon/cam_2c_sensor_to_buffer_domain_recon.md` §5). Existing fields are unchanged.
  */
-const val CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION: Int = 3
+const val CAM_DIAGNOSTIC_JSON_SCHEMA_VERSION: Int = 4
 
 /** `internalDebug`-only. `explicitNulls = true` so every documented field is always present with either
  * a real value or a literal `null`. kotlinx.serialization's own number formatting never consults the
@@ -108,6 +113,10 @@ private fun JsonObjectBuilder.putFrameTransform(frameTransform: FrameTransformEx
     put("mappedAssumedSourceBoundsPx", mappedBoundsJson(frameTransform.mappedAssumedSourceBoundsPx))
     put("expectedBufferBoundsPx", mappedBoundsJson(frameTransform.expectedBufferBoundsPx))
     put("hypothesisReason", frameTransform.hypothesisReason)
+    // Schema v3 -> v4 (dual-basis slice): the finer geometry classification, ALONGSIDE the binary
+    // verdict above - hypothesis-scoped evidence only, never proof of the real source domain.
+    put("wholeActiveArrayGeometryClass", frameTransform.wholeActiveArrayGeometryClass)
+    put("wholeActiveArrayGeometryReason", frameTransform.wholeActiveArrayGeometryReason)
 }
 
 private fun resolvedBufferKJson(resolvedBufferK: ResolvedBufferKExportSnapshot?): JsonElement {

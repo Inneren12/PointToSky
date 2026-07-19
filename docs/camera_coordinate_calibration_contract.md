@@ -1569,6 +1569,87 @@ today, a distinct and lesser claim than a device run or even a device-executed t
   this environment. This fix pass corrects code-level defects a careful review found and adds tests; it
   does not, and cannot, newly establish device-level facts.
 
+### 3.12 CAM-2c dual-basis diagnostic slice: basis identity, geometry classification, CameraX 1.4.2 model
+
+Follow-up to `docs/recon/cam_2c_sensor_to_buffer_domain_recon.md`, which changed this document's
+epistemic baseline for `ImageInfo.getSensorToBufferTransformMatrix()`:
+
+- **The CameraX transform contract is explained.** The matrix's declared coordinate domain is
+  established (public `ImageInfo` Javadoc, confirmed at the 1.4.2 implementation level): the
+  **CameraX-opened camera's** `SENSOR_INFO_ACTIVE_ARRAY_SIZE` rect → the full unrotated
+  `ImageProxy` buffer, constructed as the inverse of `Matrix.setRectToRect(bufferRect,
+  openedCameraActiveArrayRect, ScaleToFit.CENTER)` (`CameraUseCaseAdapter`, camera-core 1.4.2). The
+  intended geometry is axis-aligned uniform scale with a symmetric center crop whenever aspect
+  ratios differ; `rotationDegrees` and `cropRect` are separate; zoom/crop-region is **not**
+  incorporated; entries are float32 widened to double. Earlier statements in §3.5–§3.11 that the
+  source domain itself was "not source-traced" are historical — superseded by the recon.
+- **The historical 1.3.4 identity matrix is resolved**: CameraX 1.3.4 only set the matrix when a
+  ViewPort was bound; with none, `UseCase`'s default identity leaked through. The old
+  "pre-normalized source domain" speculation is retired.
+- **What remains device-unproven** (why nothing is unlocked): under
+  `CameraSelector.Builder.setPhysicalCameraId(...)` CameraX still opens the logical camera and
+  routes streams via a physical `OutputConfiguration` — the matrix is therefore expected to be
+  constructed from the **opened logical** camera's active-array basis while the CAM-2c physical path
+  reads intrinsics from the **selected physical** camera's characteristics. Logical basis ≠ physical
+  basis until explicitly reconciled and device-validated (equal dimensions are supporting evidence
+  only, never coordinate equivalence); and matrix metadata matching its own construction is not a
+  measurement of frame content.
+
+This slice adds the `internalDebug`-only machinery to gather exactly that evidence (see
+`docs/SPRINT_STATUS.md`'s "CAM-2c dual-basis diagnostic slice" for the full inventory): an explicit
+`CameraCoordinateBasis` identity model (camera ID + role + coordinate space + full native rect +
+metadata source — no unqualified "active-array-local" labels), the `WholeActiveArrayGeometryClass`
+classifier with four separated tolerances (float-storage noise vs. geometric magnitude vs. scale
+isotropy vs. affine structure), the pure `CAMERAX_1_4_2_IMPLEMENTATION_MODEL`
+(`predictCameraX142SensorToBufferMatrix` — a model of the pinned implementation, never a
+cross-version guarantee), per-frame dual-basis assessment with labelled residuals and a typed
+comparison verdict, the opened-logical-camera snapshot captured coherently from the same bound
+`CameraInfo` (typed `Unavailable` when the logical parent cannot be identified — never guessed),
+per-attempt matrix-stability counters, deliberate near-4:3/16:9 `ImageAnalysis` resolution selection
+(each switch a fresh generation), and deterministic text/JSON export
+(`PHYSICAL_CAMERA_EXPERIMENT_JSON_SCHEMA_VERSION=1`; main CAM JSON schema 3 → 4 for the additive
+geometry-class fields) with full-precision (widened-float32) matrix values and a mandatory safety
+block.
+
+**Safety invariants, restated:** no `SensorToBufferDomainProof.Proven*` variant is constructed by
+any path in this slice; `evidenceOnlySensorToBufferDomainProof` still yields only
+`Unresolved`/`HypothesisMismatch` (tested even for a perfect `UNIFORM_SCALE_CENTER_CROP`
+classification); the physical experiment's expected successful outcome remains
+`PHYSICAL CAMERA BINDING VERIFIED` + `TRANSFORM GEOMETRY CLASSIFIED` +
+`LOGICAL/PHYSICAL BASIS COMPARISON EXPORTED` + `CAM-2c DOMAIN NOT PROVEN`; calibrated Pixel 9
+`AnalysisBuffer` intrinsics remain blocked.
+
+### 3.13 Dual-basis diagnostic fix: model-match structural scope, explicit aspect family, verdict split, stability honesty
+
+A review of §3.12's slice found and fixed four diagnostic-correctness/evidence-integrity defects
+(see `docs/SPRINT_STATUS.md`'s "CAM-2c dual-basis diagnostic fix" for the full record). The
+contract-level statements this pass makes precise:
+
+- **Model matching is only valid inside the model's own structure.** The CameraX 1.4.2
+  implementation model is axis-aligned affine; a projective or sheared observed matrix cannot match
+  it merely because its top two rows resemble the prediction. The typed
+  `CameraX142ModelComparison` gate (reusing the geometry classifier's structural decisions) makes
+  out-of-scope structures a `COMPARISON_UNSUPPORTED_STRUCTURE` outcome that never emits the
+  `CAMERAX_IMPLEMENTATION_MODEL_MATCH` evidence level; the mapped-point residual is Euclidean and
+  is not computed for unsupported structures (applying only a projective matrix's upper rows is not
+  its mapping, and general projective matching is deliberately unimplemented).
+- **The requested aspect family is explicit and independent of exact `WxH` equality.** The family
+  (`NEAR_4_3`/`NEAR_16_9`) is assigned once by the selection band, travels intact through session
+  state and retry to the `AspectRatioStrategy` decision, and is exported separately from both the
+  requested and the actually-bound dimensions. Nothing re-infers it from integer ratios.
+- **A both-basis match with differing rects is ambiguous, not "numerically indistinguishable".**
+  `MATCHES_BOTH_EQUAL_RECTS_NUMERICALLY_INDISTINGUISHABLE` requires equal candidate native rects;
+  differing rects that both fall within tolerance are
+  `MATCHES_BOTH_DIFFERING_RECTS_WITHIN_TOLERANCE`. `basesNumericallyIndistinguishable` is pure rect
+  identity; the better-predicting ranking uses a documented tie tolerance.
+- **Stability counters separate raw-bit changes from geometrically meaningful changes.** Bitwise
+  change = exact inequality of widened float32 coefficients (no tolerance); geometric change = mapped
+  Euclidean displacement over a fixed 4096×3072 reference rectangle beyond a documented 1e-3 px
+  threshold; exports carry the threshold names/values. The retired single 1e-6 raw-coefficient bound
+  sat below the float32 ULP of large translations and was never honest "float noise".
+- Unchanged: no `SensorToBufferDomainProof.Proven*` is constructed, frame-content correspondence
+  remains unmeasured, `DomainNotProven` remains the automatic experiment outcome.
+
 ---
 
 ## 4. Timestamp & synchronization

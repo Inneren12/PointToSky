@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dev.pointtosky.mobile.ar.CameraPreview
+import dev.pointtosky.mobile.ar.EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO
 
 /**
  * CAM-2c physical-camera provenance experiment (`internalDebug` only, task §4). Standalone screen -
@@ -124,6 +125,11 @@ internal fun PhysicalCameraBindingExperimentScreen() {
     // [updateSession]) lives in a pure, independently unit-tested type - this composable only owns the
     // single `remember`ed value and wires Compose events to it.
     var uiModel by remember { mutableStateOf(ExperimentUiModel()) }
+    // Dual-basis slice (task §11): a tapped candidate first goes through an explicit resolution pick
+    // (CameraX default, plus the device-declared near-4:3/16:9 candidates) before an attempt starts.
+    // A resolution switch later always goes back through startAttempt - a brand-new attemptId /
+    // generation - never a mutation of a live session's dimensions.
+    var pendingCandidate by remember { mutableStateOf<String?>(null) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0A0A)) {
         if (!hasCameraPermission) {
@@ -143,7 +149,29 @@ internal fun PhysicalCameraBindingExperimentScreen() {
 
         val session = uiModel.session
         if (session == null) {
-            CandidatePicker(candidates = candidates, onSelected = { uiModel = uiModel.startAttempt(it) })
+            val candidate = pendingCandidate
+            if (candidate == null) {
+                CandidatePicker(candidates = candidates, onSelected = { pendingCandidate = it })
+            } else {
+                // Resolution candidates come from the real, device-declared YUV_420_888 sizes of the
+                // logical camera that declares this physical candidate (never assumed sizes - task §11).
+                val resolutionCandidates =
+                    remember(topology, candidate) {
+                        val declaringEntry = topology.entries.firstOrNull { candidate in it.declaredPhysicalCameraIds }
+                        selectAnalysisResolutionCandidates(
+                            parseAnalysisResolutions(declaringEntry?.imageAnalysisStreamConfigurationsPx ?: emptyList()),
+                        )
+                    }
+                ResolutionPicker(
+                    physicalCameraId = candidate,
+                    candidates = resolutionCandidates,
+                    onSelected = { resolution ->
+                        uiModel = uiModel.startAttempt(candidate, resolution)
+                        pendingCandidate = null
+                    },
+                    onBack = { pendingCandidate = null },
+                )
+            }
         } else {
             // key(attemptId): a NEW attempt (retry, or a different candidate) always gets an entirely
             // fresh composable subtree - a fresh CameraPreview, a fresh
@@ -160,6 +188,53 @@ internal fun PhysicalCameraBindingExperimentScreen() {
                 )
             }
         }
+    }
+}
+
+/** Resolution pick step (task §11): CameraX default plus the device-declared near-4:3/16:9
+ * candidates. Every option is explicit and user-selectable; nothing is auto-selected. */
+@Composable
+private fun ResolutionPicker(
+    physicalCameraId: String,
+    candidates: List<AnalysisResolutionCandidate>,
+    onSelected: (AnalysisResolutionCandidate?) -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Select ImageAnalysis resolution for physical id=$physicalCameraId",
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = "CameraX default (no override)",
+            color = Color.White,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .testTag("physical_camera_resolution_default")
+                    .background(Color(0xFF1B4B66), RoundedCornerShape(8.dp))
+                    .clickable { onSelected(null) }
+                    .padding(12.dp),
+        )
+        for (candidate in candidates) {
+            Text(
+                text = "${candidate.label()} (family=${candidate.family}, aspect=${candidate.aspectRatio})",
+                color = Color.White,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag("physical_camera_resolution_${candidate.label()}")
+                        .background(Color(0xFF1B4B66), RoundedCornerShape(8.dp))
+                        .clickable { onSelected(candidate) }
+                        .padding(12.dp),
+            )
+        }
+        Text(
+            "Back to candidates",
+            color = Color.Cyan,
+            modifier = Modifier.testTag("physical_camera_resolution_back").clickable { onBack() },
+        )
     }
 }
 
@@ -278,12 +353,40 @@ internal fun PhysicalCameraBindingSession(
 
     Box(modifier = Modifier.fillMaxSize()) {
         val selector = remember(physicalCameraId) { explicitPhysicalCameraSelector(physicalCameraId) }
+        // The complete resolution request — dimensions plus the EXPLICIT family the selection band
+        // assigned (P1 fix) — never a bare Size the bind would have to re-infer a family from.
+        val analysisResolutionOverride =
+            remember(
+                state.requestedAnalysisResolutionWidthPx,
+                state.requestedAnalysisResolutionHeightPx,
+                state.requestedAnalysisResolutionFamily,
+            ) {
+                state.requestedAnalysisResolutionWidthPx?.let { width ->
+                    state.requestedAnalysisResolutionHeightPx?.let { height ->
+                        state.requestedAnalysisResolutionFamily?.let { family ->
+                            AnalysisResolutionRequest(widthPx = width, heightPx = height, family = family)
+                        }
+                    }
+                }
+            }
         CameraPreview(
             modifier = Modifier.fillMaxSize(),
             cameraSelectorOverride = selector,
+            analysisResolutionOverride = analysisResolutionOverride,
             onCameraInfo = { cameraInfo: CameraInfo ->
-                val binding = resolvePhysicalCameraBindingFromCameraInfo(cameraInfo, physicalCameraId, context)
-                onUpdateSession(attemptId) { it.reduceCameraInfoResolved(attemptId, binding) }
+                // Dual-basis slice: capture BOTH identity halves from the same bound CameraInfo -
+                // the physical verification and the opened logical parent's own snapshot - plus the
+                // zoom the camera actually reports at this moment (evidence, never a guess).
+                val dualBinding = resolveDualBasisBindingFromCameraInfo(cameraInfo, physicalCameraId, context)
+                val observedZoom = cameraInfo.zoomState.value?.zoomRatio
+                onUpdateSession(attemptId) {
+                    it.reduceDualBasisBindingResolved(
+                        attemptId = attemptId,
+                        dualBinding = dualBinding,
+                        zoomTargetRatio = EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO,
+                        observedZoomRatio = observedZoom,
+                    )
+                }
             },
             onExplicitBindFailure = { reason ->
                 onUpdateSession(attemptId) { it.reduceExplicitBindFailure(attemptId, reason) }
@@ -293,6 +396,12 @@ internal fun PhysicalCameraBindingSession(
             },
         )
 
+        // Freeze/export (task §16's device workflow): freezing pins the displayed/exported state to
+        // one captured moment (the camera keeps running underneath); Copy/Share always use the frozen
+        // state when present, so an export can never mix two moments. Keyed to this attempt - a new
+        // generation never inherits a stale frozen snapshot.
+        var frozenState by remember(attemptId) { mutableStateOf<ExperimentSessionState?>(null) }
+        val displayedState = frozenState ?: state
         Column(
             modifier =
                 Modifier
@@ -302,7 +411,39 @@ internal fun PhysicalCameraBindingSession(
                     .padding(12.dp),
         ) {
             Text(
-                text = buildPhysicalCameraExperimentReportText(state),
+                text = if (frozenState == null) "Freeze" else "Resume live",
+                color = Color.Cyan,
+                modifier =
+                    Modifier.testTag("physical_camera_experiment_freeze").clickable {
+                        frozenState = if (frozenState == null) state else null
+                    },
+            )
+            Text(
+                text = "Copy report",
+                color = Color.Cyan,
+                modifier =
+                    Modifier.testTag("physical_camera_experiment_copy").clickable {
+                        dev.pointtosky.mobile.ar.copyCamDiagnosticTextToClipboard(
+                            context,
+                            "CAM-2c dual-basis experiment report",
+                            buildPhysicalCameraExperimentReportText(displayedState),
+                        )
+                    },
+            )
+            Text(
+                text = "Share JSON",
+                color = Color.Cyan,
+                modifier =
+                    Modifier.testTag("physical_camera_experiment_share_json").clickable {
+                        dev.pointtosky.mobile.ar.shareCamDiagnosticText(
+                            context,
+                            "CAM-2c dual-basis experiment JSON",
+                            buildPhysicalCameraExperimentJson(displayedState, System.currentTimeMillis()),
+                        )
+                    },
+            )
+            Text(
+                text = buildPhysicalCameraExperimentReportText(displayedState),
                 color = Color.White,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall,
@@ -379,6 +520,9 @@ internal fun buildPhysicalCameraExperimentReportText(session: ExperimentSessionS
         }
         appendLine("latestFrame=${session.latestFrame?.let { "${it.bufferWidthPx}x${it.bufferHeightPx}" } ?: "none yet"}")
         append(formatCam2cResultLines(session.cam2cResult))
+        // Dual-basis slice: session identity, matrix stability, the opened logical camera's own
+        // snapshot, both labelled basis assessments, and the explicit safety state (task §12/§13).
+        append(formatDualBasisReportLines(session))
     }
 
 /**

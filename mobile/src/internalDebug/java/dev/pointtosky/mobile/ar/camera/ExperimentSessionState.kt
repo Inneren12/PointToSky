@@ -38,6 +38,30 @@ import dev.pointtosky.core.astro.projection.camera.CameraFrameMetadata
  *   waits here until [recomputeCam2cResult] has both inputs it needs.
  * @property cam2cResult the current CAM-2c resolution attempt, `null` ("awaiting") until both
  *   [bindingResolution] and [latestFrame] are present - see [recomputeCam2cResult].
+ * @property requestedAnalysisResolutionWidthPx/`requestedAnalysisResolutionHeightPx`/
+ *   `requestedAnalysisResolutionFamily` the explicit `ImageAnalysis` resolution this attempt
+ *   requested (task §11), `null` = CameraX default. The family is the aspect band that *selected*
+ *   the candidate ([AnalysisResolutionFamily], P1 fix) — carried explicitly through this state so
+ *   the CameraX bind and [ExperimentUiModel.retry] never re-infer it from exact integer ratios. All
+ *   three are fixed for the attempt's entire lifetime — switching resolution or family must start a
+ *   *new* attempt/generation, never mutate this one (see [ExperimentUiModel.startAttempt]); the
+ *   actually-bound resolution is whatever [latestFrame] reports, recorded separately and never
+ *   conflated with the request.
+ * @property openedLogicalCamera the opened logical camera's own snapshot resolution for this attempt
+ *   (dual-basis diagnostic, recon §2.3), captured by [reduceDualBasisBindingResolved] from the same
+ *   bound `CameraInfo` as [bindingResolution] — `null` until that callback fires. Kept strictly
+ *   separate from the physical snapshot inside [bindingResolution]; neither is ever substituted for
+ *   the other.
+ * @property zoomTargetRatio/`observedZoomRatio` the fixed zoom this experiment requested
+ *   (`EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO`) and the zoom ratio the bound camera actually
+ *   reported at `onCameraInfo` time (`CameraInfo.getZoomState().value?.zoomRatio`) — `null` when the
+ *   platform reported none. Recorded evidence only.
+ * @property matrixStability per-attempt sensor-to-buffer matrix stability counters (task §10),
+ *   reduced from every frame this attempt observes — generation-scoped by the same `attemptId` guard
+ *   as every other reducer.
+ * @property dualBasisEvidence the dual-basis matrix assessment for the latest frame, recomputed
+ *   whenever both a frame and any basis metadata are present. Evidence only: it never feeds
+ *   [SensorToBufferDomainProof] and never changes [cam2cResult]'s own gating.
  */
 internal data class ExperimentSessionState(
     val attemptId: Long,
@@ -46,6 +70,14 @@ internal data class ExperimentSessionState(
     val explicitBindFailureReason: String? = null,
     val latestFrame: CameraFrameMetadata? = null,
     val cam2cResult: Cam2cPhysicalCameraResolution? = null,
+    val requestedAnalysisResolutionWidthPx: Int? = null,
+    val requestedAnalysisResolutionHeightPx: Int? = null,
+    val requestedAnalysisResolutionFamily: AnalysisResolutionFamily? = null,
+    val openedLogicalCamera: OpenedLogicalCameraSnapshotResolution? = null,
+    val zoomTargetRatio: Float? = null,
+    val observedZoomRatio: Float? = null,
+    val matrixStability: MatrixStabilityCounters = MatrixStabilityCounters(),
+    val dualBasisEvidence: DualBasisMatrixEvidence? = null,
 ) {
     /** `true` once [dev.pointtosky.mobile.ar.CameraPreview] itself reported a terminal explicit-bind
      * or zoom failure for this attempt. Once `true`, this attempt is permanently over - every reducer
@@ -55,11 +87,21 @@ internal data class ExperimentSessionState(
     val isTerminallyFailed: Boolean get() = explicitBindFailureReason != null
 }
 
-/** A fresh, empty session for a newly selected (or retried) [physicalCameraId] and [attemptId]. */
+/** A fresh, empty session for a newly selected (or retried) [physicalCameraId] and [attemptId].
+ * [requestedAnalysisResolution] (task §11) fixes the attempt's requested `ImageAnalysis` resolution
+ * for its entire lifetime (`null` = CameraX default); a different resolution requires a fresh attempt. */
 internal fun initialExperimentSessionState(
     attemptId: Long,
     physicalCameraId: String,
-): ExperimentSessionState = ExperimentSessionState(attemptId = attemptId, physicalCameraId = physicalCameraId)
+    requestedAnalysisResolution: AnalysisResolutionCandidate? = null,
+): ExperimentSessionState =
+    ExperimentSessionState(
+        attemptId = attemptId,
+        physicalCameraId = physicalCameraId,
+        requestedAnalysisResolutionWidthPx = requestedAnalysisResolution?.widthPx,
+        requestedAnalysisResolutionHeightPx = requestedAnalysisResolution?.heightPx,
+        requestedAnalysisResolutionFamily = requestedAnalysisResolution?.family,
+    )
 
 /**
  * Applies a resolved physical-camera binding outcome. May arrive before or after the first frame
@@ -74,6 +116,29 @@ internal fun ExperimentSessionState.reduceCameraInfoResolved(
 ): ExperimentSessionState {
     if (attemptId != this.attemptId || isTerminallyFailed) return this
     return copy(bindingResolution = binding).recomputeCam2cResult()
+}
+
+/**
+ * Dual-basis variant of [reduceCameraInfoResolved] (recon §2.3 / task §3): applies both identity
+ * halves of one binding attempt — the physical-camera verification *and* the opened logical camera's
+ * own snapshot resolution — plus the zoom evidence observed at the same `onCameraInfo` moment. Same
+ * `attemptId`/terminal-failure no-op guards; same "may arrive before or after the first frame"
+ * ordering guarantee. The logical and physical snapshots stay in separate fields with separate
+ * types — neither is ever substituted for the other (task §4).
+ */
+internal fun ExperimentSessionState.reduceDualBasisBindingResolved(
+    attemptId: Long,
+    dualBinding: DualBasisBindingResolution,
+    zoomTargetRatio: Float?,
+    observedZoomRatio: Float?,
+): ExperimentSessionState {
+    if (attemptId != this.attemptId || isTerminallyFailed) return this
+    return copy(
+        bindingResolution = dualBinding.binding,
+        openedLogicalCamera = dualBinding.openedLogicalCamera,
+        zoomTargetRatio = zoomTargetRatio,
+        observedZoomRatio = observedZoomRatio,
+    ).recomputeCam2cResult()
 }
 
 /**
@@ -102,7 +167,10 @@ internal fun ExperimentSessionState.reduceFrame(
     frame: CameraFrameMetadata,
 ): ExperimentSessionState {
     if (attemptId != this.attemptId || isTerminallyFailed) return this
-    return copy(latestFrame = frame).recomputeCam2cResult()
+    return copy(
+        latestFrame = frame,
+        matrixStability = matrixStability.reduceMatrixStability(frame),
+    ).recomputeCam2cResult()
 }
 
 /**
@@ -115,8 +183,8 @@ internal fun ExperimentSessionState.reduceFrame(
  * [ExperimentSessionState.cam2cResult] `null` ("awaiting"), never a guess.
  */
 private fun ExperimentSessionState.recomputeCam2cResult(): ExperimentSessionState {
-    val binding = bindingResolution ?: return copy(cam2cResult = null)
-    val frame = latestFrame ?: return copy(cam2cResult = null)
+    val binding = bindingResolution ?: return copy(cam2cResult = null, dualBasisEvidence = recomputeDualBasisEvidence())
+    val frame = latestFrame ?: return copy(cam2cResult = null, dualBasisEvidence = recomputeDualBasisEvidence())
     val physicalSnapshot = (binding as? PhysicalCameraBindingResolution.Bound)?.physicalCharacteristicsSnapshot
     val activeArrayWidthPx =
         physicalSnapshot?.activeArrayLeftPx?.let { left -> physicalSnapshot.activeArrayRightPx?.let { right -> right - left } }
@@ -138,5 +206,43 @@ private fun ExperimentSessionState.recomputeCam2cResult(): ExperimentSessionStat
             bufferWidthPx = frame.bufferWidthPx,
             bufferHeightPx = frame.bufferHeightPx,
         )
-    return copy(cam2cResult = result)
+    return copy(cam2cResult = result, dualBasisEvidence = recomputeDualBasisEvidence())
+}
+
+/**
+ * Recomputes the dual-basis matrix evidence from whatever is currently present: the latest frame's
+ * matrix/buffer, the opened logical camera's active-array basis (when captured), and the verified
+ * physical camera's active-array basis (when bound). Evidence only — this value never feeds
+ * [SensorToBufferDomainProof], never alters [resolveCam2cForExplicitPhysicalCamera]'s gating, and a
+ * missing basis stays missing (typed) rather than being substituted by the other.
+ */
+private fun ExperimentSessionState.recomputeDualBasisEvidence(): DualBasisMatrixEvidence? {
+    val frame = latestFrame ?: return null
+    val logicalSnapshot = (openedLogicalCamera as? OpenedLogicalCameraSnapshotResolution.Captured)?.snapshot
+    val bound = bindingResolution as? PhysicalCameraBindingResolution.Bound
+    val physicalSnapshot = bound?.physicalCharacteristicsSnapshot
+    // Record where the physical characteristics were actually read from — the bound CameraInfo
+    // itself (shape A) or a nested declared physical CameraInfo (shape B) — never a guess.
+    val physicalMetadataSource =
+        when (bound?.provenance?.bindingSource) {
+            PhysicalCameraBindingSource.BOUND_CAMERA_INFO_IS_PHYSICAL -> CameraBasisMetadataSource.BOUND_CAMERA_INFO_CHARACTERISTICS
+            else -> CameraBasisMetadataSource.DECLARED_PHYSICAL_CAMERA_INFO_CHARACTERISTICS
+        }
+    return assessDualBasisMatrixEvidence(
+        observedMatrix = frame.sensorToBufferTransform,
+        logicalBasis =
+            activeArrayNativeBasisOrNull(
+                snapshot = logicalSnapshot,
+                cameraRole = CameraBasisRole.OPENED_LOGICAL_CAMERA,
+                metadataSource = CameraBasisMetadataSource.BOUND_CAMERA_INFO_CHARACTERISTICS,
+            ),
+        physicalBasis =
+            activeArrayNativeBasisOrNull(
+                snapshot = physicalSnapshot,
+                cameraRole = CameraBasisRole.SELECTED_PHYSICAL_CAMERA,
+                metadataSource = physicalMetadataSource,
+            ),
+        bufferWidthPx = frame.bufferWidthPx,
+        bufferHeightPx = frame.bufferHeightPx,
+    )
 }

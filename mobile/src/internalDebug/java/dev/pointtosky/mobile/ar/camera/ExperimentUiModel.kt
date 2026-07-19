@@ -22,10 +22,18 @@ internal data class ExperimentUiModel(
  * still in flight from a prior attempt is guarded off by [ExperimentSessionState]'s own `attemptId`
  * no-op checks; this function's job is only to guarantee that `attemptId` is never reused.
  */
-internal fun ExperimentUiModel.startAttempt(physicalCameraId: String): ExperimentUiModel =
+internal fun ExperimentUiModel.startAttempt(
+    physicalCameraId: String,
+    requestedAnalysisResolution: AnalysisResolutionCandidate? = null,
+): ExperimentUiModel =
     copy(
         nextAttemptId = nextAttemptId + 1,
-        session = initialExperimentSessionState(attemptId = nextAttemptId, physicalCameraId = physicalCameraId),
+        session =
+            initialExperimentSessionState(
+                attemptId = nextAttemptId,
+                physicalCameraId = physicalCameraId,
+                requestedAnalysisResolution = requestedAnalysisResolution,
+            ),
     )
 
 /**
@@ -36,7 +44,19 @@ internal fun ExperimentUiModel.startAttempt(physicalCameraId: String): Experimen
  */
 internal fun ExperimentUiModel.retry(): ExperimentUiModel {
     val current = session ?: return this
-    return startAttempt(current.physicalCameraId)
+    return startAttempt(
+        physicalCameraId = current.physicalCameraId,
+        requestedAnalysisResolution =
+            current.requestedAnalysisResolutionWidthPx?.let { width ->
+                current.requestedAnalysisResolutionHeightPx?.let { height ->
+                    current.requestedAnalysisResolutionFamily?.let { family ->
+                        // The family is restored from the stored request (P1 fix) — never re-derived
+                        // from the dimensions' exact integer ratio.
+                        AnalysisResolutionCandidate(widthPx = width, heightPx = height, family = family)
+                    }
+                }
+            },
+    )
 }
 
 /**

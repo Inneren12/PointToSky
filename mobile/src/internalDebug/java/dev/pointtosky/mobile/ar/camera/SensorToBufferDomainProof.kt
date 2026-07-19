@@ -8,10 +8,13 @@ import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
  * [PhysicalCameraBindingResolution.Bound] proves *which sensor* produced this session's
  * characteristics; it says nothing about whether [resolveAnalysisBufferIntrinsics]'s own implicit
  * assumption — that the sensor-to-buffer matrix's source domain is the active-array-local rectangle
- * its K-composition already lives in — actually holds for this device's real matrix. This codebase has
- * never source-traced or device-proven that assumption for any pinned CameraX version (see
- * `WholeActiveArrayMappingHypothesis.kt`'s own KDoc, and `docs/validation/cam_2c_pixel9_evidence.md`
- * §3's real-device identity-matrix finding). [resolveCam2cForExplicitPhysicalCamera] must never call
+ * its K-composition already lives in — actually holds for this device's real matrix.
+ * `docs/recon/cam_2c_sensor_to_buffer_domain_recon.md` has since source-traced CameraX 1.4.2's
+ * *declared* domain (the CameraX-**opened** camera's active-array rect — predictably the logical
+ * camera's even under physical binding, recon §2.3), which sharpens rather than closes this gap: the
+ * physical snapshot's basis and the matrix's basis are expected to *differ*, basis compatibility is
+ * device-unvalidated, and frame-content correspondence is unmeasured (see also
+ * `docs/validation/cam_2c_pixel9_evidence.md`). [resolveCam2cForExplicitPhysicalCamera] must never call
  * [resolveAnalysisBufferIntrinsics] on the strength of physical-camera identity alone — a
  * [SensorToBufferDomainProof] must independently be one of the `Proven*` variants below first.
  */
@@ -52,11 +55,14 @@ internal sealed interface SensorToBufferDomainProof {
     /**
      * No proof exists that the transform's source domain matches what
      * [resolveAnalysisBufferIntrinsics] assumes. This is the honest, and currently the *only
-     * automatically reachable*, outcome for every real experiment session in this codebase — no
-     * CameraX version this codebase has used has ever had its sensor-to-buffer source-domain contract
-     * source-traced or device-proven (see `docs/camera_coordinate_calibration_contract.md` §3.5-§3.9).
-     * An unresolved identity matrix must never resolve, regardless of how trivial the matrix's own
-     * numbers look.
+     * automatically reachable non-mismatch*, outcome for every real experiment session in this
+     * codebase. Note the recon (`docs/recon/cam_2c_sensor_to_buffer_domain_recon.md`) has since
+     * source-traced CameraX 1.4.2's *declared* contract — but a declared/implementation-model match
+     * is matrix-construction evidence only: physical/logical basis compatibility under explicit
+     * physical binding and frame-content correspondence both remain device-unproven (see
+     * `docs/camera_coordinate_calibration_contract.md` §3.5-§3.12), so no automatic path may promote
+     * anything to a `Proven*` variant. An unresolved identity matrix must never resolve, regardless
+     * of how trivial the matrix's own numbers look.
      */
     data object Unresolved : SensorToBufferDomainProof
 

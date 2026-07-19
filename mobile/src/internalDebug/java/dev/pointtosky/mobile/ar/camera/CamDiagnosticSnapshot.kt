@@ -97,6 +97,16 @@ data class MappedBoundsExportSnapshot(
  *   known, even when [mappedAssumedSourceBoundsPx] itself is `null`.
  * @property hypothesisReason a short, human-readable explanation of [wholeActiveArrayHypothesisVerdict],
  *   never a claim that the transform itself is invalid, unusable, or broken.
+ * @property wholeActiveArrayGeometryClass (dual-basis slice, schema v4) the
+ *   [WholeActiveArrayGeometryClass] name from [assessWholeActiveArrayGeometry] — the finer-grained,
+ *   still hypothesis-scoped geometry classification added *alongside* (never replacing)
+ *   [wholeActiveArrayHypothesisVerdict]: the binary verdict expects an exact bounds fit and therefore
+ *   reports CameraX 1.4.2's own intended center-crop geometry as a mismatch
+ *   (`docs/recon/cam_2c_sensor_to_buffer_domain_recon.md` §5); this field says *which shape* the
+ *   mapped-bounds relationship actually has. Evidence only — never proof of the matrix's real source
+ *   domain, and never fed into [SensorToBufferDomainProof]. `null` only when no transform is present.
+ * @property wholeActiveArrayGeometryReason the classifier's own reason line for
+ *   [wholeActiveArrayGeometryClass].
  */
 data class FrameTransformExportSnapshot(
     val present: Boolean,
@@ -112,6 +122,8 @@ data class FrameTransformExportSnapshot(
     val mappedAssumedSourceBoundsPx: MappedBoundsExportSnapshot? = null,
     val expectedBufferBoundsPx: MappedBoundsExportSnapshot? = null,
     val hypothesisReason: String? = null,
+    val wholeActiveArrayGeometryClass: String? = null,
+    val wholeActiveArrayGeometryReason: String? = null,
 )
 
 /** `internalDebug`-only. What CAM-1b/CAM-2c actually published, as plain strings/scalars. */
@@ -361,6 +373,22 @@ private fun frameTransformExportSnapshot(
                 bufferHeightPx = geometryBufferHeightPx,
             )
         }
+    // Dual-basis slice (schema v4): the finer-grained geometry classification, computed against the
+    // bound camera's active-array rect in its NATIVE position (left/top included — the representation
+    // CameraX 1.4.2's own construction consumes; recon §2.2), alongside — never replacing — the
+    // preserved binary hypothesis verdict above. Evidence only; never fed to SensorToBufferDomainProof.
+    val geometryAssessment =
+        transform?.let {
+            assessWholeActiveArrayGeometry(
+                matrix = it,
+                sourceLeftPx = characteristics?.activeArrayLeftPx,
+                sourceTopPx = characteristics?.activeArrayTopPx,
+                sourceWidthPx = activeArrayWidthPx,
+                sourceHeightPx = activeArrayHeightPx,
+                bufferWidthPx = geometryBufferWidthPx,
+                bufferHeightPx = geometryBufferHeightPx,
+            )
+        }
     return FrameTransformExportSnapshot(
         present = transform != null,
         // Deep-copy/normalize: a fresh 9-element List<Double> - never the SensorToBufferMatrix3 value
@@ -378,6 +406,8 @@ private fun frameTransformExportSnapshot(
         mappedAssumedSourceBoundsPx = mappedBoundsExportSnapshot(assessment?.mappedAssumedSourceBoundsPx),
         expectedBufferBoundsPx = mappedBoundsExportSnapshot(assessment?.expectedBufferBoundsPx),
         hypothesisReason = assessment?.reason,
+        wholeActiveArrayGeometryClass = geometryAssessment?.geometryClass?.name,
+        wholeActiveArrayGeometryReason = geometryAssessment?.reason,
     )
 }
 
