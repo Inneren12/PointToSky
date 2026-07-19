@@ -14,11 +14,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -295,8 +299,13 @@ private fun CandidatePicker(
  * single layout, never two independently-`fillMaxSize`d layers stacked in a `Box`. Every item is a real
  * sibling in the scroll order, so on a small screen or with a long report, scrolling to the bottom always
  * reaches Retry/Back - never blocked by an overlay drawn on top. The live (non-terminal) state is
- * unaffected: it has no controls to obscure, so `CameraPreview` plus a translucent report overlay drawn
- * on top of it (via `Box`) is unchanged.
+ * unaffected by that fix: it has no controls to obscure, so `CameraPreview` plus a translucent report
+ * overlay drawn on top of it (via `Box`) is structurally unchanged - but see
+ * [PhysicalCameraExperimentLiveOverlay]'s own KDoc for a separate mobile-usability fix to that overlay
+ * (task §16): the same "controls pushed off-screen by a long report" defect this section fixed for the
+ * terminal branch also existed in the live overlay, fixed there the same way (fixed action header, always
+ * visible, above a separately-scrollable report body) but as its own extracted composable rather than
+ * inline here - see that composable's KDoc for why it was extracted.
  */
 @Composable
 internal fun PhysicalCameraBindingSession(
@@ -396,20 +405,65 @@ internal fun PhysicalCameraBindingSession(
             },
         )
 
-        // Freeze/export (task §16's device workflow): freezing pins the displayed/exported state to
-        // one captured moment (the camera keeps running underneath); Copy/Share always use the frozen
-        // state when present, so an export can never mix two moments. Keyed to this attempt - a new
-        // generation never inherits a stale frozen snapshot.
-        var frozenState by remember(attemptId) { mutableStateOf<ExperimentSessionState?>(null) }
-        val displayedState = frozenState ?: state
+        // Freeze/export (task §16's device workflow) plus the fixed-header/scrollable-report layout
+        // (mobile-usability fix): extracted into its own composable so this layout is directly
+        // Compose-UI-testable without also binding a real CameraPreview - see
+        // [PhysicalCameraExperimentLiveOverlay]'s own KDoc.
+        PhysicalCameraExperimentLiveOverlay(state = state)
+    }
+}
+
+/**
+ * The live (non-terminal) attempt's action-header/report overlay - freezing pins the displayed/exported
+ * state to one captured moment (the camera keeps running underneath, drawn by the sibling
+ * [CameraPreview] in [PhysicalCameraBindingSession]); Copy/Share always use the frozen state when
+ * present, so an export can never mix two moments. `frozenState` is keyed to [ExperimentSessionState.attemptId] -
+ * a new attempt/generation never inherits a stale frozen snapshot.
+ *
+ * **Mobile usability fix (device evidence workflow, task §16).** A prior revision put Freeze/Resume, Copy
+ * report, and Share JSON inside the *same* `verticalScroll`ed `Column` as the (potentially very long)
+ * report text - on a real device, a long report pushed those controls below the viewport, and the overlay
+ * drew flush under the status bar, both making the device-evidence workflow this composable exists for
+ * unusable in practice. Fixed with a stable two-region layout: a fixed action header
+ * (`physical_camera_experiment_action_header` - a compact physical id/attempt id/status/frame-count
+ * summary, then Freeze/Resume, Copy report, Share JSON) that is never itself scrollable, above a
+ * separately-scrollable report body (`physical_camera_experiment_report_scroll`) - both inset from the
+ * system status/navigation bars via `WindowInsets.safeDrawing`, so neither the header nor the bottom of
+ * the report is ever hidden. Extracted from [PhysicalCameraBindingSession] as its own composable
+ * specifically so Compose UI tests can exercise this layout - including with a synthetic, arbitrarily
+ * long report/session state - without also needing to bind a real [CameraPreview], which requires camera
+ * hardware this test environment does not have.
+ *
+ * This is a layout-only fix: [ExperimentSessionState], the freeze/resume semantics above, and every byte
+ * [buildPhysicalCameraExperimentReportText]/[buildPhysicalCameraExperimentJson] produce are unchanged.
+ */
+@Composable
+internal fun PhysicalCameraExperimentLiveOverlay(state: ExperimentSessionState) {
+    val context = LocalContext.current
+    var frozenState by remember(state.attemptId) { mutableStateOf<ExperimentSessionState?>(null) }
+    val displayedState = frozenState ?: state
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color(0x99000000))
+                .windowInsetsPadding(WindowInsets.safeDrawing),
+    ) {
         Column(
             modifier =
                 Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .background(Color(0x99000000))
+                    .fillMaxWidth()
+                    .testTag("physical_camera_experiment_action_header")
                     .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Text(
+                text = buildPhysicalCameraExperimentCompactSummaryText(displayedState),
+                color = Color.White,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("physical_camera_experiment_compact_summary"),
+            )
             Text(
                 text = if (frozenState == null) "Freeze" else "Resume live",
                 color = Color.Cyan,
@@ -442,15 +496,44 @@ internal fun PhysicalCameraBindingSession(
                         )
                     },
             )
-            Text(
-                text = buildPhysicalCameraExperimentReportText(displayedState),
-                color = Color.White,
-                fontFamily = FontFamily.Monospace,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("physical_camera_experiment_report"),
-            )
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .testTag("physical_camera_experiment_report_scroll")
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = buildPhysicalCameraExperimentReportText(displayedState),
+                        color = Color.White,
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("physical_camera_experiment_report"),
+                    )
+                }
+            }
         }
     }
+}
+
+/**
+ * One-line summary shown in the live overlay's fixed action header (mobile-usability fix) - physical id,
+ * attempt id, status, and observed frame count for whichever [state] the header is currently displaying
+ * (the frozen snapshot when frozen, live state otherwise - same `displayedState` the header's Copy/Share
+ * actions use). Never called by, and never affects, [buildPhysicalCameraExperimentReportText] or
+ * [buildPhysicalCameraExperimentJson] - a separate, display-only string, not part of either export.
+ * `status` here is always `BINDING`/`BOUND`: [PhysicalCameraBindingSession] only reaches this header once
+ * [ExperimentSessionState.isTerminallyFailed] is `false` for good (its terminal branch returns earlier),
+ * so `EXPLICIT_BIND_FAILED` never appears in this summary.
+ */
+internal fun buildPhysicalCameraExperimentCompactSummaryText(state: ExperimentSessionState): String {
+    val status = if (state.bindingResolution == null) "BINDING" else "BOUND"
+    return "physicalId=${state.physicalCameraId} attemptId=${state.attemptId} status=$status " +
+        "frames=${state.matrixStability.framesObserved}"
 }
 
 /**
