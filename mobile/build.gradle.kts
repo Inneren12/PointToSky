@@ -151,6 +151,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 
     testImplementation(kotlin("test"))           // kotlin.test + JUnit binding
+    testImplementation(kotlin("reflect"))         // KVisibility checks in the resolution-seam boundary tests
     testImplementation("org.json:json:20240303") // real org.json for JVM unit tests (avoids android.jar stub)
     implementation(platform(libs.compose.bom))
 

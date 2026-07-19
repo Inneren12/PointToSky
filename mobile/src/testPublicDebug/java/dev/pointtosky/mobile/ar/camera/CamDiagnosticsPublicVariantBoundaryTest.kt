@@ -1,6 +1,9 @@
 package dev.pointtosky.mobile.ar.camera
 
+import dev.pointtosky.mobile.ar.CameraPreview
+import kotlin.reflect.KVisibility
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /**
@@ -85,6 +88,7 @@ class CamDiagnosticsPublicVariantBoundaryTest {
             "dev.pointtosky.mobile.ar.camera.MatrixStabilityCounters",
             "dev.pointtosky.mobile.ar.camera.MatrixStabilityCountersKt",
             "dev.pointtosky.mobile.ar.camera.AnalysisResolutionCandidate",
+            "dev.pointtosky.mobile.ar.camera.AnalysisResolutionSize",
             "dev.pointtosky.mobile.ar.camera.AnalysisResolutionCandidatesKt",
             "dev.pointtosky.mobile.ar.camera.PhysicalCameraExperimentExportKt",
         )
@@ -104,5 +108,27 @@ class CamDiagnosticsPublicVariantBoundaryTest {
         // only the real implementation's classes above are expected to be absent. Class.forName
         // succeeding (no exception) is the assertion here.
         Class.forName("dev.pointtosky.mobile.ar.camera.CamDiagnosticsExportUiProvider")
+    }
+
+    /**
+     * Architecture-leak fix, checked from the `publicDebug` side too (the seam lives in `main`, so
+     * it is present - and must stay non-public - in *every* variant, not just `internalDebug`):
+     * [AnalysisResolutionRequest], [AnalysisResolutionFamily], the `aspectRatioStrategyFor` mapping,
+     * and [dev.pointtosky.mobile.ar.CameraPreview] are all `internal`, never public production API.
+     * `KVisibility` (via `kotlin-reflect`) is the only reliable way to assert this - plain
+     * `Class.forName`/`java.lang.reflect` cannot distinguish `internal` from `public`, since both
+     * compile to a JVM-public class. Callable references (`::aspectRatioStrategyFor`,
+     * `::CameraPreview`) are used rather than `Class.forName(...).kotlin.staticFunctions` - the
+     * latter does not resolve top-level file-facade functions reliably; a direct reference to the
+     * (already-imported, friend-visible) declaration is unambiguous and does not require invoking
+     * it - `CameraPreview`'s `@Composable` context is only needed to *call* it, never to merely
+     * reference it for reflection.
+     */
+    @Test
+    fun `the resolution-request seam types and mapping function are internal, never public API`() {
+        assertEquals(KVisibility.INTERNAL, AnalysisResolutionFamily::class.visibility)
+        assertEquals(KVisibility.INTERNAL, AnalysisResolutionRequest::class.visibility)
+        assertEquals(KVisibility.INTERNAL, (::aspectRatioStrategyFor).visibility)
+        assertEquals(KVisibility.INTERNAL, (::CameraPreview).visibility)
     }
 }

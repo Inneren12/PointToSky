@@ -53,17 +53,18 @@ internal fun formatDualBasisReportLines(session: ExperimentSessionState): String
         appendLine("MATRIX STABILITY (generation attemptId=${session.attemptId}):")
         appendLine("  framesObserved=${stability.framesObserved}")
         appendLine("  framesWithNullTransform=${stability.framesWithNullTransform}")
-        // Two explicitly separated change notions (P2 fix): exact bit inequality of the widened
-        // float32 values vs. mapped-pixel displacement over the fixed reference rectangle. The
-        // threshold and reference-rect values are printed so this report is self-describing.
-        appendLine("  bitwiseMatrixChanges=${stability.bitwiseMatrixChanges}")
+        // Two explicitly separated change notions (P2 fix): exact-value (Double structural)
+        // inequality of the widened float32 values vs. mapped-pixel displacement over the fixed
+        // reference rectangle. The threshold and reference-rect values are printed so this report
+        // is self-describing.
+        appendLine("  exactValueMatrixChanges=${stability.exactValueMatrixChanges}")
         appendLine("  mappedDisplacementChangesBeyondTolerance=${stability.mappedDisplacementChangesBeyondTolerance}")
         appendLine("  maxMappedDisplacementFromFirstPx=${stability.maxMappedDisplacementFromFirstPx}")
         appendLine("  maxCoefficientDeltaFromFirst=${stability.maxCoefficientDeltaFromFirst} (raw diagnostic; no threshold applied)")
         appendLine(
             "  stabilityThresholds: MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX=" +
                 "$MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX over reference rect " +
-                "${MATRIX_STABILITY_REFERENCE_WIDTH_PX}x$MATRIX_STABILITY_REFERENCE_HEIGHT_PX; bitwise changes use exact equality",
+                "${MATRIX_STABILITY_REFERENCE_WIDTH_PX}x$MATRIX_STABILITY_REFERENCE_HEIGHT_PX; exact-value changes use exact equality",
         )
         appendLine("  dimensionsCropOrRotationChanged=${stability.dimensionsCropOrRotationChanged}")
         appendLine("  firstMatrix=" + (stability.firstMatrix?.let { matrixValues(it).toString() } ?: "none"))
@@ -168,8 +169,13 @@ private fun describeDomainProof(cam2cResult: Cam2cPhysicalCameraResolution?): St
  *   `matrixStability` replaced `changesBeyondFloatNoise` with `bitwiseMatrixChanges` +
  *   `mappedDisplacementChangesBeyondTolerance` + `maxMappedDisplacementFromFirstPx` and now exports
  *   its threshold names/values; the session gained `requestedAnalysisResolutionFamily`.
+ * - `3` (architecture-leak fix pass, terminology cleanup): `matrixStability.bitwiseMatrixChanges` /
+ *   `bitwiseChangeCriterion` renamed to `exactValueMatrixChanges` / `exactValueChangeCriterion` —
+ *   the comparison itself is unchanged ([Double] structural equality of the widened float32
+ *   values, no tolerance), only the name, since it was never a raw-bits (`Double.toRawBits()`)
+ *   comparison. No other field, threshold, or value changes.
  */
-const val PHYSICAL_CAMERA_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 2
+const val PHYSICAL_CAMERA_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 3
 
 private fun matrixJson(m: dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3?): JsonElement =
     m?.let { values -> buildJsonArray { matrixValues(values).forEach { add(it) } } } ?: JsonNull
@@ -328,10 +334,11 @@ internal fun buildPhysicalCameraExperimentJson(
                         buildJsonObject {
                             put("framesObserved", stability.framesObserved)
                             put("framesWithNullTransform", stability.framesWithNullTransform)
-                            // Schema v2: raw-bit changes and geometrically meaningful mapped-pixel
-                            // changes are separate counters; threshold names/values are exported so
-                            // a device report is self-describing.
-                            put("bitwiseMatrixChanges", stability.bitwiseMatrixChanges)
+                            // Schema v3: exact-value changes (Double structural equality, no
+                            // tolerance) and geometrically meaningful mapped-pixel changes are
+                            // separate counters; threshold names/values are exported so a device
+                            // report is self-describing.
+                            put("exactValueMatrixChanges", stability.exactValueMatrixChanges)
                             put("mappedDisplacementChangesBeyondTolerance", stability.mappedDisplacementChangesBeyondTolerance)
                             put("maxMappedDisplacementFromFirstPx", stability.maxMappedDisplacementFromFirstPx)
                             put("maxCoefficientDeltaFromFirst", stability.maxCoefficientDeltaFromFirst)
@@ -339,7 +346,7 @@ internal fun buildPhysicalCameraExperimentJson(
                             put("mappedDisplacementToleranceName", "MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX")
                             put("referenceRectWidthPx", MATRIX_STABILITY_REFERENCE_WIDTH_PX)
                             put("referenceRectHeightPx", MATRIX_STABILITY_REFERENCE_HEIGHT_PX)
-                            put("bitwiseChangeCriterion", "exact inequality of widened float32 coefficients")
+                            put("exactValueChangeCriterion", "exact inequality of widened float32 coefficients (Double structural equality)")
                             put("dimensionsCropOrRotationChanged", stability.dimensionsCropOrRotationChanged)
                             put("firstMatrix", matrixJson(stability.firstMatrix))
                             put("latestMatrix", matrixJson(stability.latestMatrix))

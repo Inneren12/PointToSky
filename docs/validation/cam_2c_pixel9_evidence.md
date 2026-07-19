@@ -609,3 +609,11 @@ before any device run occurred, so no captured evidence predates them
   `mappedDisplacementChangesBeyondTolerance` (mapped-pixel displacement over the exported reference
   rectangle vs the exported `MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX`); device reports are
   self-describing about their thresholds.
+
+**Architecture-leak fix pass (`docs/camera_coordinate_calibration_contract.md` §3.14, experiment
+JSON schema now `3`):** terminology-only — `matrixStability.bitwiseMatrixChanges` /
+`bitwiseChangeCriterion` are now `exactValueMatrixChanges` / `exactValueChangeCriterion` in every
+export (the comparison itself, its meaning, and every threshold/value are unchanged; the old name
+overstated the precision — it was always `Double` structural equality, never a raw-bits
+(`Double.toRawBits()`) comparison). A report or captured JSON showing the older field names predates
+schema `3`.

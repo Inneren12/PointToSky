@@ -18,11 +18,15 @@ import kotlin.math.hypot
  * ordinary float storage as "change", while at scale magnitudes (~0.15) the same bound is ~7 ULPs.
  * This type therefore tracks two distinct things and names them for exactly what they are:
  *
- * 1. **Bitwise change** ([MatrixStabilityCounters.bitwiseMatrixChanges]): the reported matrix's
- *    nine values are not exactly equal to the previous frame's. Since every value is a widened
- *    `android.graphics.Matrix` float32, a re-delivery of the *same* platform matrix reproduces the
- *    same bits — any inequality at all means CameraX/the HAL actually reported different numbers.
- *    No tolerance is involved, so no magnitude dishonesty is possible.
+ * 1. **Exact-value change** ([MatrixStabilityCounters.exactValueMatrixChanges]) — named for what it
+ *    actually is: [Double] structural-equality inequality of the reported matrix's nine values
+ *    against the previous frame's (`matrix != previous` on the [SensorToBufferMatrix3] data class),
+ *    not a comparison of raw IEEE-754 bit patterns via `Double.toRawBits()` (a prior revision of
+ *    this KDoc called it "bitwise", which overstated the precision: `Double.equals()`-based
+ *    structural equality canonicalizes `NaN`, unlike a true raw-bits comparison). Since every value
+ *    is a widened `android.graphics.Matrix` float32, a re-delivery of the *same* platform matrix
+ *    reproduces the same value — any inequality at all means CameraX/the HAL actually reported
+ *    different numbers. No tolerance is involved, so no magnitude dishonesty is possible.
  * 2. **Geometrically meaningful change**
  *    ([MatrixStabilityCounters.mappedDisplacementChangesBeyondTolerance] /
  *    [MatrixStabilityCounters.maxMappedDisplacementFromFirstPx]): the maximum **mapped-point
@@ -44,7 +48,7 @@ internal data class MatrixStabilityCounters(
     val latestMatrix: SensorToBufferMatrix3? = null,
     val framesObserved: Long = 0L,
     val framesWithNullTransform: Long = 0L,
-    val bitwiseMatrixChanges: Long = 0L,
+    val exactValueMatrixChanges: Long = 0L,
     val mappedDisplacementChangesBeyondTolerance: Long = 0L,
     val maxMappedDisplacementFromFirstPx: Double = 0.0,
     val maxCoefficientDeltaFromFirst: Double = 0.0,
@@ -114,8 +118,8 @@ internal fun MatrixStabilityCounters.reduceMatrixStability(frame: CameraFrameMet
 
     val first = firstMatrix ?: matrix
     val previous = latestMatrix
-    // Bitwise: exact inequality of the widened float32 values — no tolerance, so no magnitude bias.
-    val bitwiseChanged = matrix != null && previous != null && matrix != previous
+    // Exact-value: exact inequality of the widened float32 values — no tolerance, so no magnitude bias.
+    val exactValueChanged = matrix != null && previous != null && matrix != previous
     // Geometric: mapped-pixel displacement vs the previous matrix over the fixed reference rect.
     val geometricallyChanged =
         matrix != null && previous != null &&
@@ -150,7 +154,7 @@ internal fun MatrixStabilityCounters.reduceMatrixStability(frame: CameraFrameMet
         latestMatrix = matrix ?: latestMatrix,
         framesObserved = framesObserved,
         framesWithNullTransform = framesWithNullTransform,
-        bitwiseMatrixChanges = bitwiseMatrixChanges + (if (bitwiseChanged) 1 else 0),
+        exactValueMatrixChanges = exactValueMatrixChanges + (if (exactValueChanged) 1 else 0),
         mappedDisplacementChangesBeyondTolerance =
             mappedDisplacementChangesBeyondTolerance + (if (geometricallyChanged) 1 else 0),
         maxMappedDisplacementFromFirstPx = maxDisplacementFromFirst,

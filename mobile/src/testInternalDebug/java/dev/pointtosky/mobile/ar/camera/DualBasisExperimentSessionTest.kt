@@ -169,7 +169,7 @@ class DualBasisExperimentSessionTest {
     }
 
     @Test
-    fun `matrix stability counts frames, null transforms, bitwise changes, and geometric changes`() {
+    fun `matrix stability counts frames, null transforms, exact-value changes, and geometric changes`() {
         var state = initialExperimentSessionState(1L, "2")
         state = state.reduceFrame(1L, frame(timestampNanos = 1L))
         state = state.reduceFrame(1L, frame(timestampNanos = 2L))
@@ -177,17 +177,17 @@ class DualBasisExperimentSessionTest {
 
         assertEquals(3L, state.matrixStability.framesObserved)
         assertEquals(1L, state.matrixStability.framesWithNullTransform)
-        assertEquals(0L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(0L, state.matrixStability.exactValueMatrixChanges)
         assertEquals(0L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
         assertEquals(0.0, state.matrixStability.maxCoefficientDeltaFromFirst, 0.0)
         assertEquals(0.0, state.matrixStability.maxMappedDisplacementFromFirstPx, 0.0)
         assertEquals(pixel9Matrix, state.matrixStability.firstMatrix)
         assertEquals(pixel9Matrix, state.matrixStability.latestMatrix)
 
-        // A ~0.44 px translation change is both a bitwise change and a geometrically meaningful one.
+        // A ~0.44 px translation change is both an exact-value change and a geometrically meaningful one.
         val changed = pixel9Matrix.copy(m12 = -0.5)
         state = state.reduceFrame(1L, frame(timestampNanos = 4L, matrix = changed))
-        assertEquals(1L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(1L, state.matrixStability.exactValueMatrixChanges)
         assertEquals(1L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
         assertTrue(state.matrixStability.maxCoefficientDeltaFromFirst > 0.4)
         assertTrue(state.matrixStability.maxMappedDisplacementFromFirstPx > 0.4)
@@ -197,10 +197,10 @@ class DualBasisExperimentSessionTest {
     }
 
     @Test
-    fun `a large-translation float32 ULP step is a bitwise change but not a geometric one`() {
+    fun `a large-translation float32 ULP step is an exact-value change but not a geometric one`() {
         // P2 fix boundary: at translation magnitude ~-121.88 (the 16:9 fixture), one float32 ULP is
         // ~7.6e-6 — far above the old 1e-6 raw-coefficient bound, which would have mislabelled pure
-        // float storage as "change beyond float noise". The new design counts it as a bitwise change
+        // float storage as "change beyond float noise". The new design counts it as an exact-value change
         // (the numbers really differ) but NOT as a geometrically meaningful mapped-pixel change.
         val bigTranslation = pixel9Matrix.copy(m12 = (-121.88235f).toDouble())
         val ulpStep = bigTranslation.copy(m12 = Math.nextUp((-121.88235f)).toDouble())
@@ -209,7 +209,7 @@ class DualBasisExperimentSessionTest {
         state = state.reduceFrame(1L, frame(timestampNanos = 1L, matrix = bigTranslation))
         state = state.reduceFrame(1L, frame(timestampNanos = 2L, matrix = ulpStep))
 
-        assertEquals(1L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(1L, state.matrixStability.exactValueMatrixChanges)
         assertEquals(0L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
         assertTrue(state.matrixStability.maxMappedDisplacementFromFirstPx < MATRIX_STABILITY_MAPPED_DISPLACEMENT_TOLERANCE_PX)
     }
@@ -224,11 +224,11 @@ class DualBasisExperimentSessionTest {
         var state = initialExperimentSessionState(1L, "2")
         state = state.reduceFrame(1L, frame(timestampNanos = 1L, matrix = base))
         state = state.reduceFrame(1L, frame(timestampNanos = 2L, matrix = justBelow))
-        assertEquals(1L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(1L, state.matrixStability.exactValueMatrixChanges)
         assertEquals(0L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
 
         state = state.reduceFrame(1L, frame(timestampNanos = 3L, matrix = justAbove))
-        assertEquals(2L, state.matrixStability.bitwiseMatrixChanges)
+        assertEquals(2L, state.matrixStability.exactValueMatrixChanges)
         assertEquals(1L, state.matrixStability.mappedDisplacementChangesBeyondTolerance)
     }
 
