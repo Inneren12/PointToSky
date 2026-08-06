@@ -8,16 +8,80 @@ import dev.pointtosky.core.astro.projection.camera.skylog.encodeSkyFrameLine
 import dev.pointtosky.core.astro.projection.camera.skylog.encodeSkySessionHeaderLine
 import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStreamWriter
 import java.io.Writer
+import java.nio.charset.StandardCharsets
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 
 /** The log file inside a session directory. One JSON object per line; the first is the header. */
 internal const val SKY_SESSION_LOG_FILE_NAME = "session.jsonl"
 
 /** The subdirectory holding one raw luma plane per analyzed frame. */
 internal const val SKY_SESSION_FRAMES_DIRECTORY_NAME = "frames"
+
+/**
+ * Why a session write failed. A short, stable category — never an `IOException` message, which can
+ * carry the app's full private storage path into a HUD or a pasted bug report.
+ */
+internal enum class SkySessionWriteFailure {
+    /** The session directory already existed. A session never adopts a directory it did not create. */
+    SESSION_DIRECTORY_EXISTS,
+    SESSION_DIRECTORY_CREATE_FAILED,
+    FRAMES_DIRECTORY_EXISTS,
+    FRAMES_DIRECTORY_CREATE_FAILED,
+
+    /** `session.jsonl` already existed. Appending to it would splice two sessions into one file. */
+    LOG_FILE_EXISTS,
+    LOG_OPEN_FAILED,
+    HEADER_WRITE_FAILED,
+
+    /** A luma file for this sequence number already existed. Never overwritten. */
+    LUMA_FILE_EXISTS,
+    LUMA_WRITE_FAILED,
+
+    /** The supplied buffer is smaller than the geometry it claims. */
+    LUMA_BUFFER_SHORT,
+    FRAME_APPEND_FAILED,
+    CLOSE_FAILED,
+
+    /** A write was attempted before [SkySessionLogSink.start] succeeded. */
+    NOT_STARTED,
+}
+
+/**
+ * The disk seam a [SkySessionRecorder] writes through.
+ *
+ * Extracted as an interface for one reason: the recorder's whole job is ordering — pixels before the
+ * line that references them, no write after close, one in-flight commit finishing atomically against
+ * a concurrent stop. Proving that against a real filesystem means racing real I/O; proving it against
+ * a sink that can be paused mid-`appendFrame` is deterministic. See `SkySessionRecorderConcurrencyTest`.
+ */
+internal interface SkySessionLogSink {
+    val sessionPath: String
+    val writtenFrameCount: Long
+    val writtenLumaBytes: Long
+    val lastFailure: SkySessionWriteFailure?
+
+    /** Creates the session and writes the header. `false` means the session must not start. */
+    fun start(header: SkySessionLogHeader): Boolean
+
+    /** Writes this frame's pixels, returning the reference to record, or `null` on failure. */
+    fun writeLumaFrame(
+        sequence: Long,
+        data: ByteArray,
+        widthPx: Int,
+        heightPx: Int,
+        rowStridePx: Int,
+    ): SkyLumaReference?
+
+    /** Appends and flushes one frame line. */
+    fun appendFrame(record: SkyFrameRecord): Boolean
+
+    fun close()
+}
 
 /**
  * SKY-1 (`internalDebug`-only): writes one sky session to disk — a `session.jsonl` line stream plus
@@ -27,88 +91,109 @@ internal const val SKY_SESSION_FRAMES_DIRECTORY_NAME = "frames"
  * ```text
  * <parent>/sky_<sessionId>/
  *   session.jsonl        header line, then one line per frame
- *   frames/frame_000000.y  packed 8-bit luma, rowStridePx == widthPx
+ *   frames/frame_000000.y  packed 8-bit luma
  *   frames/frame_000001.y
  * ```
  * A frame line references its pixels by a path **relative to the session directory**
  * ([SkyLumaReference.path]), so the whole directory can be pulled off the device and read anywhere.
  *
- * ## Why raw `.y` and not PNG
- * See [SkyLumaFormat]. Short version: `ImageProxy.planes[0]` already is the 8-bit intensity plane a
- * star detector wants, so writing it verbatim is lossless, encoder-free, and one `numpy.fromfile`
- * away offline. Chroma is not read at all — no star detector uses it, and it would cost roughly 3x
- * the bytes per frame in a mode (long-exposure night capture) where storage is the practical limit
- * on session length.
+ * ## Exclusive creation
+ * A session **creates** its directory or refuses to run. It never adopts an existing one, never
+ * appends to an existing `session.jsonl`, and never overwrites an existing `frame_NNNNNN.y`. Every
+ * one of those is done through `Files.createDirectory` / `StandardOpenOption.CREATE_NEW`, which fail
+ * atomically at the filesystem level rather than through a check-then-open window another writer
+ * could slip through.
+ *
+ * This is not defensiveness for its own sake. `session.jsonl` opened with `append = true` on a
+ * directory that already had one produces a file with two header lines and two interleaved frame
+ * sequences, whose `frame_000000.y` belongs to whichever session wrote it last — a dataset that
+ * parses cleanly and is entirely wrong.
  *
  * ## Failure handling
  * Every write returns a result rather than throwing: a capture session that fills the disk halfway
  * through should stop cleanly and keep the frames it already wrote, not crash the experiment
- * activity. [failureCount] and [lastFailureReason] surface that to the UI. The reason is a category
- * plus the exception's class name, never its message — an `IOException` message can carry a full
- * filesystem path.
+ * activity. [lastFailure] is a typed category; nothing here ever surfaces an exception message.
  *
  * ## Threading
- * Not internally synchronized: one instance is owned by one capture session and written only from
- * that session's single analysis executor thread, matching [SkySessionCameraPreview]'s own
- * single-thread analyzer. [close] may be called from another thread once the analyzer is known to
- * have stopped.
+ * Not internally synchronized. Ordering and exclusion are [SkySessionRecorder]'s job — it holds a
+ * lock across every call into this sink, including [close]. Nothing else may write through an
+ * instance the recorder owns.
  */
 internal class SkySessionLogWriter(
     val sessionDirectory: File,
-) {
+) : SkySessionLogSink {
     private val framesDirectory = File(sessionDirectory, SKY_SESSION_FRAMES_DIRECTORY_NAME)
     private val logFile = File(sessionDirectory, SKY_SESSION_LOG_FILE_NAME)
 
     private var writer: Writer? = null
     private var closed = false
 
-    /** How many frames have been appended successfully. */
-    var writtenFrameCount: Long = 0L
+    override val sessionPath: String get() = sessionDirectory.absolutePath
+
+    override var writtenFrameCount: Long = 0L
+        private set
+
+    override var writtenLumaBytes: Long = 0L
+        private set
+
+    override var lastFailure: SkySessionWriteFailure? = null
         private set
 
     /** How many writes failed. A non-zero value means the log is short of what the camera delivered. */
     var failureCount: Long = 0L
         private set
 
-    /** The most recent failure's short category, or `null` when nothing has failed. */
-    var lastFailureReason: String? = null
-        private set
-
-    /** How many bytes of luma have been written, so a UI can show a session's storage cost. */
-    var writtenLumaBytes: Long = 0L
-        private set
-
-    /**
-     * Creates the session directory and writes the header line. Must be called exactly once, before
-     * any [appendFrame]. Returns `false` when the directory or header could not be written, in which
-     * case the session should not start.
-     */
-    fun start(header: SkySessionLogHeader): Boolean {
+    override fun start(header: SkySessionLogHeader): Boolean {
         check(!closed) { "SkySessionLogWriter is closed" }
         check(writer == null) { "start() must be called exactly once" }
-        return runWrite("session_start") {
-            if (!sessionDirectory.isDirectory && !sessionDirectory.mkdirs()) {
-                throw IOException("could not create session directory")
+
+        if (sessionDirectory.exists()) return fail(SkySessionWriteFailure.SESSION_DIRECTORY_EXISTS)
+        try {
+            sessionDirectory.parentFile?.let { Files.createDirectories(it.toPath()) }
+            Files.createDirectory(sessionDirectory.toPath())
+        } catch (_: FileAlreadyExistsException) {
+            return fail(SkySessionWriteFailure.SESSION_DIRECTORY_EXISTS)
+        } catch (_: IOException) {
+            return fail(SkySessionWriteFailure.SESSION_DIRECTORY_CREATE_FAILED)
+        } catch (_: SecurityException) {
+            return fail(SkySessionWriteFailure.SESSION_DIRECTORY_CREATE_FAILED)
+        }
+
+        try {
+            Files.createDirectory(framesDirectory.toPath())
+        } catch (_: FileAlreadyExistsException) {
+            return fail(SkySessionWriteFailure.FRAMES_DIRECTORY_EXISTS)
+        } catch (_: IOException) {
+            return fail(SkySessionWriteFailure.FRAMES_DIRECTORY_CREATE_FAILED)
+        } catch (_: SecurityException) {
+            return fail(SkySessionWriteFailure.FRAMES_DIRECTORY_CREATE_FAILED)
+        }
+
+        val stream =
+            try {
+                // CREATE_NEW, never APPEND: two sessions must never share one log file.
+                Files.newOutputStream(logFile.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+            } catch (_: FileAlreadyExistsException) {
+                return fail(SkySessionWriteFailure.LOG_FILE_EXISTS)
+            } catch (_: IOException) {
+                return fail(SkySessionWriteFailure.LOG_OPEN_FAILED)
+            } catch (_: SecurityException) {
+                return fail(SkySessionWriteFailure.LOG_OPEN_FAILED)
             }
-            if (!framesDirectory.isDirectory && !framesDirectory.mkdirs()) {
-                throw IOException("could not create frames directory")
-            }
-            val stream =
-                OutputStreamWriter(BufferedOutputStream(FileOutputStream(logFile, /* append = */ true)), Charsets.UTF_8)
-            stream.appendLine(encodeSkySessionHeaderLine(header))
-            stream.flush()
-            writer = stream
+
+        val textWriter = OutputStreamWriter(BufferedOutputStream(stream), StandardCharsets.UTF_8)
+        return try {
+            textWriter.appendLine(encodeSkySessionHeaderLine(header))
+            textWriter.flush()
+            writer = textWriter
+            true
+        } catch (_: IOException) {
+            runCatching { textWriter.close() }
+            fail(SkySessionWriteFailure.HEADER_WRITE_FAILED)
         }
     }
 
-    /**
-     * Writes [data]'s first `rowStridePx * heightPx` bytes as this frame's luma file and returns the
-     * reference to record in the frame's log line, or `null` when the write failed.
-     *
-     * The returned [SkyLumaReference.byteLength] is what was actually written, not what was intended:
-     * an offline reader must be able to trust that the file on disk is that long.
-     */
-    fun writeLumaFrame(
+    override fun writeLumaFrame(
         sequence: Long,
         data: ByteArray,
         widthPx: Int,
@@ -116,30 +201,46 @@ internal class SkySessionLogWriter(
         rowStridePx: Int,
     ): SkyLumaReference? {
         check(!closed) { "SkySessionLogWriter is closed" }
-        val fileName = lumaFileName(sequence)
-        val relativePath = "$SKY_SESSION_FRAMES_DIRECTORY_NAME/$fileName"
-        val byteLength = rowStridePx.toLong() * heightPx.toLong()
-        if (byteLength > data.size.toLong()) {
-            recordFailure("luma_buffer_short")
+        if (writer == null) {
+            fail(SkySessionWriteFailure.NOT_STARTED)
             return null
         }
-        var reference: SkyLumaReference? = null
-        runWrite("luma_write") {
-            FileOutputStream(File(framesDirectory, fileName)).use { stream ->
-                stream.write(data, 0, byteLength.toInt())
-            }
-            writtenLumaBytes += byteLength
-            reference =
-                SkyLumaReference(
-                    path = relativePath,
-                    format = SkyLumaFormat.RAW_Y8,
-                    widthPx = widthPx,
-                    heightPx = heightPx,
-                    rowStridePx = rowStridePx,
-                    byteLength = byteLength,
-                )
+        if (widthPx <= 0 || heightPx <= 0 || rowStridePx < widthPx) {
+            fail(SkySessionWriteFailure.LUMA_BUFFER_SHORT)
+            return null
         }
-        return reference
+        val byteLength = rowStridePx.toLong() * heightPx.toLong()
+        if (byteLength > data.size.toLong()) {
+            fail(SkySessionWriteFailure.LUMA_BUFFER_SHORT)
+            return null
+        }
+
+        val fileName = lumaFileName(sequence)
+        val target = File(framesDirectory, fileName)
+        try {
+            Files
+                .newOutputStream(target.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+                .use { stream -> stream.write(data, 0, byteLength.toInt()) }
+        } catch (_: FileAlreadyExistsException) {
+            fail(SkySessionWriteFailure.LUMA_FILE_EXISTS)
+            return null
+        } catch (_: IOException) {
+            fail(SkySessionWriteFailure.LUMA_WRITE_FAILED)
+            return null
+        } catch (_: SecurityException) {
+            fail(SkySessionWriteFailure.LUMA_WRITE_FAILED)
+            return null
+        }
+
+        writtenLumaBytes += byteLength
+        return SkyLumaReference(
+            path = "$SKY_SESSION_FRAMES_DIRECTORY_NAME/$fileName",
+            format = SkyLumaFormat.RAW_Y8,
+            widthPx = widthPx,
+            heightPx = heightPx,
+            rowStridePx = rowStridePx,
+            byteLength = byteLength,
+        )
     }
 
     /**
@@ -147,55 +248,38 @@ internal class SkySessionLogWriter(
      * off must leave the frames it already recorded readable, and a buffered tail would lose the last
      * few seconds — which, at long sky exposures, can be most of the session.
      */
-    fun appendFrame(record: SkyFrameRecord): Boolean {
+    override fun appendFrame(record: SkyFrameRecord): Boolean {
         check(!closed) { "SkySessionLogWriter is closed" }
-        val stream =
-            writer ?: run {
-                recordFailure("not_started")
-                return false
-            }
-        return runWrite("frame_append") {
+        val stream = writer ?: return fail(SkySessionWriteFailure.NOT_STARTED)
+        return try {
             stream.appendLine(encodeSkyFrameLine(record))
             stream.flush()
             writtenFrameCount += 1
+            true
+        } catch (_: IOException) {
+            fail(SkySessionWriteFailure.FRAME_APPEND_FAILED)
         }
     }
 
     /** Flushes and closes the log stream. Idempotent. */
-    fun close() {
+    override fun close() {
         if (closed) return
         closed = true
-        runWrite("close") {
-            writer?.flush()
-            writer?.close()
-        }
+        val stream = writer
         writer = null
+        if (stream == null) return
+        try {
+            stream.flush()
+            stream.close()
+        } catch (_: IOException) {
+            fail(SkySessionWriteFailure.CLOSE_FAILED)
+        }
     }
 
-    private inline fun runWrite(
-        category: String,
-        block: () -> Unit,
-    ): Boolean =
-        try {
-            block()
-            true
-        } catch (e: IOException) {
-            recordFailure("$category:${e.javaClass.simpleName}")
-            false
-        } catch (e: SecurityException) {
-            recordFailure("$category:${e.javaClass.simpleName}")
-            false
-        } catch (e: IllegalArgumentException) {
-            // A model type's own init rejecting the values this frame produced. Expected to be
-            // unreachable (every caller passes already-validated geometry), but a capture session
-            // must degrade to "one frame lost, counted" rather than taking the activity down.
-            recordFailure("$category:${e.javaClass.simpleName}")
-            false
-        }
-
-    private fun recordFailure(reason: String) {
+    private fun fail(failure: SkySessionWriteFailure): Boolean {
         failureCount += 1
-        lastFailureReason = reason
+        lastFailure = failure
+        return false
     }
 
     internal companion object {

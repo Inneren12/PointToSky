@@ -64,17 +64,46 @@ sealed interface SkySessionLogLine {
         val lineNumber: Int,
         val reason: String,
     ) : SkySessionLogLine
+
+    /**
+     * A syntactically valid session header naming a [schemaVersion] outside
+     * [SUPPORTED_SKY_SESSION_LOG_SCHEMA_VERSIONS].
+     *
+     * Distinct from [Unreadable] on purpose: the line parsed fine, and the file is very likely a real
+     * session log — this build simply must not interpret it. Reporting it as merely "unreadable" would
+     * invite the natural next step of parsing it anyway, which is exactly what a version number
+     * exists to prevent.
+     *
+     * @property schemaVersion the version the header claimed, `null` when the field was absent or not
+     *   an integer at all.
+     */
+    data class UnsupportedSchema(
+        val lineNumber: Int,
+        val schemaVersion: Int?,
+    ) : SkySessionLogLine
 }
 
 /**
- * A whole parsed log. [header] is nullable because a log truncated before its first flush, or one
- * whose header line itself failed to parse, still yields whatever frames survived — those frames are
- * unusable for replay without a header but remain readable as raw pixel/pose data.
+ * A whole parsed log.
+ *
+ * [header] is nullable because a log truncated before its first flush, or one whose header line
+ * failed to parse or named an unsupported schema, still yields whatever frames survived.
+ *
+ * ## Why [orphanFrames] is separate from [records]
+ * A frame line that appears **before** any valid header does not belong to [header] and must never be
+ * replayed as though it did. It was written under intrinsics, a camera id, and pairing tolerances
+ * this document has no record of; attributing a later header's calibration to it would produce
+ * plausible, wrong numbers with nothing to flag them. So such frames are kept — they still carry real
+ * pixels and a real pose — but in their own list, and [replaySkySessionLog] never touches them.
+ *
+ * [records] therefore contains exactly the frames that followed the accepted header, in file order.
  */
 data class SkySessionLogDocument(
     val header: SkySessionLogHeader?,
     val records: List<SkyFrameRecord>,
     val unreadable: List<SkySessionLogLine.Unreadable>,
+    val orphanFrames: List<SkyFrameRecord> = emptyList(),
+    val unsupportedSchema: List<SkySessionLogLine.UnsupportedSchema> = emptyList(),
 )
 
 // ---------------------------------------------------------------------------------------------
@@ -315,8 +344,7 @@ fun parseSkySessionLogLine(
         }
     val obj = element as? JsonObject ?: return SkySessionLogLine.Unreadable(lineNumber, "line is not a JSON object")
     return when (val kind = obj.string(KEY_KIND)) {
-        KIND_SESSION ->
-            runCatchingLine(lineNumber) { SkySessionLogLine.Header(decodeHeader(obj)) }
+        KIND_SESSION -> parseHeaderLine(obj, lineNumber)
 
         KIND_FRAME ->
             runCatchingLine(lineNumber) { SkySessionLogLine.Frame(decodeFrame(obj)) }
@@ -327,14 +355,42 @@ fun parseSkySessionLogLine(
 }
 
 /**
- * Parses a whole log. The **first** header line wins: a session log has exactly one, and a second
- * one means two sessions were concatenated — that is recorded as unreadable rather than silently
- * replacing the intrinsics every earlier frame was captured under.
+ * Reads the `schemaVersion` gate before decoding anything else.
+ *
+ * The version is **required and must be an integer**. A missing, non-integer, zero, or negative
+ * version is [SkySessionLogLine.UnsupportedSchema] with `schemaVersion = null`/the offending value —
+ * never coerced to [SKY_SESSION_LOG_SCHEMA_VERSION]. Defaulting would let a header written before the
+ * field existed, or by a future build that reinterpreted a field this one still recognizes by name,
+ * decode into numbers that look right and are not.
+ */
+private fun parseHeaderLine(
+    obj: JsonObject,
+    lineNumber: Int,
+): SkySessionLogLine {
+    val declared = obj.int("schemaVersion")
+    if (declared == null || declared !in SUPPORTED_SKY_SESSION_LOG_SCHEMA_VERSIONS) {
+        return SkySessionLogLine.UnsupportedSchema(lineNumber, declared)
+    }
+    return runCatchingLine(lineNumber) { SkySessionLogLine.Header(decodeHeader(obj)) }
+}
+
+/**
+ * Parses a whole log.
+ *
+ * The **first** supported header line wins: a session log has exactly one, and a second means two
+ * sessions were concatenated — recorded as unreadable rather than silently replacing the intrinsics
+ * every earlier frame was captured under.
+ *
+ * Frames read **before** that header land in [SkySessionLogDocument.orphanFrames], never in
+ * [SkySessionLogDocument.records]; see that type's KDoc for why attributing them to a later header
+ * would be worse than dropping them.
  */
 fun parseSkySessionLog(lines: Sequence<String>): SkySessionLogDocument {
     var header: SkySessionLogHeader? = null
     val records = mutableListOf<SkyFrameRecord>()
+    val orphanFrames = mutableListOf<SkyFrameRecord>()
     val unreadable = mutableListOf<SkySessionLogLine.Unreadable>()
+    val unsupportedSchema = mutableListOf<SkySessionLogLine.UnsupportedSchema>()
     lines.forEachIndexed { index, line ->
         val lineNumber = index + 1
         when (val parsed = parseSkySessionLogLine(line, lineNumber)) {
@@ -345,11 +401,20 @@ fun parseSkySessionLog(lines: Sequence<String>): SkySessionLogDocument {
                     unreadable += SkySessionLogLine.Unreadable(lineNumber, "duplicate session header")
                 }
 
-            is SkySessionLogLine.Frame -> records += parsed.record
+            is SkySessionLogLine.Frame ->
+                if (header == null) orphanFrames += parsed.record else records += parsed.record
+
             is SkySessionLogLine.Unreadable -> unreadable += parsed
+            is SkySessionLogLine.UnsupportedSchema -> unsupportedSchema += parsed
         }
     }
-    return SkySessionLogDocument(header = header, records = records, unreadable = unreadable)
+    return SkySessionLogDocument(
+        header = header,
+        records = records,
+        unreadable = unreadable,
+        orphanFrames = orphanFrames,
+        unsupportedSchema = unsupportedSchema,
+    )
 }
 
 /**
@@ -359,7 +424,9 @@ fun parseSkySessionLog(lines: Sequence<String>): SkySessionLogDocument {
  * write that produced it.
  */
 fun parseSkySessionLog(text: String): SkySessionLogDocument {
-    if (text.isEmpty()) return SkySessionLogDocument(header = null, records = emptyList(), unreadable = emptyList())
+    if (text.isEmpty()) {
+        return SkySessionLogDocument(header = null, records = emptyList(), unreadable = emptyList())
+    }
     return parseSkySessionLog(text.removeSuffix("\n").removeSuffix("\r").lineSequence())
 }
 
@@ -374,4 +441,13 @@ private inline fun runCatchingLine(
         SkySessionLogLine.Unreadable(lineNumber, e.message ?: e.javaClass.simpleName)
     } catch (e: NoSuchElementException) {
         SkySessionLogLine.Unreadable(lineNumber, e.message ?: e.javaClass.simpleName)
+    } catch (e: IllegalStateException) {
+        // A `check()` anywhere in the decoded model tree. Same reasoning as IllegalArgumentException:
+        // reading a file the device wrote is an expected runtime activity, so nothing here may escape
+        // as an exception a consumer has to catch.
+        SkySessionLogLine.Unreadable(lineNumber, e.message ?: e.javaClass.simpleName)
+    } catch (e: NumberFormatException) {
+        SkySessionLogLine.Unreadable(lineNumber, "malformed number: ${e.javaClass.simpleName}")
+    } catch (e: IndexOutOfBoundsException) {
+        SkySessionLogLine.Unreadable(lineNumber, "truncated array: ${e.javaClass.simpleName}")
     }

@@ -59,6 +59,10 @@ class SkySessionRecorderTest {
     private fun recorderIn(directory: File): SkySessionRecorder =
         SkySessionRecorder(SkySessionLogWriter(File(directory, "session")))
 
+    /** The matched exposure for a frame at [timestampNanos], as the join would have produced it. */
+    private fun exposureFor(timestampNanos: Long = SkySessionCaptureFixtures.FRAME_TIMESTAMP_NANOS) =
+        fixtures.exposureSample(sensorTimestampNanos = timestampNanos)
+
     // -----------------------------------------------------------------------------------------
 
     @Test
@@ -72,6 +76,7 @@ class SkySessionRecorderTest {
             val outcome =
                 recorder.record(
                     frame = fixtures.analyzedFrame(timestampNanos = timestampNanos, seed = index),
+                    exposure = fixtures.exposureSample(sensorTimestampNanos = timestampNanos),
                     geometry = fixtures.geometry(timestampNanos = timestampNanos, poseTimestampNanos = timestampNanos),
                     capturedAtEpochMillis = 1_767_225_600_000L + index,
                     observer = fixtures.observer(),
@@ -100,6 +105,7 @@ class SkySessionRecorderTest {
         val frame = fixtures.analyzedFrame(seed = 7)
         recorder.record(
             frame = frame,
+            exposure = fixtures.exposureSample(),
             geometry = fixtures.geometry(),
             capturedAtEpochMillis = 0L,
             observer = null,
@@ -133,6 +139,7 @@ class SkySessionRecorderTest {
         recorder.start(header())
         recorder.record(
             frame = fixtures.analyzedFrame(rowStridePx = stride),
+            exposure = fixtures.exposureSample(),
             geometry = fixtures.geometry(),
             capturedAtEpochMillis = 0L,
             observer = null,
@@ -157,6 +164,7 @@ class SkySessionRecorderTest {
         recorder.start(header())
         recorder.record(
             frame = fixtures.analyzedFrame(),
+            exposure = fixtures.exposureSample(),
             geometry = fixtures.geometry(),
             capturedAtEpochMillis = 0L,
             observer = null,
@@ -180,6 +188,7 @@ class SkySessionRecorderTest {
         val outcome =
             recorder.record(
                 frame = fixtures.analyzedFrame(timestampNanos = SkySessionCaptureFixtures.FRAME_TIMESTAMP_NANOS),
+                exposure = fixtures.exposureSample(),
                 geometry =
                     fixtures.geometry(
                         timestampNanos =
@@ -208,6 +217,7 @@ class SkySessionRecorderTest {
         val outcome =
             recorder.record(
                 frame = fixtures.analyzedFrame(),
+                exposure = fixtures.exposureSample(),
                 geometry = fixtures.geometry(),
                 capturedAtEpochMillis = 0L,
                 observer = null,
@@ -225,6 +235,7 @@ class SkySessionRecorderTest {
         recorder.start(header())
         recorder.record(
             frame = fixtures.analyzedFrame(),
+            exposure = fixtures.exposureSample(),
             geometry = fixtures.geometry(),
             capturedAtEpochMillis = 0L,
             observer = fixtures.observer(),
@@ -244,24 +255,90 @@ class SkySessionRecorderTest {
     }
 
     @Test
-    fun `a frame with no exposure reading records no exposure rather than zeroes`() {
+    fun `a frame whose matched exposure has no exposure time is refused, not recorded as null`() {
         val directory = newSessionDirectory()
         val recorder = recorderIn(directory)
         recorder.start(header())
-        recorder.record(
-            frame = fixtures.analyzedFrame(exposure = null),
-            geometry = fixtures.geometry(),
-            capturedAtEpochMillis = 0L,
-            observer = null,
-            stars = emptyList(),
-            prediction = StarPredictionBatchResult.Ready.of(emptyList()),
-        )
+
+        val outcome =
+            recorder.record(
+                frame = fixtures.analyzedFrame(),
+                exposure = exposureFor().copy(exposureTimeNanos = null),
+                geometry = fixtures.geometry(),
+                capturedAtEpochMillis = 0L,
+                observer = null,
+                stars = emptyList(),
+                prediction = StarPredictionBatchResult.Ready.of(emptyList()),
+            )
         recorder.stop()
 
-        val record =
-            parseSkySessionLog(File(File(directory, "session"), SKY_SESSION_LOG_FILE_NAME).readText()).records.single()
+        assertEquals(SkyRecordOutcome.EXPOSURE_TIME_MISSING, outcome)
+        assertEquals(
+            0,
+            parseSkySessionLog(File(File(directory, "session"), SKY_SESSION_LOG_FILE_NAME).readText()).records.size,
+        )
+        assertEquals(1L, recorder.droppedFrameCount)
+    }
 
-        assertNull(record.exposure)
+    @Test
+    fun `a frame whose matched exposure was auto-exposed is refused`() {
+        val recorder = recorderIn(newSessionDirectory())
+        recorder.start(header())
+
+        val outcome =
+            recorder.record(
+                frame = fixtures.analyzedFrame(),
+                exposure = exposureFor().copy(aeMode = "ON"),
+                geometry = fixtures.geometry(),
+                capturedAtEpochMillis = 0L,
+                observer = null,
+                stars = emptyList(),
+                prediction = StarPredictionBatchResult.Ready.of(emptyList()),
+            )
+        recorder.stop()
+
+        assertEquals(SkyRecordOutcome.EXPOSURE_AE_NOT_OFF, outcome)
+        assertEquals(0L, recorder.recordedFrameCount)
+    }
+
+    @Test
+    fun `a frame whose matched exposure belongs to another frame is refused`() {
+        val recorder = recorderIn(newSessionDirectory())
+        recorder.start(header())
+
+        val outcome =
+            recorder.record(
+                frame = fixtures.analyzedFrame(),
+                exposure = exposureFor(SkySessionCaptureFixtures.FRAME_TIMESTAMP_NANOS + 1L),
+                geometry = fixtures.geometry(),
+                capturedAtEpochMillis = 0L,
+                observer = null,
+                stars = emptyList(),
+                prediction = StarPredictionBatchResult.Ready.of(emptyList()),
+            )
+        recorder.stop()
+
+        assertEquals(SkyRecordOutcome.EXPOSURE_TIMESTAMP_MISMATCH, outcome)
+    }
+
+    @Test
+    fun `a frame whose matched exposure has no sensitivity is refused`() {
+        val recorder = recorderIn(newSessionDirectory())
+        recorder.start(header())
+
+        val outcome =
+            recorder.record(
+                frame = fixtures.analyzedFrame(),
+                exposure = exposureFor().copy(sensitivityIso = null),
+                geometry = fixtures.geometry(),
+                capturedAtEpochMillis = 0L,
+                observer = null,
+                stars = emptyList(),
+                prediction = StarPredictionBatchResult.Ready.of(emptyList()),
+            )
+        recorder.stop()
+
+        assertEquals(SkyRecordOutcome.EXPOSURE_SENSITIVITY_MISSING, outcome)
     }
 
     // -----------------------------------------------------------------------------------------
@@ -288,6 +365,7 @@ class SkySessionRecorderTest {
                 SkyRecordOutcome.RECORDED,
                 recorder.record(
                     frame = fixtures.analyzedFrame(timestampNanos = timestampNanos, seed = index),
+                    exposure = fixtures.exposureSample(sensorTimestampNanos = timestampNanos),
                     geometry = geometry,
                     capturedAtEpochMillis = 1_767_225_600_000L + index,
                     observer = observer,
@@ -322,6 +400,7 @@ class SkySessionRecorderTest {
         val geometry = fixtures.geometry()
         recorder.record(
             frame = fixtures.analyzedFrame(),
+            exposure = fixtures.exposureSample(),
             geometry = geometry,
             capturedAtEpochMillis = 0L,
             observer = fixtures.observer(),

@@ -39,7 +39,9 @@ internal fun decodeHeader(obj: JsonObject): SkySessionLogHeader {
             ),
         maxPairDeltaNanos = obj.requiredLong("maxPairDeltaNanos"),
         clockMismatchThresholdNanos = obj.requiredLong("clockMismatchThresholdNanos"),
-        schemaVersion = obj.int("schemaVersion") ?: SKY_SESSION_LOG_SCHEMA_VERSION,
+        // Required, and already checked against SUPPORTED_SKY_SESSION_LOG_SCHEMA_VERSIONS by the
+        // caller (parseHeaderLine) before this function ever runs - never defaulted here.
+        schemaVersion = obj.requiredInt("schemaVersion"),
         lumaFormat = obj.enum("lumaFormat", SkyLumaFormat.entries) ?: SkyLumaFormat.RAW_Y8,
         deviceModel = obj.string("deviceModel"),
         cameraId = obj.string("cameraId"),

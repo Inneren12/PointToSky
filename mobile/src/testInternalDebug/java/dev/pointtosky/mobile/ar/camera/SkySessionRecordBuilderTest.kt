@@ -29,7 +29,9 @@ class SkySessionRecordBuilderTest {
             widthPx = SkySessionCaptureFixtures.BUFFER_WIDTH_PX,
             heightPx = SkySessionCaptureFixtures.BUFFER_HEIGHT_PX,
             rowStridePx = SkySessionCaptureFixtures.BUFFER_WIDTH_PX,
-            byteLength = SkySessionCaptureFixtures.BUFFER_WIDTH_PX.toLong() * SkySessionCaptureFixtures.BUFFER_HEIGHT_PX,
+            byteLength =
+                SkySessionCaptureFixtures.BUFFER_WIDTH_PX.toLong() *
+                    SkySessionCaptureFixtures.BUFFER_HEIGHT_PX,
         )
 
     @Test

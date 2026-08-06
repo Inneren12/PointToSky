@@ -11,7 +11,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraInfo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,14 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dev.pointtosky.core.astro.catalog.PtskCatalogLoader
 import dev.pointtosky.core.astro.catalog.isRenderablePoint
-import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometryResult
-import dev.pointtosky.core.astro.projection.camera.TimestampSyncConfig
 import dev.pointtosky.core.astro.projection.camera.prediction.EquatorialStarDirection
-import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionBatchResult
-import dev.pointtosky.core.astro.projection.camera.prediction.projectStars
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyCalibrationRecord
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyObserverContext
-import dev.pointtosky.core.astro.projection.camera.skylog.toStarProjectionContext
 import dev.pointtosky.mobile.ar.camera.prediction.selectPredictedStarDirections
 import dev.pointtosky.mobile.ar.rememberRotationFrame
 import dev.pointtosky.mobile.location.DeviceLocationRepository
@@ -70,14 +64,16 @@ import java.io.File
  * ## What it records
  * See `SkySessionLog` in `:core:astro-core`. Per frame: the raw luma plane, the CAM-1c frame
  * metadata, the CAM-1d-paired device pose, the observing context (GPS + UTC + magnetic declination),
- * the `CaptureResult` exposure for that exact frame, and the CAM-2a predicted stars for that pose.
- * Once per session: camera ids, buffer size, intrinsics and calibration.
+ * the `CaptureResult` exposure matched to that exact frame, and the CAM-2a predicted stars for that
+ * pose. Once per session: camera ids, buffer size, intrinsics and calibration.
  *
- * ## Manual exposure
- * The capture defaults to a manual long exposure ([DEFAULT_SKY_EXPOSURE]), because an auto-exposed
- * frame of the night sky is not usable data — see [SkyCaptureExposure]'s file KDoc. When the selected
- * physical camera does not support `MANUAL_SENSOR`, the screen says so plainly rather than recording
- * an auto-exposed session that looks the same in the log.
+ * ## Two-phase bind
+ * The first bind of a camera carries **no** exposure request. Nothing is known yet about what the
+ * device supports, and a `SENSOR_EXPOSURE_TIME` outside its advertised range makes it discard the
+ * whole manual mode and silently auto-expose. So phase one binds plain, [probeSkyManualExposureCapability]
+ * reads the ranges from the bound `CameraInfo`, the requested exposure is resolved against them, and
+ * phase two rebinds with the resolved values. Recording is blocked until the resolved exposure is the
+ * one actually bound — see [evaluateSkyRecordingGate].
  */
 class SkySessionCaptureActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,6 +96,15 @@ internal fun buildSkySessionCaptureIntent(context: Context): Intent =
  */
 internal val DEFAULT_SKY_EXPOSURE = SkyManualExposureRequest(exposureTimeNanos = 500_000_000L, sensitivityIso = 1600)
 
+/** Exposure presets spanning what a hand-held to lightly-braced night shot can realistically use. */
+internal val SKY_EXPOSURE_PRESETS =
+    listOf(
+        SkyManualExposureRequest(exposureTimeNanos = 125_000_000L, sensitivityIso = 3200),
+        DEFAULT_SKY_EXPOSURE,
+        SkyManualExposureRequest(exposureTimeNanos = 1_000_000_000L, sensitivityIso = 800),
+        SkyManualExposureRequest(exposureTimeNanos = 2_000_000_000L, sensitivityIso = 400),
+    )
+
 private val SKY_RESOLUTION_CANDIDATES =
     listOf(
         AnalysisResolutionRequest(1280, 720, AnalysisResolutionFamily.NEAR_16_9),
@@ -117,6 +122,9 @@ internal data class SkyCaptureUiState(
     val analyzedFrameCount: Long = 0L,
     val recordedFrameCount: Long = 0L,
     val droppedFrameCount: Long = 0L,
+    val staleFrameCount: Long = 0L,
+    val joinDropCount: Long = 0L,
+    val lastJoinDropReason: SkyJoinDropReason? = null,
     val writtenLumaBytes: Long = 0L,
     val lastOutcome: SkyRecordOutcome? = null,
     val lastFailureReason: String? = null,
@@ -138,8 +146,7 @@ internal fun SkySessionCaptureScreen() {
         }
     val permissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            hasCameraPermission =
-                granted
+            hasCameraPermission = granted
         }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF05050A)) {
@@ -174,12 +181,29 @@ private fun SkySessionCaptureContent() {
 
     var selectedPhysicalCameraId by remember { mutableStateOf(physicalCameraIds.firstOrNull()) }
     var resolution by remember { mutableStateOf(SKY_RESOLUTION_CANDIDATES.first()) }
-    var manualExposure by remember { mutableStateOf<SkyManualExposureRequest?>(DEFAULT_SKY_EXPOSURE) }
-    var exposureCapability by remember { mutableStateOf<SkyManualExposureCapability?>(null) }
+
+    // What the operator wants, and what the currently bound session actually carries. They differ for
+    // exactly one bind after every change - see the two-phase bind in this file's KDoc.
+    var requestedExposure by remember { mutableStateOf<SkyManualExposureRequest?>(DEFAULT_SKY_EXPOSURE) }
+    var capabilityByCameraId by remember { mutableStateOf<Map<String, SkyManualExposureCapability>>(emptyMap()) }
     var bindFailure by remember { mutableStateOf<String?>(null) }
     var uiState by remember { mutableStateOf(SkyCaptureUiState()) }
     var viewportWidthPx by remember { mutableStateOf(0) }
     var viewportHeightPx by remember { mutableStateOf(0) }
+
+    val exposureCapability = selectedPhysicalCameraId?.let { capabilityByCameraId[it] }
+    val resolvedExposure =
+        remember(exposureCapability, requestedExposure) {
+            val request = requestedExposure ?: return@remember null
+            (exposureCapability?.resolve(request) as? SkyExposureResolution.Resolved)?.exposure
+        }
+
+    val configuration =
+        remember(selectedPhysicalCameraId, resolution, resolvedExposure) {
+            selectedPhysicalCameraId?.let { id ->
+                SkyCaptureConfiguration(physicalCameraId = id, resolution = resolution, exposure = resolvedExposure)
+            }
+        }
 
     // The catalog subset to predict, loaded once. Reuses the same bounded selection the CAM-2b overlay
     // uses rather than inventing a second star-selection policy for the log.
@@ -201,20 +225,23 @@ private fun SkySessionCaptureContent() {
         }
     }
 
-    val synchronizer = remember { CameraTimestampSynchronizer() }
-    val geometryProvider =
-        remember { CameraSessionGeometryProvider(maxAllowedPairDeltaNanos = synchronizer.maxAllowedDeltaNanos) }
-    val intrinsicsResolver = remember { SessionScopedCameraIntrinsicsResolver() }
-    val session = remember { SkySessionCaptureSession(synchronizer, geometryProvider, intrinsicsResolver) }
+    val session =
+        remember {
+            SkySessionCaptureSession(
+                sessionsRoot = File(context.getExternalFilesDir(null) ?: context.filesDir, "sky_sessions"),
+                deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
+            )
+        }
 
-    // Feeds the rotation history the CAM-1d pairing reads. The matrix reaching the log is exactly the
-    // display-remapped, magnetic-north-referenced one the math consumes - never pre-corrected for true
-    // north, which projectStars applies itself from the recorded declination.
-    rememberRotationFrame(onRotationSample = { sample -> synchronizer.onRotationSample(sample) })
+    // Feeds the rotation history the CAM-1d pairing reads, routed through the session so it always
+    // lands in the live generation's synchronizer and never in a disposed one. The matrix reaching the
+    // log is exactly the display-remapped, magnetic-north-referenced one the math consumes - never
+    // pre-corrected for true north, which projectStars applies itself from the recorded declination.
+    rememberRotationFrame(onRotationSample = { sample -> session.onRotationSample(sample) })
 
     LaunchedEffect(viewportWidthPx, viewportHeightPx) {
         if (viewportWidthPx > 0 && viewportHeightPx > 0) {
-            geometryProvider.onViewportChanged(viewportWidthPx, viewportHeightPx)
+            session.onViewportChanged(viewportWidthPx, viewportHeightPx)
         }
     }
 
@@ -229,22 +256,30 @@ private fun SkySessionCaptureContent() {
                 viewportHeightPx = size.height
             },
     ) {
-        val cameraId = selectedPhysicalCameraId
-        if (cameraId != null) {
+        if (configuration != null) {
             SkySessionCameraPreview(
                 modifier = Modifier.fillMaxSize(),
-                cameraSelector = explicitPhysicalCameraSelector(cameraId),
-                analysisResolutionOverride = resolution,
-                manualExposure = manualExposure,
-                onCameraInfo = { info: CameraInfo ->
-                    exposureCapability = probeSkyManualExposureCapability(info)
-                    session.onCameraInfo(info, cameraId)
+                configuration = configuration,
+                onBind = { epoch, boundConfiguration, info ->
+                    if (session.onBind(epoch, boundConfiguration, info)) {
+                        capabilityByCameraId =
+                            capabilityByCameraId +
+                            (boundConfiguration.physicalCameraId to probeSkyManualExposureCapability(info))
+                    }
                 },
                 onExplicitBindFailure = { reason -> bindFailure = reason },
-                onFrame = { frame ->
-                    val observer = skyObserverContext(latitudeDeg, longitudeDeg)
-                    uiState = session.onFrame(frame, observer, starDirections, uiState)
+                onFrame = { epoch, frameConfiguration, joined ->
+                    uiState =
+                        session.onFrame(
+                            epoch = epoch,
+                            configuration = frameConfiguration,
+                            joined = joined,
+                            observer = skyObserverContext(latitudeDeg, longitudeDeg),
+                            stars = starDirections,
+                            previous = uiState,
+                        )
                 },
+                onJoinDrops = { epoch, drops -> uiState = session.onJoinDrops(epoch, drops, uiState) },
             )
         }
 
@@ -257,16 +292,19 @@ private fun SkySessionCaptureContent() {
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            val gate = session.recordingGate(requestedExposure, exposureCapability)
             SelectionContainer {
                 Text(
                     text =
                         skyCaptureStatusText(
-                            uiState,
-                            exposureCapability,
-                            manualExposure,
-                            bindFailure,
-                            resolution,
-                            selectedPhysicalCameraId,
+                            state = uiState,
+                            capability = exposureCapability,
+                            requested = requestedExposure,
+                            applied = configuration?.exposure,
+                            gate = gate,
+                            bindFailure = bindFailure,
+                            resolution = resolution,
+                            physicalCameraId = selectedPhysicalCameraId,
                         ),
                     color = Color(0xFFB8E0FF),
                     style = MaterialTheme.typography.bodySmall,
@@ -275,15 +313,15 @@ private fun SkySessionCaptureContent() {
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (uiState.sessionDirectoryPath == null || !session.isRecording) {
+                if (!session.isRecording) {
                     Button(
-                        onClick = { uiState = session.startRecording(context, resolution, uiState) },
+                        onClick = { uiState = session.startRecording(requestedExposure, exposureCapability, uiState) },
+                        enabled = gate is SkyRecordingGate.Allowed,
                         modifier = Modifier.testTag(TAG_SKY_START_RECORDING),
                     ) {
                         Text("Record")
                     }
-                }
-                if (session.isRecording) {
+                } else {
                     Button(onClick = { session.stopRecording() }, modifier = Modifier.testTag(TAG_SKY_STOP_RECORDING)) {
                         Text("Stop")
                     }
@@ -300,11 +338,8 @@ private fun SkySessionCaptureContent() {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SKY_EXPOSURE_PRESETS.forEach { preset ->
-                        Button(onClick = { manualExposure = exposureCapability?.clamp(preset) ?: preset }) {
-                            Text(formatSkyExposure(preset))
-                        }
+                        Button(onClick = { requestedExposure = preset }) { Text(formatSkyExposure(preset)) }
                     }
-                    Button(onClick = { manualExposure = null }) { Text("Auto") }
                 }
                 if (physicalCameraIds.size > 1) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -318,19 +353,14 @@ private fun SkySessionCaptureContent() {
     }
 }
 
-/** Exposure presets spanning what a hand-held to lightly-braced night shot can realistically use. */
-private val SKY_EXPOSURE_PRESETS =
-    listOf(
-        SkyManualExposureRequest(exposureTimeNanos = 125_000_000L, sensitivityIso = 3200),
-        DEFAULT_SKY_EXPOSURE,
-        SkyManualExposureRequest(exposureTimeNanos = 1_000_000_000L, sensitivityIso = 800),
-        SkyManualExposureRequest(exposureTimeNanos = 2_000_000_000L, sensitivityIso = 400),
-    )
-
-private fun formatSkyExposure(request: SkyManualExposureRequest): String {
+internal fun formatSkyExposure(request: SkyManualExposureRequest): String {
     val millis = request.exposureTimeNanos / 1_000_000L
     return "${millis}ms/${request.sensitivityIso}"
 }
+
+private fun formatSkyExposure(exposure: SkyResolvedExposure): String =
+    "${exposure.exposureTimeNanos / 1_000_000L}ms/${exposure.sensitivityIso}" +
+        " frameDur=${exposure.frameDurationNanos / 1_000_000L}ms"
 
 /**
  * The observing context for a frame captured now, or `null` when the device fix has not resolved.
@@ -360,174 +390,6 @@ internal fun skyObserverContext(
     )
 }
 
-/**
- * Owns the per-session runtime wiring: pairing, geometry, intrinsics, and the recorder. Lives outside
- * the composable so a recomposition can never rebuild it mid-capture, and so the per-frame path is a
- * plain function call rather than a chain of Compose state writes on the analysis thread.
- */
-internal class SkySessionCaptureSession(
-    private val synchronizer: CameraTimestampSynchronizer,
-    private val geometryProvider: CameraSessionGeometryProvider,
-    private val intrinsicsResolver: SessionScopedCameraIntrinsicsResolver,
-) {
-    // Written on the main thread (onCameraInfo, startRecording/stopRecording from the UI) and read on
-    // the analysis thread (onFrame), so each needs its own visibility guarantee. analyzedFrameCount is
-    // deliberately not volatile: it is only ever touched from the single analysis executor thread.
-    @Volatile private var recorder: SkySessionRecorder? = null
-
-    @Volatile private var cameraInfo: CameraInfo? = null
-
-    @Volatile private var cameraId: String? = null
-    private var analyzedFrameCount = 0L
-
-    val isRecording: Boolean get() = recorder?.isRecording == true
-
-    fun onCameraInfo(
-        info: CameraInfo,
-        physicalCameraId: String,
-    ) {
-        cameraInfo = info
-        cameraId = physicalCameraId
-    }
-
-    /**
-     * Called once per analyzed frame, on the analysis thread. Resolves the session intrinsics from the
-     * first real frame's dimensions (never a guessed size — see [SessionScopedCameraIntrinsicsResolver.resolveOnce]),
-     * pairs the frame to a rotation sample, projects the star subset for the resulting geometry, and
-     * hands the whole lot to the recorder.
-     */
-    fun onFrame(
-        frame: SkyAnalyzedFrame,
-        observer: SkyObserverContext?,
-        stars: List<EquatorialStarDirection>,
-        previous: SkyCaptureUiState,
-    ): SkyCaptureUiState {
-        analyzedFrameCount += 1
-
-        val info = cameraInfo
-        if (info != null) {
-            val resolution =
-                intrinsicsResolver.resolveOnce(
-                    cameraInfo = info,
-                    imageWidthPx = frame.metadata.bufferWidthPx,
-                    imageHeightPx = frame.metadata.bufferHeightPx,
-                    sensorToBufferTransform = frame.metadata.sensorToBufferTransform,
-                )
-            geometryProvider.onIntrinsicsResolved(resolution)
-        }
-
-        val pairing = synchronizer.onCameraFrame(frame.metadata)
-        if (pairing != null) {
-            geometryProvider.onPairedFrame(frame.metadata, pairing)
-        }
-
-        val geometryResult = geometryProvider.state.value
-        val geometry = (geometryResult as? CameraSessionGeometryResult.Ready)?.geometry
-        val prediction =
-            if (geometry != null && observer != null && stars.isNotEmpty()) {
-                observer.toStarProjectionContext()?.let { context -> projectStars(stars, context, geometry) }
-            } else {
-                null
-            }
-
-        val active = recorder
-        val outcome =
-            if (active != null && geometry != null) {
-                active.record(
-                    frame = frame,
-                    geometry = geometry,
-                    capturedAtEpochMillis = System.currentTimeMillis(),
-                    observer = observer,
-                    stars = if (prediction is StarPredictionBatchResult.Ready) stars else emptyList(),
-                    prediction = prediction ?: StarPredictionBatchResult.Ready.of(emptyList()),
-                )
-            } else {
-                previous.lastOutcome
-            }
-
-        return previous.copy(
-            analyzedFrameCount = analyzedFrameCount,
-            recordedFrameCount = active?.recordedFrameCount ?: 0L,
-            droppedFrameCount = active?.droppedFrameCount ?: 0L,
-            writtenLumaBytes = active?.writtenLumaBytes ?: 0L,
-            lastOutcome = outcome,
-            // A start failure ("intrinsics not resolved yet") must survive the next frame's status
-            // update - it is the one message the operator needs to act on, and wiping it a frame later
-            // would make Record look like it silently did nothing.
-            lastFailureReason = active?.lastFailureReason ?: previous.lastFailureReason,
-            geometryStatus = geometryResult::class.simpleName ?: "UNKNOWN",
-            predictedStarCount = (prediction as? StarPredictionBatchResult.Ready)?.projections?.size ?: 0,
-            exposureAvailable = frame.exposure?.exposureTimeNanos != null,
-            sessionDirectoryPath = active?.sessionDirectoryPath,
-        )
-    }
-
-    /**
-     * Opens a new session directory under the app's own external files dir (falling back to internal
-     * storage), writes the header, and starts recording.
-     *
-     * The header needs the session's intrinsics, which only exist once a frame has been analyzed — so
-     * starting before the first frame is refused rather than writing a header with a fabricated
-     * intrinsics value.
-     */
-    fun startRecording(
-        context: Context,
-        resolution: AnalysisResolutionRequest,
-        previous: SkyCaptureUiState,
-    ): SkyCaptureUiState {
-        if (isRecording) return previous
-        val intrinsics =
-            intrinsicsResolver.lastPublishedResolution
-                ?: return previous.copy(lastFailureReason = "intrinsics_not_resolved_yet")
-        val geometry = (geometryProvider.state.value as? CameraSessionGeometryResult.Ready)?.geometry
-
-        val sessionId = "sky_" + System.currentTimeMillis()
-        val directory = File(skySessionsRoot(context), sessionId)
-        val writer = SkySessionLogWriter(directory)
-        val header =
-            buildSkySessionHeader(
-                sessionId = sessionId,
-                startedAtEpochMillis = System.currentTimeMillis(),
-                bufferWidthPx = geometry?.frame?.bufferWidthPx ?: resolution.widthPx,
-                bufferHeightPx = geometry?.frame?.bufferHeightPx ?: resolution.heightPx,
-                intrinsics = intrinsics,
-                maxPairDeltaNanos = synchronizer.maxAllowedDeltaNanos,
-                clockMismatchThresholdNanos = TimestampSyncConfig.CLOCK_MISMATCH_THRESHOLD_NANOS,
-                deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
-                cameraId = cameraId,
-                physicalCameraIds =
-                    intrinsicsResolver.lastCalibrationDiagnostics
-                        ?.physicalCameraIds
-                        ?.toList()
-                        ?.sorted()
-                        .orEmpty(),
-                calibration = intrinsicsResolver.lastCalibrationDiagnostics?.toSkyCalibrationRecord(),
-                pinhole = geometry?.let { skyPinholeRecordOrNull(it) },
-                notes = null,
-            )
-        val started = SkySessionRecorder(writer).takeIf { it.start(header) }
-        recorder = started
-        return previous.copy(
-            sessionDirectoryPath = started?.sessionDirectoryPath,
-            lastFailureReason = if (started == null) writer.lastFailureReason ?: "session_start_failed" else null,
-        )
-    }
-
-    fun stopRecording() {
-        recorder?.stop()
-    }
-
-    fun dispose() {
-        stopRecording()
-        recorder = null
-        synchronizer.dispose()
-        geometryProvider.dispose()
-    }
-
-    private fun skySessionsRoot(context: Context): File =
-        File(context.getExternalFilesDir(null) ?: context.filesDir, "sky_sessions")
-}
-
 /** Maps this session's calibration diagnostics into the log's own plain-value record. */
 internal fun CameraCalibrationDiagnostics.toSkyCalibrationRecord(): SkyCalibrationRecord =
     SkyCalibrationRecord(
@@ -553,11 +415,18 @@ internal fun CameraCalibrationDiagnostics.toSkyCalibrationRecord(): SkyCalibrati
         transformClass = transformClass.name,
     )
 
-/** The capture HUD text. Pure so it can be asserted on without a device. */
+/**
+ * The capture HUD text. Pure so it can be asserted on without a device.
+ *
+ * States the *gate* rather than only the request: an operator needs to know whether this session can
+ * be recorded at all, and if not, which specific check failed.
+ */
 internal fun skyCaptureStatusText(
     state: SkyCaptureUiState,
-    exposureCapability: SkyManualExposureCapability?,
-    manualExposure: SkyManualExposureRequest?,
+    capability: SkyManualExposureCapability?,
+    requested: SkyManualExposureRequest?,
+    applied: SkyResolvedExposure?,
+    gate: SkyRecordingGate,
     bindFailure: String?,
     resolution: AnalysisResolutionRequest,
     physicalCameraId: String?,
@@ -566,20 +435,32 @@ internal fun skyCaptureStatusText(
         appendLine("SKY-1 session capture")
         appendLine("camera=${physicalCameraId ?: "-"} analysis=${resolution.widthPx}x${resolution.heightPx}")
         appendLine("geometry=${state.geometryStatus} stars=${state.predictedStarCount}")
+        appendLine("requested=${requested?.let { formatSkyExposure(it) } ?: "AUTO"}")
+        appendLine("applied=${applied?.let { formatSkyExposure(it) } ?: "none"}")
         appendLine(
-            "exposure=" +
+            "manualExposure=" +
                 when {
-                    manualExposure == null -> "AUTO (not suitable for sky capture)"
-                    exposureCapability == null -> "requested ${formatSkyExposure(manualExposure)}, capability unknown"
-                    !exposureCapability.supported -> "MANUAL UNSUPPORTED (${exposureCapability.unsupportedReason})"
-                    else -> "manual ${formatSkyExposure(manualExposure)}"
+                    capability == null -> "capability unknown (camera not bound yet)"
+                    !capability.supported -> "UNSUPPORTED (${capability.unsupportedReason?.name})"
+                    else ->
+                        "supported exposure=${capability.exposureTimeRangeNanos} iso=${capability.sensitivityRange} " +
+                            "maxFrameDur=${capability.maxFrameDurationNanos}"
+                },
+        )
+        appendLine(
+            "recording=" +
+                when (gate) {
+                    is SkyRecordingGate.Allowed -> "ALLOWED"
+                    is SkyRecordingGate.Blocked -> "BLOCKED(${gate.reason.name})"
                 },
         )
         appendLine("captureResultExposure=${if (state.exposureAvailable) "present" else "absent"}")
         appendLine(
-            "frames analyzed=${state.analyzedFrameCount} recorded=${state.recordedFrameCount} dropped=${state.droppedFrameCount}",
+            "frames analyzed=${state.analyzedFrameCount} recorded=${state.recordedFrameCount} " +
+                "dropped=${state.droppedFrameCount} stale=${state.staleFrameCount}",
         )
-        appendLine("luma=${state.writtenLumaBytes / 1024L} KiB last=${state.lastOutcome?.name ?: "-"}")
+        appendLine("joinDrops=${state.joinDropCount} last=${state.lastJoinDropReason?.name ?: "-"}")
+        appendLine("luma=${state.writtenLumaBytes / 1024L} KiB lastFrame=${state.lastOutcome?.name ?: "-"}")
         state.sessionDirectoryPath?.let { appendLine("dir=$it") }
         state.lastFailureReason?.let { appendLine("failure=$it") }
         bindFailure?.let { appendLine("bindFailure=$it") }

@@ -14,6 +14,9 @@ It is a **separate stream** from both the CAM-2c `FrameContent` dot-grid track a
 | Record model | `:core:astro-core` | `…/projection/camera/skylog/SkySessionLog.kt` |
 | JSONL encode | `:core:astro-core` | `…/skylog/SkySessionLogCodec.kt` |
 | JSONL decode | `:core:astro-core` | `…/skylog/SkySessionLogDecode.kt` |
+| Exposure join | `:mobile` (`internalDebug`) | `…/ar/camera/SkyExposureJoin.kt` |
+| Bind generations | `:mobile` (`internalDebug`) | `…/ar/camera/SkyCaptureGeneration.kt` |
+| Per-bind session state | `:mobile` (`internalDebug`) | `…/ar/camera/SkySessionCaptureSession.kt` |
 | Offline replay | `:core:astro-core` | `…/skylog/SkySessionLogReplay.kt` |
 | Disk writer | `:mobile` (`internalDebug`) | `…/ar/camera/SkySessionLogWriter.kt` |
 | Record assembly | `:mobile` (`internalDebug`) | `…/ar/camera/SkySessionRecordBuilder.kt` |
@@ -57,7 +60,6 @@ image = data.reshape(luma["heightPx"], luma["rowStridePx"])[:, :luma["widthPx"]]
 ```jsonc
 {
   "kind": "session",
-  "schemaVersion": 1,
   "sessionId": "sky_1767225600000",
   "startedAtEpochMillis": 1767225600000,
   "deviceModel": "Google Pixel 9",
@@ -65,6 +67,7 @@ image = data.reshape(luma["heightPx"], luma["rowStridePx"])[:, :luma["widthPx"]]
   "physicalCameraIds": ["2", "3"],
   "bufferWidthPx": 1280, "bufferHeightPx": 720,
   "lumaFormat": "RAW_Y8",
+  "schemaVersion": 1,                       // required; an unsupported value is never parsed
   "maxPairDeltaNanos": 25000000,            // the pairing tolerance this session actually used
   "clockMismatchThresholdNanos": 5000000000,
   "clockAlignment": { "frameClock": "CAMERA_SENSOR_NANOS", "poseClock": "SENSOR_EVENT_NANOS",
@@ -79,6 +82,18 @@ image = data.reshape(luma["heightPx"], luma["rowStridePx"])[:, :luma["widthPx"]]
 
 `maxPairDeltaNanos`/`clockMismatchThresholdNanos` are recorded so replay reproduces the device's own
 accept/reject decisions rather than library defaults.
+
+### `schemaVersion` is required, and never defaulted
+
+Only the versions in `SUPPORTED_SKY_SESSION_LOG_SCHEMA_VERSIONS` are read. A header whose version is
+missing, non-integer, zero, negative, or simply newer than this build knows becomes
+`SkySessionLogLine.UnsupportedSchema` — it is *not* coerced to the current version. A future build may
+have reinterpreted a field this one still recognises by name, and "parse it anyway and hope" is
+exactly what a version number exists to prevent.
+
+Frames appearing **before** an accepted header land in `SkySessionLogDocument.orphanFrames`, never in
+`records`, and replay never touches them: they were captured under intrinsics and tolerances this
+document has no record of.
 
 **Lens distortion is absent, deliberately.** Camera2's `LENS_DISTORTION` /
 `LENS_RADIAL_DISTORTION` characteristics are not read anywhere in this codebase, so there is no
@@ -175,7 +190,7 @@ no defaults, so a frame the device rejected replays as rejected for the same rea
 pixel coordinates are only ever the expected value to diff against, never an input — that is what
 makes a replay a check rather than an echo.
 
-## Exposure
+## Exposure: a gate, not a setting
 
 Exposure is not optional for this stream. Stars are faint point sources; an auto-exposed frame of the
 night sky is an almost-black buffer with a handful of smeared stars, and a vendor "night mode"
@@ -183,19 +198,93 @@ additionally stacks and denoises, which destroys exactly the single-frame point 
 needs.
 
 Nothing in this codebase read exposure or requested a manual one before SKY-1 (a grep for
-`SENSOR_EXPOSURE_TIME`/`CaptureResult` across the camera code came back empty). Both halves are now
-in `SkyCaptureExposure.kt`, via CameraX's `Camera2Interop` (already a dependency):
+`SENSOR_EXPOSURE_TIME`/`CaptureResult` across the camera code came back empty). What exists now is not
+just a request — setting `CONTROL_AE_MODE_OFF` is something devices clamp, ignore, or apply a few
+frames late. Three separate checks turn the request into a fact, and **a frame that fails any of them
+is not written to the log**.
 
-- `probeSkyManualExposureCapability(cameraInfo)` — reports whether the selected physical camera
-  advertises `MANUAL_SENSOR` and `CONTROL_AE_MODE_OFF`, and its exposure/ISO ranges. A camera without
-  them **cannot** be driven into a long exposure through the public Camera2 API, and the capture
-  screen says so rather than silently recording an auto-exposed session.
-- `applySkyCaptureOptions(request, callback)` — sets `CONTROL_AE_MODE_OFF` + `SENSOR_EXPOSURE_TIME` +
-  `SENSOR_SENSITIVITY` + `SENSOR_FRAME_DURATION` on the `ImageAnalysis` builder, and installs the
-  session capture callback that reads the *actual* per-frame values back.
+### 1. Two-phase bind
 
-The requested exposure is never assumed to be the one used: the log records what `CaptureResult`
-reported, with `aeMode` alongside it so a reader can confirm AE really was off.
+The first bind of a camera carries **no** exposure request at all. Nothing is yet known about the
+device's ranges, and a `SENSOR_EXPOSURE_TIME` outside them makes the HAL discard the whole manual
+request and silently auto-expose. So:
+
+1. bind plain → `probeSkyManualExposureCapability(cameraInfo)` reads `MANUAL_SENSOR`,
+   `CONTROL_AE_MODE_OFF`, `SENSOR_INFO_EXPOSURE_TIME_RANGE`, `SENSOR_INFO_SENSITIVITY_RANGE` and
+   `SENSOR_INFO_MAX_FRAME_DURATION`;
+2. `SkyManualExposureCapability.resolve(request)` clamps the request into those ranges and works out a
+   legal `SENSOR_FRAME_DURATION` — `frameDuration == exposureTime` is **not** assumed legal: the
+   exposure is capped at the max frame duration, and a device whose constraints cannot be satisfied
+   returns a typed `Unresolvable` reason instead of an illegal request;
+3. rebind with the resolved values.
+
+### 2. The recording gate
+
+`evaluateSkyRecordingGate(...)` decides whether Record may be tapped at all. It blocks, with the
+reason shown in the HUD, when:
+
+| Reason | Meaning |
+| --- | --- |
+| `AUTO_EXPOSURE_NOT_ALLOWED` | No manual exposure requested. This is a manual-exposure dataset. |
+| `CAMERA_CAPABILITY_UNKNOWN` | No camera bound yet, so nothing is known about it. |
+| `MANUAL_SENSOR_CAPABILITY_ABSENT` | The camera does not advertise `MANUAL_SENSOR`. |
+| `CONTROL_AE_MODE_OFF_UNAVAILABLE` | The camera cannot turn auto-exposure off. |
+| `CAMERA2_INFO_UNAVAILABLE` | `Camera2CameraInfo` could not be read. |
+| `EXPOSURE_RANGE_UNSATISFIABLE` / `SENSITIVITY_RANGE_UNSATISFIABLE` / `FRAME_DURATION_UNSATISFIABLE` | The request cannot be clamped into the device's ranges. |
+| `EXPOSURE_NOT_APPLIED_YET` | The resolved exposure is not the one the current bind carries — phase one, or a rebind still pending. |
+| `INTRINSICS_NOT_RESOLVED` | No frame has been analyzed yet, so the session has no intrinsics for its header. |
+
+### 3. Per-frame validation
+
+Every frame is joined to the `CaptureResult` that produced it (below), and the recorder refuses to
+count it unless that result reports **all** of: an `exposureTimeNanos`, a `sensitivityIso`, a
+`sensorTimestampNanos` exactly equal to the frame timestamp, and `aeMode == "OFF"`. Otherwise the
+frame is dropped with a typed `SkyRecordOutcome` (`EXPOSURE_TIME_MISSING`,
+`EXPOSURE_SENSITIVITY_MISSING`, `EXPOSURE_TIMESTAMP_MISMATCH`, `EXPOSURE_AE_NOT_OFF`) and counted in
+the HUD's dropped total.
+
+So `exposure` is never absent from a recorded frame line, and its `aeMode` is always `"OFF"`. A log
+that says otherwise did not come from this writer.
+
+**Known gap, stated rather than guessed at:** Camera2 also imposes a *minimum* frame duration that
+depends on the configured output size (`StreamConfigurationMap.getOutputMinFrameDuration`). The
+capability type carries a `minFrameDurationNanos` field and honours it when supplied, but the probe
+does not currently read it — that needs the exact chosen `ImageAnalysis` surface, which CameraX
+resolves only after the bind. On a device where that minimum exceeds the requested exposure, the frame
+duration is raised by the HAL rather than by us.
+
+## Joining pixels to their exposure
+
+`ImageProxy` arrives on the analysis executor and `CaptureResult` on the camera callback thread, in
+either order — and at a 2 s exposure the gap is large. `SkyExposureJoin` holds **both** sides and
+completes a pair whichever arrives second, keyed on exact `SENSOR_TIMESTAMP` equality. A one-shot
+"look up the exposure when the image arrives" would silently record every late result as
+`exposure: null`, which for this dataset is the worst possible failure: the log looks complete and is
+not.
+
+The join is bounded on both sides — by capacity (oldest evicted first) and by age measured against the
+sensor clock itself — so pending luma planes cannot accumulate. Everything released without a pair is
+reported with a typed reason (`FRAME_TIMED_OUT`, `FRAME_EVICTED`, `FRAME_DUPLICATE_TIMESTAMP`,
+`EXPOSURE_TIMED_OUT`, `EXPOSURE_EVICTED`, `EXPOSURE_DUPLICATE_TIMESTAMP`, `EXPOSURE_UNKEYED`,
+`PENDING_AT_STOP`) and counted in the HUD, never dropped silently. Duplicate timestamps are first-wins
+on both sides. Nothing is ever matched approximately.
+
+## Session isolation
+
+Every bind gets a monotonically increasing **epoch**, and the whole per-bind apparatus — intrinsics
+resolver, pairing synchronizer, geometry provider, bound camera id — is rebuilt for it and the
+previous one disposed. That matters because `SessionScopedCameraIntrinsicsResolver.resolveOnce` caches
+its first answer for the life of the instance: reused across a rebind, the second bind's frames would
+be projected through the first bind's intrinsics, and a header could pair the new camera id with the
+old camera's calibration. Callbacks carry their epoch; anything older is counted as stale and
+discarded. Changing the physical camera, the analysis resolution, or the exposure is a rebind, and a
+rebind stops any recording in progress.
+
+A session directory is **created**, never adopted: `Files.createDirectory` for the directory and
+`CREATE_NEW` for `session.jsonl` and every `frame_NNNNNN.y`. An existing directory, log file, or frame
+file is a typed failure, not something to append to or overwrite. Start-after-stop always makes a new
+directory — a recorder is terminal once stopped, and its lock covers every sink call including
+`close`, so a frame already committing finishes atomically and one starting after Stop writes nothing.
 
 ## Capturing a session
 
@@ -203,5 +292,7 @@ CAM diagnostics dialog → **Open sky session capture** (`internalDebug` builds 
 `android:exported="false"` and reachable only in-app).
 
 Pick a physical camera and analysis resolution, pick an exposure preset, point at the sky, tap
-**Record**. The HUD shows analyzed/recorded/dropped frame counts, geometry status, predicted-star
-count, whether a `CaptureResult` exposure is arriving, and the session directory path.
+**Record**. Record stays disabled until the gate above allows it, and the HUD names the blocking
+reason. It also shows analyzed/recorded/dropped/stale frame counts, join-drop counts with the last
+reason, geometry status, predicted-star count, the requested vs applied exposure, and the session
+directory path.

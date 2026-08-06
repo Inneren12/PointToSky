@@ -8,6 +8,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.TimedRotationSample
 import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarClassification
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
@@ -41,6 +42,17 @@ import kotlin.math.sqrt
  * field is always the answer.
  */
 const val SKY_SESSION_LOG_SCHEMA_VERSION: Int = 1
+
+/**
+ * Every [SkySessionLogHeader.schemaVersion] this build knows how to read.
+ *
+ * A header carrying anything else is [SkySessionLogLine.UnsupportedSchema] — never silently coerced
+ * to [SKY_SESSION_LOG_SCHEMA_VERSION]. A log written by a newer build may have reinterpreted a field
+ * this build still recognizes by name, so "parse it anyway and hope" is exactly the failure mode a
+ * version number exists to prevent. Widening this set is the deliberate act of teaching this build to
+ * read that version.
+ */
+val SUPPORTED_SKY_SESSION_LOG_SCHEMA_VERSIONS: Set<Int> = setOf(1)
 
 /**
  * How one frame's pixels are stored on disk beside the log.
@@ -144,9 +156,7 @@ data class SkyQuaternion(
  * way (`q` and `-q` are the same rotation).
  */
 internal fun quaternionFromRotationMatrix(m: List<Double>): SkyQuaternion {
-    require(
-        m.size == ROTATION_MATRIX_SIZE,
-    ) { "rotation matrix must have $ROTATION_MATRIX_SIZE elements; was ${m.size}" }
+    requireUsableRotationMatrix(m)
     val trace = m[0] + m[4] + m[8]
     val q =
         when {
@@ -156,24 +166,88 @@ internal fun quaternionFromRotationMatrix(m: List<Double>): SkyQuaternion {
             }
 
             m[0] > m[4] && m[0] > m[8] -> {
-                val s = sqrt(1.0 + m[0] - m[4] - m[8]) * 2.0
+                val s = sqrt((1.0 + m[0] - m[4] - m[8]).coerceAtLeast(0.0)) * 2.0
                 SkyQuaternion(x = 0.25 * s, y = (m[1] + m[3]) / s, z = (m[2] + m[6]) / s, w = (m[7] - m[5]) / s)
             }
 
             m[4] > m[8] -> {
-                val s = sqrt(1.0 + m[4] - m[0] - m[8]) * 2.0
+                val s = sqrt((1.0 + m[4] - m[0] - m[8]).coerceAtLeast(0.0)) * 2.0
                 SkyQuaternion(x = (m[1] + m[3]) / s, y = 0.25 * s, z = (m[5] + m[7]) / s, w = (m[2] - m[6]) / s)
             }
 
             else -> {
-                val s = sqrt(1.0 + m[8] - m[0] - m[4]) * 2.0
+                val s = sqrt((1.0 + m[8] - m[0] - m[4]).coerceAtLeast(0.0)) * 2.0
                 SkyQuaternion(x = (m[2] + m[6]) / s, y = (m[5] + m[7]) / s, z = 0.25 * s, w = (m[3] - m[1]) / s)
             }
         }
+    // Defence in depth. requireUsableRotationMatrix above already rules out every input that could
+    // divide by zero or take a root of a negative, and the coerceAtLeast guards make the roots total -
+    // but a NaN reaching a log line silently poisons every offline consumer downstream, so the output
+    // is checked rather than assumed.
+    require(q.x.isFinite() && q.y.isFinite() && q.z.isFinite() && q.w.isFinite()) {
+        "quaternion derivation produced a non-finite value from $m"
+    }
     return if (q.w < 0.0) SkyQuaternion(-q.x, -q.y, -q.z, -q.w) else q
 }
 
 internal const val ROTATION_MATRIX_SIZE: Int = 9
+
+/**
+ * How far a stored matrix may drift from exact orthonormality before it is refused.
+ *
+ * `1e-3` is deliberately generous. The real values come from `SensorManager.getRotationMatrixFromVector`
+ * followed by `remapCoordinateSystem`, both computed in `Float`, so ~1e-6 of accumulated error is
+ * normal and must not be rejected. The purpose of this check is not to police float noise: it is to
+ * refuse a matrix that cannot represent a rotation at all — an all-zero array, a scaled or sheared
+ * matrix, a reflection (determinant near -1), a partially-overwritten buffer — before
+ * [quaternionFromRotationMatrix] turns it into a plausible-looking quaternion and a replay projects
+ * stars through it.
+ */
+internal const val ROTATION_MATRIX_ORTHONORMAL_TOLERANCE: Double = 1e-3
+
+/**
+ * Rejects [m] unless it can represent a usable rotation: nine finite elements, rows and columns of
+ * unit length, mutually orthogonal rows, and a determinant near `+1` (not `-1`, which is a
+ * reflection and would silently mirror every projected star).
+ *
+ * @throws IllegalArgumentException with a specific reason. [parseSkySessionLogLine] converts it into
+ *   a [SkySessionLogLine.Unreadable], so a malformed line is reported rather than thrown.
+ */
+internal fun requireUsableRotationMatrix(m: List<Double>) {
+    require(m.size == ROTATION_MATRIX_SIZE) {
+        "rotationMatrix must have $ROTATION_MATRIX_SIZE elements; was ${m.size}"
+    }
+    require(m.all { it.isFinite() }) { "rotationMatrix elements must all be finite; was $m" }
+
+    val tolerance = ROTATION_MATRIX_ORTHONORMAL_TOLERANCE
+    val rows = listOf(0, 3, 6).map { listOf(m[it], m[it + 1], m[it + 2]) }
+    val columns = listOf(0, 1, 2).map { listOf(m[it], m[it + 3], m[it + 6]) }
+
+    (rows + columns).forEachIndexed { index, vector ->
+        val norm = sqrt(vector.sumOf { it * it })
+        require(abs(norm - 1.0) <= tolerance) {
+            "rotationMatrix ${if (index < 3) "row" else "column"} ${index % 3} must be unit length " +
+                "within $tolerance; was $norm"
+        }
+    }
+    for (a in 0 until 2) {
+        for (b in a + 1 until 3) {
+            val dot = (0 until 3).sumOf { rows[a][it] * rows[b][it] }
+            require(abs(dot) <= tolerance) {
+                "rotationMatrix rows $a and $b must be orthogonal within $tolerance; dot was $dot"
+            }
+        }
+    }
+
+    val determinant =
+        m[0] * (m[4] * m[8] - m[5] * m[7]) -
+            m[1] * (m[3] * m[8] - m[5] * m[6]) +
+            m[2] * (m[3] * m[7] - m[4] * m[6])
+    require(abs(determinant - 1.0) <= tolerance) {
+        "rotationMatrix determinant must be +1 within $tolerance (a reflection or scaling is not a " +
+            "usable rotation); was $determinant"
+    }
+}
 
 /**
  * One device-pose sample, paired to one frame.
@@ -203,10 +277,11 @@ data class SkyPoseSample(
 ) {
     init {
         require(timestampNanos >= 0L) { "timestampNanos must be non-negative; was $timestampNanos" }
-        require(rotationMatrix.size == ROTATION_MATRIX_SIZE) {
-            "rotationMatrix must have $ROTATION_MATRIX_SIZE elements; was ${rotationMatrix.size}"
-        }
-        require(rotationMatrix.all { it.isFinite() }) { "rotationMatrix elements must all be finite" }
+        // Validated here, at construction, rather than at quaternion-derivation or replay time: a pose
+        // that cannot represent a rotation must never reach a log line or a projection in the first
+        // place. See requireUsableRotationMatrix for what "usable" means and why the tolerance is what
+        // it is.
+        requireUsableRotationMatrix(rotationMatrix)
     }
 
     /** Derived on write, ignored on parse. See [SkySessionLog]'s "two kinds of fields". */
@@ -301,7 +376,22 @@ data class SkyPredictedStar(
         require(rightAscensionRad.isFinite()) { "rightAscensionRad must be finite; was $rightAscensionRad" }
         require(declinationRad.isFinite()) { "declinationRad must be finite; was $declinationRad" }
         require(magnitude == null || magnitude.isFinite()) { "magnitude must be finite when present; was $magnitude" }
+        // A NaN pixel coordinate would compare unequal to itself and silently poison every residual a
+        // detector computes against it, so absence and non-finiteness are kept distinct: absent is a
+        // star behind the camera, non-finite is a malformed line.
+        requireFiniteIfPresent(imageXPx, "imageXPx")
+        requireFiniteIfPresent(imageYPx, "imageYPx")
+        requireFiniteIfPresent(displayXPx, "displayXPx")
+        requireFiniteIfPresent(displayYPx, "displayYPx")
     }
+}
+
+/** @throws IllegalArgumentException when [value] is present and not finite. */
+internal fun requireFiniteIfPresent(
+    value: Double?,
+    name: String,
+) {
+    require(value == null || value.isFinite()) { "$name must be finite when present; was $value" }
 }
 
 /**
@@ -352,7 +442,13 @@ data class SkyPinholeRecord(
     val fyPx: Double,
     val cxPx: Double,
     val cyPx: Double,
-)
+) {
+    init {
+        require(fxPx.isFinite() && fyPx.isFinite() && cxPx.isFinite() && cyPx.isFinite()) {
+            "pinhole coefficients must all be finite; was fx=$fxPx fy=$fyPx cx=$cxPx cy=$cyPx"
+        }
+    }
+}
 
 /**
  * The session's resolved-or-fallback intrinsics, flattened to plain values and rich enough to
@@ -383,6 +479,16 @@ data class SkyIntrinsicsRecord(
     val pinhole: SkyPinholeRecord? = null,
 ) {
     init {
+        // The FOV pair drives every pixel focal length downstream; a non-finite one would produce an
+        // fx/fy of NaN and put every projected star at a NaN pixel without any single field looking
+        // wrong on its own.
+        require(horizontalFovDeg.isFinite()) { "horizontalFovDeg must be finite; was $horizontalFovDeg" }
+        require(verticalFovDeg.isFinite()) { "verticalFovDeg must be finite; was $verticalFovDeg" }
+        requireFiniteIfPresent(focalLengthMm, "focalLengthMm")
+        requireFiniteIfPresent(sensorWidthMm, "sensorWidthMm")
+        requireFiniteIfPresent(sensorHeightMm, "sensorHeightMm")
+        requireFiniteIfPresent(principalPointXPx, "principalPointXPx")
+        requireFiniteIfPresent(principalPointYPx, "principalPointYPx")
         require((source == CameraIntrinsicsSource.LEGACY_FALLBACK) == (legacyFallbackReason != null)) {
             "legacyFallbackReason must be present exactly when source is LEGACY_FALLBACK; was source=$source, " +
                 "reason=$legacyFallbackReason"
@@ -502,7 +608,36 @@ data class SkyCalibrationRecord(
     val quality: String,
     val sensorToBufferMappingSource: String,
     val transformClass: String,
-)
+) {
+    init {
+        // Every numeric field here is read by an offline consumer reasoning in active-array pixels. One
+        // non-finite value among twenty is exactly the kind of thing that surfaces later as an
+        // inexplicable detector bias rather than as an obvious parse failure, so all of them are
+        // checked at construction.
+        val numerics =
+            mapOf(
+                "activeArrayLeftPx" to activeArrayLeftPx,
+                "activeArrayTopPx" to activeArrayTopPx,
+                "activeArrayRightPx" to activeArrayRightPx,
+                "activeArrayBottomPx" to activeArrayBottomPx,
+                "sensorWidthMm" to sensorWidthMm,
+                "sensorHeightMm" to sensorHeightMm,
+                "focalLengthMm" to focalLengthMm,
+                "activeFxPx" to activeFxPx,
+                "activeFyPx" to activeFyPx,
+                "activeCxPx" to activeCxPx,
+                "activeCyPx" to activeCyPx,
+                "bufferFxPx" to bufferFxPx,
+                "bufferFyPx" to bufferFyPx,
+                "bufferCxPx" to bufferCxPx,
+                "bufferCyPx" to bufferCyPx,
+            )
+        numerics.forEach { (name, value) -> require(value.isFinite()) { "$name must be finite; was $value" } }
+        require(activeArrayWidthPx > 0 && activeArrayHeightPx > 0) {
+            "active array must be positively sized; was ${activeArrayWidthPx}x$activeArrayHeightPx"
+        }
+    }
+}
 
 /**
  * The session header — the first line of every sky session log, written once.
@@ -535,6 +670,7 @@ data class SkySessionLogHeader(
 ) {
     init {
         require(sessionId.isNotBlank()) { "sessionId must not be blank" }
+        require(schemaVersion > 0) { "schemaVersion must be positive; was $schemaVersion" }
         require(bufferWidthPx > 0) { "bufferWidthPx must be positive; was $bufferWidthPx" }
         require(bufferHeightPx > 0) { "bufferHeightPx must be positive; was $bufferHeightPx" }
         require(maxPairDeltaNanos >= 0L) { "maxPairDeltaNanos must be non-negative; was $maxPairDeltaNanos" }

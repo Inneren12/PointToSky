@@ -104,7 +104,6 @@ internal object SkySessionCaptureFixtures {
         timestampNanos: Long = FRAME_TIMESTAMP_NANOS,
         rowStridePx: Int = BUFFER_WIDTH_PX,
         seed: Int = 0,
-        exposure: SkyExposureSample? = exposureSample(timestampNanos),
     ): SkyAnalyzedFrame =
         SkyAnalyzedFrame(
             metadata = frameMetadata(timestampNanos),
@@ -112,17 +111,48 @@ internal object SkySessionCaptureFixtures {
             lumaWidthPx = BUFFER_WIDTH_PX,
             lumaHeightPx = BUFFER_HEIGHT_PX,
             lumaRowStridePx = rowStridePx,
+        )
+
+    /** A `CaptureResult` sample that passes the manual-exposure gate for the given frame. */
+    fun exposureSample(
+        sensorTimestampNanos: Long = FRAME_TIMESTAMP_NANOS,
+        aeMode: String? = SKY_AE_MODE_OFF,
+        exposureTimeNanos: Long? = 500_000_000L,
+        sensitivityIso: Int? = 1600,
+    ): SkyExposureSample =
+        SkyExposureSample(
+            exposureTimeNanos = exposureTimeNanos,
+            sensitivityIso = sensitivityIso,
+            frameDurationNanos = 500_000_000L,
+            aeMode = aeMode,
+            awbMode = "AUTO",
+            sensorTimestampNanos = sensorTimestampNanos,
+        )
+
+    fun joinedFrame(
+        timestampNanos: Long = FRAME_TIMESTAMP_NANOS,
+        rowStridePx: Int = BUFFER_WIDTH_PX,
+        seed: Int = 0,
+        exposure: SkyExposureSample = exposureSample(timestampNanos),
+    ): SkyJoinedFrame =
+        SkyJoinedFrame(
+            frame = analyzedFrame(timestampNanos = timestampNanos, rowStridePx = rowStridePx, seed = seed),
             exposure = exposure,
         )
 
-    fun exposureSample(sensorTimestampNanos: Long = FRAME_TIMESTAMP_NANOS): SkyExposureSample =
-        SkyExposureSample(
-            exposureTimeNanos = 500_000_000L,
-            sensitivityIso = 1600,
-            frameDurationNanos = 500_000_000L,
-            aeMode = "OFF",
-            awbMode = "AUTO",
-            sensorTimestampNanos = sensorTimestampNanos,
+    fun manualExposureCapability(
+        supported: Boolean = true,
+        exposureTimeRangeNanos: LongRange? = 100_000L..4_000_000_000L,
+        sensitivityRange: IntRange? = 50..12800,
+        maxFrameDurationNanos: Long? = 4_000_000_000L,
+        unsupportedReason: SkyManualExposureUnsupportedReason? = null,
+    ): SkyManualExposureCapability =
+        SkyManualExposureCapability(
+            supported = supported,
+            exposureTimeRangeNanos = if (supported) exposureTimeRangeNanos else null,
+            sensitivityRange = if (supported) sensitivityRange else null,
+            maxFrameDurationNanos = if (supported) maxFrameDurationNanos else null,
+            unsupportedReason = unsupportedReason,
         )
 
     fun observer(): SkyObserverContext =
