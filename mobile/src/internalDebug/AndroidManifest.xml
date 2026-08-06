@@ -22,6 +22,15 @@
             android:label="CAM-2c frame-content correspondence"
             android:screenOrientation="portrait" />
 
+        <!-- SKY-1 sky-track session-log capture: same internalDebug-only, non-exported,
+             in-app-launch-only convention as the two CAM-2c experiments above. Launched from the CAM
+             diagnostics dialog's "Open sky session capture" action. -->
+        <activity
+            android:name="dev.pointtosky.mobile.ar.camera.SkySessionCaptureActivity"
+            android:exported="false"
+            android:label="SKY-1 sky session capture"
+            android:screenOrientation="portrait" />
+
         <!-- CAM-2c frame-content correspondence experiment: real image/svg+xml *file* sharing for the
              printable target (FrameContentTargetSvgSharing.kt). The existing "${applicationId}.logs"
              FileProvider (main manifest) only covers a files-path "crash/" subdirectory - it does not

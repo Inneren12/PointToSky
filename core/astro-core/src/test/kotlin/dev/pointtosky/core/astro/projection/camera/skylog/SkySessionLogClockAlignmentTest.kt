@@ -135,7 +135,10 @@ class SkySessionLogClockAlignmentTest {
         val header =
             fixtures.header(
                 clockAlignment =
-                    SkyClockAlignment(frameClock = SkyClock.CAMERA_SENSOR_NANOS, poseClock = SkyClock.SENSOR_EVENT_NANOS),
+                    SkyClockAlignment(
+                        frameClock = SkyClock.CAMERA_SENSOR_NANOS,
+                        poseClock = SkyClock.SENSOR_EVENT_NANOS,
+                    ),
             )
 
         assertNull(rebuildSkyFrameGeometry(header, fixtures.frameRecord()))

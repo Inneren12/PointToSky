@@ -27,9 +27,15 @@ internal object SkySessionLogFixtures {
     /** A 30° rotation about the world Z axis, so tests are not all run on a degenerate identity pose. */
     val tiltedRotationMatrix: List<Double> =
         listOf(
-            0.8660254037844387, -0.5, 0.0,
-            0.5, 0.8660254037844387, 0.0,
-            0.0, 0.0, 1.0,
+            0.8660254037844387,
+            -0.5,
+            0.0,
+            0.5,
+            0.8660254037844387,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
         )
 
     fun intrinsics(

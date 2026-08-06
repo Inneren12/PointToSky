@@ -16,9 +16,15 @@ import kotlin.test.assertTrue
 class SkyPoseSampleTest {
     private fun rotationAboutZ(angleRad: Double): List<Double> =
         listOf(
-            cos(angleRad), -sin(angleRad), 0.0,
-            sin(angleRad), cos(angleRad), 0.0,
-            0.0, 0.0, 1.0,
+            cos(angleRad),
+            -sin(angleRad),
+            0.0,
+            sin(angleRad),
+            cos(angleRad),
+            0.0,
+            0.0,
+            0.0,
+            1.0,
         )
 
     @Test
@@ -53,7 +59,11 @@ class SkyPoseSampleTest {
 
         angles.forEach { angle ->
             val quaternion = SkySessionLogFixtures.pose(rotationMatrix = rotationAboutZ(angle)).quaternion
-            val norm = sqrt(quaternion.x * quaternion.x + quaternion.y * quaternion.y + quaternion.z * quaternion.z + quaternion.w * quaternion.w)
+            val norm =
+                sqrt(
+                    quaternion.x * quaternion.x + quaternion.y * quaternion.y + quaternion.z * quaternion.z +
+                        quaternion.w * quaternion.w,
+                )
             assertEquals(1.0, norm, absoluteTolerance = 1e-9, message = "angle=$angle produced a non-unit quaternion")
             assertTrue(quaternion.w >= 0.0, "angle=$angle produced a negative scalar part")
         }

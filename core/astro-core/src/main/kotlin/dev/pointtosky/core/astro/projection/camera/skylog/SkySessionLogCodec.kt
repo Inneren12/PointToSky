@@ -47,16 +47,23 @@ private const val KEY_KIND = "kind"
  * line, and losing that one frame must never cost the thousands before it.
  */
 sealed interface SkySessionLogLine {
-    data class Header(val header: SkySessionLogHeader) : SkySessionLogLine
+    data class Header(
+        val header: SkySessionLogHeader,
+    ) : SkySessionLogLine
 
-    data class Frame(val record: SkyFrameRecord) : SkySessionLogLine
+    data class Frame(
+        val record: SkyFrameRecord,
+    ) : SkySessionLogLine
 
     /**
      * @property reason a short, non-sensitive category plus the failing detail. Never the raw line
      *   content — a log line carries a location fix, and an error string is the one part of a parse
      *   result most likely to be pasted into a bug report.
      */
-    data class Unreadable(val lineNumber: Int, val reason: String) : SkySessionLogLine
+    data class Unreadable(
+        val lineNumber: Int,
+        val reason: String,
+    ) : SkySessionLogLine
 }
 
 /**
@@ -206,8 +213,17 @@ private fun encodeFrameMetadata(frame: CameraFrameMetadata): JsonObject =
             put(
                 "sensorToBufferTransform",
                 buildJsonArray {
-                    listOf(matrix.m00, matrix.m01, matrix.m02, matrix.m10, matrix.m11, matrix.m12, matrix.m20, matrix.m21, matrix.m22)
-                        .forEach { add(it) }
+                    listOf(
+                        matrix.m00,
+                        matrix.m01,
+                        matrix.m02,
+                        matrix.m10,
+                        matrix.m11,
+                        matrix.m12,
+                        matrix.m20,
+                        matrix.m21,
+                        matrix.m22,
+                    ).forEach { add(it) }
                 },
             )
         }
@@ -354,223 +370,8 @@ private inline fun runCatchingLine(
     try {
         block()
     } catch (e: IllegalArgumentException) {
-        // Covers both this file's own require()s and every model type's init block.
+        // Covers both SkySessionLogDecode.kt's own require()s and every model type's init block.
         SkySessionLogLine.Unreadable(lineNumber, e.message ?: e.javaClass.simpleName)
     } catch (e: NoSuchElementException) {
         SkySessionLogLine.Unreadable(lineNumber, e.message ?: e.javaClass.simpleName)
     }
-
-private fun decodeHeader(obj: JsonObject): SkySessionLogHeader {
-    val alignment = obj.obj("clockAlignment") ?: throw IllegalArgumentException("missing \"clockAlignment\"")
-    val intrinsics = obj.obj("intrinsics") ?: throw IllegalArgumentException("missing \"intrinsics\"")
-    return SkySessionLogHeader(
-        sessionId = obj.requiredString("sessionId"),
-        startedAtEpochMillis = obj.requiredLong("startedAtEpochMillis"),
-        bufferWidthPx = obj.requiredInt("bufferWidthPx"),
-        bufferHeightPx = obj.requiredInt("bufferHeightPx"),
-        intrinsics = decodeIntrinsics(intrinsics),
-        clockAlignment =
-            SkyClockAlignment(
-                frameClock = alignment.requiredEnum("frameClock", SkyClock.entries),
-                poseClock = alignment.requiredEnum("poseClock", SkyClock.entries),
-                poseToFrameOffsetNanos = alignment.long("poseToFrameOffsetNanos"),
-            ),
-        maxPairDeltaNanos = obj.requiredLong("maxPairDeltaNanos"),
-        clockMismatchThresholdNanos = obj.requiredLong("clockMismatchThresholdNanos"),
-        schemaVersion = obj.int("schemaVersion") ?: SKY_SESSION_LOG_SCHEMA_VERSION,
-        lumaFormat = obj.enum("lumaFormat", SkyLumaFormat.entries) ?: SkyLumaFormat.RAW_Y8,
-        deviceModel = obj.string("deviceModel"),
-        cameraId = obj.string("cameraId"),
-        physicalCameraIds = obj.stringList("physicalCameraIds"),
-        calibration = obj.obj("calibration")?.let { decodeCalibration(it) },
-        notes = obj.string("notes"),
-    )
-}
-
-private fun decodeIntrinsics(obj: JsonObject): SkyIntrinsicsRecord =
-    SkyIntrinsicsRecord(
-        horizontalFovDeg = obj.requiredDouble("horizontalFovDeg"),
-        verticalFovDeg = obj.requiredDouble("verticalFovDeg"),
-        source = obj.requiredEnum("source", CameraIntrinsicsSource.entries),
-        referenceKind = obj.requiredEnum("referenceKind", SkyIntrinsicsReferenceKind.entries),
-        referenceWidthPx = obj.int("referenceWidthPx"),
-        referenceHeightPx = obj.int("referenceHeightPx"),
-        quality = obj.enum("quality", CameraIntrinsicsQuality.entries),
-        focalLengthMm = obj.double("focalLengthMm"),
-        sensorWidthMm = obj.double("sensorWidthMm"),
-        sensorHeightMm = obj.double("sensorHeightMm"),
-        principalPointXPx = obj.double("principalPointXPx"),
-        principalPointYPx = obj.double("principalPointYPx"),
-        axisSwapped = obj.boolean("axisSwapped") ?: false,
-        negateXInput = obj.boolean("negateXInput") ?: false,
-        negateYInput = obj.boolean("negateYInput") ?: false,
-        legacyFallbackReason = obj.string("legacyFallbackReason"),
-        // "pinhole" is deliberately not read back: it is derived on write. See SkyPinholeRecord.
-        pinhole = null,
-    )
-
-private fun decodeCalibration(obj: JsonObject): SkyCalibrationRecord =
-    SkyCalibrationRecord(
-        activeArrayWidthPx = obj.requiredInt("activeArrayWidthPx"),
-        activeArrayHeightPx = obj.requiredInt("activeArrayHeightPx"),
-        activeArrayLeftPx = obj.requiredDouble("activeArrayLeftPx"),
-        activeArrayTopPx = obj.requiredDouble("activeArrayTopPx"),
-        activeArrayRightPx = obj.requiredDouble("activeArrayRightPx"),
-        activeArrayBottomPx = obj.requiredDouble("activeArrayBottomPx"),
-        sensorWidthMm = obj.requiredDouble("sensorWidthMm"),
-        sensorHeightMm = obj.requiredDouble("sensorHeightMm"),
-        focalLengthMm = obj.requiredDouble("focalLengthMm"),
-        activeFxPx = obj.requiredDouble("activeFxPx"),
-        activeFyPx = obj.requiredDouble("activeFyPx"),
-        activeCxPx = obj.requiredDouble("activeCxPx"),
-        activeCyPx = obj.requiredDouble("activeCyPx"),
-        bufferFxPx = obj.requiredDouble("bufferFxPx"),
-        bufferFyPx = obj.requiredDouble("bufferFyPx"),
-        bufferCxPx = obj.requiredDouble("bufferCxPx"),
-        bufferCyPx = obj.requiredDouble("bufferCyPx"),
-        quality = obj.requiredString("quality"),
-        sensorToBufferMappingSource = obj.requiredString("sensorToBufferMappingSource"),
-        transformClass = obj.requiredString("transformClass"),
-    )
-
-private fun decodeFrame(obj: JsonObject): SkyFrameRecord {
-    val frameObj = obj.obj("frame") ?: throw IllegalArgumentException("missing \"frame\"")
-    val lumaObj = obj.obj("luma") ?: throw IllegalArgumentException("missing \"luma\"")
-    val poseObj = obj.obj("pose") ?: throw IllegalArgumentException("missing \"pose\"")
-    return SkyFrameRecord(
-        sequence = obj.requiredLong("seq"),
-        capturedAtEpochMillis = obj.requiredLong("capturedAtEpochMillis"),
-        frame = decodeFrameMetadata(frameObj),
-        viewportWidthPx = obj.requiredInt("viewportWidthPx"),
-        viewportHeightPx = obj.requiredInt("viewportHeightPx"),
-        luma =
-            SkyLumaReference(
-                path = lumaObj.requiredString("path"),
-                format = lumaObj.enum("format", SkyLumaFormat.entries) ?: SkyLumaFormat.RAW_Y8,
-                widthPx = lumaObj.requiredInt("widthPx"),
-                heightPx = lumaObj.requiredInt("heightPx"),
-                rowStridePx = lumaObj.requiredInt("rowStridePx"),
-                byteLength = lumaObj.requiredLong("byteLength"),
-            ),
-        pose =
-            SkyPoseSample(
-                timestampNanos = poseObj.requiredLong("timestampNanos"),
-                rotationMatrix = poseObj.requiredDoubleList("rotationMatrix"),
-                frameToPoseDeltaNanos = poseObj.requiredLong("frameToPoseDeltaNanos"),
-            ),
-        observer =
-            obj.obj("observer")?.let {
-                SkyObserverContext(
-                    latitudeDeg = it.requiredDouble("latitudeDeg"),
-                    longitudeDeg = it.requiredDouble("longitudeDeg"),
-                    utcEpochMillis = it.requiredLong("utcEpochMillis"),
-                    horizontalAccuracyM = it.double("horizontalAccuracyM"),
-                    magneticDeclinationDeg = it.double("magneticDeclinationDeg"),
-                )
-            },
-        exposure =
-            obj.obj("exposure")?.let {
-                SkyExposureSample(
-                    exposureTimeNanos = it.long("exposureTimeNanos"),
-                    sensitivityIso = it.int("sensitivityIso"),
-                    frameDurationNanos = it.long("frameDurationNanos"),
-                    aeMode = it.string("aeMode"),
-                    awbMode = it.string("awbMode"),
-                    sensorTimestampNanos = it.long("sensorTimestampNanos"),
-                )
-            },
-        predictedStars =
-            (obj["predictedStars"] as? JsonArray)?.map { entry ->
-                val star = entry as? JsonObject ?: throw IllegalArgumentException("predictedStars entry is not an object")
-                SkyPredictedStar(
-                    catalogIndex = star.requiredInt("id"),
-                    rightAscensionRad = star.requiredDouble("raRad"),
-                    declinationRad = star.requiredDouble("decRad"),
-                    magnitude = star.double("mag"),
-                    classification = star.requiredEnum("classification", PredictedStarClassification.entries),
-                    imageXPx = star.double("xPx"),
-                    imageYPx = star.double("yPx"),
-                    displayXPx = star.double("displayXPx"),
-                    displayYPx = star.double("displayYPx"),
-                )
-            } ?: emptyList(),
-    )
-}
-
-/** A row-major 3x3 sensor-to-buffer matrix, flattened. */
-private const val MATRIX_3X3_SIZE = 9
-
-private fun decodeFrameMetadata(obj: JsonObject): CameraFrameMetadata {
-    val crop = obj.obj("cropRect")
-    val sensorToBuffer =
-        obj.takeIf { it["sensorToBufferTransform"] != null }?.let {
-            val v = it.requiredDoubleList("sensorToBufferTransform")
-            require(v.size == MATRIX_3X3_SIZE) {
-                "sensorToBufferTransform must have $MATRIX_3X3_SIZE elements; was ${v.size}"
-            }
-            SensorToBufferMatrix3(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8])
-        }
-    return CameraFrameMetadata(
-        timestampNanos = obj.requiredLong("timestampNanos"),
-        bufferWidthPx = obj.requiredInt("bufferWidthPx"),
-        bufferHeightPx = obj.requiredInt("bufferHeightPx"),
-        rotationDegrees = obj.requiredInt("rotationDegrees"),
-        cropRectLeftPx = crop?.requiredInt("leftPx"),
-        cropRectTopPx = crop?.requiredInt("topPx"),
-        cropRectRightPx = crop?.requiredInt("rightPx"),
-        cropRectBottomPx = crop?.requiredInt("bottomPx"),
-        sensorToBufferTransform = sensorToBuffer,
-    )
-}
-
-// ---------------------------------------------------------------------------------------------
-// JsonObject accessors. "absent" and "null" are the same thing to every one of these, matching
-// skySessionLogJson's own explicitNulls = false write behaviour.
-// ---------------------------------------------------------------------------------------------
-
-private fun JsonObject.primitive(key: String): JsonPrimitive? = (this[key] as? JsonPrimitive)?.takeIf { it.isString || it.content != "null" }
-
-private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
-
-private fun JsonObject.string(key: String): String? = primitive(key)?.content
-
-private fun JsonObject.int(key: String): Int? = primitive(key)?.content?.toIntOrNull()
-
-private fun JsonObject.long(key: String): Long? = primitive(key)?.content?.toLongOrNull()
-
-private fun JsonObject.double(key: String): Double? = primitive(key)?.content?.toDoubleOrNull()
-
-private fun JsonObject.boolean(key: String): Boolean? = primitive(key)?.content?.toBooleanStrictOrNull()
-
-private fun JsonObject.stringList(key: String): List<String> =
-    (this[key] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
-
-private fun JsonObject.requiredString(key: String): String = string(key) ?: throw IllegalArgumentException("missing \"$key\"")
-
-private fun JsonObject.requiredInt(key: String): Int = int(key) ?: throw IllegalArgumentException("missing or non-integer \"$key\"")
-
-private fun JsonObject.requiredLong(key: String): Long = long(key) ?: throw IllegalArgumentException("missing or non-integer \"$key\"")
-
-private fun JsonObject.requiredDouble(key: String): Double = double(key) ?: throw IllegalArgumentException("missing or non-numeric \"$key\"")
-
-private fun JsonObject.requiredDoubleList(key: String): List<Double> {
-    val array = this[key] as? JsonArray ?: throw IllegalArgumentException("missing or non-array \"$key\"")
-    return array.map { element ->
-        (element as? JsonPrimitive)?.content?.toDoubleOrNull()
-            ?: throw IllegalArgumentException("non-numeric element in \"$key\"")
-    }
-}
-
-private fun <E : Enum<E>> JsonObject.enum(
-    key: String,
-    values: List<E>,
-): E? {
-    val name = string(key) ?: return null
-    return values.firstOrNull { it.name == name }
-        ?: throw IllegalArgumentException("unknown \"$key\": $name")
-}
-
-private fun <E : Enum<E>> JsonObject.requiredEnum(
-    key: String,
-    values: List<E>,
-): E = enum(key, values) ?: throw IllegalArgumentException("missing \"$key\"")

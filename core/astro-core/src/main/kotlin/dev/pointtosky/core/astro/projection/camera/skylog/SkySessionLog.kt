@@ -144,7 +144,9 @@ data class SkyQuaternion(
  * way (`q` and `-q` are the same rotation).
  */
 internal fun quaternionFromRotationMatrix(m: List<Double>): SkyQuaternion {
-    require(m.size == ROTATION_MATRIX_SIZE) { "rotation matrix must have $ROTATION_MATRIX_SIZE elements; was ${m.size}" }
+    require(
+        m.size == ROTATION_MATRIX_SIZE,
+    ) { "rotation matrix must have $ROTATION_MATRIX_SIZE elements; was ${m.size}" }
     val trace = m[0] + m[4] + m[8]
     val q =
         when {

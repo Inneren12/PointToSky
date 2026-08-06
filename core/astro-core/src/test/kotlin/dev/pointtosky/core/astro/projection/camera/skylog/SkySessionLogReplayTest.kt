@@ -28,14 +28,24 @@ class SkySessionLogReplayTest {
 
     private val directions: List<EquatorialStarDirection> =
         fixtures.starDirections().map { (index, ra, dec) ->
-            EquatorialStarDirection.of(catalogIndex = index, rightAscensionRad = ra, declinationRad = dec, magnitude = 2.0 + index % 3)
+            EquatorialStarDirection.of(
+                catalogIndex = index,
+                rightAscensionRad = ra,
+                declinationRad = dec,
+                magnitude =
+                    2.0 + index % 3,
+            )
         }
 
     /** The geometry a live session would have published for the fixture frame. */
-    private fun liveGeometry(header: SkySessionLogHeader, record: SkyFrameRecord): CameraSessionGeometry =
+    private fun liveGeometry(
+        header: SkySessionLogHeader,
+        record: SkyFrameRecord,
+    ): CameraSessionGeometry =
         assertIs<CameraSessionGeometryResult.Ready>(rebuildSkyFrameGeometry(header, record)).geometry
 
-    private fun liveContext(observer: SkyObserverContext): StarProjectionContext = assertNotNull(observer.toStarProjectionContext())
+    private fun liveContext(observer: SkyObserverContext): StarProjectionContext =
+        assertNotNull(observer.toStarProjectionContext())
 
     /**
      * Builds a log whose recorded predictions are the genuine output of [projectStars] for the
@@ -56,7 +66,8 @@ class SkySessionLogReplayTest {
                         pose =
                             fixtures.pose(
                                 timestampNanos = SkySessionLogFixtures.FRAME_TIMESTAMP_NANOS + sequence * 33_000_000L,
-                                frameTimestampNanos = SkySessionLogFixtures.FRAME_TIMESTAMP_NANOS + sequence * 33_000_000L,
+                                frameTimestampNanos =
+                                    SkySessionLogFixtures.FRAME_TIMESTAMP_NANOS + sequence * 33_000_000L,
                             ),
                         observer = fixtures.observer(utcEpochMillis = 1_767_225_600_000L + sequence * 33L),
                         luma = fixtures.lumaReference(path = "frames/frame_%06d.y".format(sequence)),
@@ -68,7 +79,10 @@ class SkySessionLogReplayTest {
     }
 
     /** Runs the projection math directly, exactly as the capture path does before writing a line. */
-    private fun projectDirectly(header: SkySessionLogHeader, record: SkyFrameRecord): List<PredictedStarProjection> {
+    private fun projectDirectly(
+        header: SkySessionLogHeader,
+        record: SkyFrameRecord,
+    ): List<PredictedStarProjection> {
         val batch =
             projectStars(
                 stars = directions,

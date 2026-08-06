@@ -131,7 +131,9 @@ data class SkySessionReplayReport(
 ) {
     val readyFrames: List<SkyFrameReplayResult.Ready> get() = frames.filterIsInstance<SkyFrameReplayResult.Ready>()
 
-    val skippedFrames: List<SkyFrameReplayResult.Skipped> get() = frames.filterIsInstance<SkyFrameReplayResult.Skipped>()
+    val skippedFrames: List<SkyFrameReplayResult.Skipped> get() =
+        frames
+            .filterIsInstance<SkyFrameReplayResult.Skipped>()
 
     /** The largest image-space residual across every replayed frame, or `null` when none produced one. */
     val maxImageResidualPx: Double? get() = readyFrames.mapNotNull { it.maxImageResidualPx }.maxOrNull()
@@ -190,10 +192,16 @@ fun replaySkySessionFrame(
 ): SkyFrameReplayResult {
     val observer =
         record.observer
-            ?: return SkyFrameReplayResult.Skipped(record.sequence, SkyFrameReplaySkipReason.OBSERVER_CONTEXT_UNAVAILABLE)
+            ?: return SkyFrameReplayResult.Skipped(
+                record.sequence,
+                SkyFrameReplaySkipReason.OBSERVER_CONTEXT_UNAVAILABLE,
+            )
     val context =
         observer.toStarProjectionContext()
-            ?: return SkyFrameReplayResult.Skipped(record.sequence, SkyFrameReplaySkipReason.MAGNETIC_DECLINATION_UNAVAILABLE)
+            ?: return SkyFrameReplayResult.Skipped(
+                record.sequence,
+                SkyFrameReplaySkipReason.MAGNETIC_DECLINATION_UNAVAILABLE,
+            )
 
     val geometryResult =
         rebuildSkyFrameGeometry(header, record)

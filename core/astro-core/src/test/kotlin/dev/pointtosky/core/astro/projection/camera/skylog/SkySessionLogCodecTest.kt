@@ -24,7 +24,10 @@ class SkySessionLogCodecTest {
     fun `header round-trips field for field`() {
         val header = fixtures.header(calibration = fixtures.calibration())
 
-        val parsed = assertIs<SkySessionLogLine.Header>(parseSkySessionLogLine(encodeSkySessionHeaderLine(header), 1)).header
+        val parsed =
+            assertIs<SkySessionLogLine.Header>(
+                parseSkySessionLogLine(encodeSkySessionHeaderLine(header), 1),
+            ).header
 
         // The pinhole block is derived-on-write and deliberately not parsed back, so it is compared
         // separately from everything else rather than silently weakening the field-for-field claim.
@@ -37,7 +40,12 @@ class SkySessionLogCodecTest {
         val record =
             fixtures.frameRecord(
                 sequence = 42L,
-                frame = fixtures.frameMetadata(rotationDegrees = 90, withCropRect = true, withSensorToBufferTransform = true),
+                frame =
+                    fixtures.frameMetadata(
+                        rotationDegrees = 90,
+                        withCropRect = true,
+                        withSensorToBufferTransform = true,
+                    ),
                 predictedStars =
                     listOf(
                         fixtures.predictedStar(catalogIndex = 101),
@@ -134,7 +142,14 @@ class SkySessionLogCodecTest {
 
     @Test
     fun `luma reference round-trips width, height and stride`() {
-        val record = fixtures.frameRecord(luma = fixtures.lumaReference(rowStridePx = SkySessionLogFixtures.BUFFER_WIDTH_PX + 32))
+        val record =
+            fixtures.frameRecord(
+                luma =
+                    fixtures.lumaReference(
+                        rowStridePx =
+                            SkySessionLogFixtures.BUFFER_WIDTH_PX + 32,
+                    ),
+            )
 
         val parsed = assertIs<SkySessionLogLine.Frame>(parseSkySessionLogLine(encodeSkyFrameLine(record), 1)).record
 
@@ -184,7 +199,9 @@ class SkySessionLogCodecTest {
                             widthPx = SkySessionLogFixtures.BUFFER_WIDTH_PX / 2,
                             heightPx = SkySessionLogFixtures.BUFFER_HEIGHT_PX,
                             rowStridePx = SkySessionLogFixtures.BUFFER_WIDTH_PX / 2,
-                            byteLength = 1L * (SkySessionLogFixtures.BUFFER_WIDTH_PX / 2) * SkySessionLogFixtures.BUFFER_HEIGHT_PX,
+                            byteLength =
+                                1L * (SkySessionLogFixtures.BUFFER_WIDTH_PX / 2) *
+                                    SkySessionLogFixtures.BUFFER_HEIGHT_PX,
                         ),
                 )
             }
@@ -265,7 +282,12 @@ class SkySessionLogCodecTest {
             "the first header must win, not the last",
         )
         assertEquals(1, document.unreadable.size)
-        assertTrue(document.unreadable.single().reason.contains("duplicate"))
+        assertTrue(
+            document.unreadable
+                .single()
+                .reason
+                .contains("duplicate"),
+        )
     }
 
     @Test
