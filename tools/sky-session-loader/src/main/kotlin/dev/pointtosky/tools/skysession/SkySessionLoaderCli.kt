@@ -14,12 +14,20 @@ import kotlin.system.exitProcess
  * tools/sky-session-loader/build/install/sky-session-loader/bin/sky-session-loader <session-dir>
  * ```
  *
- * Every number printed comes from [analyzeSkySession] and therefore from `:core:astro-core`. The two
- * columns are kept apart on purpose, per frame and in the aggregate: `detected` is what the pixels
- * contain and is always available, while `rate` / `rmsPx` / `falsePos` exist only for frames whose
- * projection replay could reproduce. A frame replay refused prints its reason and dashes — never a
- * zero, which would read as "the detector found nothing" rather than "there was nothing to score
- * against".
+ * Every number printed comes from [analyzeSkySession] and therefore from `:core:astro-core`. Three
+ * kinds of column are kept apart on purpose, per frame and in the aggregate:
+ *
+ *  - `detected` is what the **pixels** contain. It needs no pose and is printed for every frame whose
+ *    luma could be read, including frames replay refused.
+ *  - `rate` / `rmsPx` / `maxPx` / `falsePos` score the detector against the **replayed** projection —
+ *    the truth set the offline math reproduces, never the coordinates the capture recorded. They exist
+ *    only for a frame that replayed *and* has at least one recomputed source observable in the image.
+ *  - `rplMaxPx` is **replay integrity**, not detector error: how far the recorded coordinates have
+ *    drifted from the recomputed ones. A large value there with a small `rmsPx` means the log's record
+ *    is stale, not that the detector is wrong.
+ *
+ * A frame with no truth set prints its reason and dashes — never a zero, which would read as "the
+ * detector found nothing" rather than "there was nothing to score against".
  */
 
 private const val TOLERANCE_FLAG = "--tolerance-px="
@@ -128,10 +136,15 @@ private fun printReport(
                 "rmsPx",
                 "maxPx",
                 "falsePos",
+                "rplMaxPx",
                 "note",
             ),
         )
         report.frames.forEach { println(formatFrame(it)) }
+        println(
+            "  (predicted/matched/rate/rmsPx/maxPx/falsePos score the detector against the replayed " +
+                "projection; rplMaxPx is the recorded-vs-replayed integrity residual, not detector error)",
+        )
     }
     println()
     printAggregate(report.aggregate)
@@ -167,18 +180,6 @@ private fun describeClock(header: SkySessionLogHeader): String {
 
 private fun formatFrame(frame: SkySessionFrameMetrics): String {
     val evaluation = frame.evaluation
-    val note =
-        when {
-            frame.lumaFailure != null ->
-                "pixels unavailable: ${frame.lumaFailure}${frame.lumaFailureDetail?.let { " ($it)" } ?: ""}"
-
-            frame.projectionSkipReason != null ->
-                "projection skipped: ${frame.projectionSkipReason}" +
-                    (frame.projectionSkipDetail?.let { " ($it)" } ?: "")
-
-            evaluation?.detectionRate == null -> "no observable predictions recorded"
-            else -> ""
-        }
     return String.format(
         Locale.ROOT,
         FRAME_FORMAT,
@@ -190,15 +191,38 @@ private fun formatFrame(frame: SkySessionFrameMetrics): String {
         formatPixels(evaluation?.centroidResidualRmsPx),
         formatPixels(evaluation?.maxCentroidResidualPx),
         evaluation?.falsePositiveCount?.toString() ?: "-",
-        note,
+        formatPixels(frame.replayMaxImageResidualPx),
+        describeFrameState(frame),
     )
 }
 
+/**
+ * The per-frame note. Every applicable fact is printed rather than only the first, so a frame that is
+ * missing its pixels *and* was refused by replay says both.
+ */
+private fun describeFrameState(frame: SkySessionFrameMetrics): String {
+    val notes = mutableListOf<String>()
+    frame.lumaFailure?.let { failure ->
+        notes += "pixels unavailable: $failure${frame.lumaFailureDetail?.let { " ($it)" } ?: ""}"
+    }
+    frame.projectionSkipReason?.let { reason ->
+        notes += "projection skipped: $reason${frame.projectionSkipDetail?.let { " ($it)" } ?: ""}"
+    }
+    if (frame.evaluationUnavailable == SkyFrameEvaluationUnavailable.NO_OBSERVABLE_PREDICTIONS) {
+        notes += "no truth set: replay placed no source in the analysis image"
+    }
+    if (frame.replayClassificationMismatchCount?.takeIf { it > 0 } != null) {
+        notes += "replay integrity: ${frame.replayClassificationMismatchCount} classification mismatch(es)"
+    }
+    return notes.joinToString(separator = "; ")
+}
+
 private fun printAggregate(aggregate: SkySessionAggregateMetrics) {
-    println("aggregate")
+    println("aggregate (pixels)")
     println("  frames in log            ${aggregate.frameCount}")
     println("  frames with pixels       ${aggregate.framesWithPixels}")
     println("  detected sources         ${aggregate.detectedSourceCount}")
+    println("aggregate (detector vs replayed projection)")
     println("  frames scored            ${aggregate.scoredFrameCount}")
     println("  predictions scored       ${aggregate.predictedCount}")
     println("  matched                  ${aggregate.matchedCount}")
@@ -206,8 +230,18 @@ private fun printAggregate(aggregate: SkySessionAggregateMetrics) {
     println("  centroid residual RMS    ${formatPixels(aggregate.centroidResidualRmsPx)} px")
     println("  centroid residual max    ${formatPixels(aggregate.maxCentroidResidualPx)} px")
     println("  false positives          ${aggregate.falsePositiveCount}")
+    // Printed text stays ASCII: a terminal whose stdout charset is not UTF-8 turns a dash into a "?".
+    println("aggregate (replay integrity, recorded vs replayed, not detector error)")
+    println("  max image residual       ${formatPixels(aggregate.maxReplayImageResidualPx)} px")
+    println("  classification mismatch  ${aggregate.replayClassificationMismatchCount}")
+    if (aggregate.framesWithoutObservablePredictions > 0) {
+        println(
+            "  frames with no truth set (replayed, but no source in the analysis image): " +
+                "${aggregate.framesWithoutObservablePredictions}",
+        )
+    }
     if (aggregate.projectionSkipCounts.isNotEmpty()) {
-        println("  frames without a truth set (projection-dependent metrics withheld):")
+        println("  frames replay refused (no offline projection, so no truth set):")
         aggregate.projectionSkipCounts.entries
             .sortedBy { it.key.name }
             .forEach { (reason, count) -> println("    $reason: $count") }
@@ -224,4 +258,4 @@ private fun formatRatio(value: Double?): String = value?.let { String.format(Loc
 
 private fun formatPixels(value: Double?): String = value?.let { String.format(Locale.ROOT, "%.4f", it) } ?: "-"
 
-private const val FRAME_FORMAT = "%-8s %-9s %-10s %-8s %-7s %-8s %-8s %-9s %s"
+private const val FRAME_FORMAT = "%-8s %-9s %-10s %-8s %-7s %-8s %-8s %-9s %-9s %s"

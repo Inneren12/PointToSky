@@ -18,7 +18,7 @@ class SkySessionDirectoryTest {
 
     @Test
     fun `a written frame reads back byte for byte, stride and all`() {
-        val frame = SyntheticSession.frame(sequence = 0L, stars = SyntheticSession.defaultStars())
+        val frame = SyntheticSession.selfConsistentFrame(sequence = 0L)
         SyntheticSession.write(sessionDirectory, SyntheticSession.header(), listOf(frame))
         val reference = frame.record.luma
 
@@ -44,7 +44,7 @@ class SkySessionDirectoryTest {
 
     @Test
     fun `a truncated frame file is refused, not detected in`() {
-        val frame = SyntheticSession.frame(sequence = 0L, stars = SyntheticSession.defaultStars())
+        val frame = SyntheticSession.selfConsistentFrame(sequence = 0L)
         SyntheticSession.write(sessionDirectory, SyntheticSession.header(), listOf(frame))
         val onDisk = File(sessionDirectory, frame.record.luma.path)
         onDisk.writeBytes(frame.data.copyOf(frame.data.size - 1))
@@ -85,7 +85,7 @@ class SkySessionDirectoryTest {
 
     @Test
     fun `the log file name and frame layout match what the writer produces`() {
-        val frame = SyntheticSession.frame(sequence = 42L, stars = emptyList(), noiseSigma = 0.0)
+        val frame = SyntheticSession.selfConsistentFrame(sequence = 42L, renderStars = false, noiseSigma = 0.0)
         SyntheticSession.write(sessionDirectory, SyntheticSession.header(), listOf(frame))
 
         assertTrue(File(sessionDirectory, "session.jsonl").isFile)

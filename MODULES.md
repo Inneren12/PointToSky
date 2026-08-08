@@ -47,5 +47,5 @@
   - Responsibilities: parse external catalogs (HYG, BSC), process constellation boundaries, and pack binary assets for runtime loading.
   - Key dependencies: Kotlin serialization/CSV parsing, outputs consumed by `:core:catalog` and app assets.
 - `:tools:sky-session-loader` — **CLI Kotlin/JVM application**
-  - Responsibilities: load a SKY-1 session directory (`session.jsonl` + `frames/frame_NNNNNN.y`) from disk and run the existing parse → replay → detect → evaluate chain over it, printing per-frame and aggregate detector metrics.
+  - Responsibilities: load a SKY-1 session directory (`session.jsonl` + `frames/frame_NNNNNN.y`) from disk and run the existing parse → replay → detect → evaluate chain over it, printing per-frame and aggregate metrics. Pure detections come from the pixels; the projection truth set comes from a successful offline replay (never from the recorded pixel coordinates); the recorded-vs-replayed residual is reported separately as a replay-integrity diagnostic. A detector evaluation exists only when at least one replayed source is observable in the analysis image.
   - Key dependencies: `:core:astro-core` (which stays file-free by design; the file I/O lives here). No Android dependency.

@@ -29,7 +29,7 @@
 - `tools/ephem-cli/src/main/kotlin/dev/pointtosky/tools/ephemcli/EphemCli.kt` — CLI entry for ephemeris calculations leveraging astro/time helpers.
 - `tools/catalog-packer/src/main/kotlin/dev/pointtosky/tools/catalog/PackerMain.kt` — CLI entry coordinating catalog CSV parsers (`csv/`), constellation processing, and binary packing for runtime assets.
 - `tools/sky-session-loader/src/main/kotlin/dev/pointtosky/tools/skysession/SkySessionDirectory.kt` — the file seam of a SKY-1 session directory: log text and raw luma bytes read off disk and handed to `parseSkySessionLog` / `LumaFrame.forReference`.
-- `tools/sky-session-loader/src/main/kotlin/dev/pointtosky/tools/skysession/SkySessionDetectionRun.kt` — drives replay → detect → evaluate per frame and folds the results into session-level metrics, withholding projection-dependent numbers for frames replay refused.
+- `tools/sky-session-loader/src/main/kotlin/dev/pointtosky/tools/skysession/SkySessionDetectionRun.kt` — drives replay → detect → evaluate per frame and folds the results into session-level metrics: detections from the pixels, truth set from the replayed projection, recorded-vs-replayed residual kept separate as a replay-integrity diagnostic, and projection-dependent numbers withheld for frames replay refused or with no observable replayed source.
 - `tools/sky-session-loader/src/main/kotlin/dev/pointtosky/tools/skysession/SkySessionLoaderCli.kt` — CLI entry printing per-frame and aggregate detector metrics for a captured session directory.
 
 ## Tests
