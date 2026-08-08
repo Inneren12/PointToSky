@@ -12,6 +12,27 @@ package dev.pointtosky.core.astro.projection.camera
  * pixel-center coordinates (`[0, W-1] × [0, H-1]`) would force into the inverse transform and viewport
  * scaling. All axes are `+x` right, `+y` down, matching `ImageProxy`/`PreviewView`.
  *
+ * ## Where a raster sample sits on that axis (the canonical statement)
+ * This is the project's single source of truth for the relationship between an integer raster index and
+ * a continuous coordinate, and every stage that produces or consumes a buffer-pixel coordinate — the
+ * pinhole projection, `SkyPredictedStar.imageXPx`/`imageYPx`, [CropScaleTransform], and the SKY-2
+ * detector's centroids — uses it unchanged:
+ *
+ * > Raster sample `[x, y]` (the `x`-th byte of the `y`-th row of the analysis buffer) **occupies** the
+ * > continuous square `[x, x+1) × [y, y+1)`, and its **centre** is at `(x + 0.5, y + 0.5)`.
+ *
+ * So a `W`-wide buffer's leftmost sample is centred at `0.5`, its rightmost at `W - 0.5`, and the
+ * buffer's exact geometric centre is `W / 2.0` — not `(W - 1) / 2.0`, which is what the pixel-center
+ * convention would give. [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel.forGeometry]
+ * defaulting its principal point to `imageWidthPx / 2.0` is that same statement applied: it is the
+ * centre of the buffer only under this convention.
+ *
+ * The corollary a detector depends on: a point source whose true centre is the middle of sample
+ * `[x, y]` must be reported at `(x + 0.5, y + 0.5)`, and a projected star landing at exactly `(320.0,
+ * 240.0)` in a 640×480 buffer sits on the *corner* shared by samples `[319, 239]`, `[320, 239]`,
+ * `[319, 240]` and `[320, 240]`, not at the centre of any one of them. See
+ * `docs/camera_coordinate_calibration_contract.md` §9.2 and `docs/star_detection_contract.md`.
+ *
  * Every value is validated eagerly on construction: non-finite values, non-positive sizes, and
  * unordered rectangles are rejected with [IllegalArgumentException] rather than silently clamped or
  * NaN-propagated (CAM-1e §1 "no silent clamping").

@@ -2500,6 +2500,32 @@ chosen deliberately: the inverse transform and viewport scaling stay free of the
 `−1` magic constants that pixel-center coordinates would force in. The two
 conventions are never mixed.
 
+Stated numerically, so that a producer and a consumer of a buffer coordinate can
+be checked against each other rather than assumed compatible:
+
+> Raster sample `[x, y]` — the `x`-th byte of the `y`-th row of the analysis
+> buffer — **occupies** the continuous square `[x, x+1) × [y, y+1)`, and its
+> **centre** is at `(x + 0.5, y + 0.5)`.
+
+Consequences that follow from that one sentence:
+
+- A `W`-wide buffer's leftmost sample is centred at `0.5`, its rightmost at
+  `W − 0.5`, and the buffer's geometric centre is `W / 2.0` — **not**
+  `(W − 1) / 2.0`.
+- `PinholeProjectionModel.forGeometry` defaulting the principal point to
+  `imageWidthPx / 2.0` (§3.4) is that statement applied: `320.0` is the centre of
+  a 640-wide buffer only under this convention.
+- A projected star at exactly `(320.0, 240.0)` in a 640×480 buffer sits on the
+  **corner** shared by samples `[319,239]`, `[320,239]`, `[319,240]`,
+  `[320,240]`, not at the centre of any one of them.
+- A detector reporting the centre of sample `[x, y]` must report
+  `(x + 0.5, y + 0.5)`. SKY-2 (`docs/star_detection_contract.md`) does, and
+  `SkySessionLogDetectionTest` pins that against a real `PinholeProjectionModel`
+  output rather than against a synthetic point authored under the same
+  assumption.
+
+The canonical in-code statement of this lives in `PixelGeometry.kt`'s file KDoc.
+
 ### 9.3 Clockwise rotation formulas
 
 `rotationDegrees` is interpreted as `ImageProxy.imageInfo.rotationDegrees`: the
