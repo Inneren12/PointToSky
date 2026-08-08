@@ -47,9 +47,13 @@ enum class SkyFrameReplaySkipReason {
     MAGNETIC_DECLINATION_UNAVAILABLE,
 
     /**
-     * The pose timestamp cannot be expressed on the frame clock: the session recorded two different
-     * clocks with no measured offset between them, or one of them as [SkyClock.UNKNOWN], or the
-     * aligned value fell outside the non-negative range a `TimedRotationSample` accepts.
+     * The pose timestamp cannot be expressed on the frame clock: the session recorded a
+     * [SkyClockRelationship.UNKNOWN] relationship — it never proved the two timestamps share a time
+     * base and never measured an offset between them — or the aligned value fell outside the
+     * non-negative range a `TimedRotationSample` accepts.
+     *
+     * Skipping is the only correct outcome. Falling back to a zero offset here would resurrect exactly
+     * the unproven assumption [SkyClockRelationship] exists to keep out of the data.
      */
     POSE_CLOCK_UNALIGNED,
 

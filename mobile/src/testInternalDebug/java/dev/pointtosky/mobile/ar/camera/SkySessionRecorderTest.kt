@@ -3,6 +3,9 @@ package dev.pointtosky.mobile.ar.camera
 import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionBatchResult
 import dev.pointtosky.core.astro.projection.camera.prediction.projectStars
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyClock
+import dev.pointtosky.core.astro.projection.camera.skylog.SkyClockAlignment
+import dev.pointtosky.core.astro.projection.camera.skylog.SkyClockRelationship
+import dev.pointtosky.core.astro.projection.camera.skylog.SkyFrameReplaySkipReason
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyLumaFormat
 import dev.pointtosky.core.astro.projection.camera.skylog.SkySessionLogHeader
 import dev.pointtosky.core.astro.projection.camera.skylog.parseSkySessionLog
@@ -39,13 +42,17 @@ class SkySessionRecorderTest {
     private fun newSessionDirectory(): File =
         Files.createTempDirectory("sky_session_test").toFile().also { temporaryDirectories += it }
 
-    private fun header(sessionId: String = "sky_test"): SkySessionLogHeader =
+    private fun header(
+        sessionId: String = "sky_test",
+        clockAlignment: SkyClockAlignment = skyClockAlignmentFor(SkyCameraTimestampSource.REALTIME),
+    ): SkySessionLogHeader =
         buildSkySessionHeader(
             sessionId = sessionId,
             startedAtEpochMillis = 1_767_225_600_000L,
             bufferWidthPx = SkySessionCaptureFixtures.BUFFER_WIDTH_PX,
             bufferHeightPx = SkySessionCaptureFixtures.BUFFER_HEIGHT_PX,
             intrinsics = fixtures.intrinsics(),
+            clockAlignment = clockAlignment,
             maxPairDeltaNanos = 25_000_000L,
             clockMismatchThresholdNanos = 5_000_000_000L,
             deviceModel = "Test Device",
@@ -108,7 +115,7 @@ class SkySessionRecorderTest {
             exposure = fixtures.exposureSample(),
             geometry = fixtures.geometry(),
             capturedAtEpochMillis = 0L,
-            observer = null,
+            observer = fixtures.observer(),
             stars = emptyList(),
             prediction = StarPredictionBatchResult.Ready.of(emptyList()),
         )
@@ -142,7 +149,7 @@ class SkySessionRecorderTest {
             exposure = fixtures.exposureSample(),
             geometry = fixtures.geometry(),
             capturedAtEpochMillis = 0L,
-            observer = null,
+            observer = fixtures.observer(),
             stars = emptyList(),
             prediction = StarPredictionBatchResult.Ready.of(emptyList()),
         )
@@ -167,7 +174,7 @@ class SkySessionRecorderTest {
             exposure = fixtures.exposureSample(),
             geometry = fixtures.geometry(),
             capturedAtEpochMillis = 0L,
-            observer = null,
+            observer = fixtures.observer(),
             stars = emptyList(),
             prediction = StarPredictionBatchResult.Ready.of(emptyList()),
         )
@@ -195,7 +202,7 @@ class SkySessionRecorderTest {
                             SkySessionCaptureFixtures.FRAME_TIMESTAMP_NANOS + 33_000_000L,
                     ),
                 capturedAtEpochMillis = 0L,
-                observer = null,
+                observer = fixtures.observer(),
                 stars = emptyList(),
                 prediction = StarPredictionBatchResult.Ready.of(emptyList()),
             )
@@ -220,7 +227,7 @@ class SkySessionRecorderTest {
                 exposure = fixtures.exposureSample(),
                 geometry = fixtures.geometry(),
                 capturedAtEpochMillis = 0L,
-                observer = null,
+                observer = fixtures.observer(),
                 stars = emptyList(),
                 prediction = StarPredictionBatchResult.Ready.of(emptyList()),
             )
@@ -266,7 +273,7 @@ class SkySessionRecorderTest {
                 exposure = exposureFor().copy(exposureTimeNanos = null),
                 geometry = fixtures.geometry(),
                 capturedAtEpochMillis = 0L,
-                observer = null,
+                observer = fixtures.observer(),
                 stars = emptyList(),
                 prediction = StarPredictionBatchResult.Ready.of(emptyList()),
             )
@@ -291,7 +298,7 @@ class SkySessionRecorderTest {
                 exposure = exposureFor().copy(aeMode = "ON"),
                 geometry = fixtures.geometry(),
                 capturedAtEpochMillis = 0L,
-                observer = null,
+                observer = fixtures.observer(),
                 stars = emptyList(),
                 prediction = StarPredictionBatchResult.Ready.of(emptyList()),
             )
@@ -312,7 +319,7 @@ class SkySessionRecorderTest {
                 exposure = exposureFor(SkySessionCaptureFixtures.FRAME_TIMESTAMP_NANOS + 1L),
                 geometry = fixtures.geometry(),
                 capturedAtEpochMillis = 0L,
-                observer = null,
+                observer = fixtures.observer(),
                 stars = emptyList(),
                 prediction = StarPredictionBatchResult.Ready.of(emptyList()),
             )
@@ -332,7 +339,7 @@ class SkySessionRecorderTest {
                 exposure = exposureFor().copy(sensitivityIso = null),
                 geometry = fixtures.geometry(),
                 capturedAtEpochMillis = 0L,
-                observer = null,
+                observer = fixtures.observer(),
                 stars = emptyList(),
                 prediction = StarPredictionBatchResult.Ready.of(emptyList()),
             )
@@ -413,20 +420,123 @@ class SkySessionRecorderTest {
             parseSkySessionLog(File(File(directory, "session"), SKY_SESSION_LOG_FILE_NAME).readText()).records.single()
 
         assertEquals(geometry.pairedRotation.timestampNanos, record.pose.timestampNanos)
-        assertEquals(geometry.frameRotationDeltaNanos, record.pose.frameToPoseDeltaNanos)
+        assertEquals(geometry.frameRotationDeltaNanos, record.pose.frameToPoseRawDeltaNanos)
         geometry.pairedRotation.rotationMatrix.forEachIndexed { index, value ->
             assertEquals(value.toDouble(), record.pose.rotationMatrix[index], absoluteTolerance = 1e-6)
         }
     }
 
     @Test
-    fun `the session header records the clock relationship explicitly`() {
-        assertEquals(SkyClock.CAMERA_SENSOR_NANOS, SKY_SESSION_CLOCK_ALIGNMENT.frameClock)
-        assertEquals(SkyClock.SENSOR_EVENT_NANOS, SKY_SESSION_CLOCK_ALIGNMENT.poseClock)
+    fun `a frame with no observing context is dropped rather than written with a null observer`() {
+        // The start gate normally makes this unreachable; this is the mid-session backstop for a fix
+        // that goes away (permission revoked from Settings, provider stops) while recording runs.
+        val directory = newSessionDirectory()
+        val recorder = recorderIn(directory)
+        recorder.start(header())
+
+        val outcome =
+            recorder.record(
+                frame = fixtures.analyzedFrame(),
+                exposure = fixtures.exposureSample(),
+                geometry = fixtures.geometry(),
+                capturedAtEpochMillis = 0L,
+                observer = null,
+                stars = emptyList(),
+                prediction = StarPredictionBatchResult.Ready.of(emptyList()),
+            )
+        recorder.stop()
+
+        val sessionDirectory = File(directory, "session")
+        assertEquals(SkyRecordOutcome.OBSERVER_CONTEXT_UNAVAILABLE, outcome)
+        assertEquals(0L, recorder.recordedFrameCount)
+        assertEquals(1L, recorder.droppedFrameCount)
         assertEquals(
-            0L,
-            SKY_SESSION_CLOCK_ALIGNMENT.poseToFrameOffsetNanos,
-            "the offset must be written explicitly, not left absent for a reader to infer",
+            0,
+            parseSkySessionLog(File(sessionDirectory, SKY_SESSION_LOG_FILE_NAME).readText()).records.size,
+            "an observer-less frame must never reach the log",
+        )
+        assertEquals(
+            0,
+            File(sessionDirectory, SKY_SESSION_FRAMES_DIRECTORY_NAME).listFiles()?.size,
+            "and must not leave its pixels behind either - the drop happens before any byte is written",
+        )
+    }
+
+    @Test
+    fun `a frame whose observing context has no magnetic declination is dropped too`() {
+        // It would replay as MAGNETIC_DECLINATION_UNAVAILABLE: a location with no declination cannot
+        // produce a star projection context, so it is no more usable than no location at all.
+        val recorder = recorderIn(newSessionDirectory())
+        recorder.start(header())
+
+        val outcome =
+            recorder.record(
+                frame = fixtures.analyzedFrame(),
+                exposure = fixtures.exposureSample(),
+                geometry = fixtures.geometry(),
+                capturedAtEpochMillis = 0L,
+                observer = fixtures.observer().copy(magneticDeclinationDeg = null),
+                stars = emptyList(),
+                prediction = StarPredictionBatchResult.Ready.of(emptyList()),
+            )
+        recorder.stop()
+
+        assertEquals(SkyRecordOutcome.OBSERVER_CONTEXT_UNAVAILABLE, outcome)
+        assertEquals(0L, recorder.recordedFrameCount)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Clock provenance in the header
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `a camera that reports a REALTIME timestamp source writes a source-proven alignment`() {
+        val directory = newSessionDirectory()
+        val recorder = recorderIn(directory)
+        recorder.start(header(clockAlignment = skyClockAlignmentFor(SkyCameraTimestampSource.REALTIME)))
+        recorder.stop()
+
+        val alignment =
+            assertNotNull(
+                parseSkySessionLog(File(File(directory, "session"), SKY_SESSION_LOG_FILE_NAME).readText()).header,
+            ).clockAlignment
+
+        assertEquals(SkyClockRelationship.SOURCE_PROVEN_COMPARABLE, alignment.relationship)
+        assertEquals(SkyClock.CAMERA_SENSOR_NANOS, alignment.frameClock)
+        assertEquals(SkyClock.SENSOR_EVENT_NANOS, alignment.poseClock)
+        assertNull(
+            alignment.poseToFrameOffsetNanos,
+            "a proven-comparable session must not claim a measured offset it never measured",
+        )
+    }
+
+    @Test
+    fun `a camera that will not state its timestamp source writes an unalignable session`() {
+        val directory = newSessionDirectory()
+        val recorder = recorderIn(directory)
+        recorder.start(header(clockAlignment = skyClockAlignmentFor(SkyCameraTimestampSource.UNKNOWN)))
+        recorder.record(
+            frame = fixtures.analyzedFrame(),
+            exposure = fixtures.exposureSample(),
+            geometry = fixtures.geometry(),
+            capturedAtEpochMillis = 0L,
+            observer = fixtures.observer(),
+            stars = emptyList(),
+            prediction = StarPredictionBatchResult.Ready.of(emptyList()),
+        )
+        recorder.stop()
+
+        val document = parseSkySessionLog(File(File(directory, "session"), SKY_SESSION_LOG_FILE_NAME).readText())
+        val report = assertNotNull(replaySkySessionLog(document))
+
+        assertEquals(
+            SkyClockRelationship.UNKNOWN,
+            assertNotNull(document.header).clockAlignment.relationship,
+        )
+        assertEquals(
+            listOf(SkyFrameReplaySkipReason.POSE_CLOCK_UNALIGNED),
+            report.skippedFrames.map { it.reason },
+            "an unproven session must replay as skipped, never as a zero-offset projection",
         )
     }
 }

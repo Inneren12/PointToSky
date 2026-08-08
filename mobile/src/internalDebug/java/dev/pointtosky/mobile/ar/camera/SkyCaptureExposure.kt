@@ -12,6 +12,7 @@ import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.ImageAnalysis
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyExposureSample
+import dev.pointtosky.core.astro.projection.camera.skylog.SkyObserverContext
 
 /**
  * SKY-1 (`internalDebug`-only): asking for a manual long exposure, reading back what the sensor
@@ -35,7 +36,9 @@ import dev.pointtosky.core.astro.projection.camera.skylog.SkyExposureSample
  *
  * Both halves go through CameraX's `Camera2Interop`, which the app already depends on
  * (`libs.camerax.camera2`, used by `PhysicalCameraBindingExperiment` and `CameraTopologyBuilder`), so
- * this needs no new dependency and no separate Camera2 session.
+ * this needs no new dependency and no separate Camera2 session. The interop's opt-in is declared twice
+ * per entry point — `kotlin.OptIn` for the compiler, `androidx.annotation.OptIn` for Android Lint's
+ * `UnsafeOptInUsageError`, which does not read the Kotlin one; see `SkyCaptureClock`.
  */
 
 /** What the operator asked for, before the device has been consulted. */
@@ -186,6 +189,7 @@ internal data class SkyManualExposureCapability(
  * one that reports "unsupported".
  */
 @OptIn(ExperimentalCamera2Interop::class)
+@androidx.annotation.OptIn(markerClass = [ExperimentalCamera2Interop::class])
 internal fun probeSkyManualExposureCapability(cameraInfo: CameraInfo): SkyManualExposureCapability {
     val camera2Info =
         runCatching { Camera2CameraInfo.from(cameraInfo) }.getOrNull()
@@ -246,6 +250,7 @@ private fun Range<Int>.toIntRangeOrNull(): IntRange? = if (lower in 1..upper) lo
  * silently be auto-exposed. See `SkySessionCaptureScreen`'s two-phase bind.
  */
 @OptIn(ExperimentalCamera2Interop::class)
+@androidx.annotation.OptIn(markerClass = [ExperimentalCamera2Interop::class])
 internal fun ImageAnalysis.Builder.applySkyCaptureOptions(
     exposure: SkyResolvedExposure?,
     captureCallback: CameraCaptureSession.CaptureCallback,
@@ -285,7 +290,39 @@ internal enum class SkyRecordingBlockedReason {
 
     /** The session's camera intrinsics resolve on the first analyzed frame; none has arrived. */
     INTRINSICS_NOT_RESOLVED,
+
+    /**
+     * There is no observing context: no location permission, no fix yet, or no magnetic declination for
+     * the fix there is.
+     *
+     * A session recorded in this state is *useless for its stated purpose*. Every frame would carry
+     * `observer: null`, no star could be projected into it, and the offline replay skips every such
+     * frame with `OBSERVER_CONTEXT_UNAVAILABLE` — a directory full of pixels a detector cannot be
+     * developed against. Blocking the start is what stops an operator from spending a clear night
+     * filling storage with that.
+     *
+     * Per-frame dropping ([SkyRecordOutcome.OBSERVER_CONTEXT_UNAVAILABLE]) still exists underneath, for
+     * a fix that disappears mid-session. It is a backstop, not the gate: on its own it would let a
+     * whole session record zero usable frames while the HUD counted them as dropped.
+     */
+    OBSERVER_CONTEXT_UNAVAILABLE,
 }
+
+/**
+ * Whether [observer] carries everything the projection needs — a location *and* the magnetic
+ * declination at it.
+ *
+ * Both halves are required because both are required downstream: `SkyObserverContext.toStarProjectionContext`
+ * returns `null` without a declination, and the replay skips such a frame with
+ * `MAGNETIC_DECLINATION_UNAVAILABLE`. A missing declination is never substituted with `0.0` — "magnetic
+ * north is close enough to true north" and "the declination is known to be zero" are different claims,
+ * and a dataset that conflates them is one nobody can trust afterwards.
+ *
+ * There is deliberately no coordinate fallback of any kind: no `(0, 0)`, no last-known-good, no
+ * device-default. Absent stays absent.
+ */
+internal fun isUsableSkyObserverContext(observer: SkyObserverContext?): Boolean =
+    observer != null && observer.magneticDeclinationDeg != null
 
 /** Whether a session may start recording, and with which confirmed exposure. */
 internal sealed interface SkyRecordingGate {
@@ -305,12 +342,17 @@ internal sealed interface SkyRecordingGate {
  * the operator most recently picked. Requiring them to be the same object-equal value is what stops a
  * session from being recorded at one exposure while the HUD shows another: a newly chosen exposure
  * only becomes recordable after the rebind that actually applied it.
+ *
+ * [observer] is the observing context a frame captured *now* would carry. It is checked here, before
+ * any byte is written, rather than only per frame: see
+ * [SkyRecordingBlockedReason.OBSERVER_CONTEXT_UNAVAILABLE].
  */
 internal fun evaluateSkyRecordingGate(
     requested: SkyManualExposureRequest?,
     capability: SkyManualExposureCapability?,
     appliedExposure: SkyResolvedExposure?,
     intrinsicsResolved: Boolean,
+    observer: SkyObserverContext?,
 ): SkyRecordingGate {
     if (requested == null) return SkyRecordingGate.Blocked(SkyRecordingBlockedReason.AUTO_EXPOSURE_NOT_ALLOWED)
     if (capability == null) return SkyRecordingGate.Blocked(SkyRecordingBlockedReason.CAMERA_CAPABILITY_UNKNOWN)
@@ -323,6 +365,9 @@ internal fun evaluateSkyRecordingGate(
 
     if (appliedExposure != resolved) return SkyRecordingGate.Blocked(SkyRecordingBlockedReason.EXPOSURE_NOT_APPLIED_YET)
     if (!intrinsicsResolved) return SkyRecordingGate.Blocked(SkyRecordingBlockedReason.INTRINSICS_NOT_RESOLVED)
+    if (!isUsableSkyObserverContext(observer)) {
+        return SkyRecordingGate.Blocked(SkyRecordingBlockedReason.OBSERVER_CONTEXT_UNAVAILABLE)
+    }
     return SkyRecordingGate.Allowed(resolved)
 }
 

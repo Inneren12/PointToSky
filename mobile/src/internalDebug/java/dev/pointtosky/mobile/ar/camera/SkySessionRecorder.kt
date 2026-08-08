@@ -103,6 +103,10 @@ internal class SkySessionRecorder(
      * [SkyExposureJoin]) — never the most recent one seen. It is validated once more here, because
      * this is the last point before the bytes reach disk.
      *
+     * [observer] must carry a location *and* its magnetic declination. It is typed nullable because the
+     * capture path genuinely may not have one, not because a frame without one is acceptable: such a
+     * frame is dropped here rather than written with `observer: null`.
+     *
      * [stars] and [prediction] must be the exact input and output of the same `projectStars` batch for
      * [geometry] — see [buildSkyFrameRecord].
      */
@@ -127,6 +131,16 @@ internal class SkySessionRecorder(
                 // one frame's pose with another's image - the single worst corruption this log can
                 // carry, because nothing downstream could ever detect it.
                 return@synchronized note(SkyRecordOutcome.GEOMETRY_FRAME_MISMATCH)
+            }
+
+            if (!isUsableSkyObserverContext(observer)) {
+                // Defence in depth. evaluateSkyRecordingGate refuses to start a session without an
+                // observing context, so reaching here means the fix (or its declination) vanished
+                // mid-session - a permission revoked from Settings, a provider that stopped. Such a
+                // frame is not a SKY-1 frame: it would replay as OBSERVER_CONTEXT_UNAVAILABLE and no
+                // detector could use it. It is dropped with a typed reason rather than written with a
+                // null observer, so the HUD's counts stay honest about what the session actually holds.
+                return@synchronized note(SkyRecordOutcome.OBSERVER_CONTEXT_UNAVAILABLE)
             }
 
             val validation = validateSkyManualExposure(exposure, frame.metadata.timestampNanos)
@@ -211,6 +225,12 @@ internal enum class SkyRecordOutcome {
 
     /** The supplied geometry describes a different frame than the supplied pixels. */
     GEOMETRY_FRAME_MISMATCH,
+
+    /**
+     * No usable observing context for this frame — no location fix, or no magnetic declination at it.
+     * The start gate normally prevents this entirely; see the check in [SkySessionRecorder.record].
+     */
+    OBSERVER_CONTEXT_UNAVAILABLE,
 
     /** The matched `CaptureResult` reported no exposure time. */
     EXPOSURE_TIME_MISSING,

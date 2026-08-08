@@ -95,7 +95,7 @@ class SkyPoseSampleTest {
     @Test
     fun `a rotation matrix of the wrong size is rejected`() {
         assertFailsWith<IllegalArgumentException> {
-            SkyPoseSample(timestampNanos = 0L, rotationMatrix = listOf(1.0, 0.0, 0.0), frameToPoseDeltaNanos = 0L)
+            SkyPoseSample(timestampNanos = 0L, rotationMatrix = listOf(1.0, 0.0, 0.0), frameToPoseRawDeltaNanos = 0L)
         }
     }
 
@@ -105,7 +105,7 @@ class SkyPoseSampleTest {
             SkyPoseSample(
                 timestampNanos = 0L,
                 rotationMatrix = List(9) { if (it == 4) Double.NaN else 0.0 },
-                frameToPoseDeltaNanos = 0L,
+                frameToPoseRawDeltaNanos = 0L,
             )
         }
     }

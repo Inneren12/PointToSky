@@ -1,9 +1,12 @@
 package dev.pointtosky.mobile.ar.camera
 
+import dev.pointtosky.core.astro.projection.camera.skylog.SkyObserverContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * SKY-1 (`internalDebug`-only): the manual-exposure gate.
@@ -169,7 +172,8 @@ class SkyManualExposureGateTest {
                 ) as SkyExposureResolution.Resolved
             ).exposure,
         intrinsicsResolved: Boolean = true,
-    ) = evaluateSkyRecordingGate(requested, capability, applied, intrinsicsResolved)
+        observer: SkyObserverContext? = fixtures.observer(),
+    ) = evaluateSkyRecordingGate(requested, capability, applied, intrinsicsResolved, observer)
 
     @Test
     fun `a fully resolved manual session is allowed`() {
@@ -265,6 +269,45 @@ class SkyManualExposureGateTest {
             SkyRecordingBlockedReason.INTRINSICS_NOT_RESOLVED,
             assertIs<SkyRecordingGate.Blocked>(gate(intrinsicsResolved = false)).reason,
         )
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The observer half of the gate
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `no observing context blocks recording even when everything else is satisfied`() {
+        // No location permission, or permission granted but no fix yet. Either way a session started
+        // now would write frames with observer=null that no detector could ever use.
+        assertEquals(
+            SkyRecordingBlockedReason.OBSERVER_CONTEXT_UNAVAILABLE,
+            assertIs<SkyRecordingGate.Blocked>(gate(observer = null)).reason,
+        )
+    }
+
+    @Test
+    fun `a location with no magnetic declination is not a usable observing context`() {
+        assertEquals(
+            SkyRecordingBlockedReason.OBSERVER_CONTEXT_UNAVAILABLE,
+            assertIs<SkyRecordingGate.Blocked>(
+                gate(observer = fixtures.observer().copy(magneticDeclinationDeg = null)),
+            ).reason,
+        )
+    }
+
+    @Test
+    fun `a valid observing context lets the gate proceed once every other condition holds`() {
+        assertIs<SkyRecordingGate.Allowed>(gate(observer = fixtures.observer()))
+    }
+
+    @Test
+    fun `usability is about the context, never about substituting a default position`() {
+        assertFalse(isUsableSkyObserverContext(null))
+        assertFalse(isUsableSkyObserverContext(fixtures.observer().copy(magneticDeclinationDeg = null)))
+        assertTrue(isUsableSkyObserverContext(fixtures.observer()))
+        // (0, 0) is a real coordinate, so it is - correctly - usable. Nothing here manufactures it:
+        // that is resolveSkyObserverPoint's job, and it returns null rather than null island.
+        assertTrue(isUsableSkyObserverContext(fixtures.observer().copy(latitudeDeg = 0.0, longitudeDeg = 0.0)))
     }
 
     // -----------------------------------------------------------------------------------------
