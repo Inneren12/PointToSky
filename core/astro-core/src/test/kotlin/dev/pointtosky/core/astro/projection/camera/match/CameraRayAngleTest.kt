@@ -1,6 +1,9 @@
 package dev.pointtosky.core.astro.projection.camera.match
 
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsics
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
+import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsSource
 import dev.pointtosky.core.astro.projection.camera.PixelPoint
 import dev.pointtosky.core.astro.projection.camera.prediction.BufferOpticalCameraVector
 import dev.pointtosky.core.astro.projection.camera.prediction.analysisBufferIntrinsics
@@ -14,12 +17,14 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
  * Pins the published ray→angle step: that it agrees with the closed form wherever the closed form is
  * trustworthy, that it keeps its precision where the closed form does not — which is the reason it is
- * `atan2` and not `acos` — and that it is literally the same function [AnalysisBufferScale]'s own
+ * `atan2` and not `acos` — that it enforces its unit-ray precondition instead of computing an angle for
+ * a vector that has no direction, and that it is literally the same function [AnalysisBufferScale]'s own
  * angular extents are measured with rather than a public copy of it.
  */
 class CameraRayAngleTest {
@@ -105,7 +110,10 @@ class CameraRayAngleTest {
         val helperError = abs(angleBetweenRad(a, b) - expectedRad) / expectedRad
         val acosError = abs(acosOfDot(a, b) - expectedRad) / expectedRad
 
-        assertTrue(helperError < 1e-13, "atan2 form should be exact here; relative error was $helperError")
+        assertTrue(
+            helperError < 1e-13,
+            "the atan2 form should match the analytic reference here; relative error was $helperError",
+        )
         assertTrue(
             acosError > 1e-9,
             "acos of the dot product should already be visibly wrong at $dxPx px; " +
@@ -130,7 +138,7 @@ class CameraRayAngleTest {
     }
 
     @Test
-    fun `is symmetric, zero against itself, and bounded to the documented range`() {
+    fun `is symmetric, zero against the same unit ray, and bounded to the documented range`() {
         val scale = scale()
         val rays =
             listOf(
@@ -181,9 +189,170 @@ class CameraRayAngleTest {
         )
     }
 
+    @Test
+    fun `rejects the zero vector rather than reporting an angle for a direction that does not exist`() {
+        val valid = scale().opticalAxisRay
+        val zero = BufferOpticalCameraVector(0.0, 0.0, 0.0)
+
+        // atan2(0, 0) is 0.0, so before the precondition was enforced this returned a perfectly
+        // plausible "the rays are parallel" for a vector that points nowhere at all.
+        assertFailsWith<IllegalArgumentException> { angleBetweenRad(zero, valid) }
+        val fromSecondArgument = assertFailsWith<IllegalArgumentException> { angleBetweenRad(valid, zero) }
+        assertFailsWith<IllegalArgumentException> { angleBetweenRad(zero, zero) }
+
+        assertTrue(
+            fromSecondArgument.message.orEmpty().contains("argument b"),
+            "the failure must name which argument was malformed; was ${fromSecondArgument.message}",
+        )
+    }
+
+    @Test
+    fun `rejects finite vectors that are measurably not unit length`() {
+        val valid = scale().opticalAxisRay
+
+        // Right direction, wrong length: a scaled ray still has a well-defined direction, so this one
+        // would have produced the *correct* angle. It is refused anyway — along the sanctioned path
+        // every ray is already unit, so a scaled one means the geometry was assembled wrong upstream,
+        // and quietly normalizing it would turn that bug into a plausible number.
+        for (nonUnit in listOf(
+            BufferOpticalCameraVector(2.0, 0.0, 0.0),
+            BufferOpticalCameraVector(0.5, 0.0, 0.0),
+            BufferOpticalCameraVector(0.0, 0.0, 1.001),
+            BufferOpticalCameraVector(1.0, 1.0, 1.0),
+        )) {
+            assertFailsWith<IllegalArgumentException>("expected $nonUnit to be refused") {
+                angleBetweenRad(nonUnit, valid)
+            }
+            assertFailsWith<IllegalArgumentException>("expected $nonUnit to be refused") {
+                angleBetweenRad(valid, nonUnit)
+            }
+        }
+    }
+
+    @Test
+    fun `rejects finite vectors whose squared norm overflows or underflows`() {
+        val valid = scale().opticalAxisRay
+
+        // Every component here is finite, so BufferOpticalCameraVector's own constructor check passes.
+        // The squares are what leave the representable range — to Infinity for the large ones and to
+        // exactly 0.0 for the small one — which would put Infinity or a fabricated zero into atan2.
+        for (extreme in listOf(
+            BufferOpticalCameraVector(1e300, 1e300, 0.0),
+            BufferOpticalCameraVector(1e200, 0.0, 0.0),
+            BufferOpticalCameraVector(Double.MAX_VALUE, 0.0, 0.0),
+            BufferOpticalCameraVector(1e-300, 0.0, 0.0),
+            BufferOpticalCameraVector(Double.MIN_VALUE, 0.0, 0.0),
+        )) {
+            assertFailsWith<IllegalArgumentException>("expected $extreme to be refused") {
+                angleBetweenRad(extreme, valid)
+            }
+            assertFailsWith<IllegalArgumentException>("expected $extreme to be refused") {
+                angleBetweenRad(valid, extreme)
+            }
+        }
+    }
+
+    @Test
+    fun `tolerates floating-point noise around unit length but not a real scaling`() {
+        val axis = scale().opticalAxisRay
+
+        // The tolerance has to absorb the last few bits of a normalization without absorbing anything
+        // that could be a genuinely mis-scaled vector. These two bracket that, three orders either side
+        // of the 1e-6 bound, so the constant cannot be loosened or tightened by much unnoticed.
+        val noisy = BufferOpticalCameraVector(axis.x, axis.y, axis.z * (1.0 + 1e-9))
+        val scaled = BufferOpticalCameraVector(axis.x, axis.y, axis.z * (1.0 + 1e-3))
+
+        assertEquals(0.0, angleBetweenRad(noisy, axis), 1e-9)
+        assertFailsWith<IllegalArgumentException> { angleBetweenRad(scaled, axis) }
+    }
+
+    @Test
+    fun `accepts every ray cameraRayFor produces, on and off axis and through the orientation flags`() {
+        // The precondition must never fire on the sanctioned path. This also measures the margin the
+        // 1e-6 tolerance actually has: unprojectToCameraRay lands within a couple of ulps of unit,
+        // which is the number UNIT_RAY_NORM_SQUARED_TOLERANCE's KDoc is chosen against.
+        var worstNormSquaredError = 0.0
+        for (scale in listOf(scale(), offCentreScale(), offCentreScale(axisSwapped = true, negateXInput = true))) {
+            val points =
+                listOf(
+                    PixelPoint(0.0, 0.0),
+                    PixelPoint(scale.imageWidthPx, 0.0),
+                    PixelPoint(0.0, scale.imageHeightPx),
+                    PixelPoint(scale.imageWidthPx, scale.imageHeightPx),
+                    PixelPoint(scale.principalPointXPx, scale.principalPointYPx),
+                    PixelPoint(417.3, 118.9),
+                    // Outside the frame: cameraRayFor never clamps, so a matcher can legitimately hold
+                    // one of these, and the precondition must not be what rejects it.
+                    PixelPoint(-250.0, -180.0),
+                    PixelPoint(scale.imageWidthPx + 900.0, scale.imageHeightPx + 700.0),
+                )
+            for (point in points) {
+                val ray = scale.cameraRayFor(point)
+                worstNormSquaredError =
+                    maxOf(worstNormSquaredError, abs(ray.x * ray.x + ray.y * ray.y + ray.z * ray.z - 1.0))
+
+                // Would throw if the precondition were too tight for its own canonical producer.
+                val angle = angleBetweenRad(scale.opticalAxisRay, ray)
+                assertTrue(angle in 0.0..PI, "$angle rad is outside [0, PI] for $point")
+            }
+        }
+
+        assertTrue(
+            worstNormSquaredError <= 4.5e-16,
+            "cameraRayFor should land within a couple of ulps of unit; worst was $worstNormSquaredError",
+        )
+    }
+
+    @Test
+    fun `the angular extents and enclosing cone still need no special casing`() {
+        // The extents and the cone feed cameraRayFor output straight into angleBetweenRad. If the
+        // precondition were wrong for that path these would throw rather than fail an assertion.
+        for (scale in listOf(scale(), offCentreScale(), offCentreScale(negateYInput = true))) {
+            assertTrue(scale.horizontalFieldOfViewRad > 0.0)
+            assertTrue(scale.verticalFieldOfViewRad > 0.0)
+            assertTrue(scale.enclosingConeRadiusRad > 0.0)
+        }
+    }
+
     /** The naive form a consumer would otherwise write, kept here as the thing being measured against. */
     private fun acosOfDot(
         a: BufferOpticalCameraVector,
         b: BufferOpticalCameraVector,
     ): Double = acos((a.x * b.x + a.y * b.y + a.z * b.z).coerceIn(-1.0, 1.0))
+
+    /**
+     * A calibrated scale whose optical axis is deliberately nowhere near the raster centre, optionally
+     * with the orientation flags set — the fixture shape `AnalysisBufferScaleTest` already uses, so the
+     * rays fed to the precondition above are the awkward ones rather than the symmetric default.
+     */
+    private fun offCentreScale(
+        axisSwapped: Boolean = false,
+        negateXInput: Boolean = false,
+        negateYInput: Boolean = false,
+    ): AnalysisBufferScale =
+        AnalysisBufferScale.forGeometry(
+            buildTestGeometry(
+                bufferWidthPx = bufferWidthPx,
+                bufferHeightPx = bufferHeightPx,
+                viewportWidthPx = bufferWidthPx,
+                viewportHeightPx = bufferHeightPx,
+                intrinsicsResolution =
+                    CameraIntrinsicsResolution.Resolved(
+                        CameraIntrinsics(
+                            horizontalFovDeg = horizontalFovDeg,
+                            verticalFovDeg = verticalFovDeg,
+                            focalLengthMm = 4.0,
+                            sensorWidthMm = 5.0,
+                            sensorHeightMm = 4.0,
+                            principalPointXPx = 214.0,
+                            principalPointYPx = 301.0,
+                            source = CameraIntrinsicsSource.CAMERA_CHARACTERISTICS,
+                            reference = CameraIntrinsicsReference.AnalysisBuffer(bufferWidthPx, bufferHeightPx),
+                            axisSwapped = axisSwapped,
+                            negateXInput = negateXInput,
+                            negateYInput = negateYInput,
+                        ),
+                    ),
+            ),
+        )
 }
