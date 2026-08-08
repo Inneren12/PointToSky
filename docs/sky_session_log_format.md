@@ -21,6 +21,7 @@ It is a **separate stream** from both the CAM-2c `FrameContent` dot-grid track a
 | Disk writer | `:mobile` (`internalDebug`) | `…/ar/camera/SkySessionLogWriter.kt` |
 | Record assembly | `:mobile` (`internalDebug`) | `…/ar/camera/SkySessionRecordBuilder.kt` |
 | Exposure read / manual exposure | `:mobile` (`internalDebug`) | `…/ar/camera/SkyCaptureExposure.kt` |
+| Camera timestamp provenance | `:mobile` (`internalDebug`) | `…/ar/camera/SkyCaptureClock.kt` |
 | Capture screen | `:mobile` (`internalDebug`) | `…/ar/camera/SkySessionCaptureScreen.kt` |
 
 ## On-device layout
@@ -67,11 +68,11 @@ image = data.reshape(luma["heightPx"], luma["rowStridePx"])[:, :luma["widthPx"]]
   "physicalCameraIds": ["2", "3"],
   "bufferWidthPx": 1280, "bufferHeightPx": 720,
   "lumaFormat": "RAW_Y8",
-  "schemaVersion": 1,                       // required; an unsupported value is never parsed
+  "schemaVersion": 2,                       // required; an unsupported value is never parsed
   "maxPairDeltaNanos": 25000000,            // the pairing tolerance this session actually used
   "clockMismatchThresholdNanos": 5000000000,
   "clockAlignment": { "frameClock": "CAMERA_SENSOR_NANOS", "poseClock": "SENSOR_EVENT_NANOS",
-                      "poseToFrameOffsetNanos": 0 },
+                      "relationship": "SOURCE_PROVEN_COMPARABLE" },   // see "Clocks" below
   "intrinsics": { "horizontalFovDeg": …, "verticalFovDeg": …, "source": "CAMERA_CHARACTERISTICS",
                   "referenceKind": "ANALYSIS_BUFFER", "referenceWidthPx": 1280, "referenceHeightPx": 720,
                   "axisSwapped": false, "negateXInput": false, "negateYInput": false,
@@ -90,6 +91,12 @@ missing, non-integer, zero, negative, or simply newer than this build knows beco
 `SkySessionLogLine.UnsupportedSchema` — it is *not* coerced to the current version. A future build may
 have reinterpreted a field this one still recognises by name, and "parse it anyway and hope" is
 exactly what a version number exists to prevent.
+
+**v1 is refused, not upgraded.** The current version is **2**. v1's `clockAlignment` could only say
+"an offset is recorded" or "none is", and the on-device writer emitted `poseToFrameOffsetNanos: 0` on
+every session — for two differently-named clocks — without measuring anything. Nothing in a v1 log
+distinguishes that assumed zero from a real measurement, so reading one under v2's rules would turn an
+assumption into a claim. v1 logs are therefore `UnsupportedSchema`; re-shoot the session.
 
 Frames appearing **before** an accepted header land in `SkySessionLogDocument.orphanFrames`, never in
 `records`, and replay never touches them: they were captured under intrinsics and tolerances this
@@ -112,7 +119,7 @@ a distortion read is additive here, with a `schemaVersion` bump.
   "viewportWidthPx": 1080, "viewportHeightPx": 2400,
   "luma": { "path": "frames/frame_000000.y", "format": "RAW_Y8",
             "widthPx": 1280, "heightPx": 720, "rowStridePx": 1280, "byteLength": 921600 },
-  "pose": { "timestampNanos": …, "frameToPoseDeltaNanos": …,
+  "pose": { "timestampNanos": …, "frameToPoseRawDeltaNanos": …,
             "rotationMatrix": [9 doubles], "quaternion": { "x": …, "y": …, "z": …, "w": … } },
   "observer": { "latitudeDeg": …, "longitudeDeg": …, "utcEpochMillis": …,
                 "horizontalAccuracyM": …, "magneticDeclinationDeg": … },
@@ -147,22 +154,78 @@ Absent optional fields are simply omitted — readers must treat "missing" and `
   ordering.
 - **`observer.magneticDeclinationDeg` may be absent, and absent never means zero.** Replay skips
   such a frame with `MAGNETIC_DECLINATION_UNAVAILABLE` rather than projecting an uncorrected result
-  that looks corrected.
+  that looks corrected. In practice a *recorded* frame always has one — see "Observer context" below,
+  which blocks recording without it — so an absent declination marks a hand-edited or foreign log.
+- **`pose.frameToPoseRawDeltaNanos` is a raw subtraction, not necessarily a duration.** It is
+  `frame.timestampNanos - pose.timestampNanos` exactly as the device computed it, in ticks of two
+  possibly unrelated clocks. It is elapsed time only when `clockAlignment` establishes the two are
+  comparable. Under `relationship: "UNKNOWN"` it is an uninterpretable difference of two counters and
+  must not be read as pairing drift or latency. It is stored raw, rather than "corrected", so the log
+  stays auditable if the alignment is ever revised.
 
 ## Clocks
 
-`clockAlignment` records which clock each timestamp is on, and the measured offset between them:
+`clockAlignment` records which API each timestamp came from **and on what grounds — if any — the two
+may be compared**. The names are the *source*; `relationship` is the claim:
 
-- offset present → applied, even when the two clock names agree;
-- offset absent and both clocks equal and known → the offset is `0` because the timestamps are on the
-  same clock, not because zero was assumed;
-- offset absent and clocks differ (or either is `UNKNOWN`) → **no alignment is possible**; replay
-  skips the frame with `POSE_CLOCK_UNALIGNED` rather than comparing incomparable numbers.
+| `relationship` | Meaning | `poseToFrameOffsetNanos` |
+| --- | --- | --- |
+| `SOURCE_PROVEN_COMPARABLE` | The platform documents both timestamps onto one time base. The offset is `0` because they are the same clock. | absent, always |
+| `MEASURED_OFFSET` | The capture *measured* an offset and recorded it. May legitimately be `0` — a measurement that came out zero. | required |
+| `UNKNOWN` | Nothing establishes a relationship. | absent, always |
 
-The on-device capture writes `poseToFrameOffsetNanos: 0` explicitly, because this app already pairs
-`SensorEvent.timestamp` directly against `ImageProxy.imageInfo.timestamp` (CAM-1d's
-`pairFrameToNearestRotation`, which has a `ClockMismatchSuspected` outcome for the devices where that
-assumption fails).
+`alignPoseTimestampToFrameClock` applies the first two and returns `null` for the third; replay then
+skips the frame with `POSE_CLOCK_UNALIGNED`. **There is no fallback to zero anywhere in parse or
+replay.** Two clocks carrying the same enum name are *not* comparable on that basis alone — only
+`relationship` decides.
+
+### Where the claim comes from on device
+
+From `CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE`, read for the **actually bound** camera
+(`SkyCaptureClock.kt`), and from nothing else:
+
+| Reported source | Recorded relationship |
+| --- | --- |
+| `SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME` | `SOURCE_PROVEN_COMPARABLE` — the docs put `SENSOR_TIMESTAMP` on `SystemClock.elapsedRealtimeNanos`, the same base `SensorEvent.timestamp` uses |
+| `SENSOR_INFO_TIMESTAMP_SOURCE_UNKNOWN` | `UNKNOWN` — an unspecified base with no documented relation to anything |
+| unreadable, no bound camera, or a constant this build does not know | `UNKNOWN` |
+
+The capture path performs **no clock measurement**, so it never writes `MEASURED_OFFSET`. That value
+exists for a future session that actually measures one.
+
+What is deliberately *not* treated as evidence: that CAM-1d's `pairFrameToNearestRotation` pairs the
+two directly and usually succeeds; that it did not report `ClockMismatchSuspected`; that the observed
+pairing deltas were small; the camera id or the vendor. A device whose clocks differ by less than the
+pairing tolerance pairs happily and wrongly, so a successful pairing is evidence, not proof. Before
+SKY-1's clock fix this file described a hard-coded `poseToFrameOffsetNanos: 0` as measured. It was not.
+
+A session on a camera that will not state its timestamp source is still worth shooting — the pixels,
+poses, exposures and predictions are all real — but its frames replay as `POSE_CLOCK_UNALIGNED` until
+someone measures the offset and records it.
+
+## Observer context: also a gate, not a hope
+
+A frame with `observer: null` has pixels and a pose and nothing to project through them; replay skips
+every one with `OBSERVER_CONTEXT_UNAVAILABLE`. A whole session of those is a night of storage a
+detector cannot be developed against, so this is blocked at Record rather than merely dropped per
+frame:
+
+- the observing point is **manual override first, then the device fix** — the same precedence
+  `ArViewModel` and `SkyMapViewModel` already apply — and **nothing** otherwise. Those screens fall
+  back to `(0, 0)` marked unresolved, which suits a renderer that must draw something; here it would
+  be written into every frame line as a real-looking coordinate in the Gulf of Guinea, so this path
+  returns nothing instead;
+- `magneticDeclinationDeg` comes from `GeomagneticField` at the frame's own instant and place. It is
+  never fabricated, and a context without one is not a usable context;
+- `evaluateSkyRecordingGate` blocks with `OBSERVER_CONTEXT_UNAVAILABLE` until both exist;
+- the recorder re-checks per frame and drops with `SkyRecordOutcome.OBSERVER_CONTEXT_UNAVAILABLE` —
+  a backstop for a fix revoked mid-session, not the gate.
+
+Location permission is **separate from camera permission**. Camera permission gates the whole screen;
+without location the preview still runs and only recording is blocked. The screen never requests
+location on composition: it offers an explicit **Grant location permission** action while the
+permission is missing, and the HUD states which of `GRANTED` / `NOT_REQUESTED` / `DENIED` applies and
+that it is what is blocking Record.
 
 ## Damage tolerance
 
@@ -233,6 +296,7 @@ reason shown in the HUD, when:
 | `EXPOSURE_RANGE_UNSATISFIABLE` / `SENSITIVITY_RANGE_UNSATISFIABLE` / `FRAME_DURATION_UNSATISFIABLE` | The request cannot be clamped into the device's ranges. |
 | `EXPOSURE_NOT_APPLIED_YET` | The resolved exposure is not the one the current bind carries — phase one, or a rebind still pending. |
 | `INTRINSICS_NOT_RESOLVED` | No frame has been analyzed yet, so the session has no intrinsics for its header. |
+| `OBSERVER_CONTEXT_UNAVAILABLE` | No location (permission missing, denied, or no fix yet) or no magnetic declination at it. See "Observer context" above. |
 
 ### 3. Per-frame validation
 
@@ -291,8 +355,13 @@ directory — a recorder is terminal once stopped, and its lock covers every sin
 CAM diagnostics dialog → **Open sky session capture** (`internalDebug` builds only; the activity is
 `android:exported="false"` and reachable only in-app).
 
-Pick a physical camera and analysis resolution, pick an exposure preset, point at the sky, tap
-**Record**. Record stays disabled until the gate above allows it, and the HUD names the blocking
-reason. It also shows analyzed/recorded/dropped/stale frame counts, join-drop counts with the last
-reason, geometry status, predicted-star count, the requested vs applied exposure, and the session
-directory path.
+Grant location permission when the HUD asks (Record cannot be enabled without it), pick a physical
+camera and analysis resolution, pick an exposure preset, point at the sky, tap **Record**. Record
+stays disabled until the gate above allows it, and the HUD names the blocking reason. It also shows
+analyzed/recorded/dropped/stale frame counts, join-drop counts with the last reason, geometry status,
+predicted-star count, the requested vs applied exposure, the location-permission state, the resolved
+observer, and the session directory path.
+
+Before a long shoot, check the header the first session writes: a `clockAlignment.relationship` of
+`UNKNOWN` means this device's camera would not state its timestamp source, and every frame will replay
+as `POSE_CLOCK_UNALIGNED` until an offset is measured for it.

@@ -47,10 +47,15 @@ import dev.pointtosky.core.astro.catalog.isRenderablePoint
 import dev.pointtosky.core.astro.projection.camera.prediction.EquatorialStarDirection
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyCalibrationRecord
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyObserverContext
+import dev.pointtosky.core.location.model.GeoPoint
+import dev.pointtosky.core.location.prefs.LocationPrefs
+import dev.pointtosky.core.location.prefs.fromContext
 import dev.pointtosky.mobile.ar.camera.prediction.selectPredictedStarDirections
 import dev.pointtosky.mobile.ar.rememberRotationFrame
 import dev.pointtosky.mobile.location.DeviceLocationRepository
+import kotlinx.coroutines.flow.combine
 import java.io.File
+import java.util.Locale
 
 /**
  * SKY-1 sky session-log capture experiment (`internalDebug`-only).
@@ -74,6 +79,13 @@ import java.io.File
  * reads the ranges from the bound `CameraInfo`, the requested exposure is resolved against them, and
  * phase two rebinds with the resolved values. Recording is blocked until the resolved exposure is the
  * one actually bound — see [evaluateSkyRecordingGate].
+ *
+ * ## Two permissions, two states
+ * Camera permission gates the whole screen: without it there is nothing to show. Location permission
+ * does not — the preview still runs, the HUD still reports, and only *recording* is blocked, because a
+ * session whose frames carry no observing context is a directory of pixels no detector can use (see
+ * [SkyRecordingBlockedReason.OBSERVER_CONTEXT_UNAVAILABLE]). Neither request is fired from composition:
+ * both are explicit operator actions, and the HUD names which one is missing.
  */
 class SkySessionCaptureActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,9 +125,96 @@ private val SKY_RESOLUTION_CANDIDATES =
     )
 
 internal const val TAG_SKY_REQUEST_PERMISSION = "sky_request_permission"
+internal const val TAG_SKY_REQUEST_LOCATION_PERMISSION = "sky_request_location_permission"
 internal const val TAG_SKY_START_RECORDING = "sky_start_recording"
 internal const val TAG_SKY_STOP_RECORDING = "sky_stop_recording"
 internal const val TAG_SKY_STATUS = "sky_status"
+
+/**
+ * The permissions [DeviceLocationRepository] treats as sufficient — it accepts *either*, so the check
+ * must too. Mirroring the repository's own test rather than guessing at what "location" means is what
+ * keeps the two from drifting into a state where the HUD says granted and the flow emits nothing.
+ */
+internal val SKY_ACCEPTED_LOCATION_PERMISSIONS: Array<String> =
+    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+/**
+ * What this screen actually asks for: coarse only, because coarse is the only location permission
+ * `AndroidManifest.xml` declares.
+ *
+ * Requesting an undeclared permission is not a no-op — the system denies it immediately without ever
+ * showing a dialog, so asking for `ACCESS_FINE_LOCATION` here would be reported back as a user
+ * refusal that never happened. Adding fine location to the app's declared permissions is a
+ * product-level decision with data-safety consequences (`docs/data-safety.md`), not a SKY-1 one; if it
+ * is ever declared, adding it here is a one-line change and the accepted set above already covers it.
+ *
+ * Coarse is adequate for this dataset: a kilometre of position error moves an altitude/azimuth
+ * prediction by well under an arcsecond, orders of magnitude below the pointing error the log exists
+ * to measure.
+ */
+internal val SKY_LOCATION_PERMISSIONS: Array<String> = arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION)
+
+/** Whether [DeviceLocationRepository] would consider location permission granted right now. */
+internal fun hasSkyLocationPermission(context: Context): Boolean =
+    SKY_ACCEPTED_LOCATION_PERMISSIONS.any {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+/**
+ * What the screen knows about location permission. Separate from the camera permission state on
+ * purpose: the two are independent grants with independent consequences, and collapsing them into one
+ * "permissions ok" flag is how a screen ends up either blocking the camera because location was denied
+ * or recording an observer-less session because camera was granted.
+ */
+internal enum class SkyLocationPermissionState {
+    GRANTED,
+
+    /** Not granted, and this screen has not asked. The operator has an action to take. */
+    NOT_REQUESTED,
+
+    /**
+     * Asked, and still not granted. Distinct from [NOT_REQUESTED] so the HUD can say "denied" rather
+     * than repeating an invitation the operator already declined — and so the reason recording is
+     * blocked reads as a decision rather than as a pending step.
+     */
+    DENIED,
+}
+
+/**
+ * The permission state to display, from whether it is granted and whether this screen has asked.
+ *
+ * Pure, because it is the part worth asserting on: the request itself needs an `Activity`, the answer
+ * does not.
+ */
+internal fun skyLocationPermissionState(
+    granted: Boolean,
+    requested: Boolean,
+): SkyLocationPermissionState =
+    when {
+        granted -> SkyLocationPermissionState.GRANTED
+        requested -> SkyLocationPermissionState.DENIED
+        else -> SkyLocationPermissionState.NOT_REQUESTED
+    }
+
+/**
+ * The point a sky session should observe from: the manual override if there is one, otherwise the
+ * device fix, otherwise **nothing**.
+ *
+ * The precedence is deliberately the same one `ArViewModel` and `SkyMapViewModel` already apply, so an
+ * operator who has pinned a manual location in the app records against that same location here rather
+ * than against a second, incompatible policy invented for this screen.
+ *
+ * What it does not copy is those screens' final branch. They fall back to a `DEFAULT_LOCATION` of
+ * `(0, 0)` and mark the snapshot `resolved = false`, which is right for a renderer that must draw
+ * *something* — a null island sky is visibly wrong and the UI says so. It is exactly wrong for a
+ * detector dataset: `(0, 0)` is a valid-looking latitude/longitude that would be written into every
+ * frame line, projected through, and indistinguishable offline from a real fix in the Gulf of Guinea.
+ * So this returns `null`, and the recording gate refuses to start.
+ */
+internal fun resolveSkyObserverPoint(
+    manual: GeoPoint?,
+    device: GeoPoint?,
+): GeoPoint? = manual ?: device
 
 /** Live, bounded status for the capture HUD. Never a growing list — counters and latest values only. */
 internal data class SkyCaptureUiState(
@@ -213,17 +312,48 @@ private fun SkySessionCaptureContent() {
         starDirections = selectPredictedStarDirections(catalog?.allStars().orEmpty().filter { it.isRenderablePoint() })
     }
 
-    // The latest device fix. Null until location resolves; a frame captured before then records no
-    // observer context rather than a guessed one.
-    var latitudeDeg by remember { mutableStateOf<Double?>(null) }
-    var longitudeDeg by remember { mutableStateOf<Double?>(null) }
-    LaunchedEffect(Unit) {
-        val repository = DeviceLocationRepository(context.applicationContext)
-        repository.deviceLocationFlow.collect { point ->
-            latitudeDeg = point?.latDeg
-            longitudeDeg = point?.lonDeg
+    // ---------------------------------------------------------------------------------------------
+    // Observer context: location permission, the resolved point, and the gate that depends on both.
+    // ---------------------------------------------------------------------------------------------
+
+    val locationRepository = remember { DeviceLocationRepository(context.applicationContext) }
+    val locationPrefs = remember { LocationPrefs.fromContext(context) }
+
+    var hasLocationPermission by remember { mutableStateOf(hasSkyLocationPermission(context)) }
+    var locationPermissionRequested by remember { mutableStateOf(false) }
+    val locationPermissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            // Re-read the permissions rather than trusting the result map: the repository's own
+            // "granted" test is coarse-or-fine, and this must agree with it exactly or the HUD and the
+            // location flow will disagree about whether there is any point waiting for a fix.
+            hasLocationPermission = hasSkyLocationPermission(context)
+            locationRepository.onPermissionChanged()
         }
+    // Deliberately not launched from a LaunchedEffect: a system permission dialog thrown at an operator
+    // the instant a screen composes is both hostile and unreliable (it can fire during a rebind, or
+    // twice after a configuration change). The request is an explicit action below.
+
+    // The point to observe from — manual override first, then the device fix. Null until one resolves;
+    // a frame captured before then records no observer context rather than a guessed one, and the
+    // recording gate refuses to start at all.
+    var observerPoint by remember { mutableStateOf<GeoPoint?>(null) }
+    LaunchedEffect(locationRepository, locationPrefs) {
+        combine(
+            locationRepository.deviceLocationFlow,
+            locationPrefs.manualPointFlow,
+        ) { device, manual -> resolveSkyObserverPoint(manual = manual, device = device) }
+            .collect { point -> observerPoint = point }
     }
+
+    /**
+     * The observing context for a frame captured *now*. Recomputed at every call site rather than held
+     * in state, because it carries the instant as well as the place.
+     */
+    fun observerNow(): SkyObserverContext? = skyObserverContext(observerPoint?.latDeg, observerPoint?.lonDeg)
+
+    // Only the *presence* of a context matters to the gate, so this one is remembered against the point
+    // it came from instead of being rebuilt on every recomposition.
+    val gateObserver = remember(observerPoint) { observerNow() }
 
     val session =
         remember {
@@ -274,7 +404,7 @@ private fun SkySessionCaptureContent() {
                             epoch = epoch,
                             configuration = frameConfiguration,
                             joined = joined,
-                            observer = skyObserverContext(latitudeDeg, longitudeDeg),
+                            observer = observerNow(),
                             stars = starDirections,
                             previous = uiState,
                         )
@@ -292,7 +422,7 @@ private fun SkySessionCaptureContent() {
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            val gate = session.recordingGate(requestedExposure, exposureCapability)
+            val gate = session.recordingGate(requestedExposure, exposureCapability, gateObserver)
             SelectionContainer {
                 Text(
                     text =
@@ -305,6 +435,9 @@ private fun SkySessionCaptureContent() {
                             bindFailure = bindFailure,
                             resolution = resolution,
                             physicalCameraId = selectedPhysicalCameraId,
+                            locationPermission =
+                                skyLocationPermissionState(hasLocationPermission, locationPermissionRequested),
+                            observer = gateObserver,
                         ),
                     color = Color(0xFFB8E0FF),
                     style = MaterialTheme.typography.bodySmall,
@@ -312,10 +445,28 @@ private fun SkySessionCaptureContent() {
                 )
             }
 
+            SkyLocationPermissionAction(
+                hasLocationPermission = hasLocationPermission,
+                onRequestLocationPermission = {
+                    locationPermissionRequested = true
+                    locationPermissionLauncher.launch(SKY_LOCATION_PERMISSIONS)
+                },
+            )
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!session.isRecording) {
                     Button(
-                        onClick = { uiState = session.startRecording(requestedExposure, exposureCapability, uiState) },
+                        onClick = {
+                            uiState =
+                                session.startRecording(
+                                    requested = requestedExposure,
+                                    capability = exposureCapability,
+                                    // Re-derived at the tap, not the composition that enabled the
+                                    // button: the fix can go away in between.
+                                    observer = observerNow(),
+                                    previous = uiState,
+                                )
+                        },
                         enabled = gate is SkyRecordingGate.Allowed,
                         modifier = Modifier.testTag(TAG_SKY_START_RECORDING),
                     ) {
@@ -352,6 +503,30 @@ private fun SkySessionCaptureContent() {
         }
     }
 }
+
+/**
+ * The explicit location-permission action, rendered only while the permission is missing.
+ *
+ * Its own composable, and stateless, for the same reason the rest of this screen's logic is pulled out
+ * of the camera path: a Compose test can drive it without a camera bind, a `FusedLocationProvider`, or
+ * a real permission dialog. The button is absent — not merely disabled — once permission is granted,
+ * so the HUD never invites an operator to re-grant something they already have.
+ */
+@Composable
+internal fun SkyLocationPermissionAction(
+    hasLocationPermission: Boolean,
+    onRequestLocationPermission: () -> Unit,
+) {
+    if (hasLocationPermission) return
+    Button(
+        onClick = onRequestLocationPermission,
+        modifier = Modifier.testTag(TAG_SKY_REQUEST_LOCATION_PERMISSION),
+    ) {
+        Text("Grant location permission")
+    }
+}
+
+private fun Double.formatSkyDegrees(decimals: Int): String = String.format(Locale.ROOT, "%.${decimals}f", this)
 
 internal fun formatSkyExposure(request: SkyManualExposureRequest): String {
     val millis = request.exposureTimeNanos / 1_000_000L
@@ -430,6 +605,8 @@ internal fun skyCaptureStatusText(
     bindFailure: String?,
     resolution: AnalysisResolutionRequest,
     physicalCameraId: String?,
+    locationPermission: SkyLocationPermissionState,
+    observer: SkyObserverContext?,
 ): String =
     buildString {
         appendLine("SKY-1 session capture")
@@ -447,6 +624,22 @@ internal fun skyCaptureStatusText(
                             "maxFrameDur=${capability.maxFrameDurationNanos}"
                 },
         )
+        appendLine("locationPermission=${locationPermission.name}")
+        val declinationDeg = observer?.magneticDeclinationDeg
+        appendLine(
+            "observer=" +
+                when {
+                    observer == null -> "UNAVAILABLE (no location fix)"
+                    declinationDeg == null -> "UNAVAILABLE (no magnetic declination)"
+                    // Locale.ROOT: this is a diagnostic readout an operator pastes into a report, so a
+                    // decimal comma from the device locale would be actively confusing next to the
+                    // dot-decimal numbers the log itself contains.
+                    else ->
+                        "lat=${observer.latitudeDeg.formatSkyDegrees(4)} " +
+                            "lon=${observer.longitudeDeg.formatSkyDegrees(4)} " +
+                            "decl=${declinationDeg.formatSkyDegrees(2)}"
+                },
+        )
         appendLine(
             "recording=" +
                 when (gate) {
@@ -454,6 +647,22 @@ internal fun skyCaptureStatusText(
                     is SkyRecordingGate.Blocked -> "BLOCKED(${gate.reason.name})"
                 },
         )
+        if (gate is SkyRecordingGate.Blocked &&
+            gate.reason == SkyRecordingBlockedReason.OBSERVER_CONTEXT_UNAVAILABLE
+        ) {
+            appendLine(
+                when (locationPermission) {
+                    SkyLocationPermissionState.GRANTED ->
+                        "  -> location permission is granted; waiting for a fix"
+
+                    SkyLocationPermissionState.NOT_REQUESTED ->
+                        "  -> grant location permission below to enable Record"
+
+                    SkyLocationPermissionState.DENIED ->
+                        "  -> location permission was DENIED; Record stays blocked until it is granted"
+                },
+            )
+        }
         appendLine("captureResultExposure=${if (state.exposureAvailable) "present" else "absent"}")
         appendLine(
             "frames analyzed=${state.analyzedFrameCount} recorded=${state.recordedFrameCount} " +

@@ -41,7 +41,7 @@ import kotlin.math.sqrt
  * which one the math should believe. Derived-on-write has no such failure mode: the authoritative
  * field is always the answer.
  */
-const val SKY_SESSION_LOG_SCHEMA_VERSION: Int = 1
+const val SKY_SESSION_LOG_SCHEMA_VERSION: Int = 2
 
 /**
  * Every [SkySessionLogHeader.schemaVersion] this build knows how to read.
@@ -51,8 +51,16 @@ const val SKY_SESSION_LOG_SCHEMA_VERSION: Int = 1
  * this build still recognizes by name, so "parse it anyway and hope" is exactly the failure mode a
  * version number exists to prevent. Widening this set is the deliberate act of teaching this build to
  * read that version.
+ *
+ * ## Why v1 is not in this set
+ * Schema v1's `clockAlignment` could say only "an offset is recorded" or "no offset is recorded", and
+ * the on-device writer emitted `poseToFrameOffsetNanos: 0` on every session — for two *differently
+ * named* clocks — without ever measuring anything. Reading a v1 header under v2's rules would turn
+ * that unproven assumption into a [SkyClockRelationship.MEASURED_OFFSET] the capture never made, and
+ * every replayed frame would silently inherit it. There is no information in a v1 log that
+ * distinguishes an assumed zero from a measured one, so v1 is refused rather than reinterpreted.
  */
-val SUPPORTED_SKY_SESSION_LOG_SCHEMA_VERSIONS: Set<Int> = setOf(1)
+val SUPPORTED_SKY_SESSION_LOG_SCHEMA_VERSIONS: Set<Int> = setOf(2)
 
 /**
  * How one frame's pixels are stored on disk beside the log.
@@ -70,9 +78,13 @@ enum class SkyLumaFormat {
 }
 
 /**
- * Which monotonic clock a nanosecond timestamp is expressed on. Never assumed — a log that cannot
- * say is explicitly [UNKNOWN], and [SkyClockAlignment] then refuses to align rather than guessing an
- * offset of zero.
+ * Which API a nanosecond timestamp was read from. Never assumed — a log that cannot say is explicitly
+ * [UNKNOWN].
+ *
+ * This names the *source*, not the time base. Two differently-named clocks may still be the same time
+ * base (Camera2's `SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME` puts `SENSOR_TIMESTAMP` on the same
+ * `SystemClock.elapsedRealtimeNanos` base `SensorEvent.timestamp` uses), and two identically-named
+ * ones may not be. Whether they can be compared is [SkyClockAlignment.relationship]'s business alone.
  */
 enum class SkyClock {
     /** `ImageProxy.imageInfo.timestamp` / Camera2 `CaptureResult.SENSOR_TIMESTAMP`. */
@@ -86,47 +98,140 @@ enum class SkyClock {
 }
 
 /**
+ * On what grounds a session claims its pose timestamps can be expressed on its frame clock.
+ *
+ * There are exactly three honest answers, and the point of this type is that a log must pick one
+ * rather than let a reader infer comparability from two enum names that happen to match — or, worse,
+ * from a `0` somebody wrote because pairing "usually works".
+ */
+enum class SkyClockRelationship {
+    /**
+     * The two timestamps are **provably on the same time base**, established from a documented
+     * platform source the capture actually read — not from small observed pairing deltas, not from a
+     * camera id, and not from the absence of a `ClockMismatchSuspected` outcome.
+     *
+     * The one case this codebase can prove today: Camera2 reports
+     * `SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME` for the bound camera, which per its own contract puts
+     * `SENSOR_TIMESTAMP` on `SystemClock.elapsedRealtimeNanos` — the same base
+     * `android.hardware.SensorEvent.timestamp` is documented to use. The offset is then `0` because
+     * the clocks are the same clock, and [SkyClockAlignment.poseToFrameOffsetNanos] stays absent
+     * precisely so nobody reads that zero as a measurement.
+     */
+    SOURCE_PROVEN_COMPARABLE,
+
+    /**
+     * The capture **measured** an offset between the two clocks and recorded it in
+     * [SkyClockAlignment.poseToFrameOffsetNanos]. The value may legitimately be `0`: a measurement
+     * that came out zero is a different claim from a zero nobody measured, and this is the only
+     * relationship under which a `0` in the log means the former.
+     */
+    MEASURED_OFFSET,
+
+    /**
+     * Nothing establishes a relationship: the timestamp source is unknown or unreadable, and no offset
+     * was measured. [alignPoseTimestampToFrameClock] returns `null`, and replay skips the frame with
+     * [SkyFrameReplaySkipReason.POSE_CLOCK_UNALIGNED] rather than subtracting two numbers that may not
+     * share an origin.
+     */
+    UNKNOWN,
+}
+
+/**
  * The session-level relationship between the pose clock and the frame clock.
  *
- * On most Android devices `SensorEvent.timestamp` and `ImageProxy.imageInfo.timestamp` are both
- * `SystemClock.elapsedRealtimeNanos`-based and directly comparable, which is exactly the assumption
- * CAM-1d's `pairFrameToNearestRotation` already makes (and why it has a
- * `ClockMismatchSuspected` outcome for when the assumption fails). This type records that assumption
- * explicitly per session instead of leaving it implicit:
+ * CAM-1d's `pairFrameToNearestRotation` compares the two directly and has a `ClockMismatchSuspected`
+ * outcome for when that goes wrong. That pairing succeeding is *evidence*, not proof — a device whose
+ * clocks differ by less than the pairing tolerance pairs happily and wrongly — so this type never
+ * derives a relationship from it. Only [relationship] decides:
  *
- *  - [poseToFrameOffsetNanos] present → it is **always** applied, even when the two clock enums
- *    agree, so a session that measured a real offset can record it.
- *  - absent and the two clocks are equal and not [SkyClock.UNKNOWN] → the offset is `0` because the
- *    timestamps are on the same clock, not because zero was assumed.
- *  - absent and the clocks differ (or either is [SkyClock.UNKNOWN]) → **no alignment is possible**;
- *    [alignPoseTimestampToFrameClock] returns `null` and the replay skips the frame rather than
- *    comparing two incomparable numbers.
+ *  - [SkyClockRelationship.SOURCE_PROVEN_COMPARABLE] → offset `0`, because the platform documents the
+ *    two timestamps onto one time base;
+ *  - [SkyClockRelationship.MEASURED_OFFSET] → [poseToFrameOffsetNanos] is applied verbatim, including
+ *    when it is `0`;
+ *  - [SkyClockRelationship.UNKNOWN] → **no alignment is possible**; [alignPoseTimestampToFrameClock]
+ *    returns `null` and the replay skips the frame rather than comparing two incomparable numbers.
  *
  * @property poseToFrameOffsetNanos nanoseconds to **add** to a pose timestamp to express it on the
- *   frame clock.
+ *   frame clock. Present exactly when [relationship] is [SkyClockRelationship.MEASURED_OFFSET]; an
+ *   implied zero is never stored as an explicit one, so the wire form cannot blur the two.
  */
 data class SkyClockAlignment(
     val frameClock: SkyClock,
     val poseClock: SkyClock,
+    val relationship: SkyClockRelationship,
     val poseToFrameOffsetNanos: Long? = null,
-)
+) {
+    init {
+        when (relationship) {
+            SkyClockRelationship.MEASURED_OFFSET ->
+                require(poseToFrameOffsetNanos != null) {
+                    "MEASURED_OFFSET requires poseToFrameOffsetNanos; a measurement with no value is not a measurement"
+                }
+
+            SkyClockRelationship.SOURCE_PROVEN_COMPARABLE -> {
+                require(poseToFrameOffsetNanos == null) {
+                    "SOURCE_PROVEN_COMPARABLE implies a zero offset and must not carry one explicitly " +
+                        "(that spelling is reserved for MEASURED_OFFSET); was $poseToFrameOffsetNanos"
+                }
+                require(frameClock != SkyClock.UNKNOWN && poseClock != SkyClock.UNKNOWN) {
+                    "a clock that cannot be named cannot be proven comparable; was frame=$frameClock pose=$poseClock"
+                }
+            }
+
+            SkyClockRelationship.UNKNOWN ->
+                require(poseToFrameOffsetNanos == null) {
+                    "an UNKNOWN relationship must not carry an offset; was $poseToFrameOffsetNanos"
+                }
+        }
+    }
+
+    companion object {
+        /** Same time base, on a documented source-backed ground. See [SkyClockRelationship.SOURCE_PROVEN_COMPARABLE]. */
+        fun sourceProvenComparable(
+            frameClock: SkyClock,
+            poseClock: SkyClock,
+        ): SkyClockAlignment = SkyClockAlignment(frameClock, poseClock, SkyClockRelationship.SOURCE_PROVEN_COMPARABLE)
+
+        /** An offset the capture actually measured, zero or not. */
+        fun measuredOffset(
+            frameClock: SkyClock,
+            poseClock: SkyClock,
+            poseToFrameOffsetNanos: Long,
+        ): SkyClockAlignment =
+            SkyClockAlignment(
+                frameClock,
+                poseClock,
+                SkyClockRelationship.MEASURED_OFFSET,
+                poseToFrameOffsetNanos,
+            )
+
+        /** No established relationship. Replay refuses to align. */
+        fun unknown(
+            frameClock: SkyClock,
+            poseClock: SkyClock,
+        ): SkyClockAlignment = SkyClockAlignment(frameClock, poseClock, SkyClockRelationship.UNKNOWN)
+    }
+}
 
 /**
  * [poseTimestampNanos] expressed on [alignment]'s frame clock, or `null` when the two clocks cannot
  * be related (see [SkyClockAlignment]). Saturating rather than wrapping on overflow, matching
  * `overflowSafeDeltaNanos`' own convention.
+ *
+ * There is no fallback path: an unestablished relationship returns `null`, never `poseTimestampNanos`
+ * and never a zero-offset guess.
  */
 fun alignPoseTimestampToFrameClock(
     poseTimestampNanos: Long,
     alignment: SkyClockAlignment,
 ): Long? {
     val offset =
-        alignment.poseToFrameOffsetNanos
-            ?: when {
-                alignment.frameClock == SkyClock.UNKNOWN || alignment.poseClock == SkyClock.UNKNOWN -> return null
-                alignment.frameClock == alignment.poseClock -> 0L
-                else -> return null
-            }
+        when (alignment.relationship) {
+            SkyClockRelationship.UNKNOWN -> return null
+            SkyClockRelationship.SOURCE_PROVEN_COMPARABLE -> 0L
+            // Non-null by SkyClockAlignment's own invariant; the elvis is defence in depth, not a default.
+            SkyClockRelationship.MEASURED_OFFSET -> alignment.poseToFrameOffsetNanos ?: return null
+        }
     val sum = poseTimestampNanos + offset
     // Overflow iff both operands share a sign that the result does not.
     val overflowed = ((poseTimestampNanos xor sum) and (offset xor sum)) < 0L
@@ -266,14 +371,20 @@ internal fun requireUsableRotationMatrix(m: List<Double>) {
  * @property timestampNanos on [SkySessionLogHeader.clockAlignment]'s `poseClock`, raw and unaligned —
  *   the alignment is applied at read time so a log never bakes in an offset a later analysis
  *   disagrees with.
- * @property frameToPoseDeltaNanos `frame.timestampNanos - pose.timestampNanos` as the capturing
- *   device computed it, in raw clock units. Recorded rather than re-derived so a log can be audited
- *   for pairing drift even if the alignment is later corrected.
+ * @property frameToPoseRawDeltaNanos the literal subtraction
+ *   `frame.timestampNanos - pose.timestampNanos` the capturing device computed, in **raw ticks of two
+ *   possibly different clocks**. It is a duration only when
+ *   [SkySessionLogHeader.clockAlignment]'s relationship establishes that the two are comparable
+ *   ([SkyClockRelationship.SOURCE_PROVEN_COMPARABLE], or [SkyClockRelationship.MEASURED_OFFSET] after
+ *   the offset is applied); under [SkyClockRelationship.UNKNOWN] it is an uninterpretable difference
+ *   of two unrelated counters and must not be read as elapsed time, pairing drift, or latency. It is
+ *   recorded rather than re-derived so a log stays auditable even if the alignment is later corrected
+ *   — which is exactly why it carries the device's raw numbers and not a "corrected" duration.
  */
 data class SkyPoseSample(
     val timestampNanos: Long,
     val rotationMatrix: List<Double>,
-    val frameToPoseDeltaNanos: Long,
+    val frameToPoseRawDeltaNanos: Long,
 ) {
     init {
         require(timestampNanos >= 0L) { "timestampNanos must be non-negative; was $timestampNanos" }

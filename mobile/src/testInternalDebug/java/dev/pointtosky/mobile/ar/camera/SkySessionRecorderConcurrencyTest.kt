@@ -98,6 +98,7 @@ class SkySessionRecorderConcurrencyTest {
             bufferWidthPx = SkySessionCaptureFixtures.BUFFER_WIDTH_PX,
             bufferHeightPx = SkySessionCaptureFixtures.BUFFER_HEIGHT_PX,
             intrinsics = fixtures.intrinsics(),
+            clockAlignment = skyClockAlignmentFor(SkyCameraTimestampSource.REALTIME),
             maxPairDeltaNanos = 25_000_000L,
             clockMismatchThresholdNanos = 5_000_000_000L,
             deviceModel = null,

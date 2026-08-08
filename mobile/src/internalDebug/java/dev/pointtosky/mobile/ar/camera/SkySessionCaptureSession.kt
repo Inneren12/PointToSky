@@ -23,13 +23,15 @@ import java.io.File
  *  - `SessionScopedCameraIntrinsicsResolver.resolveOnce` caches its first answer *forever* per
  *    instance, which is correct for one camera session and catastrophic across two;
  *  - `CameraSessionGeometryProvider.onIntrinsicsResolved` likewise accepts only its first call;
- *  - `CameraTimestampSynchronizer` holds a rotation history paired against one buffer's frames.
+ *  - `CameraTimestampSynchronizer` holds a rotation history paired against one buffer's frames;
+ *  - the camera's reported `SENSOR_INFO_TIMESTAMP_SOURCE` ([SkyCaptureScope.timestampSource]) is a
+ *    per-camera fact, and a logical camera need not agree with its own physical sub-cameras.
  *
- * So a [SkyCaptureScope] holds all three plus the bound camera's identity, and a new bind epoch
+ * So a [SkyCaptureScope] holds all of it plus the bound camera's identity, and a new bind epoch
  * replaces the whole scope at once. There is no path by which a header can pair one generation's
- * camera id with another generation's intrinsics: [startRecording] reads both out of a single scope
- * while holding [lock], and a scope's camera id and resolver are only ever written together in
- * [rotateTo].
+ * camera id with another generation's intrinsics or clock provenance: [startRecording] reads them all
+ * out of a single scope while holding [lock], and a scope's camera id, resolver and timestamp source
+ * are only ever written together in [rotateTo]/[adoptCameraInfo].
  *
  * Frames and camera-info callbacks carrying an older epoch are dropped ([SkyGenerationTransition.STALE]).
  * They are not merely late — they were produced by a different sensor, buffer size, or exposure.
@@ -44,6 +46,13 @@ internal class SkySessionCaptureSession(
     private val deviceModel: String?,
     private val scopeFactory: () -> SkyCaptureScope = { SkyCaptureScope.create() },
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
+    /**
+     * Reads the bound camera's `SENSOR_INFO_TIMESTAMP_SOURCE`. Injected so the header's clock claim is
+     * checkable on the JVM: the production probe needs `Camera2Interop` and a live `CameraInfo`, and
+     * the invariant worth testing — that an unprovable timestamp source produces an unalignable
+     * session rather than an assumed-zero one — has nothing to do with either.
+     */
+    private val timestampSourceProbe: (CameraInfo) -> SkyCameraTimestampSource = ::probeSkyCameraTimestampSource,
 ) {
     private val lock = Any()
     private val generations = SkyCaptureGenerationTracker()
@@ -81,7 +90,7 @@ internal class SkySessionCaptureSession(
                 }
 
                 SkyGenerationTransition.CURRENT -> {
-                    scope?.cameraInfo = cameraInfo
+                    scope?.adoptCameraInfo(cameraInfo)
                     true
                 }
             }
@@ -198,10 +207,17 @@ internal class SkySessionCaptureSession(
             )
         }
 
-    /** Whether the live generation may start recording, and with which confirmed exposure. */
+    /**
+     * Whether the live generation may start recording, and with which confirmed exposure.
+     *
+     * [observer] is supplied by the caller rather than held here: the observing context is a property
+     * of *now*, assembled per frame from the live location and the current instant, and caching it in
+     * the session would let Record be enabled against a fix that has since gone away.
+     */
     fun recordingGate(
         requested: SkyManualExposureRequest?,
         capability: SkyManualExposureCapability?,
+        observer: SkyObserverContext?,
     ): SkyRecordingGate =
         synchronized(lock) {
             val active = scope
@@ -210,6 +226,7 @@ internal class SkySessionCaptureSession(
                 capability = capability,
                 appliedExposure = generations.currentConfiguration?.exposure,
                 intrinsicsResolved = active?.intrinsics?.publishedResolution != null,
+                observer = observer,
             )
         }
 
@@ -225,6 +242,7 @@ internal class SkySessionCaptureSession(
     fun startRecording(
         requested: SkyManualExposureRequest?,
         capability: SkyManualExposureCapability?,
+        observer: SkyObserverContext?,
         previous: SkyCaptureUiState,
     ): SkyCaptureUiState =
         synchronized(lock) {
@@ -236,6 +254,7 @@ internal class SkySessionCaptureSession(
                     capability = capability,
                     appliedExposure = generations.currentConfiguration?.exposure,
                     intrinsicsResolved = scope?.intrinsics?.publishedResolution != null,
+                    observer = observer,
                 )
             if (gate is SkyRecordingGate.Blocked) {
                 return@synchronized previous.copy(lastFailureReason = gate.reason.name, sessionDirectoryPath = null)
@@ -262,6 +281,10 @@ internal class SkySessionCaptureSession(
                     bufferWidthPx = geometry?.frame?.bufferWidthPx ?: configuration.resolution.widthPx,
                     bufferHeightPx = geometry?.frame?.bufferHeightPx ?: configuration.resolution.heightPx,
                     intrinsics = intrinsics,
+                    // Read out of the same scope, under the same lock acquisition, as the camera id and
+                    // the intrinsics - so the header's clock claim always describes the camera the
+                    // header names.
+                    clockAlignment = skyClockAlignmentFor(active.timestampSource),
                     maxPairDeltaNanos = active.synchronizer.maxAllowedDeltaNanos,
                     clockMismatchThresholdNanos = TimestampSyncConfig.CLOCK_MISMATCH_THRESHOLD_NANOS,
                     deviceModel = deviceModel,
@@ -315,12 +338,27 @@ internal class SkySessionCaptureSession(
         recorder?.stop()
         recorder = null
         scope?.dispose()
-        scope = scopeFactory().also { it.cameraInfo = cameraInfo }
+        scope = scopeFactory().also { it.adoptCameraInfo(cameraInfo) }
         analyzedFrameCount = 0L
         joinDropCount = 0L
         lastJoinDropReason = null
         // staleFrameCount is deliberately cumulative across generations: it is a diagnostic about how
         // much the rebinds cost, and resetting it would hide exactly that.
+    }
+
+    /**
+     * Attaches [cameraInfo] to this scope and resolves the clock provenance that goes with it.
+     *
+     * Both are written together, under [lock], for the same reason the camera id and the intrinsics
+     * are: a header must never pair one camera's identity with another camera's timestamp source. The
+     * probe runs only when the `CameraInfo` instance actually changes — a repeated `onBind` for the
+     * live epoch is not a new camera and must not re-read characteristics on the main thread.
+     */
+    private fun SkyCaptureScope.adoptCameraInfo(cameraInfo: CameraInfo?) {
+        if (cameraInfo === this.cameraInfo) return
+        this.cameraInfo = cameraInfo
+        timestampSource =
+            cameraInfo?.let(timestampSourceProbe) ?: SkyCameraTimestampSource.UNAVAILABLE
     }
 
     private fun predictionFor(
@@ -346,10 +384,23 @@ internal class SkyCaptureScope(
     /** Set when the bind reports its `CameraInfo`; `null` until then. */
     var cameraInfo: CameraInfo? = null
 
+    /**
+     * What *this bind's* camera says about its `SENSOR_TIMESTAMP` time base, and therefore whether this
+     * generation's poses can be placed on its frame clock at all.
+     *
+     * Bind-scoped like everything else here, and for the same kind of reason: switching physical camera
+     * can switch timestamp source (a logical camera and one of its physical sub-cameras need not agree),
+     * so a value carried across a rebind could put a proven-comparable claim in the header of a session
+     * whose camera never made it. `UNAVAILABLE` until a `CameraInfo` arrives — never optimistically
+     * `REALTIME`.
+     */
+    var timestampSource: SkyCameraTimestampSource = SkyCameraTimestampSource.UNAVAILABLE
+
     fun dispose() {
         synchronizer.dispose()
         geometryProvider.dispose()
         cameraInfo = null
+        timestampSource = SkyCameraTimestampSource.UNAVAILABLE
     }
 
     internal companion object {

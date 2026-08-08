@@ -101,7 +101,7 @@ internal object SkySessionLogFixtures {
         SkyPoseSample(
             timestampNanos = timestampNanos,
             rotationMatrix = rotationMatrix,
-            frameToPoseDeltaNanos = frameTimestampNanos - timestampNanos,
+            frameToPoseRawDeltaNanos = frameTimestampNanos - timestampNanos,
         )
 
     fun observer(
@@ -126,13 +126,19 @@ internal object SkySessionLogFixtures {
             sensorTimestampNanos = FRAME_TIMESTAMP_NANOS,
         )
 
+    /**
+     * The alignment a device whose camera reports `SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME` produces:
+     * two differently-named clocks that the platform documents onto one time base, so the offset is an
+     * implied zero rather than a recorded one.
+     */
+    val sourceProvenAlignment: SkyClockAlignment =
+        SkyClockAlignment.sourceProvenComparable(
+            frameClock = SkyClock.CAMERA_SENSOR_NANOS,
+            poseClock = SkyClock.SENSOR_EVENT_NANOS,
+        )
+
     fun header(
-        clockAlignment: SkyClockAlignment =
-            SkyClockAlignment(
-                frameClock = SkyClock.CAMERA_SENSOR_NANOS,
-                poseClock = SkyClock.SENSOR_EVENT_NANOS,
-                poseToFrameOffsetNanos = 0L,
-            ),
+        clockAlignment: SkyClockAlignment = sourceProvenAlignment,
         intrinsics: CameraIntrinsicsResolution = intrinsics(),
         maxPairDeltaNanos: Long = 25_000_000L,
         calibration: SkyCalibrationRecord? = null,

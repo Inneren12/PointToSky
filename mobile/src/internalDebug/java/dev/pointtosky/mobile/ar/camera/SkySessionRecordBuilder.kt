@@ -6,7 +6,6 @@ import dev.pointtosky.core.astro.projection.camera.prediction.EquatorialStarDire
 import dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel
 import dev.pointtosky.core.astro.projection.camera.prediction.StarPredictionBatchResult
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyCalibrationRecord
-import dev.pointtosky.core.astro.projection.camera.skylog.SkyClock
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyClockAlignment
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyExposureSample
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyFrameRecord
@@ -24,29 +23,19 @@ import dev.pointtosky.core.astro.projection.camera.skylog.toSkyIntrinsicsRecord
  * platform-specific (reading the plane, reading `CaptureResult`, writing files) lives in
  * [SkySessionLogWriter], [SkyExposureSampleStore] and [SkySessionCameraPreview] instead.
  *
- * The one clock assumption this file makes, and makes explicitly rather than implicitly: this app
- * already pairs `SensorEvent.timestamp` against `ImageProxy.imageInfo.timestamp` directly (CAM-1d's
- * `pairFrameToNearestRotation`, which has a `ClockMismatchSuspected` outcome for exactly the devices
- * where that fails). [SKY_SESSION_CLOCK_ALIGNMENT] records that the two are being treated as the same
- * time base, with a measured offset of zero, so an offline reader knows it was a decision rather than
- * an oversight.
+ * This file makes **no** clock assumption of its own. The frame/pose relationship is read from the
+ * bound camera's `SENSOR_INFO_TIMESTAMP_SOURCE` (see [skyClockAlignmentFor]) and passed in; a session
+ * whose camera will not state its time base records an unalignable relationship, and the replay skips
+ * the projection rather than comparing two numbers that may not share an origin.
  */
-
-/**
- * The frame/pose clock relationship the on-device capture path operates under. `poseToFrameOffsetNanos = 0`
- * is written explicitly — not left absent — so the log states "these were treated as one clock"
- * rather than leaving a reader to infer it. A session that ever measures a real offset should record
- * it here instead.
- */
-internal val SKY_SESSION_CLOCK_ALIGNMENT: SkyClockAlignment =
-    SkyClockAlignment(
-        frameClock = SkyClock.CAMERA_SENSOR_NANOS,
-        poseClock = SkyClock.SENSOR_EVENT_NANOS,
-        poseToFrameOffsetNanos = 0L,
-    )
 
 /**
  * Builds the once-per-session header.
+ *
+ * [clockAlignment] comes from [skyClockAlignmentFor] against the bound camera's own reported timestamp
+ * source. It is a parameter rather than a constant precisely because it is a per-device fact: the same
+ * build on two phones can legitimately produce a proven-comparable session on one and an unalignable
+ * one on the other.
  *
  * [pinhole] is derived here rather than inside the pure module because deriving it needs a
  * [CameraSessionGeometry] (`PinholeProjectionModel.forGeometry`), and the geometry is only available
@@ -60,6 +49,7 @@ internal fun buildSkySessionHeader(
     bufferWidthPx: Int,
     bufferHeightPx: Int,
     intrinsics: CameraIntrinsicsResolution,
+    clockAlignment: SkyClockAlignment,
     maxPairDeltaNanos: Long,
     clockMismatchThresholdNanos: Long,
     deviceModel: String?,
@@ -75,7 +65,7 @@ internal fun buildSkySessionHeader(
         bufferWidthPx = bufferWidthPx,
         bufferHeightPx = bufferHeightPx,
         intrinsics = intrinsics.toSkyIntrinsicsRecord(pinhole = pinhole),
-        clockAlignment = SKY_SESSION_CLOCK_ALIGNMENT,
+        clockAlignment = clockAlignment,
         maxPairDeltaNanos = maxPairDeltaNanos,
         clockMismatchThresholdNanos = clockMismatchThresholdNanos,
         deviceModel = deviceModel,
@@ -137,7 +127,9 @@ internal fun buildSkyFrameRecord(
             SkyPoseSample(
                 timestampNanos = rotation.timestampNanos,
                 rotationMatrix = rotation.rotationMatrix.map { it.toDouble() },
-                frameToPoseDeltaNanos = geometry.frameRotationDeltaNanos,
+                // The device's own raw subtraction, recorded verbatim. Whether it is a duration at all
+                // is the header's clockAlignment to say - see SkyPoseSample.frameToPoseRawDeltaNanos.
+                frameToPoseRawDeltaNanos = geometry.frameRotationDeltaNanos,
             ),
         observer = observer,
         exposure = exposure,

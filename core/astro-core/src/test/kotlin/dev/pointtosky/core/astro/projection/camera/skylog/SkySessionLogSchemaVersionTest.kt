@@ -94,6 +94,28 @@ class SkySessionLogSchemaVersionTest {
     }
 
     @Test
+    fun `schema v1 is refused rather than reinterpreted under v2's clock rules`() {
+        // v1 could only say "an offset is recorded" or "none is". The writer emitted 0 on every
+        // session without measuring anything, and nothing in a v1 log distinguishes that from a real
+        // measurement - so it is refused, not read under rules it was never written against.
+        assertEquals(
+            1,
+            assertIs<SkySessionLogLine.UnsupportedSchema>(parseSkySessionLogLine(headerLineWith("1"), 1)).schemaVersion,
+        )
+    }
+
+    @Test
+    fun `the current schema version is what a freshly encoded header carries`() {
+        val parsed =
+            assertIs<SkySessionLogLine.Header>(
+                parseSkySessionLogLine(encodeSkySessionHeaderLine(fixtures.header()), 1),
+            ).header
+
+        assertEquals(SKY_SESSION_LOG_SCHEMA_VERSION, parsed.schemaVersion)
+        assertEquals(2, SKY_SESSION_LOG_SCHEMA_VERSION, "the clock-provenance field bumped this to 2")
+    }
+
+    @Test
     fun `a document whose only header is unsupported has no header and cannot be replayed`() {
         val text =
             buildString {

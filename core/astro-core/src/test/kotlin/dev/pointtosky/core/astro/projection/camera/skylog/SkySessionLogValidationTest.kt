@@ -32,7 +32,7 @@ class SkySessionLogValidationTest {
         )
 
     private fun pose(matrix: List<Double>) =
-        SkyPoseSample(timestampNanos = 0L, rotationMatrix = matrix, frameToPoseDeltaNanos = 0L)
+        SkyPoseSample(timestampNanos = 0L, rotationMatrix = matrix, frameToPoseRawDeltaNanos = 0L)
 
     // -----------------------------------------------------------------------------------------
     // Rotation matrices

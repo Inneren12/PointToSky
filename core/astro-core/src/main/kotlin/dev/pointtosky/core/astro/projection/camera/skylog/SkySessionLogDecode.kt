@@ -35,6 +35,11 @@ internal fun decodeHeader(obj: JsonObject): SkySessionLogHeader {
             SkyClockAlignment(
                 frameClock = alignment.requiredEnum("frameClock", SkyClock.entries),
                 poseClock = alignment.requiredEnum("poseClock", SkyClock.entries),
+                // Required, never defaulted. A missing relationship is a malformed v2 header, not an
+                // invitation to assume the clocks line up - see SkyClockRelationship. Combined with
+                // SkyClockAlignment's own init checks, a header claiming MEASURED_OFFSET with no offset,
+                // or a proven relationship carrying one, becomes SkySessionLogLine.Unreadable.
+                relationship = alignment.requiredEnum("relationship", SkyClockRelationship.entries),
                 poseToFrameOffsetNanos = alignment.long("poseToFrameOffsetNanos"),
             ),
         maxPairDeltaNanos = obj.requiredLong("maxPairDeltaNanos"),
@@ -120,7 +125,7 @@ internal fun decodeFrame(obj: JsonObject): SkyFrameRecord {
             SkyPoseSample(
                 timestampNanos = poseObj.requiredLong("timestampNanos"),
                 rotationMatrix = poseObj.requiredDoubleList("rotationMatrix"),
-                frameToPoseDeltaNanos = poseObj.requiredLong("frameToPoseDeltaNanos"),
+                frameToPoseRawDeltaNanos = poseObj.requiredLong("frameToPoseRawDeltaNanos"),
             ),
         observer =
             obj.obj("observer")?.let {

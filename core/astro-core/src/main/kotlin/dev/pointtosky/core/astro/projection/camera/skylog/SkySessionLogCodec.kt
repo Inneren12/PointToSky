@@ -162,6 +162,9 @@ private fun encodeClockAlignment(alignment: SkyClockAlignment): JsonObject =
     buildJsonObject {
         put("frameClock", alignment.frameClock.name)
         put("poseClock", alignment.poseClock.name)
+        // Required since schema v2. Without it a reader cannot tell a proven-comparable session from a
+        // session that merely assumed one, which is the whole reason the field exists.
+        put("relationship", alignment.relationship.name)
         alignment.poseToFrameOffsetNanos?.let { put("poseToFrameOffsetNanos", it) }
     }
 
@@ -271,7 +274,7 @@ private fun encodeLuma(luma: SkyLumaReference): JsonObject =
 private fun encodePose(pose: SkyPoseSample): JsonObject =
     buildJsonObject {
         put("timestampNanos", pose.timestampNanos)
-        put("frameToPoseDeltaNanos", pose.frameToPoseDeltaNanos)
+        put("frameToPoseRawDeltaNanos", pose.frameToPoseRawDeltaNanos)
         put("rotationMatrix", buildJsonArray { pose.rotationMatrix.forEach { add(it) } })
         // Derived on write, ignored on parse - see SkyPoseSample.quaternion's KDoc.
         val quaternion = pose.quaternion
