@@ -1,6 +1,7 @@
 package dev.pointtosky.core.astro.projection.camera.match
 
 import dev.pointtosky.core.astro.projection.camera.prediction.EquatorialStarDirection
+import java.math.BigDecimal
 import kotlin.math.PI
 import kotlin.math.acos
 import kotlin.math.cos
@@ -16,10 +17,11 @@ import kotlin.test.assertTrue
  * That this file compiles at all is half the point: `:core:astro-core` is a pure-JVM module whose only
  * dependency is `kotlinx.serialization.json`, so a matcher written here against [StarCatalogQuery] can
  * never accidentally reach the Android-library catalog reader. The other half is
- * [requireValidStarCatalogQuery]: because the fake below and the real
- * `dev.pointtosky.core.catalog.binary.PtskCat0StarCatalogQuery` call the *same* validator, a query that
- * the fake accepts is a query the device accepts — which is what makes a test written against the fake
- * evidence about production rather than about the fake.
+ * [normalizeStarCatalogQuery]: the fake below and the real
+ * `dev.pointtosky.core.catalog.binary.PtskCat0StarCatalogQuery` do not merely share a *validator*, they
+ * search by the same [NormalizedStarCatalogQuery] — so a query the fake accepts is one the device
+ * accepts, and it *means the same thing* to both. The right-ascension wrapping tests below therefore
+ * pin the port's own semantics, not one adapter's implementation detail.
  */
 class StarCatalogQueryTest {
     private val vega = catalogStar(index = 0, raRad = 4.8757, decRad = 0.6769, magnitude = 0.03)
@@ -86,10 +88,91 @@ class StarCatalogQueryTest {
     fun `an unwrapped right ascension is accepted and means the same direction`() {
         val radiusRad = Math.toRadians(10.0)
 
-        val wrapped = query.nearby(vega.rightAscensionRad, vega.declinationRad, radiusRad)
-        val unwrapped = query.nearby(vega.rightAscensionRad + 2.0 * PI, vega.declinationRad, radiusRad)
+        val canonical = query.nearby(vega.rightAscensionRad, vega.declinationRad, radiusRad)
+        assertTrue(canonical.isNotEmpty(), "the fixture must find something to compare")
 
-        assertEquals(wrapped, unwrapped)
+        assertEquals(canonical, query.nearby(vega.rightAscensionRad + 2.0 * PI, vega.declinationRad, radiusRad))
+        assertEquals(canonical, query.nearby(vega.rightAscensionRad - 2.0 * PI, vega.declinationRad, radiusRad))
+        assertEquals(canonical, query.nearby(vega.rightAscensionRad + 8.0 * PI, vega.declinationRad, radiusRad))
+        assertEquals(canonical, query.nearby(vega.rightAscensionRad - 6.0 * PI, vega.declinationRad, radiusRad))
+    }
+
+    @Test
+    fun `a huge finite right ascension is wrapped by the port, not just by one adapter`() {
+        // The property under test belongs to StarCatalogQuery, so it is exercised here against the
+        // in-memory implementation — which searches by the same NormalizedStarCatalogQuery the PTSKCAT0
+        // adapter does. Before normalization moved into the port, only that adapter wrapped, and this
+        // test would have failed while the device-side one passed.
+        val canonicalRaRad = canonicalRaRadIndependently(HUGE_RA_RAD)
+        val target = catalogStar(index = 42, raRad = canonicalRaRad, decRad = 0.4, magnitude = 2.0)
+        val catalog: StarCatalogQuery = InMemoryStarCatalogQuery(listOf(target))
+        val radiusRad = Math.toRadians(1.0)
+
+        val viaHuge = catalog.nearby(HUGE_RA_RAD, target.declinationRad, radiusRad)
+
+        assertEquals(listOf(target), viaHuge, "a huge finite RA must find the star at its canonical direction")
+        assertEquals(catalog.nearby(canonicalRaRad, target.declinationRad, radiusRad), viaHuge)
+    }
+
+    @Test
+    fun `a huge negative finite right ascension wraps forward at the port`() {
+        val canonicalRaRad = canonicalRaRadIndependently(-HUGE_RA_RAD)
+        assertTrue(canonicalRaRad >= 0.0 && canonicalRaRad < 2.0 * PI, "a canonical RA is never negative")
+
+        val target = catalogStar(index = 7, raRad = canonicalRaRad, decRad = -0.2, magnitude = 3.0)
+        val catalog: StarCatalogQuery = InMemoryStarCatalogQuery(listOf(target))
+        val radiusRad = Math.toRadians(1.0)
+
+        val viaHuge = catalog.nearby(-HUGE_RA_RAD, target.declinationRad, radiusRad)
+
+        assertEquals(listOf(target), viaHuge, "a huge negative finite RA must wrap forward, not stay negative")
+        assertEquals(catalog.nearby(canonicalRaRad, target.declinationRad, radiusRad), viaHuge)
+    }
+
+    @Test
+    fun `normalization canonicalizes the right ascension and leaves everything else alone`() {
+        val normalized =
+            normalizeStarCatalogQuery(
+                rightAscensionRad = vega.rightAscensionRad - 4.0 * PI,
+                declinationRad = vega.declinationRad,
+                radiusRad = 0.25,
+                magnitudeLimit = 4.5,
+            )
+
+        assertEquals(vega.rightAscensionRad, normalized.rightAscensionRad, 1e-12)
+        assertTrue(normalized.rightAscensionRad >= 0.0 && normalized.rightAscensionRad < 2.0 * PI)
+        assertEquals(vega.declinationRad, normalized.declinationRad)
+        assertEquals(0.25, normalized.radiusRad)
+        assertEquals(4.5, normalized.magnitudeLimit)
+    }
+
+    @Test
+    fun `normalization rejects a non-finite right ascension rather than wrapping it into something plausible`() {
+        assertFailsWith<IllegalArgumentException> {
+            normalizeStarCatalogQuery(Double.NaN, 0.0, 0.1, null)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            normalizeStarCatalogQuery(Double.POSITIVE_INFINITY, 0.0, 0.1, null)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            normalizeStarCatalogQuery(Double.NEGATIVE_INFINITY, 0.0, 0.1, null)
+        }
+    }
+
+    /**
+     * The canonical `[0, 2π)` representative of [raRad], derived in exact decimal arithmetic rather than
+     * in `Double`.
+     *
+     * Deliberately **not** the production wrap: [BigDecimal] carries every digit of both operands, so it
+     * cannot overflow and cannot round. It reproduces the operation the contract specifies — the
+     * remainder against the `Double` value of `2π`, which is the only `2π` this codebase has — without
+     * re-running the same floating-point arithmetic, so agreement is a check rather than two copies of
+     * one mistake.
+     */
+    private fun canonicalRaRadIndependently(raRad: Double): Double {
+        val twoPi = BigDecimal(2.0 * PI)
+        val remainder = BigDecimal(raRad).remainder(twoPi)
+        return if (remainder.signum() < 0) remainder.add(twoPi).toDouble() else remainder.toDouble()
     }
 
     @Test
@@ -121,6 +204,14 @@ class StarCatalogQueryTest {
         assertFailsWith<IllegalArgumentException> {
             query.nearby(vega.rightAscensionRad, vega.declinationRad, radius, magnitudeLimit = Double.NEGATIVE_INFINITY)
         }
+    }
+
+    private companion object {
+        /**
+         * A finite RA far beyond anything an observer means, but well within what the port accepts.
+         * Large enough that any degrees conversion applied before wrapping would leave the double range.
+         */
+        const val HUGE_RA_RAD = Double.MAX_VALUE / 8.0
     }
 
     @Test
@@ -160,6 +251,11 @@ private fun catalogStar(
  * The great-circle test is the same `acos(sin·sin + cos·cos·cos Δra)` form
  * `dev.pointtosky.core.catalog.binary.PtskCat0Catalog` uses, so "inside the cone" means the same thing
  * here as it does on the device.
+ *
+ * It searches by the [NormalizedStarCatalogQuery] and never by its own raw parameters — the same
+ * discipline `PtskCat0StarCatalogQuery` follows. That is what makes a test written against this fake
+ * evidence about the port: if the fake read the unwrapped right ascension, two implementations could
+ * accept the same valid query and answer differently, and this file would be documenting only itself.
  */
 private class InMemoryStarCatalogQuery(
     private val stars: List<EquatorialStarDirection>,
@@ -170,12 +266,12 @@ private class InMemoryStarCatalogQuery(
         radiusRad: Double,
         magnitudeLimit: Double?,
     ): List<EquatorialStarDirection> {
-        requireValidStarCatalogQuery(rightAscensionRad, declinationRad, radiusRad, magnitudeLimit)
-        if (radiusRad == 0.0) return emptyList()
+        val query = normalizeStarCatalogQuery(rightAscensionRad, declinationRad, radiusRad, magnitudeLimit)
+        if (query.radiusRad == 0.0) return emptyList()
         return stars.filter { star ->
             val magnitude = star.magnitude ?: Double.NEGATIVE_INFINITY
-            val withinMagnitude = magnitudeLimit == null || magnitude <= magnitudeLimit
-            withinMagnitude && separationRad(rightAscensionRad, declinationRad, star) <= radiusRad
+            val withinMagnitude = query.magnitudeLimit == null || magnitude <= query.magnitudeLimit
+            withinMagnitude && separationRad(query.rightAscensionRad, query.declinationRad, star) <= query.radiusRad
         }
     }
 

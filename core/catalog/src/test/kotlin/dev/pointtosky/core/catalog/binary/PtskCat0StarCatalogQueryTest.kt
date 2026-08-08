@@ -154,12 +154,16 @@ class PtskCat0StarCatalogQueryTest {
      * in `Double`.
      *
      * Deliberately **not** the production wrap: [BigDecimal] carries every digit of both operands, so it
-     * cannot overflow, cannot round, and cannot fail in the same direction the adapter might. If the
-     * adapter agreed with a `Double`-based re-implementation of its own arithmetic, the agreement could
-     * just be two copies of the same mistake; agreeing with the exact remainder cannot be.
+     * cannot overflow and cannot round. If the adapter agreed with a `Double`-based re-implementation of
+     * its own arithmetic, the agreement could just be two copies of the same mistake; agreeing with a
+     * computation done in a different number system is a check.
      *
-     * "Canonical" is defined relative to the `Double` value of `2π` — the only `2π` any of this code
-     * has — so that is what the remainder is taken against.
+     * "Canonical" is defined relative to the `Double` value of `2π` — the only `2π` any of this code has
+     * — so that is what the remainder is taken against. That makes this the correct reduction with
+     * respect to the constant the codebase uses; for an input spanning this many turns it is **not** a
+     * physically meaningful reduction of the true angle, and nothing here claims otherwise. What is
+     * being tested is that a degenerate-but-accepted input produces a deterministic canonical value
+     * rather than an infinity, a `NaN`, and an empty result.
      */
     private fun canonicalRaRadIndependently(raRad: Double): Double {
         val twoPi = BigDecimal(2.0 * PI)

@@ -212,9 +212,27 @@ SKY-2 **consumes** the SKY-1 contract and does not change it. No schema change, 
 `SKY_SESSION_LOG_SCHEMA_VERSION` bump; `SkyLumaReference` and `SkyPredictedStar` are read as-is, and
 the `FrameContent` dot-grid track is untouched.
 
-Reading the *recorded* predicted coordinates is correct here precisely because this is a detection
-metric and not a projection check: `SkySessionLogReplay` already re-derives them from the catalogue
-and diffs the two, so the projection is verified independently of anything measured by the detector.
+### Which predicted positions a run scores against
+
+An offline SKY-3 run scores detections against the **detector-observable positions of a successful
+replay** — `SkyFrameReplayResult.Ready.projections` narrowed by `toPredictedPointsPx`, i.e. what the
+current projection math produces from the frame's own pose, observer and intrinsics. It never scores
+against the log's recorded `imageXPx`/`imageYPx`. A recorded coordinate is what some earlier build
+wrote; only the recomputed one is a position the current math stands behind, so scoring against a
+record that is stale, hand-edited, or written by a build whose projection has since been corrected
+would let it earn an excellent detection rate against a number nothing verified. Where replay refuses
+a frame there is no truth set, and the frame is reported as unscored rather than falling back to the
+recorded values.
+
+The recorded coordinates are retained for exactly one purpose: a **recorded-vs-replayed integrity
+diagnostic** (`replayMaxImageResidualPx`, `replayRmsImageResidualPx`,
+`replayClassificationMismatchCount`) — how far the capturing device's projection sat from what the
+same math produces now. That is a measure of replay integrity, not of detector error, and the two are
+deliberately never mixed.
+
+The `List<SkyPredictedStar>.toPredictedPointsPx` overload still exists for in-repo fixture tests,
+where the "recorded" positions are authored by the test itself and there is no replay to disagree
+with.
 
 ## What consumes this next
 

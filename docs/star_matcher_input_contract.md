@@ -64,13 +64,40 @@ interface StarCatalogQuery {
 ```
 
 Radians throughout, matching astro-core's own convention; the adapter converts to the reader's degrees at
-its own boundary. Every implementation validates through the one shared
-`requireValidStarCatalogQuery`, so a test fake accepts exactly the queries the device accepts.
+its own boundary.
+
+Every implementation runs its call through the one shared `normalizeStarCatalogQuery`, and then searches
+by the `NormalizedStarCatalogQuery` it returns — never by the raw parameters:
+
+```kotlin
+override fun nearby(rightAscensionRad, declinationRad, radiusRad, magnitudeLimit): List<…> {
+    val query = normalizeStarCatalogQuery(rightAscensionRad, declinationRad, radiusRad, magnitudeLimit)
+    …search using query.rightAscensionRad, query.declinationRad, query.radiusRad, query.magnitudeLimit
+}
+```
+
+Validation and canonicalization are deliberately **one** step, not two. An earlier revision exposed
+validation alone, and the two implementations then diverged: the PTSKCAT0 adapter wrapped the right
+ascension before converting to degrees while the in-memory fake evaluated the raw value, so the same
+valid query meant different things to each — exactly what a shared port exists to prevent, and it made
+the fake evidence about itself rather than about the contract. With a normalized value returned, there is
+no second step left to forget. `NormalizedStarCatalogQuery`'s constructor is `internal`, so outside
+astro-core the normalizer is the only way to obtain one.
 
 Contract points worth stating explicitly:
 
 - A malformed query **throws**. "No stars near here" and "the query was nonsense" are different answers,
-  and a matcher that cannot tell them apart concludes the sky is empty.
+  and a matcher that cannot tell them apart concludes the sky is empty. A non-finite right ascension is
+  rejected, never wrapped into something plausible.
+- **Any finite RA is accepted and canonicalized into `[0, 2π)`** with `wrapRadTwoPi`, the same wrap
+  `EquatorialStarDirection.of` uses. Callers never pre-normalize. The wrap cannot overflow and cannot
+  produce a `NaN`, which is the concrete failure it prevents: a large-but-finite RA reaching
+  `Math.toDegrees` (a multiply by ~57.3) becomes infinite, after which every angular separation is `NaN`
+  and a well-defined direction silently returns no stars. It does **not** promise exact argument
+  reduction of the true angle — `2π` is not representable as a `Double`, so across an enormous number of
+  turns the constant's own error dominates; the result is the correct reduction with respect to the
+  constant this codebase uses, deterministic and identical across implementations, which is all the
+  contract needs for a degenerate input.
 - `radiusRad == 0.0` returns an empty list.
 - `magnitudeLimit` must be finite when present; `null` is the only spelling of "no limit". `±∞` is not a
   harmless synonym: PTSKCAT0 converts a limit with `Math.round(limit * 100.0).toInt()`, and
@@ -186,14 +213,43 @@ because a matcher cannot tell it is wrong.
 
 ## The input DTO
 
+Built through a factory, never a constructor — `StarMatcherInput`'s primary constructor is private and
+`@ConsistentCopyVisibility` makes the generated `copy()` private with it:
+
 ```kotlin
-data class StarMatcherInput(
-    val detections: List<DetectedSource>,
-    val candidates: List<EquatorialStarDirection>,
-    val scale: AnalysisBufferScale,
-    val priorProjections: List<PredictedStarProjection> = emptyList(),
+val input = StarMatcherInput.of(
+    detections = detectStars(frame),          // exactly as detectStars returned them
+    candidates = catalogQuery.nearby(...),
+    scale = AnalysisBufferScale.forGeometry(geometry),
+    priorProjections = emptyList(),           // optional; see below
 )
+
+// input.detections       : List<DetectedSource>
+// input.candidates       : List<EquatorialStarDirection>
+// input.scale            : AnalysisBufferScale
+// input.priorProjections : List<PredictedStarProjection>
 ```
+
+### The factory snapshots all three lists
+
+A Kotlin `List` is read-only, not immutable: a caller can pass an `ArrayList` and keep mutating it.
+`of` therefore copies `detections`, `candidates` and `priorProjections` on the way in, so what `init`
+validates is exactly what a consumer later reads. Without that, every invariant could be undone after
+construction, silently and from a distance:
+
+- reordering or clearing `detections` **renumbers every detection identity** — identity here *is* the
+  list index (see below), so a matched pair logged before the mutation names a different source after
+  it;
+- inserting a repeated `catalogIndex` into `candidates` defeats the uniqueness check `init` just made,
+  leaving a matched pair ambiguous;
+- removing a candidate leaves `priorProjections` describing a star the matcher was never given —
+  precisely the state `init` rejects.
+
+Only the containers are copied. The elements are shared, because `DetectedSource`,
+`EquatorialStarDirection` and `PredictedStarProjection` are immutable value types and copying them
+would change nothing but identity. Detection order is preserved exactly as supplied: nothing sorts or
+filters, since re-ordering the detector's output is the very thing that breaks identity. With the
+constructor and `copy()` both private, there is no path that can install a caller-owned list.
 
 ### One pixel space
 
