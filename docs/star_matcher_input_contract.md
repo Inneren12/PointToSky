@@ -127,7 +127,9 @@ index the port did carry.
 detected pixel (DetectedSource.xPx/yPx)
   -> AnalysisBufferScale.cameraRayFor(...)      // delegates to PinholeProjectionModel.unprojectToCameraRay
   -> unit camera ray (BufferOpticalCameraVector, +x right, +y down, +z forward)
-  -> angular invariant (e.g. acos of the dot product of two rays)
+  -> angleBetweenRad(rayA, rayB)                // atan2(|a x b|, a . b), not acos(a . b);
+                                                // requires unit rays, throws otherwise
+  -> angular invariant
 ```
 
 `cameraRayFor` is the only sanctioned pixel→ray step, and the inverse it delegates to is the only
@@ -142,6 +144,40 @@ The returned ray is always unit length and always strictly forward-facing (`z > 
 image is accepted and meaningful, exactly as `project` never clamps its own output. No display or
 viewport transform is involved — `CropScaleTransform` is a separate, later stage.
 
+`angleBetweenRad(a, b)` is the sanctioned ray→angle step, for a numeric reason rather than a
+layering one: it computes `atan2(|a × b|, a · b)`, and `acos(a · b)` loses roughly half its significant
+digits at the small angles a matcher works at, because its argument sits on the flat part of the cosine
+near 1. The `atan2` form is much better conditioned — not exact, it is still floating point, but it
+retains useful precision where `acos` does not. `CameraRayAngleTest` measures the gap against an
+analytic reference: at a sixty-fourth of a pixel of separation `acos` is already wrong in its eighth
+significant digit, and at ten nanoradians it returns exactly zero, while the `atan2` form matches the
+reference to within the tested tolerance at both. It is the same function the angular extents below are
+measured with, published rather than copied so that a matcher's invariants and this module's own extents
+cannot drift apart.
+
+**Its precondition is enforced.** Both arguments must be finite **unit** rays, normally obtained from
+`AnalysisBufferScale.cameraRayFor()`; anything measurably non-unit throws `IllegalArgumentException`.
+This matters because `BufferOpticalCameraVector` guarantees only that its components are finite — not
+that the vector is non-zero or normalized. Without the check, `angleBetweenRad(zeroVector, ray)` would
+evaluate `atan2(0, 0)` and return `0.0`, reporting "parallel" for a vector with no direction at all, and
+a vector with `1e300`-scale components would overflow the intermediate cross/dot products to `Infinity`
+before `atan2` saw them. The concrete rule is `|‖v‖² − 1| ≤ 1e-6`, which is ten orders of magnitude
+looser than the couple of ulps `unprojectToCameraRay` actually lands within and still rejects `(2,0,0)`,
+the zero vector, and any vector whose squared norm overflows or underflows.
+
+The canonical producer upholds that promise across the whole finite range, not just for plausible
+pixels: `unprojectToCameraRay` scales by the largest component before squaring, so a `PixelPoint` near
+`Double.MAX_VALUE` still returns a finite, unit, strictly forward-facing ray with the right `x/z` and
+`y/z` ratios. The obvious `sqrt(x² + y² + 1)` overflows to `Infinity` there and collapses the whole
+vector to `(0, 0, 0)` — finite and silent, which is exactly the kind of malformed ray the consumer-side
+check would then have to reject.
+
+Nothing is normalized silently. On the sanctioned path every ray is already unit, so a non-unit argument
+means the geometry was assembled wrong upstream, and normalizing it would convert that bug into a
+plausible-looking angle. A caller holding a ray from the *prediction* chain (`worldToDeviceVector`
+onward, which never renormalizes and inherits the attitude matrix's orthonormality error) must normalize
+it deliberately before calling.
+
 `PinholeProjectionModelUnprojectTest` pins `ray -> project -> unproject` to `1e-12` for a centred and an
 off-centre principal point, for `fx != fy`, and for **every** combination of the three orientation flags,
 on a fixture asymmetric enough that no flag can hide behind a symmetry — plus explicit assertions that
@@ -151,6 +187,9 @@ the fixture *can* tell a flag-aware inverse from a flag-blind one.
 
 - `pinhole` — the production model itself, stored rather than unpacked.
 - `cameraRayFor(point)` / `opticalAxisRay`.
+- `angleBetweenRad(a, b)` — a top-level function in the same package; the unsigned angle in `[0, π]`
+  between two **unit** rays from `cameraRayFor`. Throws `IllegalArgumentException` for a zero,
+  non-unit, or overflow-prone argument rather than normalizing it or returning a fabricated angle.
 - `focalLengthXPx` / `focalLengthYPx`, `principalPointXPx` / `principalPointYPx`,
   `imageWidthPx` / `imageHeightPx`.
 - `leftAngularExtentRad` / `rightAngularExtentRad` / `topAngularExtentRad` / `bottomAngularExtentRad`.
