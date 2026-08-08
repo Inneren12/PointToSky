@@ -72,7 +72,16 @@ class TiledBackgroundTest {
         val after = estimateTiledBackground(withStar, tileSizePx = 64)
 
         assertEquals(before.tileLevel(0, 0), after.tileLevel(0, 0), "a star must not move the tile level")
-        assertEquals(before.tileSigma(0, 0), after.tileSigma(0, 0), "a star must not inflate the tile spread")
+        // The star's pixels sit above the median and so never enter `median - q25` directly; all they can
+        // do is take a few dozen of the tile's 4096 samples out of the sky's own distribution and move the
+        // two quantiles by a fraction of the interpolation step between them. A mean and a standard
+        // deviation would report roughly five times the sky's spread on this same frame.
+        assertEquals(
+            before.tileSigma(0, 0),
+            after.tileSigma(0, 0),
+            0.1,
+            "a star must not inflate the tile spread",
+        )
     }
 
     @Test
@@ -266,10 +275,221 @@ class TiledBackgroundTest {
         assertEquals(90.0, model.levelAt(15, 15))
     }
 
+    @Test
+    fun `measures the sky's own noise over a gradient, not the gradient`() {
+        // The gradient ramps ~10 luma across every tile in x and ~13 in y. Measured over a tile's raw
+        // pixels that ramp is indistinguishable from noise and dominates it; measured on the residual it
+        // is gone, because a bilinear interpolation between correctly-placed centres is exact on a linear
+        // field.
+        val frame = gradientFrame(noiseSigma = 2.5, seed = 5L)
+
+        val fixed = estimateTiledBackground(frame)
+        val raw = estimateTiledBackgroundOverRawPixels(frame)
+
+        val interiorX = 320
+        val interiorY = 240
+        assertTrue(
+            abs(fixed.sigmaAt(interiorX, interiorY) - 2.5) < 0.5,
+            "the residual spread must report the injected 2.5; was ${fixed.sigmaAt(interiorX, interiorY)}",
+        )
+        assertTrue(
+            raw.sigmaAt(interiorX, interiorY) > 2.0 * fixed.sigmaAt(interiorX, interiorY),
+            "the raw-pixel spread must be the inflated one this test exists to distinguish from; " +
+                "raw=${raw.sigmaAt(interiorX, interiorY)} fixed=${fixed.sigmaAt(interiorX, interiorY)}",
+        )
+        // The level is measured over the raw pixels either way and must be untouched by the change.
+        for (tileY in 0 until fixed.tilesY) {
+            for (tileX in 0 until fixed.tilesX) {
+                assertEquals(raw.tileLevel(tileX, tileY), fixed.tileLevel(tileX, tileY), "tile ($tileX, $tileY)")
+            }
+        }
+    }
+
+    @Test
+    fun `recovers faint stars over a gradient that the raw-pixel spread hid`() {
+        // Stars at ~22 luma above their local sky: comfortably over the ~10 luma threshold the sky's real
+        // 2.5-luma noise justifies, and comfortably under the ~32 the ramp-inflated spread demanded. They
+        // are placed inside the outermost tile centres, where the interpolated model tracks the ramp; the
+        // margin outside those centres is clamped flat by design and is not what this test is about.
+        val faintStars =
+            listOf(
+                SyntheticStar(xPx = 128.5, yPx = 112.5, peakAboveBackground = 22.0),
+                SyntheticStar(xPx = 256.3, yPx = 176.7, peakAboveBackground = 22.0),
+                SyntheticStar(xPx = 384.6, yPx = 240.2, peakAboveBackground = 22.0),
+                SyntheticStar(xPx = 448.1, yPx = 304.9, peakAboveBackground = 22.0),
+                SyntheticStar(xPx = 192.8, yPx = 336.4, peakAboveBackground = 22.0),
+                SyntheticStar(xPx = 512.2, yPx = 144.6, peakAboveBackground = 22.0),
+            )
+        val frame = gradientFrame(noiseSigma = 2.5, seed = 5L, stars = faintStars)
+        val truth = faintStars.toPredictedPoints()
+
+        val fixed = evaluateDetections(detectStars(frame), truth, tolerancePx = 2.0)
+        val raw =
+            evaluateDetections(
+                detectStars(frame, estimateTiledBackgroundOverRawPixels(frame)),
+                truth,
+                tolerancePx = 2.0,
+            )
+
+        assertEquals(faintStars.size, fixed.matchedCount, "every faint star must be recovered: $fixed")
+        assertEquals(0, fixed.falsePositiveCount, "and nothing else may be reported: $fixed")
+        // The discriminating half: on the pre-fix estimator these same pixels yield nothing at all, so the
+        // test cannot pass by accident on a build that has not had the fix applied.
+        assertEquals(0, raw.matchedCount, "the raw-pixel spread must still hide them, or this proves nothing")
+    }
+
+    @Test
+    fun `adds no detections to a starless gradient`() {
+        // The other side of the same change: a lower threshold must buy real stars, not noise. Ten
+        // independent realisations of a starless gradient sky, which is where the fix cuts the threshold
+        // hardest and so where a threshold cut too far would show up first.
+        val detections =
+            (1..10).sumOf { seed ->
+                detectStars(gradientFrame(noiseSigma = 2.5, seed = seed.toLong())).size
+            }
+
+        assertTrue(detections <= 2, "10 starless gradient frames must stay near zero detections; got $detections")
+    }
+
+    @Test
+    fun `leaves a flat sky untouched`() {
+        // With no gradient there is nothing to subtract, so the fix must not move anything that matters.
+        val stars =
+            listOf(
+                SyntheticStar(xPx = 100.5, yPx = 80.5, peakAboveBackground = 140.0),
+                SyntheticStar(xPx = 213.25, yPx = 141.75, peakAboveBackground = 90.0),
+                SyntheticStar(xPx = 330.0, yPx = 96.0, peakAboveBackground = 180.0),
+            )
+        val frame =
+            renderSyntheticFrame(
+                widthPx = 384,
+                heightPx = 256,
+                background = SyntheticBackground.Uniform(60.0),
+                stars = stars,
+                noise = SyntheticNoise.Gaussian(sigma = 3.0),
+                seed = 31L,
+            )
+
+        val fixed = estimateTiledBackground(frame)
+        val raw = estimateTiledBackgroundOverRawPixels(frame)
+
+        for (tileY in 0 until fixed.tilesY) {
+            for (tileX in 0 until fixed.tilesX) {
+                assertEquals(raw.tileLevel(tileX, tileY), fixed.tileLevel(tileX, tileY), "tile ($tileX, $tileY)")
+                // Both estimators are reading the same flat sky, so they must agree on its noise to within
+                // the luma bin the raw one is quantised to.
+                assertEquals(
+                    raw.tileSigma(tileX, tileY),
+                    fixed.tileSigma(tileX, tileY),
+                    1.5,
+                    "tile ($tileX, $tileY) spread moved on a flat sky",
+                )
+            }
+        }
+        val report = evaluateDetections(detectStars(frame, fixed), stars.toPredictedPoints(), tolerancePx = 2.0)
+        assertEquals(stars.size, report.matchedCount, "the same stars must still be found on a flat sky")
+        assertEquals(0, report.falsePositiveCount, "and no others: $report")
+    }
+
+    private fun gradientFrame(
+        noiseSigma: Double,
+        seed: Long,
+        stars: List<SyntheticStar> = emptyList(),
+    ): LumaFrame =
+        renderSyntheticFrame(
+            widthPx = 640,
+            heightPx = 480,
+            rowStridePx = 704,
+            background =
+                SyntheticBackground.LinearGradient(
+                    levelAtOrigin = 20.0,
+                    levelAtOpposite = 220.0,
+                    widthPx = 640,
+                    heightPx = 480,
+                ),
+            stars = stars,
+            noise = SyntheticNoise.Gaussian(sigma = noiseSigma),
+            seed = seed,
+        )
+
     /**
      * The raster sample whose centre is nearest continuous coordinate [coordinatePx]. A tile centre is a
      * continuous coordinate and can land on a sample boundary, so a test that wants to read the model
      * "at" a centre has to name a sample; sample `[x]` is centred at `x + 0.5`, so this inverts that.
      */
     private fun sampleAt(coordinatePx: Double): Int = (coordinatePx - 0.5).roundToInt()
+}
+
+/**
+ * The **pre-fix** background estimator, kept here as the reference the gradient tests measure against:
+ * identical levels and identical tile centres, with the spread taken over each tile's raw pixels the way
+ * [estimateTiledBackground] used to take it.
+ *
+ * It exists so "the fix recovers stars the old path lost" is asserted against the old path rather than
+ * against a number someone once observed. A test written only against the current implementation would
+ * pass on a build where the fix had been reverted; this one cannot.
+ */
+private fun estimateTiledBackgroundOverRawPixels(
+    frame: LumaFrame,
+    tileSizePx: Int = StarDetectorDefaults.BACKGROUND_TILE_SIZE_PX,
+): TiledBackground {
+    val bandsX = rawTileBands(frame.widthPx, tileSizePx)
+    val bandsY = rawTileBands(frame.heightPx, tileSizePx)
+    val tilesX = bandsX.size
+    val tilesY = bandsY.size
+    val levels = DoubleArray(tilesX * tilesY)
+    val sigmas = DoubleArray(tilesX * tilesY)
+    val histogram = IntArray(256)
+
+    for (tileY in 0 until tilesY) {
+        for (tileX in 0 until tilesX) {
+            histogram.fill(0)
+            var sampleCount = 0
+            for (y in bandsY[tileY]) {
+                for (x in bandsX[tileX]) {
+                    histogram[frame.lumaAt(x, y)] += 1
+                    sampleCount += 1
+                }
+            }
+            val median = histogram.rawQuantile(sampleCount, 0.5)
+            val lowerQuartile = histogram.rawQuantile(sampleCount, 0.25)
+            levels[tileY * tilesX + tileX] = median
+            sigmas[tileY * tilesX + tileX] = ((median - lowerQuartile) / 0.6744897501960817).coerceAtLeast(0.0)
+        }
+    }
+    return TiledBackground(
+        nominalTileSizePx = tileSizePx,
+        tilesX = tilesX,
+        tilesY = tilesY,
+        centresXPx = DoubleArray(tilesX) { (bandsX[it].first + bandsX[it].last + 1) / 2.0 },
+        centresYPx = DoubleArray(tilesY) { (bandsY[it].first + bandsY[it].last + 1) / 2.0 },
+        levels = levels,
+        sigmas = sigmas,
+    )
+}
+
+private fun rawTileBands(
+    lengthPx: Int,
+    tileSizePx: Int,
+): List<IntRange> {
+    val count = ((lengthPx + tileSizePx - 1) / tileSizePx).coerceAtLeast(1)
+    return (0 until count).map { index ->
+        val start = index * tileSizePx
+        val end = if (index == count - 1) lengthPx else ((index + 1) * tileSizePx).coerceAtMost(lengthPx)
+        start until end
+    }
+}
+
+private fun IntArray.rawQuantile(
+    sampleCount: Int,
+    fraction: Double,
+): Double {
+    if (sampleCount <= 0) return 0.0
+    val target = (fraction * sampleCount).toInt().coerceIn(0, sampleCount - 1)
+    var cumulative = 0
+    for (level in indices) {
+        cumulative += this[level]
+        if (cumulative > target) return level.toDouble()
+    }
+    return (size - 1).toDouble()
 }
