@@ -3,6 +3,7 @@ package dev.pointtosky.core.catalog.binary
 import dev.pointtosky.core.astro.projection.camera.match.StarCatalogQuery
 import dev.pointtosky.core.astro.projection.camera.match.requireValidStarCatalogQuery
 import dev.pointtosky.core.astro.projection.camera.prediction.EquatorialStarDirection
+import dev.pointtosky.core.astro.projection.camera.prediction.wrapRadTwoPi
 
 /**
  * The device-side implementation of `:core:astro-core`'s [StarCatalogQuery] port, backed by the real
@@ -22,7 +23,10 @@ import dev.pointtosky.core.astro.projection.camera.prediction.EquatorialStarDire
  *  - **Radians to degrees.** The port speaks radians (astro-core's convention); [PtskCat0Catalog]
  *    stores and queries degrees. The conversion happens here, once, on the way in and on the way out.
  *    A cone radius therefore goes through one degree/radian round trip, which moves a boundary star by
- *    a few parts in `10¹⁵` of a degree — far below the catalog's own `Float` record precision.
+ *    a few parts in `10¹⁵` of a degree — far below the catalog's own `Float` record precision. The
+ *    query right ascension is canonicalized into `[0, 2π)` **before** that conversion, since the port
+ *    accepts any finite RA and a large one would otherwise overflow to infinity on its way to degrees;
+ *    see the comment at the call site.
  *  - **Record index to catalog identity.** [EquatorialStarDirection.catalogIndex] is the PTSKCAT0
  *    record index, which is what [PtskCat0Catalog.nearby] returns and what every other accessor on that
  *    class is keyed by. It is stable for a given catalog binary and is deliberately not the Hipparcos
@@ -63,7 +67,15 @@ class PtskCat0StarCatalogQuery(
 
         return catalog
             .nearby(
-                raDegQuery = Math.toDegrees(rightAscensionRad),
+                // Canonicalized while still in radians, never afterwards. The port accepts any finite
+                // RA, and Math.toDegrees multiplies by ~57.3 — so a large-but-finite input such as
+                // Double.MAX_VALUE overflows to Infinity on the way to degrees, and cos(Infinity) is
+                // NaN, which would make every angular separation NaN and return an empty result for a
+                // direction that is perfectly well defined. wrapRadTwoPi is a floating-point remainder,
+                // which is exact for every finite double and cannot overflow, so wrapping first turns
+                // any accepted input into a value degrees can represent. It is the same function
+                // EquatorialStarDirection.of wraps with, so "canonical" means one thing here.
+                raDegQuery = Math.toDegrees(wrapRadTwoPi(rightAscensionRad)),
                 decDegQuery = Math.toDegrees(declinationRad),
                 radiusDeg = Math.toDegrees(radiusRad),
                 magLimitQuery = prefixMagnitudeLimit(magnitudeLimit),

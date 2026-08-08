@@ -100,7 +100,7 @@ class MatcherInputBrightnessContractTest {
             )
 
         val input =
-            StarMatcherInput(
+            StarMatcherInput.of(
                 detections = detectStars(frame),
                 candidates = listOf(star(catalogIndex = 0, magnitude = 2.5), star(catalogIndex = 1, magnitude = 4.75)),
                 scale = AnalysisBufferScale.forGeometry(geometry),

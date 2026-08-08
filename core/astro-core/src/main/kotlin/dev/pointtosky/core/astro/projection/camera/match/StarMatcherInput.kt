@@ -64,9 +64,18 @@ import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProje
  * data class for the sake of logging. So the identity of a detection **is its index in [detections]**,
  * which is deterministic for identical input precisely because that ordering is. Two consequences a
  * caller must respect: the index is only meaningful together with the frame it came from, and
- * [detections] must be handed to the matcher exactly as `detectStars` returned it — re-sorting or
- * filtering it renumbers every detection. A stable, frame-independent detection id is future work and
- * belongs with whatever logs matched pairs, not with the detector's ordering contract.
+ * [detections] must be handed to [of] exactly as `detectStars` returned it — re-sorting or filtering it
+ * *before* construction renumbers every detection. After construction it cannot be renumbered at all,
+ * because [of] snapshots the list. A stable, frame-independent detection id is future work and belongs
+ * with whatever logs matched pairs, not with the detector's ordering contract.
+ *
+ * ## The lists are snapshotted, so the invariants hold for the object's lifetime
+ * A Kotlin `List` is read-only, not immutable — a caller can hand over an `ArrayList` and keep mutating
+ * it. [of] therefore copies all three lists on the way in, so what `init` validates is exactly what a
+ * consumer later reads, and no subsequent mutation by the caller can renumber a detection, defeat the
+ * candidate-uniqueness check, or leave a prior describing a star that is no longer a candidate. The
+ * elements are shared rather than copied — they are immutable value types, so only the containers need
+ * snapshotting. See [of] for the full reasoning.
  *
  * ## [priorProjections] is a hint, never an answer
  * `projectStars`' output for [candidates], when a pointing estimate exists. It is here because a
@@ -80,7 +89,8 @@ import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProje
  * cannot detect its own failure. Empty is the honest default, and a correct matcher must work with it
  * empty.
  *
- * @property detections the frame's point sources, exactly as `detectStars` returned them.
+ * @property detections the frame's point sources, in exactly the order `detectStars` returned them; a
+ *   snapshot of what was handed to [of], never the caller's own list.
  * @property candidates catalog stars that could plausibly appear in this frame — typically a
  *   [StarCatalogQuery] cone around the current pointing estimate, sized from
  *   [AnalysisBufferScale.enclosingConeRadiusRad] (a cone takes a radius; half of
@@ -96,11 +106,12 @@ import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProje
  *   [candidates] — a prediction about a star the matcher was never given is a mis-assembled input, not
  *   an extra hint.
  */
-data class StarMatcherInput(
+@ConsistentCopyVisibility
+data class StarMatcherInput private constructor(
     val detections: List<DetectedSource>,
     val candidates: List<EquatorialStarDirection>,
     val scale: AnalysisBufferScale,
-    val priorProjections: List<PredictedStarProjection> = emptyList(),
+    val priorProjections: List<PredictedStarProjection>,
 ) {
     init {
         val candidateIndices = HashSet<Int>(candidates.size)
@@ -134,4 +145,52 @@ data class StarMatcherInput(
      * @throws IndexOutOfBoundsException if [detectionId] is not in `0 until detectionCount`.
      */
     fun detectionAt(detectionId: Int): DetectedSource = detections[detectionId]
+
+    companion object {
+        /**
+         * The sole construction path. Snapshots all three lists on the way in, so what `init` validates
+         * and what a consumer later reads are the same thing.
+         *
+         * ## Why a copy is not paranoia here
+         * A Kotlin `List` is read-only, not immutable: a caller can hand over an `ArrayList` and keep
+         * mutating it. Without a snapshot, every invariant this type establishes could be undone after
+         * construction, silently and from a distance:
+         *  - reordering or clearing [detections] **renumbers every detection identity**, and identity
+         *    here *is* the list index (see the class KDoc), so a matched pair logged before the mutation
+         *    would name a different source after it;
+         *  - inserting a repeated `catalogIndex` into [candidates] defeats the uniqueness `init` just
+         *    checked, making a matched pair ambiguous;
+         *  - removing a candidate leaves [priorProjections] describing a star the matcher was never
+         *    given — precisely the state `init` rejects at construction.
+         *
+         * [toList] is what stores the copies: it always returns a fresh container (or an immutable
+         * singleton/empty instance), never a view onto the argument, so no stored list shares backing
+         * storage with anything the caller still holds.
+         *
+         * The elements themselves are **not** copied, and must not be: [DetectedSource],
+         * [EquatorialStarDirection] and [PredictedStarProjection] are immutable value types, so copying
+         * them would change nothing except identity. Only the containers are snapshotted, and the order
+         * of [detections] is preserved exactly as supplied — nothing here sorts or filters, because
+         * re-ordering the detector's output is the very thing that would break identity.
+         *
+         * The primary constructor is `private` and `@ConsistentCopyVisibility` makes the generated
+         * `copy()` private too, so there is no path — direct construction or `copy()` — that can install
+         * a caller-owned list. This mirrors [EquatorialStarDirection]'s own construction contract.
+         *
+         * @throws IllegalArgumentException if [candidates] or [priorProjections] repeat a
+         *   `catalogIndex`, or if a [priorProjections] entry names a star absent from [candidates].
+         */
+        fun of(
+            detections: List<DetectedSource>,
+            candidates: List<EquatorialStarDirection>,
+            scale: AnalysisBufferScale,
+            priorProjections: List<PredictedStarProjection> = emptyList(),
+        ): StarMatcherInput =
+            StarMatcherInput(
+                detections = detections.toList(),
+                candidates = candidates.toList(),
+                scale = scale,
+                priorProjections = priorProjections.toList(),
+            )
+    }
 }

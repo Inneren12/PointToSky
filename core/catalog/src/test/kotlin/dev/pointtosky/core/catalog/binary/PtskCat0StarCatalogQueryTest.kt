@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.math.BigDecimal
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
@@ -93,11 +94,85 @@ class PtskCat0StarCatalogQueryTest {
     fun `an unwrapped right ascension names the same direction`() {
         val radiusRad = Math.toRadians(6.0)
 
-        val wrapped = query.nearby(queryRaRad, queryDecRad, radiusRad)
-        val unwrapped = query.nearby(queryRaRad + 2.0 * PI, queryDecRad, radiusRad)
+        val canonical = query.nearby(queryRaRad, queryDecRad, radiusRad)
+        assertTrue("the fixture must find something to compare", canonical.isNotEmpty())
 
-        assertEquals(wrapped, unwrapped)
+        assertEquals(canonical, query.nearby(queryRaRad + 2.0 * PI, queryDecRad, radiusRad))
+        assertEquals(canonical, query.nearby(queryRaRad - 2.0 * PI, queryDecRad, radiusRad))
+        assertEquals(canonical, query.nearby(queryRaRad + 6.0 * PI, queryDecRad, radiusRad))
     }
+
+    @Test
+    fun `a very large finite right ascension wraps instead of overflowing to degrees`() {
+        // The failure this guards: the port accepts any finite RA, and Math.toDegrees multiplies by
+        // ~57.3, so converting first sends a large-but-finite RA to infinity — and cos(infinity) is NaN,
+        // which makes every angular separation NaN and returns an empty result for a well-defined
+        // direction. Asserted directly so the test states the mechanism, not just the symptom.
+        assertTrue("the premise: converting before wrapping overflows", Math.toDegrees(HUGE_RA_RAD).isInfinite())
+
+        val canonicalRaRad = canonicalRaRadIndependently(HUGE_RA_RAD)
+        val catalogAtCanonical = catalogWithStarAt(raDeg = Math.toDegrees(canonicalRaRad), decDeg = 20.0)
+        val queryAtCanonical = PtskCat0StarCatalogQuery(catalogAtCanonical)
+        val radiusRad = Math.toRadians(1.0)
+
+        val viaHuge = queryAtCanonical.nearby(HUGE_RA_RAD, queryDecRad, radiusRad)
+
+        // Non-empty is the whole point: an overflowed degree value would have produced NaN separations
+        // and an empty list, so this both proves the wrap happened and that a finite degree value
+        // reached the underlying query path.
+        assertEquals(
+            "the huge RA must find the star sitting at its canonical direction",
+            listOf(0),
+            viaHuge.map { it.catalogIndex },
+        )
+        assertEquals(queryAtCanonical.nearby(canonicalRaRad, queryDecRad, radiusRad), viaHuge)
+    }
+
+    @Test
+    fun `a very large negative finite right ascension wraps forward`() {
+        assertTrue("the premise: converting before wrapping overflows", Math.toDegrees(-HUGE_RA_RAD).isInfinite())
+
+        val canonicalRaRad = canonicalRaRadIndependently(-HUGE_RA_RAD)
+        assertTrue("a canonical RA is never negative", canonicalRaRad >= 0.0 && canonicalRaRad < 2.0 * PI)
+
+        val catalogAtCanonical = catalogWithStarAt(raDeg = Math.toDegrees(canonicalRaRad), decDeg = 20.0)
+        val queryAtCanonical = PtskCat0StarCatalogQuery(catalogAtCanonical)
+        val radiusRad = Math.toRadians(1.0)
+
+        val viaHuge = queryAtCanonical.nearby(-HUGE_RA_RAD, queryDecRad, radiusRad)
+
+        assertEquals(
+            "the huge negative RA must find the star at its canonical direction",
+            listOf(0),
+            viaHuge.map { it.catalogIndex },
+        )
+        assertEquals(queryAtCanonical.nearby(canonicalRaRad, queryDecRad, radiusRad), viaHuge)
+    }
+
+    /**
+     * The canonical `[0, 2π)` representative of [raRad], derived in exact decimal arithmetic rather than
+     * in `Double`.
+     *
+     * Deliberately **not** the production wrap: [BigDecimal] carries every digit of both operands, so it
+     * cannot overflow, cannot round, and cannot fail in the same direction the adapter might. If the
+     * adapter agreed with a `Double`-based re-implementation of its own arithmetic, the agreement could
+     * just be two copies of the same mistake; agreeing with the exact remainder cannot be.
+     *
+     * "Canonical" is defined relative to the `Double` value of `2π` — the only `2π` any of this code
+     * has — so that is what the remainder is taken against.
+     */
+    private fun canonicalRaRadIndependently(raRad: Double): Double {
+        val twoPi = BigDecimal(2.0 * PI)
+        val remainder = BigDecimal(raRad).remainder(twoPi)
+        return if (remainder.signum() < 0) remainder.add(twoPi).toDouble() else remainder.toDouble()
+    }
+
+    /** A one-record catalog placed exactly where a test needs a star to be. */
+    private fun catalogWithStarAt(
+        raDeg: Double,
+        decDeg: Double,
+    ): PtskCat0Catalog =
+        PtskCat0Catalog.parse(build(listOf(Rec(ra = raDeg.toFloat(), dec = decDeg.toFloat(), mag = 1.0, hip = 1))))
 
     @Test
     fun `identity is the record index, so the caller can read the rest of the record itself`() {
@@ -196,6 +271,14 @@ class PtskCat0StarCatalogQueryTest {
         val hip: Int = 0,
         val name: String? = null,
     )
+
+    private companion object {
+        /**
+         * A finite RA far beyond anything an observer means, but well within what the port accepts —
+         * and large enough that multiplying by 180/pi leaves the double range entirely.
+         */
+        const val HUGE_RA_RAD = Double.MAX_VALUE / 8.0
+    }
 
     private fun build(
         records: List<Rec>,

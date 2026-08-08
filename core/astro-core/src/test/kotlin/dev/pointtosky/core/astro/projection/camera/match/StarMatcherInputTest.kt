@@ -23,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotSame
 import kotlin.test.assertTrue
 
 /**
@@ -62,7 +63,7 @@ class StarMatcherInputTest {
             )
 
         val input =
-            StarMatcherInput(
+            StarMatcherInput.of(
                 detections = detectStars(frame),
                 candidates = candidates,
                 scale = scale,
@@ -99,7 +100,7 @@ class StarMatcherInputTest {
         val (candidates, projections) = projectFixtureStars(geometry)
 
         val input =
-            StarMatcherInput(
+            StarMatcherInput.of(
                 detections = emptyList(),
                 candidates = candidates,
                 scale = AnalysisBufferScale.forGeometry(geometry),
@@ -133,7 +134,7 @@ class StarMatcherInputTest {
             )
         val detections = detectStars(frame)
 
-        val input = StarMatcherInput(detections, emptyList(), AnalysisBufferScale.forGeometry(geometry))
+        val input = StarMatcherInput.of(detections, emptyList(), AnalysisBufferScale.forGeometry(geometry))
 
         assertEquals(detections.size, input.detectionCount)
         for (id in 0 until input.detectionCount) {
@@ -155,7 +156,7 @@ class StarMatcherInputTest {
                 star(catalogIndex = 7, rightAscensionRad = 0.3, declinationRad = 0.4),
             )
 
-        assertFailsWith<IllegalArgumentException> { StarMatcherInput(emptyList(), duplicated, scale) }
+        assertFailsWith<IllegalArgumentException> { StarMatcherInput.of(emptyList(), duplicated, scale) }
     }
 
     @Test
@@ -165,7 +166,7 @@ class StarMatcherInputTest {
         val scale = AnalysisBufferScale.forGeometry(geometry)
 
         assertFailsWith<IllegalArgumentException> {
-            StarMatcherInput(
+            StarMatcherInput.of(
                 detections = emptyList(),
                 candidates = candidates.drop(1),
                 scale = scale,
@@ -173,7 +174,7 @@ class StarMatcherInputTest {
             )
         }
         assertFailsWith<IllegalArgumentException> {
-            StarMatcherInput(
+            StarMatcherInput.of(
                 detections = emptyList(),
                 candidates = candidates,
                 scale = scale,
@@ -187,12 +188,112 @@ class StarMatcherInputTest {
         val geometry = geometry()
         val (candidates, _) = projectFixtureStars(geometry)
 
-        val input = StarMatcherInput(emptyList(), candidates, AnalysisBufferScale.forGeometry(geometry))
+        val input = StarMatcherInput.of(emptyList(), candidates, AnalysisBufferScale.forGeometry(geometry))
 
         assertEquals(emptyList(), input.priorProjections)
         assertEquals(candidates.size, input.candidateCount)
         assertNotEquals(0, input.candidateCount)
     }
+
+    @Test
+    fun `mutating the caller's detection list afterwards cannot renumber a detection`() {
+        val scale = AnalysisBufferScale.forGeometry(geometry())
+        val first = detection(xPx = 10.0, yPx = 20.0, brightness = 900.0)
+        val second = detection(xPx = 30.0, yPx = 40.0, brightness = 400.0)
+        val source = mutableListOf(first, second)
+
+        val input = StarMatcherInput.of(source, emptyList(), scale)
+
+        // Identity here *is* the list index, so a caller reordering its own list after construction
+        // would silently rename every detection the matcher had already referred to.
+        source.reverse()
+        source.add(detection(xPx = 50.0, yPx = 60.0, brightness = 100.0))
+        source.clear()
+
+        assertEquals(listOf(first, second), input.detections)
+        assertEquals(2, input.detectionCount)
+        assertEquals(first, input.detectionAt(0))
+        assertEquals(second, input.detectionAt(1))
+    }
+
+    @Test
+    fun `mutating the caller's candidate list afterwards cannot defeat the uniqueness check`() {
+        val scale = AnalysisBufferScale.forGeometry(geometry())
+        val alpha = star(catalogIndex = 3, rightAscensionRad = 0.1, declinationRad = 0.2)
+        val beta = star(catalogIndex = 9, rightAscensionRad = 0.3, declinationRad = 0.4)
+        val source = mutableListOf(alpha, beta)
+
+        val input = StarMatcherInput.of(detections = emptyList(), candidates = source, scale = scale)
+
+        // A duplicate catalogIndex inserted after `init` ran would make a matched pair ambiguous —
+        // exactly the state construction rejects.
+        source.add(star(catalogIndex = 3, rightAscensionRad = 1.1, declinationRad = 0.5))
+        source.removeAt(0)
+
+        assertEquals(listOf(alpha, beta), input.candidates)
+        assertEquals(2, input.candidateCount)
+        assertEquals(
+            input.candidates.size,
+            input.candidates.map { it.catalogIndex }.toSet().size,
+            "catalogIndex uniqueness must survive external mutation",
+        )
+    }
+
+    @Test
+    fun `mutating the caller's prior list afterwards cannot orphan a prediction`() {
+        val geometry = geometry()
+        val (candidates, projections) = projectFixtureStars(geometry)
+        val source = projections.toMutableList()
+
+        val input =
+            StarMatcherInput.of(
+                detections = emptyList(),
+                candidates = candidates,
+                scale = AnalysisBufferScale.forGeometry(geometry),
+                priorProjections = source,
+            )
+
+        source.clear()
+
+        assertEquals(projections, input.priorProjections)
+        assertTrue(
+            input.priorProjections.all { it.catalogIndex in candidates.map { candidate -> candidate.catalogIndex } },
+            "every prior must still name a candidate",
+        )
+    }
+
+    @Test
+    fun `the snapshots do not share backing storage with the caller's lists`() {
+        val scale = AnalysisBufferScale.forGeometry(geometry())
+        val detections = mutableListOf(detection(xPx = 1.0, yPx = 2.0, brightness = 3.0))
+        val candidates = mutableListOf(star(catalogIndex = 0, rightAscensionRad = 0.5, declinationRad = 0.1))
+
+        val input = StarMatcherInput.of(detections, candidates, scale)
+
+        // Value-equal but never the same instance: an identity match would mean the stored list *is*
+        // the caller's, and every assertion above would be one `add` away from being false.
+        assertNotSame(detections, input.detections)
+        assertNotSame(candidates, input.candidates)
+        assertEquals(detections.toList(), input.detections)
+        assertEquals(candidates.toList(), input.candidates)
+    }
+
+    /** A [DetectedSource] with plausible, unremarkable values — only position and brightness matter here. */
+    private fun detection(
+        xPx: Double,
+        yPx: Double,
+        brightness: Double,
+    ): DetectedSource =
+        DetectedSource(
+            xPx = xPx,
+            yPx = yPx,
+            brightness = brightness,
+            peakLuma = 200,
+            localBackgroundLuma = 20.0,
+            pixelCount = 9,
+            saturated = false,
+            nearEdge = false,
+        )
 
     private fun geometry(): CameraSessionGeometry =
         buildTestGeometry(
