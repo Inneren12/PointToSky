@@ -4,6 +4,7 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
 import dev.pointtosky.core.astro.projection.camera.PixelPoint
+import kotlin.math.sqrt
 import kotlin.math.tan
 
 /**
@@ -117,6 +118,68 @@ data class PinholeProjectionModel(
         return PixelPoint(
             x = focalLengthXPx * signedXInput + principalPointXPx,
             y = focalLengthYPx * signedYInput + principalPointYPx,
+        )
+    }
+
+    /**
+     * The exact inverse of [project]: turns one analysis-buffer [PixelPoint] back into the **unit**
+     * native-buffer optical camera ray that projects onto it.
+     *
+     * ## Why this lives here and not in the caller
+     * [project] is not a bare `f·x + c`: [axisSwapped]/[negateXInput]/[negateYInput] decide which
+     * incoming normalized component is multiplied by which focal length and with which sign, and those
+     * flags are derived alongside [focalLengthXPx]/[principalPointXPx] by
+     * `mapActiveArrayIntrinsicsThroughMatrix`, never independently. A consumer that wrote its own
+     * inverse would be re-deriving that convention from the outside and would become a second,
+     * unversioned camera-coordinate contract the moment either side changed. There is exactly one
+     * inversion of this model, and it is here, beside the forward map it inverts.
+     *
+     * ## Space and convention
+     * [point] is in the **full analyzed-buffer** space [project] produces — unrotated, uncropped, in the
+     * project's continuous edge-coordinate convention (raster sample `[x, y]` centred at
+     * `(x + 0.5, y + 0.5)`; see [dev.pointtosky.core.astro.projection.camera.PixelPoint]'s file KDoc).
+     * That is the same space [dev.pointtosky.core.astro.projection.camera.detect.DetectedSource]'s
+     * centroids, [PredictedStarProjection.imagePoint], and `SkyPredictedStar.imageXPx`/`imageYPx` live
+     * in, so a detected centroid can be turned into a ray with no transform in between. No display or
+     * viewport mapping happens here: [dev.pointtosky.core.astro.projection.camera.CropScaleTransform]
+     * is a separate, later stage and applying it here would rotate the result twice.
+     *
+     * The result is a [BufferOpticalCameraVector] — the same native-buffer optical frame
+     * [projectBufferOpticalDirection] consumes (`+x` right, `+y` down, `+z` forward) — deliberately, not
+     * a bare 3-tuple: a display-aligned [OpticalCameraVector] is a different frame, and keeping them
+     * distinct types is what stops the two being mixed. It is always **unit length** and always strictly
+     * forward-facing (`z > 0`), because every finite image point corresponds to a direction in front of
+     * the camera; the behind-camera case exists only in the forward direction, where
+     * [projectBufferOpticalDirection] rejects it before any pixel is computed.
+     *
+     * ## Exactness
+     * For any [BufferOpticalCameraVector] with `z > 0`, `unprojectToCameraRay(project(v.x/v.z, v.y/v.z))`
+     * returns `v` normalized — that is, the round trip is the identity on directions, up to floating
+     * point. `PinholeProjectionModelUnprojectTest` pins this for a centred and an off-centre principal
+     * point, for `fx != fy`, and for every combination of the three orientation flags.
+     *
+     * Ray magnitudes are never clamped and [point] is never required to lie inside the image: a
+     * detection near the frame border and a candidate that projected just outside it are both
+     * meaningful, exactly as [project] never clamps its own output.
+     */
+    fun unprojectToCameraRay(point: PixelPoint): BufferOpticalCameraVector {
+        // Undo project()'s pixel scaling first, then its axis relabelling, in the reverse order it was
+        // applied: pixels -> signed focal-scaled inputs -> unsigned inputs -> normalized components.
+        val signedXInput = (point.x - principalPointXPx) / focalLengthXPx
+        val signedYInput = (point.y - principalPointYPx) / focalLengthYPx
+        val xInput = if (negateXInput) -signedXInput else signedXInput
+        val yInput = if (negateYInput) -signedYInput else signedYInput
+        val normalizedX = if (axisSwapped) yInput else xInput
+        val normalizedY = if (axisSwapped) xInput else yInput
+
+        // (normalizedX, normalizedY, 1) is the ray at unit depth, by projectBufferOpticalDirection's own
+        // definition (normalizedX = cameraX / cameraZ). The length is never zero — the z component alone
+        // contributes 1 — so normalization here can never divide by zero for any finite pixel.
+        val length = sqrt(normalizedX * normalizedX + normalizedY * normalizedY + 1.0)
+        return BufferOpticalCameraVector(
+            x = normalizedX / length,
+            y = normalizedY / length,
+            z = 1.0 / length,
         )
     }
 
