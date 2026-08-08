@@ -39,6 +39,7 @@ import dev.pointtosky.mobile.ar.camera.buildCameraTopologyJson
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReport
 import dev.pointtosky.mobile.ar.camera.buildCameraTopologyReportText
 import dev.pointtosky.mobile.ar.camera.buildFrameContentCorrespondenceExperimentIntent
+import dev.pointtosky.mobile.ar.camera.buildSkySessionCaptureIntent
 import dev.pointtosky.mobile.ar.camera.buildPhysicalCameraBindingExperimentIntent
 import dev.pointtosky.mobile.ar.camera.formatCapturedAt
 
@@ -99,6 +100,11 @@ const val CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG = "cam_
  * [CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG] above. */
 const val CAM_DIAGNOSTIC_OPEN_FRAME_CONTENT_EXPERIMENT_BUTTON_TEST_TAG = "cam_diagnostic_open_frame_content_experiment_button"
 
+/** `internalDebug`-only. [androidx.compose.ui.platform.testTag] for "Open sky session capture" (SKY-1
+ * sky-track session-log capture) — same in-app-launch-only rationale as
+ * [CAM_DIAGNOSTIC_OPEN_PHYSICAL_CAMERA_EXPERIMENT_BUTTON_TEST_TAG] above. */
+const val CAM_DIAGNOSTIC_OPEN_SKY_SESSION_CAPTURE_BUTTON_TEST_TAG = "cam_diagnostic_open_sky_session_capture_button"
+
 /** `internalDebug`-only. A small, tappable, monospace-free text "button" matching this HUD's existing
  * translucent-chip visual language - never a Material3 [androidx.compose.material3.Button]. */
 @Composable
@@ -145,6 +151,7 @@ fun CamDiagnosticFullReportDialog(
     boundCameraInfo: CameraInfo? = null,
     onOpenPhysicalCameraExperiment: (() -> Unit)? = null,
     onOpenFrameContentExperiment: (() -> Unit)? = null,
+    onOpenSkySessionCapture: (() -> Unit)? = null,
 ) {
     var frozenSnapshot by remember { mutableStateOf<CamDiagnosticSnapshot?>(null) }
     val liveness = if (frozenSnapshot != null) CamDiagnosticLiveness.FROZEN else CamDiagnosticLiveness.LIVE
@@ -165,6 +172,9 @@ fun CamDiagnosticFullReportDialog(
     val effectiveOnOpenFrameContentExperiment =
         onOpenFrameContentExperiment
             ?: { context.startActivity(buildFrameContentCorrespondenceExperimentIntent(context)) }
+    val effectiveOnOpenSkySessionCapture =
+        onOpenSkySessionCapture
+            ?: { context.startActivity(buildSkySessionCaptureIntent(context)) }
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -262,6 +272,11 @@ fun CamDiagnosticFullReportDialog(
                         label = "Open frame-content experiment",
                         onClick = effectiveOnOpenFrameContentExperiment,
                         modifier = Modifier.testTag(CAM_DIAGNOSTIC_OPEN_FRAME_CONTENT_EXPERIMENT_BUTTON_TEST_TAG),
+                    )
+                    CamDiagnosticActionChip(
+                        label = "Open sky session capture",
+                        onClick = effectiveOnOpenSkySessionCapture,
+                        modifier = Modifier.testTag(CAM_DIAGNOSTIC_OPEN_SKY_SESSION_CAPTURE_BUTTON_TEST_TAG),
                     )
                 }
 
