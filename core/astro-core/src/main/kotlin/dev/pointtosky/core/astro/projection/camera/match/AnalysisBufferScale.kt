@@ -25,8 +25,8 @@ import kotlin.math.sqrt
  *
  * ## The path a matcher is expected to take
  * ```text
- * detected pixel (DetectedSource.xPx/yPx)  ->  cameraRayFor(...)  ->  unit camera ray  ->  angular
- * invariant (e.g. acos of the dot product of two rays)
+ * detected pixel (DetectedSource.xPx/yPx)  ->  cameraRayFor(...)  ->  unit camera ray  ->
+ * angleBetweenRad(...)  ->  angular invariant
  * ```
  * [cameraRayFor] is the **only** sanctioned pixel→ray step. It delegates to
  * [PinholeProjectionModel.unprojectToCameraRay], the single canonical inverse of the production forward
@@ -34,6 +34,11 @@ import kotlin.math.sqrt
  * `axisSwapped`/`negateXInput`/`negateYInput` orientation flags. A consumer must not re-derive that
  * inverse: a second hand-written inversion is a second camera-coordinate contract, and the flags are
  * exactly the part that a from-the-outside re-derivation gets wrong.
+ *
+ * [angleBetweenRad] is the sanctioned ray→angle step for the same kind of reason: it is the function the
+ * angular extents below are already measured with, and its `atan2` form keeps full precision at the
+ * fractions of a degree a matcher works at, where an open-coded `acos` of a dot product does not (see
+ * its own KDoc).
  *
  * [radiansPerPixelXOnAxis]/[radiansPerPixelYOnAxis] are **not** part of that path. They are a
  * first-order, on-axis plate scale for sizing a search radius or a match tolerance, and they degrade
@@ -249,20 +254,29 @@ data class AnalysisBufferScale(
 }
 
 /**
- * Angle between two camera rays, radians, in `[0, π]`.
+ * The unsigned angle between two camera rays, radians, in `[0, π]` — the matcher's ray→angle step.
  *
- * `atan2(|a × b|, a · b)` rather than `acos(a · b)`: for the small angles this type is mostly used at —
- * an image edge a few degrees off axis, two stars a fraction of a degree apart — `acos` loses roughly
- * half its significant digits, because its argument sits on the flat part of the cosine near 1. The
- * `atan2` form stays accurate across the whole range and needs no clamping to survive a dot product
- * that floating point nudged just past 1.
+ * [a] and [b] are expected to be the rays [AnalysisBufferScale.cameraRayFor] returns: unit length and
+ * strictly forward-facing. The result is the angle between the two *directions*, so it is symmetric in
+ * its arguments and zero for a ray against itself, and it carries no sign — which of the two rays is
+ * "first" is not a fact this can report, and a matcher that needs an orientation has to get it from the
+ * geometry it is fitting, not from here.
  *
- * Not a matcher utility, and deliberately not public: it exists so the angular extents above can be
- * measured between real rays. A consumer computing an invariant takes the dot product of two
- * [AnalysisBufferScale.cameraRayFor] results itself — both are unit vectors, so nothing here is needed
- * to interpret them.
+ * `atan2(|a × b|, a · b)` rather than `acos(a · b)`: for the small angles this is mostly used at — an
+ * image edge a few degrees off axis, two stars a fraction of a degree apart — `acos` loses roughly half
+ * its significant digits, because its argument sits on the flat part of the cosine near 1. The `atan2`
+ * form stays accurate across the whole range and needs no clamping to survive a dot product that
+ * floating point nudged just past 1. `CameraRayAngleTest` measures the gap: a sixty-fourth of a pixel of
+ * separation is already enough for `acos(a · b)` to be wrong in its eighth significant digit, and at ten
+ * nanoradians it collapses to exactly zero — while this form is exact at both.
+ *
+ * Public **so that there is exactly one of it**. The angular extents on [AnalysisBufferScale] are
+ * measured with this function, and a consumer computing an angular invariant calls the same one rather
+ * than open-coding `acos` of a dot product a second time — which is the version that quietly loses the
+ * precision an invariant is built out of. Still not a matcher utility beyond that: no association, no
+ * invariant, no descriptor lives here.
  */
-private fun angleBetweenRad(
+fun angleBetweenRad(
     a: BufferOpticalCameraVector,
     b: BufferOpticalCameraVector,
 ): Double {

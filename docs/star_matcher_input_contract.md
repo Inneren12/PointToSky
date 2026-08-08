@@ -127,7 +127,8 @@ index the port did carry.
 detected pixel (DetectedSource.xPx/yPx)
   -> AnalysisBufferScale.cameraRayFor(...)      // delegates to PinholeProjectionModel.unprojectToCameraRay
   -> unit camera ray (BufferOpticalCameraVector, +x right, +y down, +z forward)
-  -> angular invariant (e.g. acos of the dot product of two rays)
+  -> angleBetweenRad(rayA, rayB)                // atan2(|a x b|, a . b), not acos(a . b)
+  -> angular invariant
 ```
 
 `cameraRayFor` is the only sanctioned pixel→ray step, and the inverse it delegates to is the only
@@ -142,6 +143,14 @@ The returned ray is always unit length and always strictly forward-facing (`z > 
 image is accepted and meaningful, exactly as `project` never clamps its own output. No display or
 viewport transform is involved — `CropScaleTransform` is a separate, later stage.
 
+`angleBetweenRad(a, b)` is the sanctioned ray→angle step, for a numeric reason rather than a
+layering one: it computes `atan2(|a × b|, a · b)`, and `acos(a · b)` loses roughly half its significant
+digits at the small angles a matcher works at, because its argument sits on the flat part of the cosine
+near 1. `CameraRayAngleTest` measures the gap — at a sixty-fourth of a pixel of separation `acos` is
+already wrong in its eighth significant digit, and at ten nanoradians it returns exactly zero. It is the
+same function the angular extents below are measured with, published rather than copied so that a
+matcher's invariants and this module's own extents cannot drift apart.
+
 `PinholeProjectionModelUnprojectTest` pins `ray -> project -> unproject` to `1e-12` for a centred and an
 off-centre principal point, for `fx != fy`, and for **every** combination of the three orientation flags,
 on a fixture asymmetric enough that no flag can hide behind a symmetry — plus explicit assertions that
@@ -151,6 +160,8 @@ the fixture *can* tell a flag-aware inverse from a flag-blind one.
 
 - `pinhole` — the production model itself, stored rather than unpacked.
 - `cameraRayFor(point)` / `opticalAxisRay`.
+- `angleBetweenRad(a, b)` — a top-level function in the same package; the unsigned angle in `[0, π]`
+  between two rays from `cameraRayFor`.
 - `focalLengthXPx` / `focalLengthYPx`, `principalPointXPx` / `principalPointYPx`,
   `imageWidthPx` / `imageHeightPx`.
 - `leftAngularExtentRad` / `rightAngularExtentRad` / `topAngularExtentRad` / `bottomAngularExtentRad`.
