@@ -186,3 +186,10 @@ the `FrameContent` dot-grid track is untouched.
 Reading the *recorded* predicted coordinates is correct here precisely because this is a detection
 metric and not a projection check: `SkySessionLogReplay` already re-derives them from the catalogue
 and diffs the two, so the projection is verified independently of anything measured by the detector.
+
+## What consumes this next
+
+`docs/star_matcher_input_contract.md` defines what a star matcher is handed — detections, catalog
+candidates, and the angular scale the detector deliberately does not know — and restates, with a
+measurement rather than an assertion, why `brightness` may never be converted to a magnitude. It is an
+input contract only; no matching algorithm exists yet.

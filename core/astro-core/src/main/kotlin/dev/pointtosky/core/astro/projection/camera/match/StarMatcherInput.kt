@@ -1,0 +1,123 @@
+package dev.pointtosky.core.astro.projection.camera.match
+
+import dev.pointtosky.core.astro.projection.camera.detect.DetectedSource
+import dev.pointtosky.core.astro.projection.camera.prediction.EquatorialStarDirection
+import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProjection
+
+/**
+ * Everything a star matcher is allowed to read for one frame, and nothing else: the frame's detected
+ * point sources, the catalog candidates that could explain them, the angular scale relating the two,
+ * and — optionally, and hedged about below — where a prior pointing estimate expected those candidates
+ * to land.
+ *
+ * **This is the contract, not the matcher.** No association, no geometric invariant, no hash, no
+ * RANSAC, no pose. Assembling this type is the last step before a matcher exists; nothing here decides
+ * which detection is which star.
+ *
+ * ## One pixel space, so a residual is a subtraction
+ * [detections]' centroids, [priorProjections]' `imagePoint`, and every pixel quantity on [scale] are all
+ * full analysis-buffer pixels in the project's continuous edge-coordinate convention (raster sample
+ * `[x, y]` centred at `(x + 0.5, y + 0.5)`; canonical statement in `PixelGeometry.kt`'s file KDoc and
+ * `docs/camera_coordinate_calibration_contract.md` §9.2). There is no transform between them, and this
+ * type introduces none: `detection.xPx - prediction.imagePoint.x` is the residual, full stop. That
+ * equality is pinned against the real projection by `PixelConventionBridgeTest`, and again for this DTO
+ * by `StarMatcherInputTest`.
+ *
+ * ## What [detections] does **not** carry, and what a matcher must therefore do for itself
+ *  - **[DetectedSource.brightness] is not a magnitude and must never be converted to one.** It is flux
+ *    above the local background summed over the pixels that cleared the threshold, in raw 8-bit luma
+ *    units, with no zero point, no exposure normalisation, no colour term and no aperture correction —
+ *    and it is truncated by the threshold by an amount that depends on how broad the profile is, so two
+ *    sources of *equal total flux* and different widths do not measure equal (`StarDetector.kt`'s file
+ *    KDoc; demonstrated in `MatcherInputBrightnessContractTest`). It orders sources within one frame
+ *    and nothing more. The only magnitudes in this input are [EquatorialStarDirection.magnitude] on
+ *    [candidates], which come from the catalog. A matcher may use [DetectedSource.brightness] as a
+ *    within-frame *rank*; it may not build a photometric term out of it, compare it across frames, or
+ *    feed it anywhere a magnitude is expected.
+ *  - **No centroid uncertainty.** The detector reports no σ, no FWHM, and no covariance, so this input
+ *    cannot supply one. A matcher that needs a positional error model derives its own — from
+ *    [DetectedSource.pixelCount], [DetectedSource.peakLuma] and
+ *    [DetectedSource.localBackgroundLuma], which are carried for exactly that purpose — and states its
+ *    assumptions where it does so. It must not read the absence of an uncertainty as "exact".
+ *  - **[DetectedSource.saturated] and [DetectedSource.nearEdge] are positional caveats, not rejects.**
+ *    A saturated source has a clipped, flat-topped profile (its centroid is usable, its brightness is a
+ *    lower bound); a near-edge source has a truncated PSF and a centroid biased inward. The detector
+ *    keeps and flags them on purpose so a matcher can widen a tolerance rather than never learn they
+ *    were there.
+ *
+ * ## Detection identity is list position
+ * The detector has no stable per-source id, and this PR does not add one: `detectStars` returns a list
+ * ordered brightest-first with ties broken by `yPx` then `xPx` — a total order that depends only on the
+ * pixels — and inserting an id field into [DetectedSource] would put a value into that ordering's own
+ * data class for the sake of logging. So the identity of a detection **is its index in [detections]**,
+ * which is deterministic for identical input precisely because that ordering is. Two consequences a
+ * caller must respect: the index is only meaningful together with the frame it came from, and
+ * [detections] must be handed to the matcher exactly as `detectStars` returned it — re-sorting or
+ * filtering it renumbers every detection. A stable, frame-independent detection id is future work and
+ * belongs with whatever logs matched pairs, not with the detector's ordering contract.
+ *
+ * ## [priorProjections] is a hint, never an answer
+ * `projectStars`' output for [candidates], when a pointing estimate exists. It is here because a
+ * matcher may legitimately use a prior to *bound* its search — a smaller cone, a coarse rejection of
+ * candidates behind the camera — and because a diagnostic that plots residuals needs it.
+ *
+ * It must never be the basis of the association itself. `DetectionEvaluation.kt`'s file KDoc states the
+ * reason for the metrics utility and it holds here: pairing a detection to its nearest prediction and
+ * then fitting a pose to that pairing can only return the pose the predictions came from. The prior
+ * carries exactly the pointing error the matcher exists to correct, so a matcher that leans on it
+ * cannot detect its own failure. Empty is the honest default, and a correct matcher must work with it
+ * empty.
+ *
+ * @property detections the frame's point sources, exactly as `detectStars` returned them.
+ * @property candidates catalog stars that could plausibly appear in this frame — typically a
+ *   [StarCatalogQuery] cone around the current pointing estimate, sized from
+ *   [AnalysisBufferScale.horizontalFieldOfViewRad]/[AnalysisBufferScale.verticalFieldOfViewRad]. Order
+ *   carries no meaning; identity is [EquatorialStarDirection.catalogIndex], which is unique across the
+ *   list.
+ * @property scale the frame's pixel↔angle scale and optical-axis position; see [AnalysisBufferScale],
+ *   including [AnalysisBufferScale.quality] for whether these numbers are a real per-device measurement
+ *   or the legacy fixed-FOV fallback.
+ * @property priorProjections optional predicted positions for [candidates]; see the section above for
+ *   the one thing it may not be used for. Every entry's `catalogIndex` must name a star in
+ *   [candidates] — a prediction about a star the matcher was never given is a mis-assembled input, not
+ *   an extra hint.
+ */
+data class StarMatcherInput(
+    val detections: List<DetectedSource>,
+    val candidates: List<EquatorialStarDirection>,
+    val scale: AnalysisBufferScale,
+    val priorProjections: List<PredictedStarProjection> = emptyList(),
+) {
+    init {
+        val candidateIndices = HashSet<Int>(candidates.size)
+        for (candidate in candidates) {
+            require(candidateIndices.add(candidate.catalogIndex)) {
+                "candidates must carry distinct catalogIndex values; ${candidate.catalogIndex} appears twice"
+            }
+        }
+        val predictedIndices = HashSet<Int>(priorProjections.size)
+        for (projection in priorProjections) {
+            require(predictedIndices.add(projection.catalogIndex)) {
+                "priorProjections must carry distinct catalogIndex values; ${projection.catalogIndex} appears twice"
+            }
+            require(projection.catalogIndex in candidateIndices) {
+                "priorProjections must only describe stars present in candidates; ${projection.catalogIndex} is not one"
+            }
+        }
+    }
+
+    /** How many point sources this frame yielded; valid detection ids are `0 until detectionCount`. */
+    val detectionCount: Int get() = detections.size
+
+    /** How many catalog stars the matcher may choose from. */
+    val candidateCount: Int get() = candidates.size
+
+    /**
+     * The detection identified by [detectionId] — i.e. `detections[detectionId]`, spelled out so a call
+     * site reads as an identity lookup and so the "identity is list position" rule above has one place
+     * to point at.
+     *
+     * @throws IndexOutOfBoundsException if [detectionId] is not in `0 until detectionCount`.
+     */
+    fun detectionAt(detectionId: Int): DetectedSource = detections[detectionId]
+}
