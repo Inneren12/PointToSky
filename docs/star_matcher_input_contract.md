@@ -165,6 +165,13 @@ before `atan2` saw them. The concrete rule is `|‖v‖² − 1| ≤ 1e-6`, whic
 looser than the couple of ulps `unprojectToCameraRay` actually lands within and still rejects `(2,0,0)`,
 the zero vector, and any vector whose squared norm overflows or underflows.
 
+The canonical producer upholds that promise across the whole finite range, not just for plausible
+pixels: `unprojectToCameraRay` scales by the largest component before squaring, so a `PixelPoint` near
+`Double.MAX_VALUE` still returns a finite, unit, strictly forward-facing ray with the right `x/z` and
+`y/z` ratios. The obvious `sqrt(x² + y² + 1)` overflows to `Infinity` there and collapses the whole
+vector to `(0, 0, 0)` — finite and silent, which is exactly the kind of malformed ray the consumer-side
+check would then have to reject.
+
 Nothing is normalized silently. On the sanctioned path every ray is already unit, so a non-unit argument
 means the geometry was assembled wrong upstream, and normalizing it would convert that bug into a
 plausible-looking angle. A caller holding a ray from the *prediction* chain (`worldToDeviceVector`
