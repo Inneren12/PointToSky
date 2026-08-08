@@ -18,8 +18,36 @@ package dev.pointtosky.core.astro.projection.camera.detect
  * `sigma = (median - q25) / 0.6745`, the standard-normal relation between the interquartile half-width
  * and sigma. Reading the spread from below the median means a tile full of stars still reports the
  * noise of its *sky*, where a plain standard deviation would report the stars and push the threshold
- * above them. Both statistics come from a 256-bin histogram, which is exact for 8-bit data and needs no
- * sort.
+ * above them.
+ *
+ * The two are read from different things because they are measurements of different things. The level is
+ * a raw 8-bit luma, whose only possible values are the 256 integers, so it comes from a 256-bin histogram
+ * that is exact by construction and needs no sort. The spread is a statistic of the residual
+ * `pixel - levelAt(pixel centre)`, which is a real number — the interpolated level is a `Double` and lands
+ * between luma levels almost everywhere — so it is taken from the residual samples themselves, sorted.
+ * Rounding those residuals onto a luma grid first would discard exactly the sub-luma information the
+ * spread is made of, and no amount of interpolating between integer bins afterwards can put it back.
+ *
+ * ## Why the spread is measured on the residual, not on the raw pixels
+ * A gradient steep enough to ramp across a single tile is *structure*, not noise, but a spread measured
+ * over that tile's raw values cannot tell the two apart and reports the ramp as though it were noise —
+ * several times the true sigma on a strong light-pollution gradient, pushing the threshold up with it and
+ * losing the faintest stars exactly where the sky is worst. So the level grid is built first, and the
+ * spread is then measured over `pixel - levelAt(pixel centre)`: the in-tile ramp is removed by the same
+ * interpolated model the detector thresholds against, and what is left is the per-pixel noise. Between
+ * the outermost tile centres a bilinear interpolation is exact on a linear ramp, so the subtraction there
+ * removes the gradient completely; outside them the model clamps flat by design (see below), and the
+ * residual in those outer half-tiles still carries whatever the sky ramps over that margin. That
+ * remainder is the old, conservative behaviour confined to the frame's border rather than applied to
+ * every tile.
+ *
+ * How finely the spread can resolve follows from how much the level varies inside the tile. Over a
+ * gradient the interpolated level sweeps several luma across a tile, the residuals land all over the real
+ * line, and the quartile is measured on a genuinely continuous sample. Over a flat sky the level is
+ * constant across the tile, the residuals are integers minus that constant, and the quartile can only
+ * land on one of them — so `sigma` there is quantised to multiples of `1 / 0.6745 = 1.48` luma, exactly
+ * as it was before any of this. That is a property of an 8-bit sensor, not of the estimator, and it is
+ * why [StarDetectorConfig.minThresholdAboveBackground] exists.
  *
  * ## Why bilinear interpolation
  * Per-tile constant values produce a visible step at every tile boundary. Over a gradient, a step is
@@ -31,21 +59,12 @@ package dev.pointtosky.core.astro.projection.camera.detect
  * The tile must be much larger than a star for any of this to hold: at [StarDetectorDefaults.BACKGROUND_TILE_SIZE_PX]
  * a star occupies well under a percent of a tile's pixels and cannot move its median. A tile sized down
  * near the PSF would absorb the star into the background and the detector would find nothing.
- *
- * ## Known limitation: a steep gradient inflates sigma
- * The spread is measured over a tile's *raw* pixels, so whatever the gradient itself ramps across one
- * tile is counted as noise on top of the real per-pixel noise. On a strong light-pollution gradient this
- * can report a sigma several times the true one and push the threshold correspondingly higher. The error
- * is one-sided and conservative — the detector loses sensitivity to the faintest stars there, it does not
- * gain false positives — so the baseline accepts it. Fixing it means subtracting the interpolated level
- * before measuring the spread, which is a refinement with its own convergence question and is not part of
- * this stage.
  */
 class TiledBackground internal constructor(
     /**
      * The tile edge that was *requested*. Nominal only: the last tile on each axis absorbs the
-     * remainder and is therefore wider or taller than this whenever the frame is not an exact multiple
-     * of it. Nothing in the interpolation reads this value — see [centresXPx].
+     * remainder and is therefore a partial tile — narrower or shorter than this — whenever the frame is
+     * not an exact multiple of it. Nothing in the interpolation reads this value — see [centresXPx].
      */
     val nominalTileSizePx: Int,
     val tilesX: Int,
@@ -178,6 +197,11 @@ private fun DoubleArray.fractionBetween(
  * Because that last tile is genuinely a different size, its interpolation node is placed at its real
  * centre rather than at the nominal `(index + 0.5) * tileSizePx` — see [TiledBackground.centresXPx] for
  * what goes wrong otherwise.
+ *
+ * Two passes, and they cannot be folded into one: the spread is measured on each pixel's residual against
+ * the *interpolated* level, and that interpolation reads the neighbouring tiles' levels, which do not
+ * exist until every tile's level has been measured. Both passes visit the same pixels in the same raster
+ * order, so the result is a pure function of the frame.
  */
 fun estimateTiledBackground(
     frame: LumaFrame,
@@ -188,40 +212,94 @@ fun estimateTiledBackground(
     val bandsY = tileBands(frame.heightPx, tileSizePx)
     val tilesX = bandsX.size
     val tilesY = bandsY.size
+    val centresXPx = DoubleArray(tilesX) { bandsX[it].centrePx }
+    val centresYPx = DoubleArray(tilesY) { bandsY[it].centrePx }
     val levels = DoubleArray(tilesX * tilesY)
     val sigmas = DoubleArray(tilesX * tilesY)
+
+    // Pass 1: the level, from the tile's raw values. The median is where a ramp is harmless — over a
+    // linear gradient the median of a tile *is* the level at that tile's centre, which is precisely the
+    // node the interpolation places there — so subtracting anything first would only distort it.
     val histogram = IntArray(LUMA_LEVELS)
-
     for (tileY in 0 until tilesY) {
-        val band = bandsY[tileY]
         for (tileX in 0 until tilesX) {
-            val column = bandsX[tileX]
-
             histogram.fill(0)
-            var sampleCount = 0
-            for (y in band.startPx until band.endPx) {
-                for (x in column.startPx until column.endPx) {
-                    histogram[frame.lumaAt(x, y)] += 1
-                    sampleCount += 1
-                }
+            forEachTilePixel(bandsX[tileX], bandsY[tileY]) { x, y ->
+                histogram[frame.lumaAt(x, y)] += 1
             }
-
-            val index = tileY * tilesX + tileX
-            val median = histogram.quantile(sampleCount, MEDIAN_FRACTION)
-            val lowerQuartile = histogram.quantile(sampleCount, LOWER_QUARTILE_FRACTION)
-            levels[index] = median
-            sigmas[index] = ((median - lowerQuartile) / NORMAL_QUARTILE_SIGMAS).coerceAtLeast(0.0)
+            val sampleCount = bandsX[tileX].lengthPx * bandsY[tileY].lengthPx
+            levels[tileY * tilesX + tileX] = histogram.quantile(sampleCount, MEDIAN_FRACTION)
         }
     }
+
+    // The model the residuals are taken against. Built from the finished level grid and the real tile
+    // centres, so the level subtracted from a pixel is exactly the one the detector will threshold that
+    // pixel against — including the half-pixel centre convention and the flat clamp outside the outermost
+    // centres. Its sigmas are still zero and are never read; the second pass only calls `levelAt`.
+    val interpolatedLevel =
+        TiledBackground(
+            nominalTileSizePx = tileSizePx,
+            tilesX = tilesX,
+            tilesY = tilesY,
+            centresXPx = centresXPx,
+            centresYPx = centresYPx,
+            levels = levels,
+            sigmas = DoubleArray(levels.size),
+        )
+
+    // Pass 2: the spread, on the background-subtracted residual rather than on the raw values, so an
+    // in-tile ramp is removed before it can be counted as noise. Still median minus lower quartile, so a
+    // tile full of stars still reports the noise of its sky; what changed is only what the two quantiles
+    // are measured around.
+    //
+    // The residuals are held and sorted as the real numbers they are, not binned. A tile is at most
+    // `tileSizePx` square — 4096 samples at the default — so one reused buffer and one sort per tile costs
+    // nothing worth trading a rounding error against, and `DoubleArray.sort` is a fixed algorithm over a
+    // fixed input, so the result is reproducible to the bit.
+    val residuals = DoubleArray(bandsX.maxOf { it.lengthPx } * bandsY.maxOf { it.lengthPx })
+    for (tileY in 0 until tilesY) {
+        for (tileX in 0 until tilesX) {
+            var sampleCount = 0
+            forEachTilePixel(bandsX[tileX], bandsY[tileY]) { x, y ->
+                residuals[sampleCount] = frame.lumaAt(x, y) - interpolatedLevel.levelAt(x, y)
+                sampleCount += 1
+            }
+            residuals.sort(fromIndex = 0, toIndex = sampleCount)
+            val median = residuals.orderStatistic(sampleCount, MEDIAN_FRACTION)
+            val lowerQuartile = residuals.orderStatistic(sampleCount, LOWER_QUARTILE_FRACTION)
+            sigmas[tileY * tilesX + tileX] =
+                ((median - lowerQuartile) / NORMAL_QUARTILE_SIGMAS).coerceAtLeast(0.0)
+        }
+    }
+
     return TiledBackground(
         nominalTileSizePx = tileSizePx,
         tilesX = tilesX,
         tilesY = tilesY,
-        centresXPx = DoubleArray(tilesX) { bandsX[it].centrePx },
-        centresYPx = DoubleArray(tilesY) { bandsY[it].centrePx },
+        centresXPx = centresXPx,
+        centresYPx = centresYPx,
         levels = levels,
         sigmas = sigmas,
     )
+}
+
+/**
+ * Runs [body] over every pixel of the tile that [column] and [band] intersect at, in raster order.
+ *
+ * Both passes walk a tile identically and differ only in what they accumulate, so the walk — including
+ * the remainder band's actual extent, which is a partial tile — is stated once and cannot drift between
+ * them.
+ */
+private inline fun forEachTilePixel(
+    column: TileBand,
+    band: TileBand,
+    body: (x: Int, y: Int) -> Unit,
+) {
+    for (y in band.startPx until band.endPx) {
+        for (x in column.startPx until column.endPx) {
+            body(x, y)
+        }
+    }
 }
 
 /**
@@ -235,6 +313,9 @@ private class TileBand(
     val startPx: Int,
     val endPx: Int,
 ) {
+    /** How many raster samples this band covers. The remainder band is a partial tile and covers fewer. */
+    val lengthPx: Int get() = endPx - startPx
+
     /**
      * The band's centre in continuous buffer-pixel coordinates. A band covering raster samples
      * `[start, end)` occupies the continuous span `[start, end)` under the edge-coordinate convention,
@@ -278,7 +359,7 @@ private const val LOWER_QUARTILE_FRACTION = 0.25
 private const val NORMAL_QUARTILE_SIGMAS = 0.6744897501960817
 
 /**
- * The [fraction]-quantile of a 256-bin luma histogram holding [sampleCount] samples, by linear search
+ * The [fraction]-quantile of a histogram holding [sampleCount] samples, as a bin index, by linear search
  * over the cumulative counts. Returns `0.0` for an empty tile, which cannot occur for a frame with
  * positive dimensions but is defined rather than left to divide by zero.
  */
@@ -294,4 +375,22 @@ private fun IntArray.quantile(
         if (cumulative > target) return level.toDouble()
     }
     return (size - 1).toDouble()
+}
+
+/**
+ * The [fraction]-quantile of the [sampleCount] values sorted into the front of this array, by nearest
+ * rank — the same convention [quantile] reaches on the level histogram, so the level and the spread are
+ * not quietly reading their quantiles two different ways.
+ *
+ * No interpolation between neighbouring order statistics. These samples are already the real residuals
+ * rather than bin labels, so the rank is the only approximation left, and it is the one a quartile
+ * estimate on thousands of samples can afford. Returns `0.0` for an empty tile, which a frame with
+ * positive dimensions cannot produce but which is defined rather than left to index out of bounds.
+ */
+private fun DoubleArray.orderStatistic(
+    sampleCount: Int,
+    fraction: Double,
+): Double {
+    if (sampleCount <= 0) return 0.0
+    return this[(fraction * sampleCount).toInt().coerceIn(0, sampleCount - 1)]
 }

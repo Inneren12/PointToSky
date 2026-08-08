@@ -65,6 +65,23 @@ decides whether replay can rebuild geometry, and has no bearing on detection.
    The level is the tile **median** and the spread is read from the **lower quartile**
    (`sigma = (median - q25) / 0.6745`), because stars contaminate only the upper tail — a mean and a
    standard deviation would both be pulled up by the very stars the threshold has to find.
+   The **level** is measured over a tile's raw pixels, from a 256-bin histogram that is exact because
+   an 8-bit luma has no values between the bins. The **spread** is measured over the residual
+   `pixel - levelAt(pixel centre)`, so a gradient steep enough to ramp within one tile is removed by
+   the interpolated model before the spread is taken and sigma reports the sky's noise rather than
+   the ramp. That needs two passes — the residual is taken against the interpolated level, which is
+   not available until every tile's level has been measured. The residual is a real number, since the
+   interpolated level is a `Double` that lands between luma levels, so pass 2 keeps and sorts the
+   residual samples themselves rather than binning them; rounding them onto the luma grid first would
+   discard the sub-luma information the spread is made of.
+
+   How finely the spread resolves therefore depends on the tile. Over a gradient the level sweeps
+   several luma across the tile, the residuals are a continuous sample, and the estimate lands within
+   a few percent of `sqrt(sigma^2 + 1/12)` — the injected noise plus the sensor's own rounding. Over a
+   flat sky the level is constant across the tile, every residual is an integer minus that constant,
+   and sigma is quantised to multiples of `1 / 0.6745 = 1.48` luma; below about one luma of noise it
+   reads as zero, which is what `minThresholdAboveBackground` is the floor for. That quantisation is a
+   property of an 8-bit sensor, not of the estimator.
    The final tile on each axis absorbs the remainder, so it is genuinely a different size; its
    interpolation node is therefore placed at its **actual** centre, computed from its real
    `[start, end)` bounds, never at the nominal `(index + 0.5) * tileSizePx`. For a 100 px wide frame
@@ -94,10 +111,22 @@ selects the strict policy.
 
 ### Known limitation
 
-The spread is measured over a tile's raw pixels, so a gradient steep enough to ramp within one tile
-is counted as noise and inflates sigma. The error is one-sided and conservative — reduced sensitivity
-to the faintest stars there, not extra false positives. Subtracting the interpolated level before
-measuring the spread would fix it and is a later refinement.
+The background model is bilinear between tile centres, so it can follow a background that ramps but
+not one that *curves* on the tile scale. Under a source much broader than a tile — moon glow, a cloud
+edge, a horizon light — the interpolation runs below the true sky at the source's crown, and the top
+of that crown can clear the local threshold and come back as a few small sources.
+
+`maxPixelCount` does not address this and must not be quoted as if it did. It rejects a single
+oversized *connected component*, which is what a broad source produces when the background model does
+not absorb it. In the case above the model absorbs most of the source, so what is left above threshold
+is a handful of small fragments, each well inside the size limits. Separating those from a star
+requires a judgement about shape, which this detector deliberately does not make; what is bounded
+today is that the fragments stay small and stay on the source that produced them.
+
+Outside the outermost tile centres the model extrapolates flat, so the border margin — half a tile on
+each side — carries whatever the sky ramps across it, both in the level it reports and in the residual
+the spread is measured on. This is the same conservatism the whole frame used to have before the
+spread moved onto the residual, now confined to the margin.
 
 ## Brightness is relative, not photometric
 
