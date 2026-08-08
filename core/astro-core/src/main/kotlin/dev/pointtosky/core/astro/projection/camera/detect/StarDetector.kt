@@ -156,9 +156,14 @@ data class StarDetectorConfig(
  * One detected point source, in analysis-buffer pixels — the same space `SkyPredictedStar.imageXPx` /
  * `imageYPx` use, so a residual against a prediction is a plain subtraction with no transform between.
  *
- * @property xPx intensity-weighted centroid, sub-pixel. Pixel `(0, 0)` has its centre at `(0.5, 0.5)`,
- *   matching the half-open convention the projection code already uses, so a source filling exactly the
- *   top-left pixel centroids at `(0.5, 0.5)` rather than at the origin.
+ * @property xPx intensity-weighted centroid, sub-pixel, in the project's continuous edge-coordinate
+ *   convention: raster sample `[x, y]` is centred at `(x + 0.5, y + 0.5)`. That convention is not chosen
+ *   here — it is stated canonically in
+ *   [dev.pointtosky.core.astro.projection.camera.PixelPoint]'s file KDoc and
+ *   `docs/camera_coordinate_calibration_contract.md` §9.2, and is the same one
+ *   [dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel] projects into, so a
+ *   centroid and a predicted `imageXPx`/`imageYPx` are directly subtractable. `SkySessionLogDetectionTest`
+ *   pins the two together against a real projection output.
  * @property brightness integrated flux above the local background, in raw luma units, summed over the
  *   pixels that cleared the threshold. Relative within one frame only — see the file KDoc on why this is
  *   not a magnitude. Note that it is flux above the *threshold*, so it is a lower bound on the source's
@@ -418,7 +423,10 @@ private class ComponentAccumulator {
 }
 
 /**
- * Pixel `(0, 0)` spans `[0, 1) x [0, 1)` and so is centred at `(0.5, 0.5)`. Adding this offset before
- * weighting is what makes a single-pixel source report the centre of that pixel rather than its corner.
+ * Raster sample `[x, y]` spans `[x, x+1) x [y, y+1)` and so is centred at `(x + 0.5, y + 0.5)` — the
+ * project-wide continuous edge-coordinate convention, stated canonically in
+ * [dev.pointtosky.core.astro.projection.camera.PixelPoint]'s file KDoc. Adding this offset before
+ * weighting is what makes a single-pixel source report the centre of that sample rather than its corner,
+ * and what keeps a centroid on the same axis a projected star lands on.
  */
 private const val PIXEL_CENTRE_OFFSET = 0.5

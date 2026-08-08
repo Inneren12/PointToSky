@@ -1,7 +1,5 @@
 package dev.pointtosky.core.astro.projection.camera.detect
 
-import kotlin.math.floor
-
 /**
  * SKY-2: a per-tile, bilinearly interpolated estimate of the sky background and its noise level.
  *
@@ -44,9 +42,28 @@ import kotlin.math.floor
  * this stage.
  */
 class TiledBackground internal constructor(
-    val tileSizePx: Int,
+    /**
+     * The tile edge that was *requested*. Nominal only: the last tile on each axis absorbs the
+     * remainder and is therefore wider or taller than this whenever the frame is not an exact multiple
+     * of it. Nothing in the interpolation reads this value — see [centresXPx].
+     */
+    val nominalTileSizePx: Int,
     val tilesX: Int,
     val tilesY: Int,
+    /**
+     * The **actual** centre coordinate of each tile column, in continuous buffer-pixel coordinates
+     * (`docs/camera_coordinate_calibration_contract.md` §9.2), derived from that tile's real
+     * `[start, end)` bounds rather than from [nominalTileSizePx].
+     *
+     * This is the whole point of storing them: with a remainder tile, `(index + 0.5) * tileSizePx` is
+     * *not* where the tile is. For a 100 px wide frame at a nominal 64 px tile, column 1 spans
+     * `[64, 100)` and is centred at 82, where the nominal formula says 96 — so an interpolation that
+     * trusted the formula would place the last measured value 14 px to the right of the pixels it was
+     * actually measured over, shifting the whole model near the frame's right edge.
+     */
+    private val centresXPx: DoubleArray,
+    /** The actual centre coordinate of each tile row; see [centresXPx]. */
+    private val centresYPx: DoubleArray,
     private val levels: DoubleArray,
     private val sigmas: DoubleArray,
 ) {
@@ -74,27 +91,38 @@ class TiledBackground internal constructor(
         tileY: Int,
     ): Double = sigmas[tileY * tilesX + tileX]
 
+    /** The actual centre of tile column [tileX], in continuous buffer-pixel coordinates. */
+    fun tileCentreXPx(tileX: Int): Double = centresXPx[tileX]
+
+    /** The actual centre of tile row [tileY], in continuous buffer-pixel coordinates. */
+    fun tileCentreYPx(tileY: Int): Double = centresYPx[tileY]
+
     /**
-     * Bilinear interpolation over the tile-centre grid, clamped at the border tiles.
+     * Bilinear interpolation over the measured tile centres.
      *
-     * The `- 0.5` puts pixel centres on the same footing as tile centres: tile `t` is centred at
-     * `(t + 0.5) * tileSizePx` in pixel coordinates, so a pixel at that location must land exactly on
-     * grid node `t` with zero fractional weight. Clamping the node indices makes the model constant
-     * outside the outermost centres instead of extrapolating a gradient past the last measurement.
+     * The pixel is placed at its own continuous centre, `x + 0.5`, on the same axis the tile centres
+     * live on, so a pixel sitting exactly on a tile centre lands on that node with zero fractional
+     * weight regardless of how wide that tile happens to be. Each axis contributes an independent
+     * weight and the result is their product; outside the first or last measured centre the weight
+     * collapses to zero and the nearest tile's value is returned unchanged, so the model extrapolates
+     * flat instead of continuing a trend past its last measurement.
+     *
+     * No tile is special-cased here. The remainder tile is handled purely by [centresXPx]/[centresYPx]
+     * holding where it really is.
      */
     private fun interpolate(
         grid: DoubleArray,
         x: Int,
         y: Int,
     ): Double {
-        val gx = (x + PIXEL_CENTRE_OFFSET) / tileSizePx - TILE_CENTRE_OFFSET
-        val gy = (y + PIXEL_CENTRE_OFFSET) / tileSizePx - TILE_CENTRE_OFFSET
-        val x0 = floor(gx).toInt().coerceIn(0, tilesX - 1)
-        val y0 = floor(gy).toInt().coerceIn(0, tilesY - 1)
+        val px = x + PIXEL_CENTRE_OFFSET
+        val py = y + PIXEL_CENTRE_OFFSET
+        val x0 = centresXPx.lowerNodeIndex(px)
+        val y0 = centresYPx.lowerNodeIndex(py)
         val x1 = (x0 + 1).coerceAtMost(tilesX - 1)
         val y1 = (y0 + 1).coerceAtMost(tilesY - 1)
-        val fx = (gx - x0).coerceIn(0.0, 1.0)
-        val fy = (gy - y0).coerceIn(0.0, 1.0)
+        val fx = centresXPx.fractionBetween(x0, x1, px)
+        val fy = centresYPx.fractionBetween(y0, y1, py)
 
         val top = grid[y0 * tilesX + x0] * (1.0 - fx) + grid[y0 * tilesX + x1] * fx
         val bottom = grid[y1 * tilesX + x0] * (1.0 - fx) + grid[y1 * tilesX + x1] * fx
@@ -103,34 +131,76 @@ class TiledBackground internal constructor(
 }
 
 /**
+ * The largest node index whose centre is at or below [coordinate], clamped into the array.
+ *
+ * Binary search rather than arithmetic, because the centres are only *almost* evenly spaced — the
+ * remainder tile breaks any closed-form index formula, and rediscovering the tile bounds here is
+ * exactly what storing the real centres exists to avoid. A coordinate below the first centre returns
+ * node 0, which [fractionBetween] then turns into a flat clamp.
+ */
+private fun DoubleArray.lowerNodeIndex(coordinate: Double): Int {
+    if (size == 1 || coordinate <= this[0]) return 0
+    if (coordinate >= this[size - 1]) return size - 1
+    var low = 0
+    var high = size - 1
+    while (high - low > 1) {
+        val mid = (low + high) / 2
+        if (this[mid] <= coordinate) low = mid else high = mid
+    }
+    return low
+}
+
+/**
+ * Where [coordinate] sits between nodes [lowIndex] and [highIndex], as a fraction in `[0, 1]`.
+ *
+ * Returns `0.0` when the two indices coincide, which is how the top and bottom of the grid clamp: past
+ * the last centre there is no next node to interpolate towards, so the last measured value stands. The
+ * `coerceIn` does the same job below the first centre, where the raw fraction comes out negative.
+ */
+private fun DoubleArray.fractionBetween(
+    lowIndex: Int,
+    highIndex: Int,
+    coordinate: Double,
+): Double {
+    if (lowIndex == highIndex) return 0.0
+    val span = this[highIndex] - this[lowIndex]
+    if (span <= 0.0) return 0.0
+    return ((coordinate - this[lowIndex]) / span).coerceIn(0.0, 1.0)
+}
+
+/**
  * Builds a [TiledBackground] over [frame] with square tiles of [tileSizePx] pixels.
  *
  * The last tile in each direction absorbs the remainder rather than being dropped, so a frame whose
  * dimensions are not a multiple of the tile size still has every pixel covered by a measured tile. A
  * frame smaller than one tile yields a single tile, which degrades cleanly to a global estimate.
+ *
+ * Because that last tile is genuinely a different size, its interpolation node is placed at its real
+ * centre rather than at the nominal `(index + 0.5) * tileSizePx` — see [TiledBackground.centresXPx] for
+ * what goes wrong otherwise.
  */
 fun estimateTiledBackground(
     frame: LumaFrame,
     tileSizePx: Int = StarDetectorDefaults.BACKGROUND_TILE_SIZE_PX,
 ): TiledBackground {
     require(tileSizePx > 0) { "tileSizePx must be positive; was $tileSizePx" }
-    val tilesX = ((frame.widthPx + tileSizePx - 1) / tileSizePx).coerceAtLeast(1)
-    val tilesY = ((frame.heightPx + tileSizePx - 1) / tileSizePx).coerceAtLeast(1)
+    val bandsX = tileBands(frame.widthPx, tileSizePx)
+    val bandsY = tileBands(frame.heightPx, tileSizePx)
+    val tilesX = bandsX.size
+    val tilesY = bandsY.size
     val levels = DoubleArray(tilesX * tilesY)
     val sigmas = DoubleArray(tilesX * tilesY)
     val histogram = IntArray(LUMA_LEVELS)
 
     for (tileY in 0 until tilesY) {
-        val yStart = tileY * tileSizePx
-        val yEnd = tileEndPx(tileY, tilesY, tileSizePx, frame.heightPx)
+        val band = bandsY[tileY]
         for (tileX in 0 until tilesX) {
-            val xStart = tileX * tileSizePx
-            val xEnd = tileEndPx(tileX, tilesX, tileSizePx, frame.widthPx)
+            val column = bandsX[tileX]
 
             histogram.fill(0)
             var sampleCount = 0
-            for (y in yStart until yEnd) {
-                for (x in xStart until xEnd) {
+            for (y in band.startPx until band.endPx) {
+                for (x in column.startPx until column.endPx) {
                     histogram[frame.lumaAt(x, y)] += 1
                     sampleCount += 1
                 }
@@ -143,31 +213,58 @@ fun estimateTiledBackground(
             sigmas[index] = ((median - lowerQuartile) / NORMAL_QUARTILE_SIGMAS).coerceAtLeast(0.0)
         }
     }
-    return TiledBackground(tileSizePx, tilesX, tilesY, levels, sigmas)
+    return TiledBackground(
+        nominalTileSizePx = tileSizePx,
+        tilesX = tilesX,
+        tilesY = tilesY,
+        centresXPx = DoubleArray(tilesX) { bandsX[it].centrePx },
+        centresYPx = DoubleArray(tilesY) { bandsY[it].centrePx },
+        levels = levels,
+        sigmas = sigmas,
+    )
 }
 
 /**
- * Where tile [index] of [tileCount] stops along one axis, exclusive.
+ * One tile's real extent along one axis, in raster indices, plus the continuous coordinate of its
+ * centre.
  *
- * The last tile runs all the way to [limitPx] instead of stopping at its nominal edge, so a frame whose
- * size is not a multiple of [tileSizePx] has no unmeasured strip along its right or bottom border — which
- * would otherwise be thresholded against an extrapolated background it was never sampled for.
+ * [centrePx] is derived from [startPx]/[endPx] and never from the nominal tile size, which is what
+ * makes a remainder tile's interpolation node land where its pixels actually are.
  */
-private fun tileEndPx(
-    index: Int,
-    tileCount: Int,
+private class TileBand(
+    val startPx: Int,
+    val endPx: Int,
+) {
+    /**
+     * The band's centre in continuous buffer-pixel coordinates. A band covering raster samples
+     * `[start, end)` occupies the continuous span `[start, end)` under the edge-coordinate convention,
+     * so its centre is the midpoint of those two edges.
+     */
+    val centrePx: Double get() = (startPx + endPx) / 2.0
+}
+
+/**
+ * Splits an axis of [lengthPx] raster samples into bands of nominally [tileSizePx], with the final band
+ * absorbing the remainder so no strip of the frame goes unmeasured and later gets thresholded against a
+ * background it was never sampled for.
+ */
+private fun tileBands(
+    lengthPx: Int,
     tileSizePx: Int,
-    limitPx: Int,
-): Int = if (index == tileCount - 1) limitPx else ((index + 1) * tileSizePx).coerceAtMost(limitPx)
+): List<TileBand> {
+    val count = ((lengthPx + tileSizePx - 1) / tileSizePx).coerceAtLeast(1)
+    return (0 until count).map { index ->
+        val start = index * tileSizePx
+        val end = if (index == count - 1) lengthPx else ((index + 1) * tileSizePx).coerceAtMost(lengthPx)
+        TileBand(startPx = start, endPx = end)
+    }
+}
 
 /** 8-bit luma has exactly this many distinct values, so a histogram of this width is exact, not binned. */
 private const val LUMA_LEVELS = 256
 
 /** Pixel `(x, y)` spans `[x, x+1)`, so its centre is half a pixel in. */
 private const val PIXEL_CENTRE_OFFSET = 0.5
-
-/** Tile `t` covers `[t * tileSizePx, (t+1) * tileSizePx)`, so its centre node sits half a tile in. */
-private const val TILE_CENTRE_OFFSET = 0.5
 
 private const val MEDIAN_FRACTION = 0.5
 

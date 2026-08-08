@@ -36,7 +36,12 @@ import kotlin.random.Random
 
 /** A star to render, positioned in the same top-left-origin pixel space the detector reports. */
 internal data class SyntheticStar(
-    /** Sub-pixel centre. `(0.5, 0.5)` is the centre of pixel `(0, 0)`. */
+    /**
+     * Sub-pixel centre in the project's continuous edge-coordinate convention (raster sample `[x, y]`
+     * is centred at `(x + 0.5, y + 0.5)`; see `PixelGeometry.kt`'s file KDoc). The renderer does not
+     * choose this convention — it renders into the same one the pinhole projection produces, which is
+     * what lets a rendered position be compared against a real projected `PixelPoint`.
+     */
     val xPx: Double,
     val yPx: Double,
     /**
@@ -79,6 +84,34 @@ internal sealed interface SyntheticBackground {
             x: Int,
             y: Int,
         ): Double = level
+    }
+
+    /**
+     * A ramp along X only, from [levelAtLeft] at `x = 0` to [levelAtRight] at `x = widthPx`. Isolating
+     * one axis is what lets a test read the interpolated model as "which x does this value belong to",
+     * which is how the tile-centre placement is checked.
+     */
+    data class HorizontalGradient(
+        val levelAtLeft: Double,
+        val levelAtRight: Double,
+        val widthPx: Int,
+    ) : SyntheticBackground {
+        override fun levelAt(
+            x: Int,
+            y: Int,
+        ): Double = levelAtLeft + (levelAtRight - levelAtLeft) * (x.toDouble() / widthPx)
+    }
+
+    /** The Y-only analogue of [HorizontalGradient]. */
+    data class VerticalGradient(
+        val levelAtTop: Double,
+        val levelAtBottom: Double,
+        val heightPx: Int,
+    ) : SyntheticBackground {
+        override fun levelAt(
+            x: Int,
+            y: Int,
+        ): Double = levelAtTop + (levelAtBottom - levelAtTop) * (y.toDouble() / heightPx)
     }
 
     /**

@@ -1,6 +1,7 @@
 package dev.pointtosky.core.astro.projection.camera.detect
 
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -129,6 +130,125 @@ class TiledBackgroundTest {
     }
 
     @Test
+    fun `places the remainder tile's node at its actual centre, not its nominal one`() {
+        // width=100 at a nominal 64 px tile: column 0 spans [0,64) centred at 32, column 1 spans
+        // [64,100) centred at 82. The nominal formula (index + 0.5) * 64 would put column 1's node at
+        // 96 — 14 px to the right of the pixels it was measured over.
+        val frame =
+            renderSyntheticFrame(
+                widthPx = 100,
+                heightPx = 32,
+                background = SyntheticBackground.Uniform(50.0),
+                noise = SyntheticNoise.None,
+            )
+
+        val model = estimateTiledBackground(frame, tileSizePx = 64)
+
+        assertEquals(2, model.tilesX)
+        assertEquals(32.0, model.tileCentreXPx(0))
+        assertEquals(82.0, model.tileCentreXPx(1), "the remainder column spans [64,100) and is centred at 82")
+    }
+
+    @Test
+    fun `reaches the final tile value at the remainder tile's actual centre on a horizontal gradient`() {
+        // A pure horizontal ramp, so the interpolated model can be read directly as "where does this
+        // value belong". The old nominal-centre interpolation reaches tile 1's value only at x=96 and is
+        // still part-way between the two tiles at x=82, so it fails this assertion by a wide margin.
+        val frame =
+            renderSyntheticFrame(
+                widthPx = 100,
+                heightPx = 64,
+                background = SyntheticBackground.HorizontalGradient(levelAtLeft = 20.0, levelAtRight = 200.0, widthPx = 100),
+                noise = SyntheticNoise.None,
+            )
+
+        val model = estimateTiledBackground(frame, tileSizePx = 64)
+        val finalTileValue = model.tileLevel(1, 0)
+        val centreOfFinalTile = model.tileCentreXPx(1)
+
+        assertEquals(82.0, centreOfFinalTile)
+        // At the final tile's real centre the model must BE that tile's measured value: there is nothing
+        // beyond it to interpolate towards.
+        assertEquals(
+            finalTileValue,
+            model.levelAt(sampleAt(centreOfFinalTile), 32),
+            0.6,
+            "the model must reach tile 1's value at x=82, not somewhere further right",
+        )
+        // And it must still be strictly below that value just inside the interpolated span, which is what
+        // distinguishes "correctly reaching it at 82" from "flat across the whole remainder tile".
+        assertTrue(
+            model.levelAt(60, 32) < finalTileValue - 1.0,
+            "x=60 lies between the two centres and must not already have reached tile 1's value",
+        )
+    }
+
+    @Test
+    fun `reaches the final tile value at the remainder tile's actual centre on a vertical gradient`() {
+        val frame =
+            renderSyntheticFrame(
+                widthPx = 64,
+                heightPx = 100,
+                background = SyntheticBackground.VerticalGradient(levelAtTop = 20.0, levelAtBottom = 200.0, heightPx = 100),
+                noise = SyntheticNoise.None,
+            )
+
+        val model = estimateTiledBackground(frame, tileSizePx = 64)
+
+        assertEquals(2, model.tilesY)
+        assertEquals(82.0, model.tileCentreYPx(1))
+        assertEquals(
+            model.tileLevel(0, 1),
+            model.levelAt(32, sampleAt(model.tileCentreYPx(1))),
+            0.6,
+            "the model must reach the final row's value at y=82",
+        )
+    }
+
+    @Test
+    fun `does not flatten or shift the model across the remainder tile on a diagonal gradient`() {
+        val frame =
+            renderSyntheticFrame(
+                widthPx = 100,
+                heightPx = 100,
+                background =
+                    SyntheticBackground.LinearGradient(
+                        levelAtOrigin = 20.0,
+                        levelAtOpposite = 220.0,
+                        widthPx = 100,
+                        heightPx = 100,
+                    ),
+                noise = SyntheticNoise.None,
+            )
+
+        val model = estimateTiledBackground(frame, tileSizePx = 64)
+
+        // Between the two measured centres the model must reproduce the injected ramp, because the ramp
+        // is linear and a bilinear interpolation between correctly-placed nodes is exact on a linear
+        // field. This is the direct statement of "no spatial shift": stretching the span from 50 px
+        // (32 -> 82) to the nominal 64 px (32 -> 96) leaves the model lagging the true level by tens of
+        // luma at the far end, which the tolerance below cannot absorb.
+        //
+        // Outside the outermost centres the model is deliberately flat — that is the documented clamp,
+        // not a defect — so the comparison runs between the centres only.
+        val firstCentre = sampleAt(model.tileCentreXPx(0))
+        val lastCentre = sampleAt(model.tileCentreXPx(1))
+        var worstError = 0.0
+        var previous = model.levelAt(0, 0)
+        for (i in firstCentre..lastCentre) {
+            val trueLevel = 20.0 + (220.0 - 20.0) * ((i / 100.0 + i / 100.0) / 2.0)
+            worstError = maxOf(worstError, abs(model.levelAt(i, i) - trueLevel))
+        }
+        assertTrue(worstError < 2.0, "the model departed from the injected ramp by $worstError luma")
+
+        for (i in 1 until 100) {
+            val current = model.levelAt(i, i)
+            assertTrue(current >= previous - 0.51, "the model dipped at ($i, $i): $previous -> $current")
+            previous = current
+        }
+    }
+
+    @Test
     fun `degrades to a single global tile for a frame smaller than one tile`() {
         val frame =
             renderSyntheticFrame(
@@ -145,4 +265,11 @@ class TiledBackgroundTest {
         assertEquals(90.0, model.levelAt(0, 0))
         assertEquals(90.0, model.levelAt(15, 15))
     }
+
+    /**
+     * The raster sample whose centre is nearest continuous coordinate [coordinatePx]. A tile centre is a
+     * continuous coordinate and can land on a sample boundary, so a test that wants to read the model
+     * "at" a centre has to name a sample; sample `[x]` is centred at `x + 0.5`, so this inverts that.
+     */
+    private fun sampleAt(coordinatePx: Double): Int = (coordinatePx - 0.5).roundToInt()
 }

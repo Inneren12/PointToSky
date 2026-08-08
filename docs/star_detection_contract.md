@@ -27,9 +27,30 @@ diagonal smear of phantom sources. `LumaFrame.forReference` builds a frame from 
 and the bytes of the file it points at, checking the recorded `byteLength` so a truncated capture
 fails instead of being detected in.
 
-Coordinates are top-left origin, x right, y down — the same space `SkyPredictedStar.imageXPx` /
-`imageYPx` use, so a residual against a prediction is a subtraction with no transform in between.
-Pixel `(0, 0)` is centred at `(0.5, 0.5)`.
+## Pixel-coordinate convention (not chosen here)
+
+SKY-2 does **not** define a coordinate convention. It uses the project's existing one, stated
+canonically in `PixelGeometry.kt`'s file KDoc and `docs/camera_coordinate_calibration_contract.md`
+§9.2:
+
+> Coordinates are continuous image-edge coordinates in `[0, W] × [0, H]`, so raster sample `[x, y]`
+> occupies `[x, x+1) × [y, y+1)` and its **centre** is at `(x + 0.5, y + 0.5)`.
+
+Origin top-left, `+x` right, `+y` down. This is the same space `PinholeProjectionModel` projects into
+and the same one `SkyPredictedStar.imageXPx` / `imageYPx` are recorded in, so a detected centroid and
+a predicted position are subtractable with no transform in between.
+
+Being the same convention is not asserted, it is pinned: `PixelConventionBridgeTest` takes a
+`PixelPoint` out of the real `PinholeProjectionModel` and out of `projectStars`, renders a source at
+exactly that coordinate, detects it, and requires the round trip to return the number it started
+from with no systematic offset on either axis. The test asserts its own sensitivity — that a
+half-pixel shift would exceed its tolerance — so a pass is evidence rather than a tolerance wide
+enough to swallow the error it exists to find. Flipping the detector's offset to `0.0` fails it.
+
+A consequence worth stating because it is easy to get backwards: a star projected to exactly
+`(320.0, 240.0)` in a 640×480 buffer sits on the **corner** shared by samples `[319,239]`,
+`[320,239]`, `[319,240]`, `[320,240]` — the buffer's geometric centre — not at the centre of any one
+sample.
 
 The detector takes **one frame's luma plus that frame's predicted stars** and nothing else. It does
 not depend on clock alignment: whether a real session reports a usable `SENSOR_INFO_TIMESTAMP_SOURCE`
@@ -44,6 +65,12 @@ decides whether replay can rebuild geometry, and has no bearing on detection.
    The level is the tile **median** and the spread is read from the **lower quartile**
    (`sigma = (median - q25) / 0.6745`), because stars contaminate only the upper tail — a mean and a
    standard deviation would both be pulled up by the very stars the threshold has to find.
+   The final tile on each axis absorbs the remainder, so it is genuinely a different size; its
+   interpolation node is therefore placed at its **actual** centre, computed from its real
+   `[start, end)` bounds, never at the nominal `(index + 0.5) * tileSizePx`. For a 100 px wide frame
+   at a 64 px tile the last column spans `[64, 100)` and is centred at 82, where the nominal formula
+   says 96 — trusting the formula would place the last measured value 14 px right of the pixels it
+   was measured over and shift the whole model near the frame's right and bottom edges.
 2. **Threshold** at `background + max(k * sigma, minThresholdAboveBackground)`, `k = 4` by default.
    The absolute floor matters: a noiseless frame measures `sigma == 0`, and `background + 0` would
    put the whole frame above threshold.
