@@ -46,3 +46,6 @@
 - `:tools:catalog-packer` — **CLI Kotlin/JVM application**
   - Responsibilities: parse external catalogs (HYG, BSC), process constellation boundaries, and pack binary assets for runtime loading.
   - Key dependencies: Kotlin serialization/CSV parsing, outputs consumed by `:core:catalog` and app assets.
+- `:tools:sky-session-loader` — **CLI Kotlin/JVM application**
+  - Responsibilities: load a SKY-1 session directory (`session.jsonl` + `frames/frame_NNNNNN.y`) from disk and run the existing parse → replay → detect → evaluate chain over it, printing per-frame and aggregate detector metrics.
+  - Key dependencies: `:core:astro-core` (which stays file-free by design; the file I/O lives here). No Android dependency.
