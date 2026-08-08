@@ -4,6 +4,7 @@ import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarClass
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyPredictedStar
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -123,6 +124,126 @@ class DetectionEvaluationTest {
     }
 
     @Test
+    fun `excludes an OUTSIDE_IMAGE star even though it carries finite coordinates`() {
+        // The trap this closes: projectStars runs the pinhole model for every in-front star and only
+        // then classifies the resulting point as outside sourceCrop, so OUTSIDE_IMAGE arrives with
+        // coordinates that look every bit as usable as an in-image star's. They are not on the raster the
+        // detector was handed, and counting them manufactures misses no detector could avoid.
+        val stars =
+            listOf(
+                skyStar(catalogIndex = 1, imageXPx = 100.0, imageYPx = 100.0),
+                skyStar(
+                    catalogIndex = 2,
+                    imageXPx = 900.0,
+                    imageYPx = 700.0,
+                    classification = PredictedStarClassification.OUTSIDE_IMAGE,
+                ),
+                // Outside the crop but still numerically inside a 640x480 buffer: a coordinate-range
+                // check could not tell this one apart, only the classification can.
+                skyStar(
+                    catalogIndex = 3,
+                    imageXPx = 320.0,
+                    imageYPx = 240.0,
+                    classification = PredictedStarClassification.OUTSIDE_IMAGE,
+                ),
+            )
+
+        assertEquals(listOf(1), stars.toPredictedPointsPx().map { it.catalogIndex })
+    }
+
+    @Test
+    fun `keeps every in-image classification and drops every out-of-image one`() {
+        val perClassification =
+            PredictedStarClassification.entries.map { classification ->
+                classification to
+                    listOf(
+                        skyStar(
+                            catalogIndex = 7,
+                            imageXPx = 50.0,
+                            imageYPx = 60.0,
+                            classification = classification,
+                        ),
+                    ).toPredictedPointsPx()
+            }
+
+        for ((classification, points) in perClassification) {
+            val expectedKept = classification.isDetectorObservable()
+            assertEquals(
+                if (expectedKept) 1 else 0,
+                points.size,
+                "$classification should ${if (expectedKept) "be kept" else "be dropped"}",
+            )
+        }
+        // Pin the actual membership, so flipping a classification's observability has to be a deliberate
+        // edit here and not just a silently-passing loop.
+        assertTrue(PredictedStarClassification.VISIBLE_IN_VIEWPORT.isDetectorObservable())
+        assertTrue(
+            PredictedStarClassification.INSIDE_IMAGE_OUTSIDE_VIEWPORT.isDetectorObservable(),
+            "cropped away from the viewport is still on the analysis buffer the detector reads",
+        )
+        assertFalse(PredictedStarClassification.OUTSIDE_IMAGE.isDetectorObservable())
+        assertFalse(PredictedStarClassification.BEHIND_CAMERA.isDetectorObservable())
+    }
+
+    @Test
+    fun `excludes an in-image classification whose coordinates are absent`() {
+        // Self-contradictory record: every in-front projection produces a point, so an in-image
+        // classification with no coordinates is malformed. It is dropped, never repaired into a position
+        // the projection never produced.
+        val stars =
+            listOf(
+                skyStar(
+                    catalogIndex = 4,
+                    imageXPx = null,
+                    imageYPx = null,
+                    classification = PredictedStarClassification.VISIBLE_IN_VIEWPORT,
+                ),
+            )
+
+        assertTrue(stars.toPredictedPointsPx().isEmpty())
+    }
+
+    @Test
+    fun `scores a mixed batch against the observable subset only`() {
+        val stars =
+            listOf(
+                skyStar(catalogIndex = 1, imageXPx = 100.0, imageYPx = 100.0),
+                skyStar(
+                    catalogIndex = 2,
+                    imageXPx = 200.0,
+                    imageYPx = 150.0,
+                    classification = PredictedStarClassification.INSIDE_IMAGE_OUTSIDE_VIEWPORT,
+                ),
+                skyStar(
+                    catalogIndex = 3,
+                    imageXPx = 800.0,
+                    imageYPx = 600.0,
+                    classification = PredictedStarClassification.OUTSIDE_IMAGE,
+                ),
+                skyStar(
+                    catalogIndex = 4,
+                    imageXPx = 900.0,
+                    imageYPx = 900.0,
+                    classification = PredictedStarClassification.OUTSIDE_IMAGE,
+                ),
+                skyStar(catalogIndex = 5, imageXPx = null, imageYPx = null),
+            )
+        // The detector found both observable sources and nothing else — a perfect run.
+        val detections = listOf(source(100.1, 99.9), source(200.05, 150.1))
+
+        val report = evaluateDetections(detections, stars.toPredictedPointsPx(), tolerancePx = 2.0)
+
+        assertEquals(2, report.predictedCount, "only the two in-image stars are scoreable")
+        assertEquals(2, report.matchedCount)
+        assertEquals(
+            1.0,
+            assertNotNull(report.detectionRate),
+            "a perfect run must score 1.0, not 2/5 — the other three were never in the image",
+        )
+        assertEquals(0, report.falsePositiveCount)
+    }
+
+    @Test
     fun `is deterministic when two pairings are exactly equidistant`() {
         val predicted =
             listOf(
@@ -142,17 +263,18 @@ class DetectionEvaluationTest {
         catalogIndex: Int,
         imageXPx: Double?,
         imageYPx: Double?,
+        classification: PredictedStarClassification =
+            if (imageXPx == null) {
+                PredictedStarClassification.BEHIND_CAMERA
+            } else {
+                PredictedStarClassification.VISIBLE_IN_VIEWPORT
+            },
     ): SkyPredictedStar =
         SkyPredictedStar(
             catalogIndex = catalogIndex,
             rightAscensionRad = 0.1,
             declinationRad = 0.2,
-            classification =
-                if (imageXPx == null) {
-                    PredictedStarClassification.BEHIND_CAMERA
-                } else {
-                    PredictedStarClassification.VISIBLE_IN_VIEWPORT
-                },
+            classification = classification,
             imageXPx = imageXPx,
             imageYPx = imageYPx,
         )

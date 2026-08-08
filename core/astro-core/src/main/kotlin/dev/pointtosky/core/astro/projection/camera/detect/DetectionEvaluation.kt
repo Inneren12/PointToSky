@@ -1,5 +1,6 @@
 package dev.pointtosky.core.astro.projection.camera.detect
 
+import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarClassification
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyPredictedStar
 import kotlin.math.hypot
 import kotlin.math.sqrt
@@ -56,8 +57,14 @@ data class DetectionMatch(
 /**
  * The score of one detector run over one frame.
  *
- * @property detectionRate matched predictions as a fraction of all predictions, or `null` when there
- *   were no predictions to recover — which is a frame that cannot be scored, not a rate of zero.
+ * @property predictedCount how many **detector-observable, in-image** predicted sources were scored
+ *   against — the size of the list handed to [evaluateDetections], not the size of the catalogue batch
+ *   it came from. [toPredictedPointsPx] is what narrows one to the other, dropping stars that were
+ *   behind the camera or projected outside the analysed raster. A rate quoted against the full batch
+ *   would be measuring how much of the sky fell outside the frame, not how well the detector works.
+ * @property detectionRate matched predictions as a fraction of [predictedCount], or `null` when there
+ *   were no observable predictions to recover — which is a frame that cannot be scored, not a rate of
+ *   zero.
  * @property centroidResidualRmsPx root-mean-square distance over [matches], or `null` when nothing
  *   matched. This is the number that says whether the centroid is sub-pixel; it is measured only over
  *   pairs the association accepted, so it says nothing about the sources it failed to pair.
@@ -130,16 +137,54 @@ fun evaluateDetections(
 }
 
 /**
- * The subset of these recorded predictions that has an image-space position to score against.
+ * Whether a star with this classification landed on the analysed raster, and so could physically have
+ * been detected in that frame's luma.
  *
- * Stars with a `null` [SkyPredictedStar.imageXPx]/[SkyPredictedStar.imageYPx] were behind the camera —
- * a normal outcome, not a failure — and are dropped rather than counted as predictions the detector
- * failed to recover. Reading the *recorded* coordinates is correct here precisely because this is a
- * detection metric and not a projection check: `SkySessionLogReplay` already re-derives them from the
- * catalogue and diffs the two, so the projection is verified independently of anything measured here.
+ * The distinction that matters is [PredictedStarClassification.OUTSIDE_IMAGE]: it means the star was in
+ * *front* of the camera, so `projectStars` ran the pinhole model and produced a perfectly finite image
+ * point — and only then classified that point as falling outside `sourceCrop`. A finite coordinate is
+ * therefore not evidence that a star is on the raster, which is exactly the trap this predicate exists
+ * to close. Scoring a detector against a source that is not in the image it was handed manufactures a
+ * miss no detector could ever avoid.
+ *
+ * [PredictedStarClassification.INSIDE_IMAGE_OUTSIDE_VIEWPORT] **is** observable and is included: it
+ * means inside `sourceCrop` but cropped away by `FILL_CENTER` before reaching the display. That is a
+ * statement about what the user saw, not about what the sensor recorded — the pixels are in the
+ * analysis buffer either way, and the detector never looks at the viewport.
+ *
+ * The `when` is exhaustive with no `else` on purpose: a new classification must be classified here
+ * deliberately, at compile time, rather than silently inheriting whichever default was convenient.
+ */
+fun PredictedStarClassification.isDetectorObservable(): Boolean =
+    when (this) {
+        PredictedStarClassification.VISIBLE_IN_VIEWPORT -> true
+        PredictedStarClassification.INSIDE_IMAGE_OUTSIDE_VIEWPORT -> true
+        PredictedStarClassification.OUTSIDE_IMAGE -> false
+        PredictedStarClassification.BEHIND_CAMERA -> false
+    }
+
+/**
+ * The subset of these recorded predictions the detector could actually have found: the truth set a
+ * detection rate is only meaningful against.
+ *
+ * Two independent gates, and both are necessary:
+ *
+ *  1. **[isDetectorObservable]** — the star landed on the analysed raster. A
+ *     [PredictedStarClassification.OUTSIDE_IMAGE] star carries finite coordinates but is not in the
+ *     image, and counting it would understate every detector by a factor that varies with how much sky
+ *     the catalogue happened to cover outside the frame.
+ *  2. **Non-null coordinates** — nothing is manufactured, defaulted, or clamped to the frame. For a
+ *     well-formed record this is redundant, since every in-front projection produces a point; a record
+ *     that claims an in-image classification with absent coordinates is self-contradictory, and it is
+ *     excluded rather than repaired into a position the projection never produced.
+ *
+ * Reading the *recorded* coordinates is correct here precisely because this is a detection metric and
+ * not a projection check: `SkySessionLogReplay` already re-derives them from the catalogue and diffs
+ * the two, so the projection is verified independently of anything measured here.
  */
 fun List<SkyPredictedStar>.toPredictedPointsPx(): List<PredictedPointPx> =
     mapNotNull { star ->
+        if (!star.classification.isDetectorObservable()) return@mapNotNull null
         val x = star.imageXPx ?: return@mapNotNull null
         val y = star.imageYPx ?: return@mapNotNull null
         PredictedPointPx(catalogIndex = star.catalogIndex, xPx = x, yPx = y)

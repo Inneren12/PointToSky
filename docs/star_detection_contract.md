@@ -116,6 +116,38 @@ radius and reports detection rate, centroid residual RMS, and unpaired-detection
 when the predicted positions are already very nearly right — which is what a synthetic fixture
 provides and what real data does not.
 
+### The truth set is the detector-observable subset
+
+`predictedCount` means **in-image predicted sources the detector could physically have found**, not
+all projected catalogue entries, and `detectionRate` is a fraction of that. `toPredictedPointsPx()`
+is what narrows one to the other, on two independent gates:
+
+1. **Classification**, via `PredictedStarClassification.isDetectorObservable()`. Kept:
+   `VISIBLE_IN_VIEWPORT` and `INSIDE_IMAGE_OUTSIDE_VIEWPORT`. Dropped: `OUTSIDE_IMAGE` and
+   `BEHIND_CAMERA`.
+2. **Non-null coordinates.** Nothing is manufactured, defaulted, or clamped into the frame.
+
+The gate that is easy to miss is `OUTSIDE_IMAGE`. `projectStars` runs the pinhole model for every
+in-front star and *only then* classifies the resulting point as falling outside `sourceCrop`, so an
+`OUTSIDE_IMAGE` entry arrives carrying a perfectly finite image coordinate — one that may even lie
+numerically inside the buffer's dimensions. A finite coordinate is therefore not evidence that a star
+is on the analysed raster, and a coordinate-range check cannot substitute for the classification.
+Counting those stars would charge the detector with misses no detector could avoid, and the size of
+the error would track how much sky the catalogue happened to cover outside the frame rather than
+anything about the detector.
+
+`INSIDE_IMAGE_OUTSIDE_VIEWPORT` is kept, deliberately: it means inside `sourceCrop` but cropped away
+by `FILL_CENTER` before reaching the display. That is a statement about what the user saw, not about
+what the sensor recorded — the pixels are in the analysis buffer either way, and the detector never
+looks at the viewport.
+
+An in-image classification with absent coordinates is a self-contradictory record (every in-front
+projection produces a point). It is excluded rather than repaired into a position the projection
+never produced.
+
+The `when` behind `isDetectorObservable()` is exhaustive with no `else`, so adding a classification
+to the projection contract is a compile error here until someone decides which side it falls on.
+
 A number from it may be reported as *"the detector recovered N of M known sources at this residual"*.
 It may **not** be reported as a match rate, a correspondence, a plate solution, or evidence that
 pointing works. Feeding its matches into a pose solve assumes the answer: the pairing was made *from*
