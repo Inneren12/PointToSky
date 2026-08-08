@@ -296,8 +296,63 @@ class StarDetectorTest {
     }
 
     @Test
-    fun `rejects blobs larger than the maximum pixel count`() {
-        // A wide, bright blob standing in for moon glow or a cloud edge: far too large to be a star.
+    fun `rejects a component larger than the maximum pixel count`() {
+        // A flat-topped 28x28 patch of luma 200 stamped straight into the buffer, plus a normal star. The
+        // patch is deliberately not a rendered profile: whether a Gaussian's above-threshold footprint
+        // comes out as one component or several depends on how well the tiled background happens to fit
+        // it, and this test is about the size filter, not about that. 784 uniform pixels 176 luma above
+        // the sky are one 8-connected component over any threshold this detector can produce.
+        val star = SyntheticStar(xPx = 90.5, yPx = 90.5, peakAboveBackground = 120.0)
+        val data =
+            renderSyntheticFrameData(
+                widthPx = widthPx,
+                heightPx = heightPx,
+                rowStridePx = rowStridePx,
+                stars = listOf(star),
+                noise = SyntheticNoise.Gaussian(sigma = 2.0),
+                seed = 77L,
+            )
+        val patchX = 264 until 292
+        val patchY = 204 until 232
+        for (y in patchY) {
+            for (x in patchX) {
+                data[y * rowStridePx + x] = patchLuma.toByte()
+            }
+        }
+        val frame = LumaFrame(data, widthPx = widthPx, heightPx = heightPx, rowStridePx = rowStridePx)
+        val patchCentreX = (patchX.first + patchX.last + 1) / 2.0
+        val patchCentreY = (patchY.first + patchY.last + 1) / 2.0
+
+        // First: the patch really is one oversized component, so the filter has something to reject and
+        // the assertion below cannot pass by the patch never having been detected in the first place.
+        val unfiltered = detectStars(frame, StarDetectorConfig(maxPixelCount = Int.MAX_VALUE))
+        val whole = unfiltered.single { hypot(it.xPx - patchCentreX, it.yPx - patchCentreY) < 2.0 }
+        assertEquals(patchX.count() * patchY.count(), whole.pixelCount, "the patch must be one component")
+        assertTrue(whole.pixelCount > 500, "and it must exceed the limit the next run applies")
+
+        val detections = detectStars(frame, StarDetectorConfig(maxPixelCount = 500))
+
+        assertTrue(
+            detections.none { hypot(it.xPx - patchCentreX, it.yPx - patchCentreY) < 30.0 },
+            "nothing may be reported where the oversized component was: $detections",
+        )
+        assertEquals(
+            1,
+            detections.count { abs(it.xPx - star.xPx) < 1.0 && abs(it.yPx - star.yPx) < 1.0 },
+            "the real star must survive the same run: $detections",
+        )
+    }
+
+    @Test
+    fun `leaks only a small crown fragment from a source broader than a tile`() {
+        // Moon glow, a cloud edge, a horizon light: a profile that curves on the tile scale. The tiled
+        // background absorbs most of it — its body never becomes a component at all here, so maxPixelCount
+        // is not what deals with this case and this test does not pretend otherwise. A bilinear
+        // interpolation between tile centres cannot follow that curvature, and it leaves the sky ~110 luma
+        // below the blob's peak, so the top of the crown clears the local threshold and comes back as a
+        // few small sources. That is the background model's resolution, recorded as a known limitation in
+        // docs/star_detection_contract.md; separating it from a star means judging shape, which this
+        // detector deliberately does not do. What this test holds is the *bound*: small, and only there.
         val blob = SyntheticStar(xPx = 320.5, yPx = 240.5, peakAboveBackground = 200.0, fwhmPx = 90.0)
         val star = SyntheticStar(xPx = 90.5, yPx = 90.5, peakAboveBackground = 120.0)
         val frame =
@@ -312,21 +367,20 @@ class StarDetectorTest {
 
         val detections = detectStars(frame, StarDetectorConfig(maxPixelCount = 500))
 
-        assertTrue(detections.none { it.pixelCount > 500 }, "the oversized blob must be rejected: $detections")
-        val recovered = detections.filter { abs(it.xPx - star.xPx) < 1.0 && abs(it.yPx - star.yPx) < 1.0 }
-        assertEquals(1, recovered.size, "the real star must survive alongside it: $detections")
-
-        // What does still come back is one small fragment at the blob's crown, and it is the background
-        // *model's* resolution rather than a threshold set too low. Since the per-tile spread stopped
-        // counting a tile's own ramp as noise, the threshold over the blob is the sky's own; a bilinear
-        // interpolation between tile centres cannot follow a profile that curves on the tile scale, so it
-        // puts the sky ~110 luma below the blob's peak and the top of the crown clears the threshold. See
-        // the known limitation in docs/star_detection_contract.md; a filter that could tell this apart
-        // from a star has to judge shape, which this detector deliberately does not do.
-        val spurious = detections - recovered.toSet()
+        assertEquals(
+            1,
+            detections.count { abs(it.xPx - star.xPx) < 1.0 && abs(it.yPx - star.yPx) < 1.0 },
+            "the real star must still be recovered next to the blob: $detections",
+        )
+        val leaked = detections.filter { abs(it.xPx - star.xPx) >= 1.0 || abs(it.yPx - star.yPx) >= 1.0 }
+        assertTrue(leaked.size <= 5, "the crown may fragment, but not into a field of sources: $leaked")
         assertTrue(
-            spurious.all { hypot(it.xPx - blob.xPx, it.yPx - blob.yPx) < 30.0 && it.pixelCount < 50 },
-            "only a small fragment at the blob's own crown may leak: $spurious",
+            leaked.all { hypot(it.xPx - blob.xPx, it.yPx - blob.yPx) < 30.0 },
+            "every leaked source must sit on the blob's own crown, not out over the sky: $leaked",
+        )
+        assertTrue(
+            leaked.all { it.pixelCount < 50 },
+            "and each must stay a fragment rather than growing into the blob's body: $leaked",
         )
     }
 
@@ -381,4 +435,7 @@ class StarDetectorTest {
         /** Fractional flux difference above which the measured brightness ordering is required to hold. */
         const val FLUX_ORDERING_MARGIN = 0.15
     }
+
+    /** Bright enough that the stamped patch clears any threshold the tiled model can produce under it. */
+    private val patchLuma = 200
 }

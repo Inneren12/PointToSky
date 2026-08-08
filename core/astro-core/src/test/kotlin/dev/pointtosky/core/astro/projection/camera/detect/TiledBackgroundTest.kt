@@ -2,6 +2,7 @@ package dev.pointtosky.core.astro.projection.camera.detect
 
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -276,6 +277,86 @@ class TiledBackgroundTest {
     }
 
     @Test
+    fun `tracks the injected noise across the range of skies, over a gradient`() {
+        // Over a gradient the interpolated level sweeps ~10 luma across every tile, so a tile's residuals
+        // are a genuinely continuous sample and the quartile resolves between luma levels.
+        //
+        // What it must converge on is not the injected sigma but the injected sigma *as the sensor
+        // recorded it*: rounding a continuous value onto the 8-bit grid adds an independent uniform error
+        // of variance 1/12, so the truth here is sqrt(sigma^2 + 1/12). Comparing against the bare injected
+        // sigma instead would demand the estimator report less noise than the frame actually contains.
+        for (injected in listOf(0.5, 1.0, 1.5, 2.5, 4.0, 6.0)) {
+            val expected = sqrt(injected * injected + QUANTISATION_VARIANCE)
+            val measured = interiorTileSigmas(injected)
+
+            val mean = measured.average()
+            assertTrue(
+                abs(mean - expected) < 0.05,
+                "injected $injected should read as $expected across the frame; the mean tile was $mean",
+            )
+            // And no single tile may hide behind that mean. 4096 samples put the quartile's own sampling
+            // error near 5%; 15% leaves room for it without leaving room for a tile that missed the level.
+            val worst = measured.maxBy { abs(it - expected) }
+            assertTrue(
+                abs(worst - expected) < 0.15 * expected,
+                "injected $injected had a tile reading $worst, too far from $expected",
+            )
+        }
+    }
+
+    @Test
+    fun `reports the sensor's own rounding as the noise floor of a noiseless gradient`() {
+        // The zero-noise end of the sweep above, which behaves differently enough to state on its own. A
+        // ramp rendered onto an 8-bit grid is not noiseless: each pixel carries the rounding error, which
+        // is uniform on [-0.5, 0.5) rather than normal. The estimator converts a quartile assuming a
+        // normal, and a uniform's lower quartile sits at 0.25 of its width, so the floor it reports is
+        // 0.25 / 0.6745 = 0.371 luma rather than the 0.289 that distribution's standard deviation would
+        // be. This is the smallest spread a real gradient frame can report, and it is a sensor property.
+        val measured = interiorTileSigmas(injected = 0.0)
+
+        assertTrue(
+            measured.all { abs(it - 0.371) < 0.01 },
+            "a noiseless ramp must report only the 8-bit rounding floor; got ${measured.distinct()}",
+        )
+    }
+
+    @Test
+    fun `quantises the spread to whole luma steps on a flat sky, and under-reports the faintest noise`() {
+        // The other side of the same mechanism, and the estimator's real weakness. With no gradient the
+        // interpolated level is *constant* across a tile, so every residual is an integer minus that one
+        // constant and the quartile can only land on one of them. `sigma` is then pinned to multiples of
+        // 1 / 0.6745 = 1.48 luma, exactly as it was before the spread moved onto the residual.
+        //
+        // Below about one luma of noise that rounds to zero and the estimator reports no spread at all.
+        // The threshold does not collapse with it: StarDetectorConfig.minThresholdAboveBackground is the
+        // floor that covers this case, and this test is here to keep the size of the gap visible.
+        for (injected in listOf(0.0, 0.5)) {
+            assertTrue(
+                flatTileSigmas(injected).all { it == 0.0 },
+                "noise of $injected luma is under one quantisation step and must read as no spread",
+            )
+        }
+
+        for (injected in listOf(1.0, 1.5, 2.5, 4.0, 6.0)) {
+            val measured = flatTileSigmas(injected)
+            measured.forEach { sigma ->
+                val steps = sigma * NORMAL_QUARTILE_SIGMAS
+                assertEquals(
+                    steps.roundToInt().toDouble(),
+                    steps,
+                    1.0e-9,
+                    "a flat sky's spread must be a whole number of luma steps; $sigma is not",
+                )
+            }
+            // Which leaves it within half a step of the truth once the noise is worth a step at all.
+            assertTrue(
+                measured.all { abs(it - injected) < 0.75 },
+                "injected $injected read as ${measured.distinct()}, more than half a step away",
+            )
+        }
+    }
+
+    @Test
     fun `measures the sky's own noise over a gradient, not the gradient`() {
         // The gradient ramps ~10 luma across every tile in x and ~13 in y. Measured over a tile's raw
         // pixels that ramp is indistinguishable from noise and dominates it; measured on the residual it
@@ -391,6 +472,34 @@ class TiledBackgroundTest {
         assertEquals(0, report.falsePositiveCount, "and no others: $report")
     }
 
+    /**
+     * Every interior tile's spread over several noise realisations of a gradient sky. The outermost ring
+     * is left out: outside the outermost tile centres the model clamps flat by design, so those tiles
+     * carry a slice of the ramp in their residuals and are measuring something else.
+     */
+    private fun interiorTileSigmas(injected: Double): List<Double> =
+        (1..SWEEP_REALISATIONS).flatMap { seed ->
+            val model = estimateTiledBackground(gradientFrame(noiseSigma = injected, seed = seed.toLong()))
+            (1 until model.tilesY - 1).flatMap { tileY ->
+                (1 until model.tilesX - 1).map { model.tileSigma(it, tileY) }
+            }
+        }
+
+    /** The same sweep over a sky with no gradient at all, where every tile is interior in the sense above. */
+    private fun flatTileSigmas(injected: Double): List<Double> =
+        (1..SWEEP_REALISATIONS).flatMap { seed ->
+            val frame =
+                renderSyntheticFrame(
+                    widthPx = 256,
+                    heightPx = 256,
+                    background = SyntheticBackground.Uniform(120.0),
+                    noise = noiseOf(injected),
+                    seed = seed.toLong(),
+                )
+            val model = estimateTiledBackground(frame, tileSizePx = 64)
+            (0 until model.tilesY).flatMap { tileY -> (0 until model.tilesX).map { model.tileSigma(it, tileY) } }
+        }
+
     private fun gradientFrame(
         noiseSigma: Double,
         seed: Long,
@@ -408,7 +517,7 @@ class TiledBackgroundTest {
                     heightPx = 480,
                 ),
             stars = stars,
-            noise = SyntheticNoise.Gaussian(sigma = noiseSigma),
+            noise = noiseOf(noiseSigma),
             seed = seed,
         )
 
@@ -419,6 +528,19 @@ class TiledBackgroundTest {
      */
     private fun sampleAt(coordinatePx: Double): Int = (coordinatePx - 0.5).roundToInt()
 }
+
+/** No noise at all is its own case in the renderer, not a Gaussian of zero width. */
+private fun noiseOf(sigma: Double): SyntheticNoise =
+    if (sigma == 0.0) SyntheticNoise.None else SyntheticNoise.Gaussian(sigma = sigma)
+
+/** How many independent noise realisations each point of the sweep averages over. */
+private const val SWEEP_REALISATIONS = 5
+
+/** Rounding a continuous value onto the 1-luma grid adds an independent uniform error of this variance. */
+private const val QUANTISATION_VARIANCE = 1.0 / 12.0
+
+/** The same constant [estimateTiledBackground] converts a quartile into a sigma with. */
+private const val NORMAL_QUARTILE_SIGMAS = 0.6744897501960817
 
 /**
  * The **pre-fix** background estimator, kept here as the reference the gradient tests measure against:
@@ -454,7 +576,7 @@ private fun estimateTiledBackgroundOverRawPixels(
             val median = histogram.rawQuantile(sampleCount, 0.5)
             val lowerQuartile = histogram.rawQuantile(sampleCount, 0.25)
             levels[tileY * tilesX + tileX] = median
-            sigmas[tileY * tilesX + tileX] = ((median - lowerQuartile) / 0.6744897501960817).coerceAtLeast(0.0)
+            sigmas[tileY * tilesX + tileX] = ((median - lowerQuartile) / NORMAL_QUARTILE_SIGMAS).coerceAtLeast(0.0)
         }
     }
     return TiledBackground(

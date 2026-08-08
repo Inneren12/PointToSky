@@ -1,7 +1,5 @@
 package dev.pointtosky.core.astro.projection.camera.detect
 
-import kotlin.math.roundToInt
-
 /**
  * SKY-2: a per-tile, bilinearly interpolated estimate of the sky background and its noise level.
  *
@@ -20,8 +18,15 @@ import kotlin.math.roundToInt
  * `sigma = (median - q25) / 0.6745`, the standard-normal relation between the interquartile half-width
  * and sigma. Reading the spread from below the median means a tile full of stars still reports the
  * noise of its *sky*, where a plain standard deviation would report the stars and push the threshold
- * above them. Both statistics come from a histogram on the 1-luma grid the data already lives on, which
- * is exact for 8-bit values and needs no sort.
+ * above them.
+ *
+ * The two are read from different things because they are measurements of different things. The level is
+ * a raw 8-bit luma, whose only possible values are the 256 integers, so it comes from a 256-bin histogram
+ * that is exact by construction and needs no sort. The spread is a statistic of the residual
+ * `pixel - levelAt(pixel centre)`, which is a real number — the interpolated level is a `Double` and lands
+ * between luma levels almost everywhere — so it is taken from the residual samples themselves, sorted.
+ * Rounding those residuals onto a luma grid first would discard exactly the sub-luma information the
+ * spread is made of, and no amount of interpolating between integer bins afterwards can put it back.
  *
  * ## Why the spread is measured on the residual, not on the raw pixels
  * A gradient steep enough to ramp across a single tile is *structure*, not noise, but a spread measured
@@ -35,6 +40,14 @@ import kotlin.math.roundToInt
  * residual in those outer half-tiles still carries whatever the sky ramps over that margin. That
  * remainder is the old, conservative behaviour confined to the frame's border rather than applied to
  * every tile.
+ *
+ * How finely the spread can resolve follows from how much the level varies inside the tile. Over a
+ * gradient the interpolated level sweeps several luma across a tile, the residuals land all over the real
+ * line, and the quartile is measured on a genuinely continuous sample. Over a flat sky the level is
+ * constant across the tile, the residuals are integers minus that constant, and the quartile can only
+ * land on one of them — so `sigma` there is quantised to multiples of `1 / 0.6745 = 1.48` luma, exactly
+ * as it was before any of this. That is a property of an 8-bit sensor, not of the estimator, and it is
+ * why [StarDetectorConfig.minThresholdAboveBackground] exists.
  *
  * ## Why bilinear interpolation
  * Per-tile constant values produce a visible step at every tile boundary. Over a gradient, a step is
@@ -50,8 +63,8 @@ import kotlin.math.roundToInt
 class TiledBackground internal constructor(
     /**
      * The tile edge that was *requested*. Nominal only: the last tile on each axis absorbs the
-     * remainder and is therefore wider or taller than this whenever the frame is not an exact multiple
-     * of it. Nothing in the interpolation reads this value — see [centresXPx].
+     * remainder and is therefore a partial tile — narrower or shorter than this — whenever the frame is
+     * not an exact multiple of it. Nothing in the interpolation reads this value — see [centresXPx].
      */
     val nominalTileSizePx: Int,
     val tilesX: Int,
@@ -211,10 +224,10 @@ fun estimateTiledBackground(
     for (tileY in 0 until tilesY) {
         for (tileX in 0 until tilesX) {
             histogram.fill(0)
-            val sampleCount =
-                forEachTilePixel(bandsX[tileX], bandsY[tileY]) { x, y ->
-                    histogram[frame.lumaAt(x, y)] += 1
-                }
+            forEachTilePixel(bandsX[tileX], bandsY[tileY]) { x, y ->
+                histogram[frame.lumaAt(x, y)] += 1
+            }
+            val sampleCount = bandsX[tileX].lengthPx * bandsY[tileY].lengthPx
             levels[tileY * tilesX + tileX] = histogram.quantile(sampleCount, MEDIAN_FRACTION)
         }
     }
@@ -236,21 +249,24 @@ fun estimateTiledBackground(
 
     // Pass 2: the spread, on the background-subtracted residual rather than on the raw values, so an
     // in-tile ramp is removed before it can be counted as noise. Still median minus lower quartile, so a
-    // tile full of stars still reports the noise of its sky; what changed is what the two quantiles are
-    // measured around, and that they are now read between bins rather than snapped to one — see
-    // [interpolatedQuantile] for why the spread cannot afford that rounding once the ramp is gone.
-    val residuals = IntArray(RESIDUAL_LEVELS)
+    // tile full of stars still reports the noise of its sky; what changed is only what the two quantiles
+    // are measured around.
+    //
+    // The residuals are held and sorted as the real numbers they are, not binned. A tile is at most
+    // `tileSizePx` square — 4096 samples at the default — so one reused buffer and one sort per tile costs
+    // nothing worth trading a rounding error against, and `DoubleArray.sort` is a fixed algorithm over a
+    // fixed input, so the result is reproducible to the bit.
+    val residuals = DoubleArray(bandsX.maxOf { it.lengthPx } * bandsY.maxOf { it.lengthPx })
     for (tileY in 0 until tilesY) {
         for (tileX in 0 until tilesX) {
-            residuals.fill(0)
-            val sampleCount =
-                forEachTilePixel(bandsX[tileX], bandsY[tileY]) { x, y ->
-                    residuals[residualBin(frame.lumaAt(x, y) - interpolatedLevel.levelAt(x, y))] += 1
-                }
-            // A difference of two bin indices is already a difference of residual luma, so the bias the
-            // bins are offset by cancels and never has to be undone.
-            val median = residuals.interpolatedQuantile(sampleCount, MEDIAN_FRACTION)
-            val lowerQuartile = residuals.interpolatedQuantile(sampleCount, LOWER_QUARTILE_FRACTION)
+            var sampleCount = 0
+            forEachTilePixel(bandsX[tileX], bandsY[tileY]) { x, y ->
+                residuals[sampleCount] = frame.lumaAt(x, y) - interpolatedLevel.levelAt(x, y)
+                sampleCount += 1
+            }
+            residuals.sort(fromIndex = 0, toIndex = sampleCount)
+            val median = residuals.orderStatistic(sampleCount, MEDIAN_FRACTION)
+            val lowerQuartile = residuals.orderStatistic(sampleCount, LOWER_QUARTILE_FRACTION)
             sigmas[tileY * tilesX + tileX] =
                 ((median - lowerQuartile) / NORMAL_QUARTILE_SIGMAS).coerceAtLeast(0.0)
         }
@@ -268,23 +284,22 @@ fun estimateTiledBackground(
 }
 
 /**
- * Runs [body] over every pixel of the tile that [column] and [band] intersect at, in raster order, and
- * returns how many pixels that was.
+ * Runs [body] over every pixel of the tile that [column] and [band] intersect at, in raster order.
  *
  * Both passes walk a tile identically and differ only in what they accumulate, so the walk — including
- * the remainder band's real, wider extent — is stated once and cannot drift between them.
+ * the remainder band's actual extent, which is a partial tile — is stated once and cannot drift between
+ * them.
  */
 private inline fun forEachTilePixel(
     column: TileBand,
     band: TileBand,
     body: (x: Int, y: Int) -> Unit,
-): Int {
+) {
     for (y in band.startPx until band.endPx) {
         for (x in column.startPx until column.endPx) {
             body(x, y)
         }
     }
-    return (column.endPx - column.startPx) * (band.endPx - band.startPx)
 }
 
 /**
@@ -298,6 +313,9 @@ private class TileBand(
     val startPx: Int,
     val endPx: Int,
 ) {
+    /** How many raster samples this band covers. The remainder band is a partial tile and covers fewer. */
+    val lengthPx: Int get() = endPx - startPx
+
     /**
      * The band's centre in continuous buffer-pixel coordinates. A band covering raster samples
      * `[start, end)` occupies the continuous span `[start, end)` under the edge-coordinate convention,
@@ -325,25 +343,6 @@ private fun tileBands(
 
 /** 8-bit luma has exactly this many distinct values, so a histogram of this width is exact, not binned. */
 private const val LUMA_LEVELS = 256
-
-/**
- * A residual `pixel - interpolatedLevel` runs over `(-255, 255)`, so this many 1-luma bins cover it with
- * no clipping. The bin width is the grid the pixels themselves are quantised to; finer bins would only
- * record where a rounding sat, not anything the sensor measured. [interpolatedQuantile] is what recovers
- * sub-bin resolution, and it recovers it from the counts rather than from the bin width.
- */
-private const val RESIDUAL_LEVELS = 2 * LUMA_LEVELS - 1
-
-/** Shifts a residual of `-255` onto bin 0. Cancels in `median - q25` and so is never subtracted back. */
-private const val RESIDUAL_BIAS = LUMA_LEVELS - 1
-
-/**
- * The [RESIDUAL_LEVELS]-bin index for a residual of [residual] luma. The `coerceIn` cannot fire for an
- * interpolated level that came from real 8-bit medians, and is there so a future change to how the level
- * is produced degrades to a clamped bin rather than to an out-of-bounds write.
- */
-private fun residualBin(residual: Double): Int =
-    (residual.roundToInt() + RESIDUAL_BIAS).coerceIn(0, RESIDUAL_LEVELS - 1)
 
 /** Pixel `(x, y)` spans `[x, x+1)`, so its centre is half a pixel in. */
 private const val PIXEL_CENTRE_OFFSET = 0.5
@@ -379,45 +378,19 @@ private fun IntArray.quantile(
 }
 
 /**
- * The [fraction]-quantile of a histogram holding [sampleCount] samples, as a **fractional** bin index:
- * the same statistic as [quantile] but interpolated between the mid-points of the occupied bins instead
- * of snapping to whichever bin the cumulative count crosses in.
+ * The [fraction]-quantile of the [sampleCount] values sorted into the front of this array, by nearest
+ * rank — the same convention [quantile] reaches on the level histogram, so the level and the spread are
+ * not quietly reading their quantiles two different ways.
  *
- * The spread needs this and the level does not. `sigma = (median - q25) / 0.6745` divides a difference of
- * two bin indices by 0.674, so a whole-bin answer can only ever report a multiple of 1.48 luma: a sky
- * whose true sigma is 2.5 has `median - q25 = 1.69` and lands on 1 or on 2 depending on which side of the
- * bin edge a tile's noise realisation falls, i.e. on 1.48 or 2.97 — a 40% error either way, and on the
- * low side it puts the 4-sigma threshold at 2.4 real sigmas, where noise clears it often enough to build
- * three-pixel clumps the detector then reports as sources. Measuring the spread on the residual removed
- * the gradient that used to hide that coarseness behind a large sigma, so it has to be resolved rather
- * than inherited. The level is a luma value on the pixel grid and stays on it.
- *
- * Occupied bins are interpolated at their **mid**-cumulative position — a bin holding `c` of the samples
- * covers cumulative `[before, before + c]` and is placed at `before + c/2` — which is the standard
- * continuity correction for a quantised sample. A tile whose pixels are all one value has one occupied
- * bin, every target clamps onto it, and the spread comes out exactly zero, so a noiseless sky still
- * reports no spread at all rather than the half-bin an edge-based interpolation would invent.
+ * No interpolation between neighbouring order statistics. These samples are already the real residuals
+ * rather than bin labels, so the rank is the only approximation left, and it is the one a quartile
+ * estimate on thousands of samples can afford. Returns `0.0` for an empty tile, which a frame with
+ * positive dimensions cannot produce but which is defined rather than left to index out of bounds.
  */
-private fun IntArray.interpolatedQuantile(
+private fun DoubleArray.orderStatistic(
     sampleCount: Int,
     fraction: Double,
 ): Double {
     if (sampleCount <= 0) return 0.0
-    val target = fraction * sampleCount
-    var cumulative = 0
-    var previousBin = -1
-    var previousMidpoint = 0.0
-    for (bin in indices) {
-        val count = this[bin]
-        if (count == 0) continue
-        val midpoint = cumulative + count / 2.0
-        if (target <= midpoint) {
-            if (previousBin < 0) return bin.toDouble()
-            return previousBin + (target - previousMidpoint) / (midpoint - previousMidpoint) * (bin - previousBin)
-        }
-        cumulative += count
-        previousBin = bin
-        previousMidpoint = midpoint
-    }
-    return previousBin.coerceAtLeast(0).toDouble()
+    return this[(fraction * sampleCount).toInt().coerceIn(0, sampleCount - 1)]
 }
