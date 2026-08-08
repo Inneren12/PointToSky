@@ -39,5 +39,6 @@ include(
   ":core:time",
   ":tools:ephem-cli",
   ":core:catalog",
-  ":tools:catalog-packer"
+  ":tools:catalog-packer",
+  ":tools:sky-session-loader"
 )

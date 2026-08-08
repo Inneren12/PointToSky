@@ -1,6 +1,9 @@
 package dev.pointtosky.core.astro.projection.camera.detect
 
+import dev.pointtosky.core.astro.projection.camera.PixelPoint
+import dev.pointtosky.core.astro.projection.camera.prediction.CameraDirectionSnapshot
 import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarClassification
+import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProjection
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyPredictedStar
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -257,6 +260,45 @@ class DetectionEvaluationTest {
 
         assertEquals(first, second)
         assertEquals(2, first.matchedCount)
+    }
+
+    @Test
+    fun `narrows a recomputed projection batch by the same observability rule`() {
+        val projections =
+            PredictedStarClassification.entries.mapIndexed { index, classification ->
+                projection(catalogIndex = index, classification = classification, xPx = 40.0 + index, yPx = 60.0)
+            }
+
+        val points = projections.toPredictedPointsPx()
+
+        assertEquals(
+            projections.filter { it.classification.isDetectorObservable() }.map { it.catalogIndex },
+            points.map { it.catalogIndex },
+        )
+        // The coordinates come from the projection's own imagePoint, not from anything recorded.
+        points.forEach { point ->
+            val source = assertNotNull(projections.first { it.catalogIndex == point.catalogIndex }.imagePoint)
+            assertEquals(source.x, point.xPx)
+            assertEquals(source.y, point.yPx)
+        }
+    }
+
+    private fun projection(
+        catalogIndex: Int,
+        classification: PredictedStarClassification,
+        xPx: Double,
+        yPx: Double,
+    ): PredictedStarProjection {
+        // BEHIND_CAMERA carries no pixel data at all; the type's own invariant enforces that pairing.
+        val behindCamera = classification == PredictedStarClassification.BEHIND_CAMERA
+        return PredictedStarProjection(
+            catalogIndex = catalogIndex,
+            magnitude = 2.0,
+            classification = classification,
+            cameraDirection = if (behindCamera) null else CameraDirectionSnapshot(0.0, 0.0, 1.0, 0.0, 0.0),
+            imagePoint = if (behindCamera) null else PixelPoint(xPx, yPx),
+            displayPoint = if (behindCamera) null else PixelPoint(xPx, yPx),
+        )
     }
 
     private fun skyStar(

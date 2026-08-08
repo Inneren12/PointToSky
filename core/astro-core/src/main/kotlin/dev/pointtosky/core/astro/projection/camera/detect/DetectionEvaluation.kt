@@ -1,6 +1,7 @@
 package dev.pointtosky.core.astro.projection.camera.detect
 
 import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarClassification
+import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProjection
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyPredictedStar
 import kotlin.math.hypot
 import kotlin.math.sqrt
@@ -188,6 +189,31 @@ fun List<SkyPredictedStar>.toPredictedPointsPx(): List<PredictedPointPx> =
         val x = star.imageXPx ?: return@mapNotNull null
         val y = star.imageYPx ?: return@mapNotNull null
         PredictedPointPx(catalogIndex = star.catalogIndex, xPx = x, yPx = y)
+    }
+
+/**
+ * The same narrowing applied to a **freshly computed** projection batch rather than to recorded values.
+ *
+ * This is the truth set an *offline* run should score against. A recorded `SkyPredictedStar` carries
+ * the coordinate the capturing device produced; the projection here is the coordinate the same math
+ * produces now, from the log's own pose, observer and intrinsics. Where a session is intact the two
+ * agree and the choice is immaterial — but where a record is stale, hand-edited or written by a build
+ * whose projection has since been corrected, only the recomputed one is a position the current math
+ * stands behind. Scoring against the recorded value in that case measures the detector against a
+ * number nothing verified.
+ *
+ * Both gates from [toPredictedPointsPx] carry over unchanged, and deliberately reuse
+ * [isDetectorObservable] rather than restating it: the rule for what the detector could have found
+ * must have exactly one definition. The null-coordinate gate is defence in depth here —
+ * `PredictedStarProjection`'s own invariant already ties a non-[PredictedStarClassification.BEHIND_CAMERA]
+ * classification to a non-null `imagePoint` — kept so that invariant is enforced rather than assumed.
+ */
+@JvmName("projectionsToPredictedPointsPx")
+fun List<PredictedStarProjection>.toPredictedPointsPx(): List<PredictedPointPx> =
+    mapNotNull { projection ->
+        if (!projection.classification.isDetectorObservable()) return@mapNotNull null
+        val point = projection.imagePoint ?: return@mapNotNull null
+        PredictedPointPx(catalogIndex = projection.catalogIndex, xPx = point.x, yPx = point.y)
     }
 
 private fun List<Double>.rootMeanSquareOrNull(): Double? {
