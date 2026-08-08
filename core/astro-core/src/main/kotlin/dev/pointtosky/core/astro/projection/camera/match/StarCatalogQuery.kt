@@ -62,6 +62,13 @@ interface StarCatalogQuery {
      *    pair can be logged by index without ambiguity.
      *  - **No side effects.** No caching, no mutation of the caller's arguments, no I/O beyond whatever
      *    the implementation's own already-loaded store requires.
+     *  - **The magnitude cut is exact `Double` arithmetic**, applied to the very
+     *    [EquatorialStarDirection.magnitude] the caller receives: for every returned star,
+     *    `star.magnitude <= magnitudeLimit` holds when a limit was given. An implementation whose
+     *    storage quantizes magnitudes must not let that quantization widen the cut — it may use its
+     *    quantized index to narrow the candidate set, then apply the exact comparison itself. (PTSKCAT0
+     *    stores centi-magnitudes and rounds a queried limit to them, so a `1.995` limit would otherwise
+     *    admit a stored `2.00`; see `PtskCat0StarCatalogQuery`.)
      *
      * @param rightAscensionRad query RA in radians; any finite value is accepted and wrapped, matching
      *   [EquatorialStarDirection.of].

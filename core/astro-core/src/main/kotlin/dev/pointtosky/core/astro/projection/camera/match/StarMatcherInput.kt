@@ -14,6 +14,18 @@ import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProje
  * RANSAC, no pose. Assembling this type is the last step before a matcher exists; nothing here decides
  * which detection is which star.
  *
+ * ## Pixels to angles
+ * A geometric matcher works in angles, and the one sanctioned route from a detected centroid to one is
+ * [AnalysisBufferScale.cameraRayFor]:
+ * ```text
+ * DetectedSource.xPx/yPx  ->  scale.cameraRayFor(...)  ->  unit camera ray  ->  angular invariant
+ * ```
+ * It delegates to the single canonical inverse of the production projection, which is what applies the
+ * non-central principal point, `fx != fy`, and the axis-swap/negation flags correctly. A matcher must
+ * not write its own inverse, and must not obtain an invariant by multiplying a pixel distance by
+ * [AnalysisBufferScale.radiansPerPixelXOnAxis] — that is an on-axis first-order approximation for
+ * sizing tolerances, and it is visibly wrong by the frame edge.
+ *
  * ## One pixel space, so a residual is a subtraction
  * [detections]' centroids, [priorProjections]' `imagePoint`, and every pixel quantity on [scale] are all
  * full analysis-buffer pixels in the project's continuous edge-coordinate convention (raster sample
@@ -71,12 +83,14 @@ import dev.pointtosky.core.astro.projection.camera.prediction.PredictedStarProje
  * @property detections the frame's point sources, exactly as `detectStars` returned them.
  * @property candidates catalog stars that could plausibly appear in this frame — typically a
  *   [StarCatalogQuery] cone around the current pointing estimate, sized from
- *   [AnalysisBufferScale.horizontalFieldOfViewRad]/[AnalysisBufferScale.verticalFieldOfViewRad]. Order
- *   carries no meaning; identity is [EquatorialStarDirection.catalogIndex], which is unique across the
- *   list.
- * @property scale the frame's pixel↔angle scale and optical-axis position; see [AnalysisBufferScale],
- *   including [AnalysisBufferScale.quality] for whether these numbers are a real per-device measurement
- *   or the legacy fixed-FOV fallback.
+ *   [AnalysisBufferScale.enclosingConeRadiusRad] (a cone takes a radius; half of
+ *   [AnalysisBufferScale.horizontalFieldOfViewRad] would clip the frame's corners, and would not even
+ *   be half the worst-case span once the principal point is off centre). Order carries no meaning;
+ *   identity is [EquatorialStarDirection.catalogIndex], which is unique across the list.
+ * @property scale the frame's pixel↔ray geometry — [AnalysisBufferScale.cameraRayFor] for the exact
+ *   camera ray of any detected centroid, the per-edge angular extents, and
+ *   [AnalysisBufferScale.quality] for whether these numbers are a real per-device measurement or the
+ *   legacy fixed-FOV fallback.
  * @property priorProjections optional predicted positions for [candidates]; see the section above for
  *   the one thing it may not be used for. Every entry's `catalogIndex` must name a star in
  *   [candidates] — a prediction about a star the matcher was never given is a mis-assembled input, not

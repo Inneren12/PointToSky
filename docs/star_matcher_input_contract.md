@@ -28,19 +28,25 @@ translation step, and there is only one spelling of the concept to keep correct.
 ### Wall B — the detector has no scale
 
 By design `StarDetector` does not know the camera intrinsics: a centroid is a fact about pixels. A
-matcher built on geometric invariants does need a pixel↔angle scale, so it has to come from the same
+matcher built on geometric invariants does need pixel↔ray geometry, so it has to come from the same
 place production projection gets it — `CameraSessionGeometry`'s resolved intrinsics.
 
-Resolved with `AnalysisBufferScale`, which stores the production `PinholeProjectionModel` and exposes the
-numbers a matcher reads off it. It duplicates no projection math: `AnalysisBufferScale.forGeometry` is a
-delegation to `PinholeProjectionModel.forGeometry`.
+Resolved in two parts:
+
+- `PinholeProjectionModel.unprojectToCameraRay(point: PixelPoint): BufferOpticalCameraVector` — the one
+  canonical inverse of the production forward projection, living beside the forward map it inverts.
+- `AnalysisBufferScale`, which stores that model and delegates to it (`cameraRayFor`), plus the derived
+  angular quantities. It duplicates no projection math: `forGeometry` delegates to
+  `PinholeProjectionModel.forGeometry`, and the angular extents are measured between real unprojected
+  rays.
 
 ## Where the code lives
 
 | Concern | Module | File |
 | --- | --- | --- |
+| Canonical pixel→ray inverse | `:core:astro-core` | `…/camera/prediction/PinholeProjectionModel.kt` |
 | Catalog port | `:core:astro-core` | `…/projection/camera/match/StarCatalogQuery.kt` |
-| Angular-scale carrier | `:core:astro-core` | `…/projection/camera/match/AnalysisBufferScale.kt` |
+| Pixel↔ray geometry carrier | `:core:astro-core` | `…/projection/camera/match/AnalysisBufferScale.kt` |
 | Input DTO | `:core:astro-core` | `…/projection/camera/match/StarMatcherInput.kt` |
 | PTSKCAT0 adapter | `:core:catalog` | `…/catalog/binary/PtskCat0StarCatalogQuery.kt` |
 
@@ -71,32 +77,112 @@ Contract points worth stating explicitly:
   `Math.round(+∞).toInt()` is `-1`, so an infinite "no limit" would select **zero** stars.
 - Results are deterministic and carry distinct `catalogIndex` values. Nothing beyond determinism is
   promised about the order.
+- **The magnitude cut is exact `Double` arithmetic** against the magnitude the caller receives:
+  `star.magnitude <= magnitudeLimit` holds for every returned star. Storage quantization must not widen
+  it. PTSKCAT0 stores centi-magnitudes and rounds a queried limit with `round(limit · 100)`, so its own
+  prefix admits a stored `2.00` for a limit of `1.995`; `PtskCat0StarCatalogQuery` therefore uses that
+  prefix **only as a candidate-narrowing optimization** and applies the exact comparison afterwards.
+  The prefix can never drop a star the exact cut would keep (stored magnitudes are integers in
+  centi-magnitudes, and `round(x) >= floor(x)`), except for a limit outside the `Short`
+  centi-magnitude range, where the `toInt()` conversion can overflow — those skip the prefix and fall
+  through to a full scan plus the exact cut. The on-disk format is unchanged.
 
 Identity is the backing catalog's stable index — for PTSKCAT0, the record index, which is stable for a
 given catalog binary and not portable across binaries. Hipparcos numbers, names and colours are
 deliberately not carried; a caller that wants them reads them from its own catalog handle, keyed by the
 index the port did carry.
 
-## The angular scale
+## Pixel ↔ ray geometry
 
-`AnalysisBufferScale` stores the frame's `PinholeProjectionModel` and exposes:
+### The path a matcher takes
 
-- `focalLengthXPx` / `focalLengthYPx` — analysis-buffer pixels.
-- `principalPointXPx` / `principalPointYPx` — the optical axis; defaults to the buffer's geometric centre
-  `(W/2, H/2)`, which is the centre only under the edge-coordinate convention below.
-- `imageWidthPx` / `imageHeightPx`.
-- `radiansPerPixelXOnAxis` / `radiansPerPixelYOnAxis` — the exact derivative `dθ/dx = 1/f` **at the optical
-  axis**. It falls off as `cos²θ` (about 30 % across a 66° FOV), so it sizes a tolerance; it does not
-  replace projecting through the model.
-- `horizontalFieldOfViewRad` / `verticalFieldOfViewRad`.
+```text
+detected pixel (DetectedSource.xPx/yPx)
+  -> AnalysisBufferScale.cameraRayFor(...)      // delegates to PinholeProjectionModel.unprojectToCameraRay
+  -> unit camera ray (BufferOpticalCameraVector, +x right, +y down, +z forward)
+  -> angular invariant (e.g. acos of the dot product of two rays)
+```
+
+`cameraRayFor` is the only sanctioned pixel→ray step, and the inverse it delegates to is the only
+inversion of the production model anywhere in the codebase. That matters because `project` is not a bare
+`f·x + c`: `axisSwapped` decides which normalized component is multiplied by which focal length, and
+`negateXInput`/`negateYInput` decide with which sign — flags derived alongside the focal lengths and
+principal point by `mapActiveArrayIntrinsicsThroughMatrix`, never independently. A matcher that wrote its
+own inverse would be re-deriving that convention from the outside, and would become a second, unversioned
+camera-coordinate contract the moment either side changed.
+
+The returned ray is always unit length and always strictly forward-facing (`z > 0`); a point outside the
+image is accepted and meaningful, exactly as `project` never clamps its own output. No display or
+viewport transform is involved — `CropScaleTransform` is a separate, later stage.
+
+`PinholeProjectionModelUnprojectTest` pins `ray -> project -> unproject` to `1e-12` for a centred and an
+off-centre principal point, for `fx != fy`, and for **every** combination of the three orientation flags,
+on a fixture asymmetric enough that no flag can hide behind a symmetry — plus explicit assertions that
+the fixture *can* tell a flag-aware inverse from a flag-blind one.
+
+### What `AnalysisBufferScale` exposes
+
+- `pinhole` — the production model itself, stored rather than unpacked.
+- `cameraRayFor(point)` / `opticalAxisRay`.
+- `focalLengthXPx` / `focalLengthYPx`, `principalPointXPx` / `principalPointYPx`,
+  `imageWidthPx` / `imageHeightPx`.
+- `leftAngularExtentRad` / `rightAngularExtentRad` / `topAngularExtentRad` / `bottomAngularExtentRad`.
+- `horizontalFieldOfViewRad` = left + right, `verticalFieldOfViewRad` = top + bottom.
+- `enclosingConeRadiusRad` — the axis-centred cone that contains the whole buffer.
+- `radiansPerPixelXOnAxis` / `radiansPerPixelYOnAxis` — the exact derivative `dθ/dx = 1/f` **at the
+  optical axis**, and nothing more. It falls off as `cos²θ` (about 30 % across a 66° FOV), so it sizes a
+  search radius or a match tolerance. **An angle that feeds a geometric invariant comes from
+  `cameraRayFor`, never from this.**
 - `quality` — `CALIBRATED` or `LEGACY_INTRINSICS_FALLBACK`. The fallback FOV is a hardcoded default, not a
   measurement of the device in the user's hand, so the scale can be wrong by a large unknown factor. The
   flag rides with the numbers rather than being left behind in the geometry bundle.
 
-Unmappable intrinsics (physical-sensor reference, dimensionless fallback, or an analysis-buffer reference
-whose recorded dimensions do not match this frame) **throw** rather than yielding a fabricated scale —
-the same cases `projectStars` reports as `IntrinsicsMappingUnavailable`. A fabricated scale is worse than
-no scale, because a matcher cannot tell it is wrong.
+### The angular extents are per-edge, not `2·atan(W / 2f)`
+
+The closed forms `2·atan(W / (2·fx))` and `2·atan(H / (2·fy))` are exact **only** when the principal
+point is the raster centre. `CameraIntrinsics` allows a measured principal point, and `AnalysisBufferScale`
+carries whatever the calibrated geometry reports, so the extents are derived from the actual optical-axis
+position instead:
+
+```text
+left  = angle(opticalAxisRay, cameraRayFor(0, cy))       // = atan(cx / fx) for an axis-aligned model
+right = angle(opticalAxisRay, cameraRayFor(W, cy))       // = atan((W - cx) / fx)
+```
+
+and analogously for top/bottom with `cy` / `fy`. They are measured between real unprojected rays rather
+than from a closed form, so `axisSwapped` and the negation flags are handled once, by the canonical
+inverse, instead of needing another special case here. Each extent is signed by which side of the axis
+its edge lies on, so the sums remain the true full extent even if the optical axis were to fall outside
+the image. For a centred axis the results are identical to the old closed forms, so nothing changes on
+the fallback path.
+
+### Sizing a candidate cone
+
+Be explicit about which of the three you want:
+
+| You want | Use |
+| --- | --- |
+| How far the frame reaches on one side of the axis | the individual `*AngularExtentRad` |
+| The full angular width/height of the image | `horizontalFieldOfViewRad` / `verticalFieldOfViewRad` |
+| A cone radius for `StarCatalogQuery.nearby` | `enclosingConeRadiusRad` |
+
+A `StarCatalogQuery` cone is specified by a radius about one direction, so `enclosingConeRadiusRad` — the
+largest angle from the optical axis to any image **corner** — is the one to query with. Half of
+`horizontalFieldOfViewRad` is wrong twice over: it ignores the vertical extent and the corners, and with
+an off-centre axis it is not even half the span in the worst direction. `enclosingConeRadiusRad` is
+axis-centred and conservative, not minimal: for an off-centre axis the smallest enclosing cone is centred
+elsewhere, so this over-covers. Over-covering costs a few extra candidates; under-covering silently drops
+stars that are visibly in frame.
+
+Do not assume the optical axis is the raster centre. It is the *default* when nothing was measured, not a
+property of the type.
+
+### Unmappable intrinsics
+
+Physical-sensor reference, dimensionless fallback, or an analysis-buffer reference whose recorded
+dimensions do not match this frame all **throw** rather than yielding a fabricated scale — the same cases
+`projectStars` reports as `IntrinsicsMappingUnavailable`. A fabricated scale is worse than no scale,
+because a matcher cannot tell it is wrong.
 
 ## The input DTO
 

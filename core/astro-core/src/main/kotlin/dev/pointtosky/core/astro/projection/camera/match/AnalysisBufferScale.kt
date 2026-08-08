@@ -2,28 +2,52 @@ package dev.pointtosky.core.astro.projection.camera.match
 
 import dev.pointtosky.core.astro.projection.camera.CameraGeometryQuality
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
+import dev.pointtosky.core.astro.projection.camera.PixelPoint
+import dev.pointtosky.core.astro.projection.camera.prediction.BufferOpticalCameraVector
 import dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel
 import dev.pointtosky.core.astro.projection.camera.quality
-import kotlin.math.atan
+import kotlin.math.atan2
+import kotlin.math.sqrt
 
 /**
- * The **angular scale** half of the matcher's input contract: how many radians one analysis-buffer pixel
- * is worth, where the optical axis sits, and how much that number can be trusted.
+ * The **pixel↔ray geometry** half of the matcher's input contract: how to turn an analysis-buffer pixel
+ * into an exact camera ray, how wide the image actually is in angle, and how much the numbers can be
+ * trusted.
  *
  * ## Why this type has to exist
  * The SKY-2 detector deliberately does not know the camera's intrinsics — `StarDetector.kt`'s file KDoc
  * says so in its first paragraph, and that is the right call: a centroid is a fact about pixels and
- * needs no camera model. But a matcher built on geometric invariants needs a pixel↔angle scale, and it
- * must come from the same place production projection gets it: [CameraSessionGeometry]'s resolved
- * intrinsics over the analysis buffer. Without a carrier the matcher would have to reach for intrinsics
- * itself and would be free to derive them a second, subtly different way.
+ * needs no camera model. But a matcher built on angular invariants needs the exact ray for each detected
+ * centroid, and it must come from the same place production projection gets it:
+ * [CameraSessionGeometry]'s resolved intrinsics over the analysis buffer. Without a carrier the matcher
+ * would have to reach for intrinsics itself and would be free to derive them a second, subtly different
+ * way.
+ *
+ * ## The path a matcher is expected to take
+ * ```text
+ * detected pixel (DetectedSource.xPx/yPx)  ->  cameraRayFor(...)  ->  unit camera ray  ->  angular
+ * invariant (e.g. acos of the dot product of two rays)
+ * ```
+ * [cameraRayFor] is the **only** sanctioned pixel→ray step. It delegates to
+ * [PinholeProjectionModel.unprojectToCameraRay], the single canonical inverse of the production forward
+ * projection, which is what correctly applies the non-central principal point, `fx != fy`, and the
+ * `axisSwapped`/`negateXInput`/`negateYInput` orientation flags. A consumer must not re-derive that
+ * inverse: a second hand-written inversion is a second camera-coordinate contract, and the flags are
+ * exactly the part that a from-the-outside re-derivation gets wrong.
+ *
+ * [radiansPerPixelXOnAxis]/[radiansPerPixelYOnAxis] are **not** part of that path. They are a
+ * first-order, on-axis plate scale for sizing a search radius or a match tolerance, and they degrade
+ * off-axis (see their own docs). Any angle that feeds a geometric invariant comes from rays, not from
+ * multiplying a pixel distance by a plate scale.
  *
  * ## No second copy of the projection math
- * Every number here is read straight off a [PinholeProjectionModel] — the same object
+ * Every number here is read from, or computed through, one [PinholeProjectionModel] — the same object
  * [dev.pointtosky.core.astro.projection.camera.prediction.projectStars] projects with. [pinhole] is
  * stored, not unpacked into independent fields, so "consistent with the production model" is true by
  * construction rather than by a test that has to keep two derivations in step. [forGeometry] is a
- * one-line delegation to [PinholeProjectionModel.forGeometry] and derives nothing of its own.
+ * one-line delegation to [PinholeProjectionModel.forGeometry] and derives nothing of its own, and the
+ * angular extents below are measured between real unprojected rays rather than from a closed-form
+ * formula that would have to special-case the orientation flags all over again.
  *
  * ## Space and convention (consumed here, not chosen here)
  * All pixel quantities are **full analyzed-buffer** pixels — unrotated, uncropped — in the project's
@@ -32,7 +56,7 @@ import kotlin.math.atan
  * `docs/camera_coordinate_calibration_contract.md` §9.2). That is the same space
  * [dev.pointtosky.core.astro.projection.camera.detect.DetectedSource]'s centroids and
  * `SkyPredictedStar.imageXPx`/`imageYPx` live in, which is what makes a detection-minus-prediction
- * residual a plain subtraction.
+ * residual a plain subtraction. No display/viewport transform belongs anywhere in this type.
  *
  * ## What [quality] is for
  * [CameraGeometryQuality.LEGACY_INTRINSICS_FALLBACK] means the FOV these numbers come from is a
@@ -42,10 +66,8 @@ import kotlin.math.atan
  * in the geometry bundle. This type does not decide what to do about it.
  *
  * ## What this deliberately is not
- * Not a projector and not an unprojector: there is no `unproject`, no ray, and no matcher math here.
- * A consumer that needs the exact angle between two arbitrary pixels computes it from [pinhole] itself;
- * [radiansPerPixelXOnAxis]/[radiansPerPixelYOnAxis] are the *on-axis* plate scale and nothing more (see
- * their own docs for how they fall off).
+ * Not a matcher and not a projector: there is no association, no invariant, no descriptor, and no
+ * forward projection here — [pinhole] owns the forward map and this type never wraps it.
  *
  * The constructor stays public because there is no cross-field invariant to protect — a
  * [PinholeProjectionModel] carries no provenance, so no check here could tell a matching [quality] from
@@ -64,9 +86,11 @@ data class AnalysisBufferScale(
 
     /**
      * Optical-axis X in analysis-buffer pixels. Defaults to the buffer's exact geometric centre
-     * (`imageWidthPx / 2`) whenever the device reports no measured principal point — which is always, as
-     * of CAM-1b. `W / 2` is the centre only under the edge-coordinate convention above; under a
-     * pixel-centre convention it would be `(W - 1) / 2`.
+     * (`imageWidthPx / 2`) whenever the device reports no measured principal point — which is the case
+     * as of CAM-1b, but **not** something anything here may assume: a calibrated intrinsics value is
+     * free to carry an off-centre axis, and every angular quantity below is derived from this field
+     * rather than from `W / 2`. `W / 2` is the centre only under the edge-coordinate convention above;
+     * under a pixel-centre convention it would be `(W - 1) / 2`.
      */
     val principalPointXPx: Double get() = pinhole.principalPointXPx
 
@@ -80,13 +104,102 @@ data class AnalysisBufferScale(
     val imageHeightPx: Double get() = pinhole.imageHeightPx
 
     /**
+     * The exact unit camera ray for one analysis-buffer pixel — the matcher's pixel→ray step.
+     *
+     * A straight delegation to [PinholeProjectionModel.unprojectToCameraRay]; the inversion math lives
+     * there, once, beside the forward projection it inverts. See the class KDoc for why a consumer must
+     * not write its own.
+     */
+    fun cameraRayFor(point: PixelPoint): BufferOpticalCameraVector = pinhole.unprojectToCameraRay(point)
+
+    /**
+     * The ray at the optical axis — `cameraRayFor(principal point)`, i.e. `(0, 0, 1)`. Every angular
+     * extent below is measured from this ray, so none of them assumes the axis is the raster centre.
+     */
+    val opticalAxisRay: BufferOpticalCameraVector
+        get() = cameraRayFor(PixelPoint(principalPointXPx, principalPointYPx))
+
+    /**
+     * Angle from the optical axis to the image's **left** edge (`x = 0`), radians.
+     *
+     * Signed, and positive in the ordinary case where the axis lies inside the image: negative would
+     * mean the optical axis sits left of the frame entirely, in which case the left edge is on the same
+     * side as the right one and the signed sum is still the true horizontal extent. Equal to
+     * `atan(cx / fx)` for an axis-aligned model, but computed as the angle between two real unprojected
+     * rays so that [PinholeProjectionModel.axisSwapped] and the negation flags are handled by the one
+     * canonical inverse rather than by a second formula here.
+     */
+    val leftAngularExtentRad: Double
+        get() = signedExtentRad(PixelPoint(0.0, principalPointYPx), offsetPx = principalPointXPx)
+
+    /** Angle from the optical axis to the image's **right** edge (`x = imageWidthPx`); see [leftAngularExtentRad]. */
+    val rightAngularExtentRad: Double
+        get() =
+            signedExtentRad(
+                PixelPoint(imageWidthPx, principalPointYPx),
+                offsetPx = imageWidthPx - principalPointXPx,
+            )
+
+    /** Angle from the optical axis to the image's **top** edge (`y = 0`); see [leftAngularExtentRad]. */
+    val topAngularExtentRad: Double
+        get() = signedExtentRad(PixelPoint(principalPointXPx, 0.0), offsetPx = principalPointYPx)
+
+    /** Angle from the optical axis to the image's **bottom** edge (`y = imageHeightPx`); see [leftAngularExtentRad]. */
+    val bottomAngularExtentRad: Double
+        get() =
+            signedExtentRad(
+                PixelPoint(principalPointXPx, imageHeightPx),
+                offsetPx = imageHeightPx - principalPointYPx,
+            )
+
+    /**
+     * Total horizontal angular extent of the analysis buffer, radians:
+     * [leftAngularExtentRad] + [rightAngularExtentRad].
+     *
+     * **Not** `2·atan(W / (2·fx))`. That closed form is exact only when the principal point is the raster
+     * centre, which a calibrated intrinsics value is under no obligation to be; it silently reports the
+     * wrong extent for an off-centre axis, and it hides the asymmetry a caller may need. When the axis
+     * *is* centred the two agree exactly, so nothing changes for the fallback path.
+     *
+     * This is the **full image** extent, not a cone radius. A candidate cone centred on the optical axis
+     * needs a radius, not a width — see [enclosingConeRadiusRad].
+     */
+    val horizontalFieldOfViewRad: Double get() = leftAngularExtentRad + rightAngularExtentRad
+
+    /** The vertical analogue of [horizontalFieldOfViewRad]: [topAngularExtentRad] + [bottomAngularExtentRad]. */
+    val verticalFieldOfViewRad: Double get() = topAngularExtentRad + bottomAngularExtentRad
+
+    /**
+     * Radius of a cone, centred on the optical axis, that contains the whole analysis buffer: the
+     * largest angle from [opticalAxisRay] to any of the four image corners.
+     *
+     * This is the number to size a catalog query with, because a [StarCatalogQuery] cone is specified by
+     * a radius about one direction. Deriving that radius from half of [horizontalFieldOfViewRad] would
+     * be wrong twice over: it ignores the vertical extent and the corners, and for an off-centre
+     * principal point it is not even half the horizontal span in the worst direction.
+     *
+     * Conservative and axis-centred by construction, not minimal: for an off-centre axis the smallest
+     * enclosing cone is centred somewhere else, so this over-covers rather than clipping the frame.
+     * Over-covering costs a few extra candidates; under-covering silently drops stars that are visibly
+     * in frame.
+     */
+    val enclosingConeRadiusRad: Double
+        get() =
+            listOf(
+                PixelPoint(0.0, 0.0),
+                PixelPoint(imageWidthPx, 0.0),
+                PixelPoint(0.0, imageHeightPx),
+                PixelPoint(imageWidthPx, imageHeightPx),
+            ).maxOf { corner -> angleBetweenRad(opticalAxisRay, cameraRayFor(corner)) }
+
+    /**
      * Radians per pixel along X **at the optical axis** — the exact derivative `dθ/dx` of
      * `θ = atan(x / fx)` at `x = 0`, which is `1 / fx`.
      *
-     * On-axis only, and it shrinks off-axis: at an offset of `x` pixels the local scale is
-     * `fx / (fx² + x²)`, i.e. down by `cos²θ`. For a 66 deg horizontal FOV that is about a 30 % change
-     * between the centre and the frame edge, so this number is a sizing aid for tolerances and search
-     * radii, never a substitute for projecting through [pinhole] when an exact angle is needed.
+     * A sizing aid for tolerances and search radii, and nothing else. It is on-axis only and shrinks
+     * off-axis: at an offset of `x` pixels the local scale is `fx / (fx² + x²)`, i.e. down by `cos²θ`.
+     * For a 66 deg horizontal FOV that is about a 30 % change between the centre and the frame edge. An
+     * angle that feeds a geometric invariant must come from [cameraRayFor], never from this.
      */
     val radiansPerPixelXOnAxis: Double get() = 1.0 / focalLengthXPx
 
@@ -94,15 +207,20 @@ data class AnalysisBufferScale(
     val radiansPerPixelYOnAxis: Double get() = 1.0 / focalLengthYPx
 
     /**
-     * Full horizontal field of view of the analysis buffer, radians: `2·atan(W / (2·fx))`. This inverts
-     * exactly the relation [PinholeProjectionModel.forGeometry] used to derive `fx` from the intrinsics'
-     * `horizontalFovDeg`, so it round-trips to the FOV the camera reported — it is a convenience for a
-     * caller sizing a catalog cone, not an independent measurement.
+     * The angle from [opticalAxisRay] to the ray at [edge], signed by which side of the axis [edge] sits
+     * on ([offsetPx] is the pixel distance from the axis to that edge along the relevant image axis,
+     * positive when the edge is on the far side from the axis in the usual inside-the-image case).
+     *
+     * The magnitude comes from real rays so the orientation flags are applied exactly once, by the
+     * canonical inverse; only the sign is read off the pixel geometry, where it is unambiguous.
      */
-    val horizontalFieldOfViewRad: Double get() = 2.0 * atan(imageWidthPx / (2.0 * focalLengthXPx))
-
-    /** The vertical analogue of [horizontalFieldOfViewRad]: `2·atan(H / (2·fy))`. */
-    val verticalFieldOfViewRad: Double get() = 2.0 * atan(imageHeightPx / (2.0 * focalLengthYPx))
+    private fun signedExtentRad(
+        edge: PixelPoint,
+        offsetPx: Double,
+    ): Double {
+        val magnitude = angleBetweenRad(opticalAxisRay, cameraRayFor(edge))
+        return if (offsetPx >= 0.0) magnitude else -magnitude
+    }
 
     companion object {
         /**
@@ -128,4 +246,30 @@ data class AnalysisBufferScale(
                 quality = geometry.intrinsics.quality,
             )
     }
+}
+
+/**
+ * Angle between two camera rays, radians, in `[0, π]`.
+ *
+ * `atan2(|a × b|, a · b)` rather than `acos(a · b)`: for the small angles this type is mostly used at —
+ * an image edge a few degrees off axis, two stars a fraction of a degree apart — `acos` loses roughly
+ * half its significant digits, because its argument sits on the flat part of the cosine near 1. The
+ * `atan2` form stays accurate across the whole range and needs no clamping to survive a dot product
+ * that floating point nudged just past 1.
+ *
+ * Not a matcher utility, and deliberately not public: it exists so the angular extents above can be
+ * measured between real rays. A consumer computing an invariant takes the dot product of two
+ * [AnalysisBufferScale.cameraRayFor] results itself — both are unit vectors, so nothing here is needed
+ * to interpret them.
+ */
+private fun angleBetweenRad(
+    a: BufferOpticalCameraVector,
+    b: BufferOpticalCameraVector,
+): Double {
+    val crossX = a.y * b.z - a.z * b.y
+    val crossY = a.z * b.x - a.x * b.z
+    val crossZ = a.x * b.y - a.y * b.x
+    val crossMagnitude = sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ)
+    val dot = a.x * b.x + a.y * b.y + a.z * b.z
+    return atan2(crossMagnitude, dot)
 }

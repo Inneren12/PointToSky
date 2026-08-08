@@ -66,8 +66,9 @@ class PtskCat0StarCatalogQuery(
                 raDegQuery = Math.toDegrees(rightAscensionRad),
                 decDegQuery = Math.toDegrees(declinationRad),
                 radiusDeg = Math.toDegrees(radiusRad),
-                magLimitQuery = magnitudeLimit,
-            ).map { index ->
+                magLimitQuery = prefixMagnitudeLimit(magnitudeLimit),
+            ).filter { index -> magnitudeLimit == null || catalog.magAt(index) <= magnitudeLimit }
+            .map { index ->
                 EquatorialStarDirection.of(
                     catalogIndex = index,
                     rightAscensionRad = Math.toRadians(catalog.raDegAt(index).toDouble()),
@@ -75,5 +76,40 @@ class PtskCat0StarCatalogQuery(
                     magnitude = catalog.magAt(index),
                 )
             }
+    }
+
+    /**
+     * The limit handed to [PtskCat0Catalog.nearby] as a **candidate-prefix optimization only** — never
+     * as the answer. The exact `magAt(index) <= magnitudeLimit` cut is applied afterwards, against the
+     * magnitude the caller actually receives.
+     *
+     * ## Why the prefix alone cannot be the contract
+     * [PtskCat0Catalog.countBrighterOrEqual] quantizes the limit to centi-magnitudes with
+     * `Math.round(limit * 100.0)`, so a limit of `1.995` rounds to `200` and admits a stored `2.00` —
+     * a star strictly fainter than the caller asked for. The port promises exact `Double` semantics, so
+     * the storage's quantization must not leak through it. Filtering afterwards costs one comparison per
+     * candidate and makes the promise true regardless of how the reader indexes internally.
+     *
+     * ## Why the prefix can never drop a star the exact cut would keep
+     * Stored magnitudes are integer centi-magnitudes, so the exact set is `magCenti <= floor(limit·100)`,
+     * and the prefix keeps `magCenti <= round(limit·100)`. `round(x) >= floor(x)` for every finite `x`,
+     * so the prefix is always a superset — over-inclusive at worst, which the post-filter then corrects.
+     *
+     * The one case where that reasoning breaks is a limit far outside the range a `Short`
+     * centi-magnitude can express: `Math.round(1e10 * 100.0).toInt()` overflows and can come back
+     * *negative*, which would empty the prefix and drop every valid star before the post-filter ever
+     * saw it. Such a limit is passed as `null` instead — a full scan, then the exact cut. It is a
+     * degenerate query either way (a limit above `327.67` admits every record; one below `-327.68`
+     * admits none), so the cost of not using the prefix there is irrelevant.
+     */
+    private fun prefixMagnitudeLimit(magnitudeLimit: Double?): Double? =
+        magnitudeLimit?.takeIf { it >= MIN_REPRESENTABLE_MAGNITUDE && it <= MAX_REPRESENTABLE_MAGNITUDE }
+
+    private companion object {
+        /** `Short.MIN_VALUE` centi-magnitudes — the faintest-signed value a PTSKCAT0 record can hold. */
+        const val MIN_REPRESENTABLE_MAGNITUDE = Short.MIN_VALUE / 100.0
+
+        /** `Short.MAX_VALUE` centi-magnitudes — the largest value a PTSKCAT0 record can hold. */
+        const val MAX_REPRESENTABLE_MAGNITUDE = Short.MAX_VALUE / 100.0
     }
 }

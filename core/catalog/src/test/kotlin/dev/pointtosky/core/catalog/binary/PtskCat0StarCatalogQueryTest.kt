@@ -119,6 +119,61 @@ class PtskCat0StarCatalogQueryTest {
     }
 
     @Test
+    fun `the magnitude cut is exact Double arithmetic, not the catalog's centi-magnitude rounding`() {
+        // Record 1 is stored as magnitude 2.00. PtskCat0Catalog converts a queried limit with
+        // round(limit * 100), so 1.995 rounds to 200 and its own prefix would admit that star — a star
+        // strictly fainter than asked for. The port promises star.magnitude <= magnitudeLimit against
+        // the Double the caller passed, so the storage quantization must not leak through.
+        val radiusRad = Math.toRadians(6.0)
+
+        fun indicesUpTo(magnitudeLimit: Double) =
+            query.nearby(queryRaRad, queryDecRad, radiusRad, magnitudeLimit).map { it.catalogIndex }
+
+        assertEquals("1.994 must exclude a stored 2.00", listOf(0), indicesUpTo(1.994))
+        assertEquals("1.995 must exclude a stored 2.00", listOf(0), indicesUpTo(1.995))
+        assertEquals("1.999 must exclude a stored 2.00", listOf(0), indicesUpTo(1.999))
+        assertEquals("2.000 must include a stored 2.00", listOf(0, 1), indicesUpTo(2.000))
+        assertEquals("2.001 must include a stored 2.00", listOf(0, 1), indicesUpTo(2.001))
+
+        // The bug is real in the layer underneath, not hypothetical: the raw reader does admit it.
+        assertTrue(
+            "the underlying prefix is expected to be over-inclusive at this boundary",
+            catalog.nearby(raDegQuery = 10.0, decDegQuery = 20.0, radiusDeg = 6.0, magLimitQuery = 1.995).contains(1),
+        )
+    }
+
+    @Test
+    fun `every returned star satisfies the exact limit`() {
+        val radiusRad = Math.toRadians(180.0)
+
+        for (limit in listOf(-2.0, 0.999, 1.0, 1.004, 2.5, 3.999, 4.0, 100.0)) {
+            val found = query.nearby(queryRaRad, queryDecRad, radiusRad, magnitudeLimit = limit)
+
+            assertTrue(
+                "a returned star was fainter than the limit $limit",
+                found.all { it.magnitude!! <= limit },
+            )
+            // ...and nothing that qualified was dropped: the exact set is what the catalog itself holds.
+            val expected = (0 until catalog.count).filter { catalog.magAt(it) <= limit }
+            assertEquals("limit $limit", expected, found.map { it.catalogIndex })
+        }
+    }
+
+    @Test
+    fun `a limit beyond the centi-magnitude range still returns the exact set`() {
+        // Math.round(1e10 * 100.0).toInt() overflows to a wrapped, possibly negative value, which would
+        // empty the reader's prefix and drop every star before the exact cut ever ran. Such limits skip
+        // the prefix entirely and fall through to the post-filter.
+        val radiusRad = Math.toRadians(180.0)
+
+        val huge = query.nearby(queryRaRad, queryDecRad, radiusRad, magnitudeLimit = 1e10)
+        assertEquals(listOf(0, 1, 2, 3), huge.map { it.catalogIndex })
+
+        val hugelyNegative = query.nearby(queryRaRad, queryDecRad, radiusRad, magnitudeLimit = -1e10)
+        assertEquals(emptyList<Int>(), hugelyNegative.map { it.catalogIndex })
+    }
+
+    @Test
     fun `an infinite magnitude limit is rejected rather than silently selecting nothing`() {
         val radiusRad = Math.toRadians(6.0)
 
