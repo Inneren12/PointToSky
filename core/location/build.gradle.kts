@@ -11,6 +11,13 @@ android {
         minSdk = libs.versions.minSdkMobile.get().toInt()
     }
 
+    testOptions {
+        // Robolectric needs the merged manifest to see this module's <uses-permission>
+        // entries (ACCESS_FINE_LOCATION/ACCESS_COARSE_LOCATION); without this it falls
+        // back to bare OS resources and every permission check is denied.
+        unitTests.isIncludeAndroidResources = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

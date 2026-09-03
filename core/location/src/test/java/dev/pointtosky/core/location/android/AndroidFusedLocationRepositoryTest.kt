@@ -1,5 +1,7 @@
 package dev.pointtosky.core.location.android
 
+import android.Manifest
+import android.app.Application
 import android.location.Location
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.gms.location.LocationRequest
@@ -18,14 +20,28 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class AndroidFusedLocationRepositoryTest {
+
+    @Before
+    fun grantLocationPermissions() {
+        // Robolectric correctly models the runtime-permission system for target SDK 23+: a
+        // manifest <uses-permission> entry alone does not mean checkSelfPermission() returns
+        // GRANTED, same as on a real device. AndroidFusedLocationRepository.start() silently
+        // no-ops without these.
+        shadowOf(ApplicationProvider.getApplicationContext<Application>()).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
+    }
 
     @Test
     fun `location mapping converts provider and fields`() {
