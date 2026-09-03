@@ -2,7 +2,6 @@ package dev.pointtosky.wear.complication
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import androidx.test.core.app.ServiceScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
@@ -68,7 +67,7 @@ class AimStatusComplicationDataTest {
     fun monochromaticImageData_hasIconAndDescription() {
         val data = requestData(ComplicationType.MONOCHROMATIC_IMAGE) as MonochromaticImageComplicationData
 
-        val description = data.contentDescription.getTextAt(context.resources, Instant.EPOCH).toString()
+        val description = data.contentDescription!!.getTextAt(context.resources, Instant.EPOCH).toString()
         assertThat(data.monochromaticImage.image).isNotNull()
         assertThat(description).contains("Vega")
         assertThat(data.tapAction).isNotNull()
@@ -85,21 +84,16 @@ class AimStatusComplicationDataTest {
     }
 
     private fun requestData(type: ComplicationType): ComplicationData? {
-        var result: ComplicationData? = null
-        val scenario = ServiceScenario.launch(AimStatusDataSourceService::class.java)
-        scenario.onService { service ->
-            result =
-                runBlocking {
-                    service.onComplicationRequest(
-                        ComplicationRequest(
-                            // complicationInstanceId =
-                            101,
-                            type,
-                        ),
-                    )
-                }
+        val service = AimStatusDataSourceServiceTestHarness()
+        service.initForTest(context)
+        return runBlocking {
+            service.onComplicationRequest(
+                ComplicationRequest(
+                    // complicationInstanceId =
+                    101,
+                    type,
+                ),
+            )
         }
-        scenario.close()
-        return result
     }
 }
