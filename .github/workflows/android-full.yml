@@ -9,6 +9,9 @@ on:
 jobs:
   full:
     runs-on: ubuntu-latest
+    # A hanging test (e.g. a coroutine test whose scope never completes) must fail the
+    # job instead of burning the runner until GitHub's default 6h job timeout kicks in.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,7 +47,10 @@ jobs:
       - name: Build + Lint + Unit tests
         run: |
           set -e
-          TASKS="testDebugUnitTest"
+          # testDebugUnitTest runs on every Android module (application/library) that has it,
+          # but the pure-JVM modules (core:astro-core, tools:*) only expose the plain `test`
+          # task, so they need to be listed explicitly or they never actually run here.
+          TASKS="testDebugUnitTest :core:astro-core:test :tools:ephem-cli:test :tools:catalog-packer:test :tools:sky-session-loader:test"
           if [ "${{ steps.detect.outputs.has_wear }}" = "true" ]; then
             TASKS=":wear:assembleDebug :wear:lint $TASKS"
           fi
