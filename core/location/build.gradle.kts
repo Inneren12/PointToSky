@@ -48,4 +48,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.androidx.test.core)
+    testImplementation("org.robolectric:robolectric:4.12.2")
 }

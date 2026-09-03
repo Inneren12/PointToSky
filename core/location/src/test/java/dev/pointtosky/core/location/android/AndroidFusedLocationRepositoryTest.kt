@@ -1,7 +1,7 @@
 package dev.pointtosky.core.location.android
 
-import android.app.Application
 import android.location.Location
+import androidx.test.core.app.ApplicationProvider
 import com.google.android.gms.location.LocationRequest
 import dev.pointtosky.core.location.api.LocationConfig
 import dev.pointtosky.core.location.model.GeoPoint
@@ -18,10 +18,13 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
+@RunWith(RobolectricTestRunner::class)
 class AndroidFusedLocationRepositoryTest {
 
     @Test
@@ -53,7 +56,7 @@ class AndroidFusedLocationRepositoryTest {
         val delegate = FakeFusedClientDelegate()
         var now = 200_000L
         val repo = AndroidFusedLocationRepository(
-            context = Application(),
+            context = ApplicationProvider.getApplicationContext(),
             io = dispatcher,
             timeProvider = { now },
             delegate = delegate,
@@ -77,6 +80,12 @@ class AndroidFusedLocationRepositoryTest {
         assertNotNull(fix)
         assertEquals(GeoPoint(1.0, 2.0), fix.point)
         assertEquals(ProviderType.FUSED, fix.provider)
+
+        // repo.start() launches a collector on its own internal scope that never completes on
+        // its own; without stopping it, runTest sees an uncompleted coroutine on the shared test
+        // dispatcher at the end of the test body and fails with UncompletedCoroutinesError.
+        repo.stop()
+        advanceUntilIdle()
     }
 
     @Test
@@ -84,7 +93,7 @@ class AndroidFusedLocationRepositoryTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val delegate = FakeFusedClientDelegate()
         val repo = AndroidFusedLocationRepository(
-            context = Application(),
+            context = ApplicationProvider.getApplicationContext(),
             io = dispatcher,
             delegate = delegate,
         )
@@ -116,6 +125,7 @@ class AndroidFusedLocationRepositoryTest {
         advanceUntilIdle()
 
         collectionJob.cancel()
+        repo.stop()
 
         assertEquals(3, collected.size)
         assertEquals(LocationFixHolder(0.0, 0.0, 0L), collected[0])
@@ -127,9 +137,10 @@ class AndroidFusedLocationRepositoryTest {
         repo.fixes.first()
     }
 
-    privateclass FakeFusedClientDelegate : AndroidFusedLocationRepository.FusedClientDelegate {
+    private class FakeFusedClientDelegate : AndroidFusedLocationRepository.FusedClientDelegate {
         private val updates = MutableSharedFlow<LocationFixHolder>()
         var lastLocation: Location? = null
+        var currentLocationResult: Location? = null
 
         override fun locationUpdates(request: LocationRequest): Flow<LocationFix> {
             return updates.mapToFixes()
@@ -137,19 +148,26 @@ class AndroidFusedLocationRepositoryTest {
 
         override suspend fun lastLocation(): Location? = lastLocation
 
+        override suspend fun currentLocation(timeoutMs: Long, priority: Int): Location? = currentLocationResult
+
         suspend fun emit(holder: LocationFixHolder) {
             updates.emit(holder)
         }
     }
 
-    private data class LocationFixHolder(val lat: Double, val lon: Double, val time: Long)
+    // internal (not private): the top-level mapToFixes() below needs to reference this type from
+    // outside the class body.
+    internal data class LocationFixHolder(val lat: Double, val lon: Double, val time: Long)
+}
 
-    private fun Flow<LocationFixHolder>.mapToFixes(): Flow<LocationFix> = this.map { holder ->
-        LocationFix(
-            point = GeoPoint(holder.lat, holder.lon),
-            timeMs = holder.time,
-            accuracyM = null,
-            provider = ProviderType.FUSED,
-        )
-    }
+// Top-level (not a member of AndroidFusedLocationRepositoryTest): FakeFusedClientDelegate is a
+// plain nested class, not an inner class, so it has no implicit outer-instance receiver and
+// can't see member extension functions declared on the test class.
+private fun Flow<AndroidFusedLocationRepositoryTest.LocationFixHolder>.mapToFixes(): Flow<LocationFix> = this.map { holder ->
+    LocationFix(
+        point = GeoPoint(holder.lat, holder.lon),
+        timeMs = holder.time,
+        accuracyM = null,
+        provider = ProviderType.FUSED,
+    )
 }
