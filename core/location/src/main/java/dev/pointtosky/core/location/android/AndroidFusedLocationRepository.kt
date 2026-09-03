@@ -123,12 +123,17 @@ class AndroidFusedLocationRepository(
     }
 
     override suspend fun stop() {
-        mutex.withLock {
+        // Capture and clear the job under the lock, but cancel/join it outside: awaiting a
+        // cancellation while holding `mutex` is a deadlock hazard (any code path in the
+        // cancelled coroutine's cleanup that ever needs this same lock would never get it).
+        val jobToCancel = mutex.withLock {
             if (!started) return
             started = false
-            updatesJob?.cancelAndJoin()
+            val job = updatesJob
             updatesJob = null
+            job
         }
+        jobToCancel?.cancelAndJoin()
     }
 
     @SuppressLint("MissingPermission") // явная проверка прав ниже
