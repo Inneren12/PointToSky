@@ -1,6 +1,13 @@
 # NOTICE
 
-This project uses astronomical reference data compiled from publicly available sources.
+The PointToSky project code is licensed under the Apache License, Version 2.0
+(see `LICENSE`). This project also uses astronomical reference data compiled
+from publicly available sources; those third-party data obligations are
+separate from, and not changed by, the Apache 2.0 code license. In
+particular, the packed HYG-derived catalog assets (PTSKCAT0 format) are
+derivatives of the HYG Database and carry the Creative Commons
+Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) license, as detailed
+below.
 
 ## Data sources
 - Yale Bright Star Catalogue (BSC5): star positions, magnitudes, and names.
@@ -13,7 +20,7 @@ This project uses astronomical reference data compiled from publicly available s
 - HYG Database v4.2 — compiled by David Nash (`astronexus/HYG-Database`), combining the Hipparcos Catalogue, the Yale Bright Star Catalogue (5th ed.), and the Gliese Catalogue of Nearby Stars (3rd ed.); star proper names cross-referenced against the IAU Catalog of Star Names (IAU-CSN). Licensed under Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/. Source: https://github.com/astronexus/HYG-Database.
 - Constellation boundaries — IAU (Delporte, 1930); obtained via d3-celestial.
 - Constellation figure lines (skeletons) — © Olaf Frohn, d3-celestial (https://github.com/ofrohn/d3-celestial).
-- Light-pollution grid — derived from NASA's Black Marble product suite (VIIRS/NPP), NASA EOSDIS. Reference: Román et al. 2018, Remote Sensing of Environment 210, 113–143. Skyglow model: Duriscoe et al. 2018, Journal of Quantitative Spectroscopy and Radiative Transfer 214, 133–145. (The real asset is not yet shipped; attribution is recorded here in advance.)
+- Light-pollution grid — derived from NASA's Black Marble product suite (VIIRS/NPP), NASA EOSDIS. Reference: Román et al. 2018, Remote Sensing of Environment 210, 113–143. Skyglow model: Duriscoe et al. 2018, Journal of Quantitative Spectroscopy and Radiative Transfer 214, 133–145. Shipped as `mobile/src/main/assets/lightpollution/bortle.bin` (PTSKLP01 v3).
 
 Per CC BY-SA 4.0, any redistribution of the packed HYG-derived catalog (PTSKCAT0 assets) must carry this same attribution and license.
 
