@@ -11,6 +11,13 @@ android {
         minSdk = libs.versions.minSdkMobile.get().toInt()
     }
 
+    testOptions {
+        // Robolectric needs the merged manifest to see this module's <uses-permission>
+        // entries (ACCESS_FINE_LOCATION/ACCESS_COARSE_LOCATION); without this it falls
+        // back to bare OS resources and every permission check is denied.
+        unitTests.isIncludeAndroidResources = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -48,4 +55,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.androidx.test.core)
+    testImplementation("org.robolectric:robolectric:4.12.2")
 }

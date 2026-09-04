@@ -37,4 +37,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.androidx.test.core)
+    testImplementation("org.robolectric:robolectric:4.12.2")
 }

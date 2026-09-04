@@ -1,5 +1,9 @@
 package dev.pointtosky.wear.sensors.orientation
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,54 +19,67 @@ import kotlin.test.assertTrue
 
 class DelegatingOrientationRepositoryTest {
 
+    // The repository eagerly shares its `zero`/`fps`/`isRunning`/`activeSource` state via
+    // stateIn(scope, Eagerly, ...), which launches child coroutines that never complete on
+    // their own. Passing runBlocking's own scope in previously meant those children kept
+    // runBlocking's Job alive forever. Give the repository an independent scope instead, and
+    // cancel it once the assertions are done so it can't outlive the test.
     @Test
     fun `uses rotation vector when available`() = runBlocking {
         val primary = FakeOrientationRepository(OrientationSource.ROTATION_VECTOR)
         val fallback = FakeOrientationRepository(OrientationSource.ACCEL_MAG)
-        val proxy = DelegatingOrientationRepository(primary, fallback, scope = this)
+        val repoScope = CoroutineScope(Job() + Dispatchers.Default)
+        val proxy = DelegatingOrientationRepository(primary, fallback, scope = repoScope)
+        try {
+            proxy.start(OrientationRepositoryConfig())
 
-        proxy.start(OrientationRepositoryConfig())
+            val frame = OrientationFrame(
+                timestampNanos = 1L,
+                azimuthDeg = 0f,
+                pitchDeg = 0f,
+                rollDeg = 0f,
+                forward = floatArrayOf(0f, 0f, 1f),
+                accuracy = OrientationAccuracy.HIGH,
+                rotationMatrix = FloatArray(9),
+            )
+            primary.emitFrame(frame)
 
-        val frame = OrientationFrame(
-            timestampNanos = 1L,
-            azimuthDeg = 0f,
-            pitchDeg = 0f,
-            rollDeg = 0f,
-            forward = floatArrayOf(0f, 0f, 1f),
-            accuracy = OrientationAccuracy.HIGH,
-            rotationMatrix = FloatArray(9),
-        )
-        primary.emitFrame(frame)
-
-        val received = withTimeout(1_000) { proxy.frames.first() }
-        assertEquals(frame, received)
-        assertTrue(primary.started)
-        assertFalse(fallback.started)
-        assertEquals(OrientationSource.ROTATION_VECTOR, proxy.activeSource.value)
+            val received = withTimeout(1_000) { proxy.frames.first() }
+            assertEquals(frame, received)
+            assertTrue(primary.started)
+            assertFalse(fallback.started)
+            assertEquals(OrientationSource.ROTATION_VECTOR, proxy.activeSource.value)
+        } finally {
+            repoScope.cancel()
+        }
     }
 
     @Test
     fun `falls back to accel plus mag when rotation vector missing`() = runBlocking {
         val fallback = FakeOrientationRepository(OrientationSource.ACCEL_MAG)
-        val proxy = DelegatingOrientationRepository(primary = null, fallback = fallback, scope = this)
+        val repoScope = CoroutineScope(Job() + Dispatchers.Default)
+        val proxy = DelegatingOrientationRepository(primary = null, fallback = fallback, scope = repoScope)
+        try {
+            proxy.start(OrientationRepositoryConfig())
 
-        proxy.start(OrientationRepositoryConfig())
+            val frame = OrientationFrame(
+                timestampNanos = 2L,
+                azimuthDeg = 10f,
+                pitchDeg = 5f,
+                rollDeg = -2f,
+                forward = floatArrayOf(0f, 1f, 0f),
+                accuracy = OrientationAccuracy.MEDIUM,
+                rotationMatrix = FloatArray(9),
+            )
+            fallback.emitFrame(frame)
 
-        val frame = OrientationFrame(
-            timestampNanos = 2L,
-            azimuthDeg = 10f,
-            pitchDeg = 5f,
-            rollDeg = -2f,
-            forward = floatArrayOf(0f, 1f, 0f),
-            accuracy = OrientationAccuracy.MEDIUM,
-            rotationMatrix = FloatArray(9),
-        )
-        fallback.emitFrame(frame)
-
-        val received = withTimeout(1_000) { proxy.frames.first() }
-        assertEquals(frame, received)
-        assertTrue(fallback.started)
-        assertEquals(OrientationSource.ACCEL_MAG, proxy.activeSource.value)
+            val received = withTimeout(1_000) { proxy.frames.first() }
+            assertEquals(frame, received)
+            assertTrue(fallback.started)
+            assertEquals(OrientationSource.ACCEL_MAG, proxy.activeSource.value)
+        } finally {
+            repoScope.cancel()
+        }
     }
 }
 

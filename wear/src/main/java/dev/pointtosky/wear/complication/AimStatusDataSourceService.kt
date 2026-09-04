@@ -18,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
-class AimStatusDataSourceService : BaseComplicationDataSourceService() {
+open class AimStatusDataSourceService : BaseComplicationDataSourceService() {
     private val repository by lazy { AimStatusRepository(applicationContext) }
     private val formatter by lazy { AimStatusFormatter(this) }
     private val prefsStore by lazy { ComplicationPrefsStore(applicationContext) }
