@@ -24,7 +24,7 @@
 - `:core:time` — **Android library**
   - Responsibilities: Julian date math, timezone repository utilities, and time sources for simulations/tests.
   - Key dependencies: Kotlin stdlib; consumed by astro modules.
-- `:core:astro-core` — **Android library**
+- `:core:astro-core` — **Kotlin/JVM library** (`kotlin("jvm")`, pure JVM — no Android dependency)
   - Responsibilities: foundational astronomy math (vectors/angles), coordinate transforms, sidereal time, aiming geometry, and ephemeris primitives.
   - Key dependencies: kotlin.math; consumed by `:core:astro` and tools.
 - `:core:astro` — **Android library**

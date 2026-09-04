@@ -3,7 +3,7 @@
 ## Top-level layout
 - `settings.gradle.kts` — declares all Gradle modules (mobile, wear, core libraries, tools, benchmarks).
 - `build.gradle.kts`, `gradle/`, `gradle.properties*`, `config/` — shared build configuration and version catalogs.
-- Module roots: `mobile/`, `wear/`, `core/`, `tools/`, `app/` (legacy), plus `docs/` and test data under `res/` and `store/`.
+- Module roots: `mobile/`, `wear/`, `core/`, `tools/`, plus `docs/` and test data under `res/` and `store/`.
 
 ## App entry points
 - Mobile
