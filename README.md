@@ -38,9 +38,10 @@ The authoritative, per-slice record of what's implemented vs. tested vs.
 device-validated for the camera workstream is `docs/SPRINT_STATUS.md`. Do
 not rely on `PROJECT_OVERVIEW.md`, `CONTENT_GUIDE.md`, or `MODULES.md` for
 current status — they predate several of the changes above and are not
-kept in sync with implementation state module-by-module (for example they
-describe `:core:astro-core` as an Android library; it is a pure-JVM module,
-see the module map below).
+kept in sync with implementation state module-by-module (for example,
+`PROJECT_OVERVIEW.md`'s module list omits `:tools:sky-session-loader`,
+added after that doc was last updated; see the module map below for the
+current module list).
 
 ## Three orthogonal axes
 
@@ -192,10 +193,8 @@ not for magnitude-based visibility filtering or matching.
 
 ## Licensing
 
-Code in this repository is intended to be licensed under Apache License
-2.0. **No `LICENSE` file exists at the repository root at the time of
-writing** — this section will be updated once one is added; do not treat
-the code as Apache-2.0-licensed until it is.
+Code in this repository is licensed under the Apache License, Version 2.0;
+see `LICENSE` at the repository root.
 
 Bundled data carries its own obligations, tracked in `NOTICE.md`:
 
