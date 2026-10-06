@@ -26,6 +26,22 @@ internal data class FrameContentExperimentSessionState(
     val targetPlacementLabel: TargetPlacementLabel = TargetPlacementLabel.CENTER,
     val distanceLabelMm: Double? = null,
     val latestSnapshot: FrameContentCorrespondenceSnapshot? = null,
+    /** PTS-03: the `CaptureResult` exact-joined to [latestFrame]; always replaced together with it. */
+    val latestCaptureResult: SkyCaptureResultSnapshot? = null,
+    /** PTS-03: the lighting label active when [latestFrame] arrived; replaced together with it. */
+    val latestFrameLighting: Pts03LightingLabel = Pts03LightingLabel.UNSPECIFIED,
+    /** PTS-03: [Pts03SessionClass.LOGICAL_UNPINNED] binds the logical camera with no physical/zoom pin (A1). */
+    val sessionClass: Pts03SessionClass = Pts03SessionClass.EXPLICIT_PHYSICAL,
+    /** PTS-03 camera-truth evidence for this attempt (this bind) only. */
+    val pts03: Pts03TruthSessionState =
+        Pts03TruthSessionState(
+            sessionId = pts03SessionId(0L, attemptId, sessionClass, physicalCameraId),
+            sessionClass = sessionClass,
+            requestedPhysicalCameraId = physicalCameraId.takeIf { sessionClass == Pts03SessionClass.EXPLICIT_PHYSICAL },
+            requestedDistortionMode = Pts03DistortionModeRequest.DEVICE_DEFAULT,
+            requestedAnalysisWidthPx = requestedAnalysisResolutionWidthPx,
+            requestedAnalysisHeightPx = requestedAnalysisResolutionHeightPx,
+        ),
 ) {
     val isTerminallyFailed: Boolean get() = explicitBindFailureReason != null
 }
@@ -43,14 +59,37 @@ internal fun initialFrameContentExperimentSessionState(
     attemptId: Long,
     physicalCameraId: String,
     requestedAnalysisResolution: AnalysisResolutionCandidate? = null,
-): FrameContentExperimentSessionState =
-    FrameContentExperimentSessionState(
+    pts03Request: Pts03AttemptRequest = Pts03AttemptRequest(),
+): FrameContentExperimentSessionState {
+    val sessionClass =
+        if (physicalCameraId == PTS03_LOGICAL_UNPINNED_CANDIDATE) Pts03SessionClass.LOGICAL_UNPINNED else Pts03SessionClass.EXPLICIT_PHYSICAL
+    val requestedPhysicalId = physicalCameraId.takeIf { sessionClass == Pts03SessionClass.EXPLICIT_PHYSICAL }
+    return FrameContentExperimentSessionState(
         attemptId = attemptId,
         physicalCameraId = physicalCameraId,
         requestedAnalysisResolutionWidthPx = requestedAnalysisResolution?.widthPx,
         requestedAnalysisResolutionHeightPx = requestedAnalysisResolution?.heightPx,
         requestedAnalysisResolutionFamily = requestedAnalysisResolution?.family,
+        sessionClass = sessionClass,
+        pts03 =
+            Pts03TruthSessionState(
+                sessionId = pts03SessionId(pts03Request.startedAtEpochMillis, attemptId, sessionClass, requestedPhysicalId),
+                sessionClass = sessionClass,
+                requestedPhysicalCameraId = requestedPhysicalId,
+                requestedDistortionMode = pts03Request.distortionMode,
+                requestedAnalysisWidthPx = requestedAnalysisResolution?.widthPx,
+                requestedAnalysisHeightPx = requestedAnalysisResolution?.heightPx,
+                lighting = pts03Request.lighting,
+            ),
     )
+}
+
+/** The PTS-03 choices fixed for one attempt (one bind): they are bind-time decisions. */
+internal data class Pts03AttemptRequest(
+    val distortionMode: Pts03DistortionModeRequest = Pts03DistortionModeRequest.DEVICE_DEFAULT,
+    val lighting: Pts03LightingLabel = Pts03LightingLabel.UNSPECIFIED,
+    val startedAtEpochMillis: Long = 0L,
+)
 
 internal fun FrameContentExperimentSessionState.reduceBindingResolved(
     attemptId: Long,
@@ -66,6 +105,70 @@ internal fun FrameContentExperimentSessionState.reduceBindingResolved(
         zoomTargetRatio = zoomTargetRatio,
         observedZoomRatio = observedZoomRatio,
     ).recomputeSnapshot(capturedAtEpochMillis)
+}
+
+/**
+ * PTS-03: the static characteristics (logical + every declared child) and CameraX's post-bind stream
+ * configuration for this attempt. Separate from [reduceBindingResolved] because the A1 logical session has
+ * no physical binding to resolve.
+ */
+internal fun FrameContentExperimentSessionState.reducePts03Bound(
+    attemptId: Long,
+    logicalCameraId: String?,
+    characteristics: Pts03CameraCharacteristicsSet?,
+    streamConfiguration: Pts03StreamConfiguration,
+): FrameContentExperimentSessionState {
+    if (attemptId != this.attemptId || isTerminallyFailed) return this
+    return copy(
+        pts03 =
+            pts03.copy(
+                logicalCameraId = logicalCameraId,
+                characteristics = characteristics,
+                streamConfiguration = streamConfiguration,
+            ),
+    )
+}
+
+/** PTS-03: the operator's lighting label; frozen into every later frame record of this attempt. */
+internal fun FrameContentExperimentSessionState.reducePts03Lighting(
+    attemptId: Long,
+    lighting: Pts03LightingLabel,
+): FrameContentExperimentSessionState {
+    if (attemptId != this.attemptId || isTerminallyFailed) return this
+    return copy(pts03 = pts03.copy(lighting = lighting))
+}
+
+/** PTS-03: join statistics as of the latest offer. Replaced wholesale; never merged across binds. */
+internal fun FrameContentExperimentSessionState.reducePts03JoinStatistics(
+    attemptId: Long,
+    statistics: SkyJoinStatistics,
+): FrameContentExperimentSessionState {
+    if (attemptId != this.attemptId || isTerminallyFailed) return this
+    return copy(pts03 = pts03.withJoinStatistics(statistics))
+}
+
+/**
+ * PTS-03: the join was finalized (offers stopped, pending entries drained, statistics frozen). Idempotent —
+ * see [Pts03TruthSessionState.finalizedWith]. The authoritative export is written only after this.
+ */
+internal fun FrameContentExperimentSessionState.reducePts03Finalized(
+    attemptId: Long,
+    finalStatistics: SkyJoinStatistics,
+): FrameContentExperimentSessionState {
+    if (attemptId != this.attemptId) return this
+    return copy(pts03 = pts03.finalizedWith(finalStatistics))
+}
+
+/**
+ * PTS-03: appends [snapshot] — the exact snapshot the operator is looking at (frozen or live) — as one
+ * printed-target evidence capture. A snapshot from another attempt is refused.
+ */
+internal fun FrameContentExperimentSessionState.reducePts03AddEvidence(
+    attemptId: Long,
+    snapshot: FrameContentCorrespondenceSnapshot,
+): FrameContentExperimentSessionState {
+    if (attemptId != this.attemptId || isTerminallyFailed || snapshot.attemptId != this.attemptId) return this
+    return copy(pts03 = pts03.withEvidenceCapture(snapshot))
 }
 
 internal fun FrameContentExperimentSessionState.reduceExplicitBindFailure(
@@ -85,12 +188,19 @@ internal fun FrameContentExperimentSessionState.reduceFrame(
     frame: CameraFrameMetadata,
     detection: FrameContentDetectionResult,
     capturedAtEpochMillis: Long,
+    captureResult: SkyCaptureResultSnapshot? = null,
 ): FrameContentExperimentSessionState {
     if (attemptId != this.attemptId || isTerminallyFailed) return this
+    // PTS-03: the frame, its detection and its exact-joined CaptureResult are replaced together, so
+    // the snapshot below can never pair this frame's pixels with another frame's metadata.
+    val joined = captureResult?.takeIf { it.sensorTimestampNanos == frame.timestampNanos }
     return copy(
         latestFrame = frame,
         latestDetection = detection,
+        latestCaptureResult = joined,
+        latestFrameLighting = pts03.lighting,
         framesObserved = framesObserved + 1,
+        pts03 = if (joined != null) pts03.withMatchedFrame(frame, joined) else pts03,
     ).recomputeSnapshot(capturedAtEpochMillis)
 }
 
@@ -164,6 +274,8 @@ private fun FrameContentExperimentSessionState.recomputeSnapshot(capturedAtEpoch
             targetSpec = DEFAULT_FRAME_CONTENT_TARGET_SPEC,
             detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,
             capturedAtEpochMillis = capturedAtEpochMillis,
+            captureResult = latestCaptureResult,
+            lightingAtCapture = latestFrameLighting,
         )
     return copy(latestSnapshot = snapshot)
 }

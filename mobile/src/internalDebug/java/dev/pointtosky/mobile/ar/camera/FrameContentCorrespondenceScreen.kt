@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -41,17 +42,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.camera.core.CameraSelector
 import androidx.core.content.ContextCompat
 import dev.pointtosky.mobile.ar.EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO
 import dev.pointtosky.mobile.ar.copyCamDiagnosticTextToClipboard
 import dev.pointtosky.mobile.ar.shareCamDiagnosticText
+import java.io.File
 
 /**
  * CAM-2c frame-content correspondence experiment (`internalDebug`-only, task §7). Standalone screen —
  * same "own the whole camera session" reasoning as [PhysicalCameraBindingExperimentScreen] — optimized
- * for the Pixel 9 device workflow: physical camera 3 listed first, 640x480/1280x720 resolution buttons,
+ * for the Pixel 9 device workflow: declared physical cameras in sorted ID order, 640x480/1280x720 resolution buttons,
  * Freeze, Copy report, Share JSON, target-placement label, distance label, live detected-point count and
  * per-hypothesis RMS.
+ *
+ * PTS-03 extends this same screen rather than adding a parallel one: a "logical rear camera (no pin)"
+ * candidate for the A1 session, a CameraX-default (production-like) resolution option, a requested
+ * distortion mode and a lighting label per attempt, and evidence actions — add the displayed snapshot as a
+ * printed-target placement, save the full camera-truth JSON to app storage, share a summary JSON.
  */
 class FrameContentCorrespondenceExperimentActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,6 +82,23 @@ private val FIXED_RESOLUTION_CANDIDATES =
         AnalysisResolutionCandidate(1280, 720, AnalysisResolutionFamily.NEAR_16_9),
     )
 
+/** PTS-03: the analysis-resolution choice, including "no selector at all" (what production binds). */
+private sealed interface ResolutionChoice {
+    data object CameraXDefault : ResolutionChoice
+
+    data class Fixed(val candidate: AnalysisResolutionCandidate) : ResolutionChoice
+}
+
+/** Every declared physical camera ID, deduplicated and in deterministic sorted order. */
+internal fun orderedPhysicalCameraCandidates(declaredIdsPerCamera: List<List<String>>): List<String> =
+    declaredIdsPerCamera.flatten().distinct().sorted()
+
+/** The logical back camera that declares [physicalCameraId] as a child, from the static topology. */
+internal fun logicalCameraIdDeclaring(
+    topology: CameraTopologyReport,
+    physicalCameraId: String,
+): String? = topology.entries.firstOrNull { physicalCameraId in it.declaredPhysicalCameraIds }?.camera2Id
+
 @Composable
 internal fun FrameContentCorrespondenceScreen() {
     val context = LocalContext.current
@@ -87,15 +112,19 @@ internal fun FrameContentCorrespondenceScreen() {
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> hasCameraPermission = granted }
 
     val topology = remember { buildCameraTopologyReport(context, boundCameraInfo = null) }
-    // Task §7: physical camera 3 first, when declared; every other candidate follows in sorted order.
-    val candidates =
-        remember(topology) {
-            val declared = topology.entries.flatMap { it.declaredPhysicalCameraIds }.distinct().sorted()
-            declared.sortedBy { if (it == "3") 0 else 1 }
-        }
+    // Declared physical cameras, discovered from the topology and ordered generically; no ID is privileged.
+    val candidates = remember(topology) { orderedPhysicalCameraCandidates(topology.entries.map { it.declaredPhysicalCameraIds }) }
 
     var uiModel by remember { mutableStateOf(FrameContentCorrespondenceUiModel()) }
     var pendingCandidate by remember { mutableStateOf<String?>(null) }
+    var pts03DistortionMode by remember { mutableStateOf(Pts03DistortionModeRequest.DEVICE_DEFAULT) }
+    var pts03Lighting by remember { mutableStateOf(Pts03LightingLabel.NORMAL_INDOOR) }
+    // Distortion modes the logical back camera (the session owner) advertises; only those are offered.
+    val advertisedDistortionModes =
+        remember(topology) {
+            val logicalId = topology.entries.firstOrNull { it.isLogicalMultiCamera }?.camera2Id ?: topology.entries.firstOrNull()?.camera2Id
+            logicalId?.let { id -> capturePts03CameraCharacteristicsSet(context, id).logical.distortionCorrectionAvailableModes?.map { it.raw } }
+        }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0A0A)) {
         if (!hasCameraPermission) {
@@ -112,11 +141,24 @@ internal fun FrameContentCorrespondenceScreen() {
         if (session == null) {
             val candidate = pendingCandidate
             if (candidate == null) {
-                CandidatePicker(candidates) { pendingCandidate = it }
+                CandidatePicker(
+                    candidates = candidates,
+                    distortionMode = pts03DistortionMode,
+                    advertisedDistortionModes = advertisedDistortionModes,
+                    lighting = pts03Lighting,
+                    onDistortionMode = { pts03DistortionMode = it },
+                    onLighting = { pts03Lighting = it },
+                    onSelected = { pendingCandidate = it },
+                )
             } else {
                 ResolutionPickerFixed(
-                    onSelected = { resolution ->
-                        uiModel = uiModel.startAttempt(candidate, resolution)
+                    onSelected = { choice ->
+                        uiModel =
+                            uiModel.startAttempt(
+                                candidate,
+                                (choice as? ResolutionChoice.Fixed)?.candidate,
+                                Pts03AttemptRequest(pts03DistortionMode, pts03Lighting, System.currentTimeMillis()),
+                            )
                         pendingCandidate = null
                     },
                     onBack = { pendingCandidate = null },
@@ -128,6 +170,7 @@ internal fun FrameContentCorrespondenceScreen() {
         key(session.attemptId) {
             FrameContentCorrespondenceSession(
                 state = session,
+                logicalCameraIdForExplicitBinding = logicalCameraIdDeclaring(topology, session.physicalCameraId),
                 onUpdateSession = { attemptId, reducer -> uiModel = uiModel.updateSession(attemptId, reducer) },
                 onRetry = { uiModel = uiModel.retry() },
                 onBackToCandidates = { uiModel = uiModel.backToCandidates() },
@@ -155,14 +198,43 @@ internal const val TAG_LIVE_SUMMARY = "frame_content_experiment_live_summary"
 internal const val TAG_POSE_ANCHOR_BANNER = "frame_content_experiment_pose_anchor_banner"
 internal const val TAG_VERDICT_BANNER = "frame_content_experiment_verdict_banner"
 internal const val TAG_EXPORT_TARGET_SVG = "frame_content_experiment_export_target_svg"
+internal const val TAG_PTS03_LOGICAL_CANDIDATE = "frame_content_experiment_pts03_logical_candidate"
+internal const val TAG_PTS03_DISTORTION_PREFIX = "frame_content_experiment_pts03_distortion_"
+internal const val TAG_PTS03_LIGHTING_PREFIX = "frame_content_experiment_pts03_lighting_"
+internal const val TAG_RESOLUTION_CAMERAX_DEFAULT = "frame_content_experiment_resolution_camerax_default"
+internal const val TAG_PTS03_ADD_EVIDENCE = "frame_content_experiment_pts03_add_evidence"
+internal const val TAG_PTS03_SAVE_JSON = "frame_content_experiment_pts03_save_json"
+internal const val TAG_PTS03_SHARE_SUMMARY = "frame_content_experiment_pts03_share_summary"
+internal const val TAG_PTS03_STATUS = "frame_content_experiment_pts03_status"
+internal const val TAG_PTS03_SUMMARY = "frame_content_experiment_pts03_summary"
+internal const val TAG_PTS03_SAVE_NON_FINAL = "frame_content_experiment_pts03_save_non_final"
 
 @Composable
 private fun CandidatePicker(
     candidates: List<String>,
+    distortionMode: Pts03DistortionModeRequest,
+    advertisedDistortionModes: List<Int>?,
+    lighting: Pts03LightingLabel,
+    onDistortionMode: (Pts03DistortionModeRequest) -> Unit,
+    onLighting: (Pts03LightingLabel) -> Unit,
     onSelected: (String) -> Unit,
 ) {
     val context = LocalContext.current
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        // PTS-03: bind-time choices for the next attempt. Only advertised distortion modes are offered;
+        // DEVICE_DEFAULT sets nothing (what production does). The effective mode is read back per frame.
+        Text("PTS-03 requested distortion mode (advertised: ${advertisedDistortionModes ?: "unknown"})", color = Color.White)
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Pts03DistortionModeRequest.values()
+                .filter { it.camera2Value == null || advertisedDistortionModes?.contains(it.camera2Value) == true }
+                .forEach { mode ->
+                    Button(onClick = { onDistortionMode(mode) }, modifier = Modifier.testTag(TAG_PTS03_DISTORTION_PREFIX + mode.name)) {
+                        Text(mode.name, color = if (mode == distortionMode) Color.Yellow else Color.White)
+                    }
+                }
+        }
+        Text("PTS-03 lighting label", color = Color.White)
+        Pts03LightingRow(lighting = lighting, enabled = true, onLighting = onLighting)
         Text("Select physical camera", color = Color.White)
         // Task §3: the printable target's exact geometry must be reproducible from code, not an ad hoc
         // hand-drawn substitute — exported here, before an attempt even starts, since the target should
@@ -182,20 +254,51 @@ private fun CandidatePicker(
                     Text("Physical camera $candidate")
                 }
             }
+            item {
+                // PTS-03 A1: the logical rear camera exactly as production binds it — no physical pin and
+                // no zoom pin — the only session class that can show natural physical-camera switching.
+                Button(
+                    onClick = { onSelected(PTS03_LOGICAL_UNPINNED_CANDIDATE) },
+                    modifier = Modifier.fillMaxWidth().testTag(TAG_PTS03_LOGICAL_CANDIDATE),
+                ) {
+                    Text("Logical rear camera (no pin) — PTS-03 A1")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Pts03LightingRow(
+    lighting: Pts03LightingLabel,
+    enabled: Boolean,
+    onLighting: (Pts03LightingLabel) -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Pts03LightingLabel.values().forEach { label ->
+            Button(onClick = { onLighting(label) }, enabled = enabled, modifier = Modifier.testTag(TAG_PTS03_LIGHTING_PREFIX + label.name)) {
+                Text(label.name, color = if (label == lighting) Color.Yellow else Color.White)
+            }
         }
     }
 }
 
 @Composable
 private fun ResolutionPickerFixed(
-    onSelected: (AnalysisResolutionCandidate) -> Unit,
+    onSelected: (ResolutionChoice) -> Unit,
     onBack: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Select analysis resolution", color = Color.White)
+        Button(
+            onClick = { onSelected(ResolutionChoice.CameraXDefault) },
+            modifier = Modifier.fillMaxWidth().testTag(TAG_RESOLUTION_CAMERAX_DEFAULT),
+        ) {
+            Text("CameraX default (no selector, as production)")
+        }
         FIXED_RESOLUTION_CANDIDATES.forEach { candidate ->
             Button(
-                onClick = { onSelected(candidate) },
+                onClick = { onSelected(ResolutionChoice.Fixed(candidate)) },
                 modifier = Modifier.fillMaxWidth().testTag(TAG_RESOLUTION_PREFIX + candidate.label()),
             ) {
                 Text(candidate.label())
@@ -208,6 +311,7 @@ private fun ResolutionPickerFixed(
 @Composable
 internal fun FrameContentCorrespondenceSession(
     state: FrameContentExperimentSessionState,
+    logicalCameraIdForExplicitBinding: String? = null,
     onUpdateSession: (Long, (FrameContentExperimentSessionState) -> FrameContentExperimentSessionState) -> Unit,
     onRetry: () -> Unit,
     onBackToCandidates: () -> Unit,
@@ -241,14 +345,27 @@ internal fun FrameContentCorrespondenceSession(
         }
     val capturedAtEpochMillisProvider = remember { { System.currentTimeMillis() } }
 
+    val context = LocalContext.current
+    val isLogicalSession = state.sessionClass == Pts03SessionClass.LOGICAL_UNPINNED
+    val joinControl = remember(attemptId) { FrameContentJoinControl() }
     Box(modifier = Modifier.fillMaxSize()) {
         FrameContentCameraPreview(
             modifier = Modifier.fillMaxSize(),
-            cameraSelector = explicitPhysicalCameraSelector(state.physicalCameraId),
+            cameraSelector =
+                if (isLogicalSession) CameraSelector.DEFAULT_BACK_CAMERA else explicitPhysicalCameraSelector(state.physicalCameraId),
             analysisResolutionOverride = requestedResolution,
             targetSpec = DEFAULT_FRAME_CONTENT_TARGET_SPEC,
             detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,
+            requestedDistortionMode = state.pts03.requestedDistortionMode,
+            pinZoom = !isLogicalSession,
+            onBindInfo = { info ->
+                val logicalId = if (isLogicalSession) info.boundCameraId else logicalCameraIdForExplicitBinding
+                val characteristics = logicalId?.let { capturePts03CameraCharacteristicsSet(context, it) }
+                onUpdateSession(attemptId) { it.reducePts03Bound(attemptId, logicalId, characteristics, info.streamConfiguration) }
+            },
             onCameraInfo = { cameraInfo ->
+                // A1 has no physical binding to verify: identity there comes only from the per-frame result.
+                if (isLogicalSession) return@FrameContentCameraPreview
                 val binding = resolveDualBasisBindingFromCameraInfo(cameraInfo, state.physicalCameraId, null)
                 onUpdateSession(attemptId) {
                     it.reduceBindingResolved(
@@ -261,13 +378,17 @@ internal fun FrameContentCorrespondenceSession(
                 }
             },
             onExplicitBindFailure = { reason -> onUpdateSession(attemptId) { it.reduceExplicitBindFailure(attemptId, reason) } },
-            onFrame = { frame, detection ->
-                onUpdateSession(attemptId) { it.reduceFrame(attemptId, frame, detection, capturedAtEpochMillisProvider()) }
+            onFrame = { frame, detection, captureResult ->
+                onUpdateSession(attemptId) { it.reduceFrame(attemptId, frame, detection, capturedAtEpochMillisProvider(), captureResult) }
             },
+            onJoinStatistics = { stats -> onUpdateSession(attemptId) { it.reducePts03JoinStatistics(attemptId, stats) } },
+            joinControl = joinControl,
+            onJoinFinalized = { stats -> onUpdateSession(attemptId) { it.reducePts03Finalized(attemptId, stats) } },
         )
         FrameContentExperimentLiveOverlay(
             state = state,
             onUpdateSession = onUpdateSession,
+            joinControl = joinControl,
         )
     }
 }
@@ -302,6 +423,7 @@ internal fun FrameContentCorrespondenceSession(
 internal fun FrameContentExperimentLiveOverlay(
     state: FrameContentExperimentSessionState,
     onUpdateSession: (Long, (FrameContentExperimentSessionState) -> FrameContentExperimentSessionState) -> Unit,
+    joinControl: FrameContentJoinControl? = null,
 ) {
     var frozenSnapshot by remember(state.attemptId) { mutableStateOf<FrameContentCorrespondenceSnapshot?>(null) }
     val isFrozen = frozenSnapshot != null
@@ -413,6 +535,67 @@ internal fun FrameContentExperimentLiveOverlay(
                     modifier = Modifier.testTag(TAG_SHARE_JSON),
                 ) { Text("Share JSON") }
             }
+
+            // PTS-03 evidence actions. "Add" appends exactly the displayed snapshot (frozen or live), which
+            // carries its own exact-joined CaptureResult and its own frame's lighting label (so changing the
+            // label below never relabels an already-frozen frame). "Finalize & save" stops the join, drains
+            // it into the pending-at-stop counts, freezes the statistics, then writes the authoritative file.
+            Pts03LightingRow(
+                lighting = state.pts03.lighting,
+                enabled = true,
+                onLighting = { label -> onUpdateSession(state.attemptId) { it.reducePts03Lighting(state.attemptId, label) } },
+            )
+            var pts03Status by remember(state.attemptId) { mutableStateOf("") }
+            var finalSaveRequested by remember(state.attemptId) { mutableStateOf(false) }
+            // The authoritative save runs only once the finalized state (with frozen statistics) has arrived.
+            LaunchedEffect(state.attemptId, state.pts03.finalized, finalSaveRequested) {
+                if (finalSaveRequested && state.pts03.finalized) {
+                    pts03Status = savePts03CameraTruthJson(context, state.pts03)
+                    finalSaveRequested = false
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = {
+                        val snap = displayedSnapshot
+                        if (snap != null) onUpdateSession(state.attemptId) { it.reducePts03AddEvidence(state.attemptId, snap) }
+                    },
+                    enabled = displayedSnapshot?.captureResult != null,
+                    modifier = Modifier.testTag(TAG_PTS03_ADD_EVIDENCE),
+                ) { Text("Add PTS-03 evidence (${state.pts03.evidenceCaptures.size})") }
+                Button(
+                    onClick = {
+                        if (state.pts03.finalized) {
+                            pts03Status = savePts03CameraTruthJson(context, state.pts03)
+                        } else if (joinControl?.requestFinalize() == true) {
+                            finalSaveRequested = true
+                            pts03Status = "finalizing join…"
+                        } else {
+                            pts03Status = "finalize unavailable: no live bind for this attempt"
+                        }
+                    },
+                    modifier = Modifier.testTag(TAG_PTS03_SAVE_JSON),
+                ) { Text(if (state.pts03.finalized) "Save final PTS-03 JSON" else "Finalize & save PTS-03 JSON") }
+                Button(
+                    onClick = { pts03Status = savePts03CameraTruthJson(context, state.pts03) },
+                    enabled = !state.pts03.finalized,
+                    modifier = Modifier.testTag(TAG_PTS03_SAVE_NON_FINAL),
+                ) { Text("Save non-final snapshot") }
+                Button(
+                    onClick = {
+                        shareCamDiagnosticText(
+                            context,
+                            "PTS-03 camera truth ${state.pts03.sessionId}",
+                            buildPts03CameraTruthJson(state.pts03, pts03CurrentEnvironment(), System.currentTimeMillis(), includeAllRetainedFrameRecords = false),
+                        )
+                    },
+                    modifier = Modifier.testTag(TAG_PTS03_SHARE_SUMMARY),
+                ) { Text("Share PTS-03 summary") }
+            }
+            if (pts03Status.isNotEmpty()) Text(pts03Status, color = Color.Green, modifier = Modifier.testTag(TAG_PTS03_STATUS))
         }
 
         val reportText = displayedSnapshot?.let { buildFrameContentCorrespondenceReportText(it) } ?: "awaiting frame/binding"
@@ -423,9 +606,41 @@ internal fun FrameContentExperimentLiveOverlay(
                     .verticalScroll(rememberScrollState())
                     .testTag(TAG_REPORT_SCROLL),
         ) {
+            // PTS-03 live summary of this attempt's evidence; kept out of TAG_REPORT so the report stays
+            // exactly the frame-content report Copy/Share export.
+            Text(
+                buildPts03CameraTruthSummaryText(state.pts03),
+                color = Color.Cyan,
+                fontFamily = MaterialTheme.typography.bodySmall.fontFamily,
+                modifier = Modifier.testTag(TAG_PTS03_SUMMARY),
+            )
             SelectionContainer {
                 Text(reportText, color = Color.White, fontFamily = MaterialTheme.typography.bodySmall.fontFamily, modifier = Modifier.testTag(TAG_REPORT))
             }
         }
     }
 }
+
+/**
+ * Writes the full PTS-03 export (every retained raw frame record) and returns a status line naming the
+ * path, for `adb pull`. A finalized session is written to `<external files dir>/pts03_sessions/<sessionId>.json`
+ * (authoritative); a non-final one to `<sessionId>-nonfinal-<millis>.json`, so a live snapshot can never
+ * overwrite or be mistaken for the final file. Never throws into the UI.
+ */
+internal fun savePts03CameraTruthJson(
+    context: Context,
+    session: Pts03TruthSessionState,
+): String =
+    try {
+        val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, PTS03_SESSIONS_DIRECTORY).apply { mkdirs() }
+        val now = System.currentTimeMillis()
+        val file = File(dir, if (session.finalized) "${session.sessionId}.json" else "${session.sessionId}-nonfinal-$now.json")
+        file.writeText(buildPts03CameraTruthJson(session, pts03CurrentEnvironment(), now, includeAllRetainedFrameRecords = true))
+        "saved ${file.absolutePath} (${file.length()} bytes)"
+    } catch (e: java.io.IOException) {
+        "save failed: ${e.javaClass.simpleName}: ${e.message}"
+    } catch (e: SecurityException) {
+        "save failed: ${e.javaClass.simpleName}: ${e.message}"
+    }
+
+internal const val PTS03_SESSIONS_DIRECTORY: String = "pts03_sessions"

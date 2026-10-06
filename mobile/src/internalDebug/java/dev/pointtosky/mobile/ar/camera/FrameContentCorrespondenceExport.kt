@@ -32,12 +32,18 @@ import kotlinx.serialization.json.put
  *   printable target's full physical geometry
  *   (`regularDotDiameterMm`/`markerDiameterMm`/`markerOffsetXMm`/`markerOffsetYMm`/`printableBounds`) so
  *   the exact target a device report was captured against is reproducible from the report alone.
- * - `4` (this revision): `target` gains `minimumBlobClearanceMm` — the real physical gap
+ * - `4`: `target` gains `minimumBlobClearanceMm` — the real physical gap
  *   [FrameContentTargetSpec.init] now validates between every pair of printed circles (marker-to-dot and
  *   dot-to-dot), so a physical target reproduced from a report can never silently drift into a
  *   physically-overlapping, undetectable configuration.
+ * - `5` (this revision, PTS-03): `captureResult` — the `CaptureResult` joined to this exact frame by
+ *   `SENSOR_TIMESTAMP` equality (active physical ID, effective distortion mode and
+ *   its metadata basis, focal length, per-frame intrinsics, focus/AF, crop, zoom, exposure, stabilisation,
+ *   hot-pixel/NR/edge provenance), split into `logicalTopLevelResult` and `physicalResultsByCameraId`
+ *   (each physical entry with its own `SENSOR_TIMESTAMP`), JSON `null` when the snapshot carries none; plus
+ *   `lightingAtCapture`, the PTS-03 lighting label frozen with this frame. Every schema-4 key is unchanged.
  */
-internal const val FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 4
+internal const val FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 5
 
 private fun matrixValuesOrNull(snapshot: FrameContentCorrespondenceSnapshot): List<Double>? =
     snapshot.sensorToBufferTransformMatrix?.let {
@@ -80,6 +86,7 @@ internal fun buildFrameContentCorrespondenceReportText(snapshot: FrameContentCor
         appendLine("EVIDENCE METADATA (frozen with this snapshot's own generation)")
         appendLine("  targetPlacementLabel=${snapshot.targetPlacementLabel}")
         appendLine("  distanceLabelMm=${snapshot.distanceLabelMm ?: "unset"}")
+        appendLine("  lightingAtCapture=${snapshot.lightingAtCapture}")
         appendLine()
 
         appendLine("CHARACTERISTICS")
@@ -101,6 +108,52 @@ internal fun buildFrameContentCorrespondenceReportText(snapshot: FrameContentCor
         appendLine("  rotationDegrees=${snapshot.rotationDegrees} (metadata only — see BUFFER ROTATION CONTRACT in each hypothesis below)")
         appendLine("  sensorToBufferTransformMatrix=" + (matrixValuesOrNull(snapshot)?.toString() ?: "unavailable"))
         appendLine("  zoomTargetRatio=${snapshot.zoomTargetRatio}, observedZoomRatio=${snapshot.observedZoomRatio}")
+        appendLine()
+
+        appendLine("CAPTURE RESULT (PTS-03; joined to this frame by exact SENSOR_TIMESTAMP)")
+        val truth = snapshot.captureResult
+        if (truth == null) {
+            appendLine("  unavailable (snapshot built without the CaptureResult join)")
+        } else {
+            val t = truth.logicalTruth
+            appendLine(
+                "  logicalTopLevelResult: sensorTimestampNanos=${truth.sensorTimestampNanos} " +
+                    "logicalActivePhysicalCameraId=${t.activePhysicalCameraId} (${t.activePhysicalCameraIdAvailability}; " +
+                    "describes the logical camera's backing sensor, NOT an explicit physical output)",
+            )
+            appendLine(
+                "  logical effectiveDistortionMode=${t.effectiveDistortionMode().label} " +
+                    "metadataCoordinateBasis=${t.effectiveDistortionMode().metadataCoordinateBasis()} " +
+                    "(mode is NOT evidence that the YUV is corrected)",
+            )
+            appendLine(
+                "  logical focalLengthMm=${t.lensFocalLengthMm} intrinsics=${t.lensIntrinsicCalibration} " +
+                    "focusDistanceDiopters=${t.lensFocusDistanceDiopters} afState=${t.controlAfState?.name} " +
+                    "scalerCropRegion=${t.scalerCropRegion} zoomRatio=${t.controlZoomRatio} " +
+                    "activePhysicalSensorCrop=${t.activePhysicalSensorCropRegion} (${t.activePhysicalSensorCropRegionAvailability})",
+            )
+            appendLine(
+                "  logical exposureNanos=${truth.exposure.exposureTimeNanos} iso=${truth.exposure.sensitivityIso} " +
+                    "frameDurationNanos=${truth.exposure.frameDurationNanos} aeMode=${truth.exposure.aeMode}",
+            )
+            val requested = snapshot.requestedPhysicalCameraId
+            val ts = truth.sensorTimestampNanos
+            if (ts != null) {
+                val lookup = truth.physicalResultFor(requested, ts)
+                appendLine(
+                    "  physicalResult[requested=$requested]: status=${lookup.status} " +
+                        "entrySensorTimestampNanos=${lookup.entrySensorTimestampNanos}",
+                )
+                lookup.usable?.truth?.let { p ->
+                    appendLine(
+                        "    effectiveDistortionMode=${p.effectiveDistortionMode().label} focalLengthMm=${p.lensFocalLengthMm} " +
+                            "intrinsics=${p.lensIntrinsicCalibration} afState=${p.controlAfState?.name} " +
+                            "scalerCropRegion=${p.scalerCropRegion}",
+                    )
+                } ?: appendLine("    physical dynamic metadata UNRESOLVED (logical values are not substituted)")
+            }
+            appendLine("  physicalResultIds=${truth.physicalResultsByCameraId.keys.sorted()}")
+        }
         appendLine()
 
         appendLine("APPROXIMATE PHYSICAL PINHOLE K (never \"calibrated\" — see field names)")
@@ -370,6 +423,10 @@ internal fun buildFrameContentCorrespondenceJson(snapshot: FrameContentCorrespon
             put("observedZoomRatio", snapshot.observedZoomRatio?.toDouble())
             put("targetPlacementLabel", snapshot.targetPlacementLabel.name)
             put("distanceLabelMm", snapshot.distanceLabelMm)
+            // PTS-03 (schema 5): the exact-joined CaptureResult for this frame (logical top-level result and
+            // per-physical results kept apart) and the lighting label frozen with this frame.
+            put("captureResult", pts03CaptureResultJson(snapshot.captureResult))
+            put("lightingAtCapture", snapshot.lightingAtCapture.name)
 
             // --- approximate pinhole K evidence (never "calibrated") ---
             put(

@@ -131,7 +131,7 @@ internal class SkySessionCaptureSession(
     fun onFrame(
         epoch: Long,
         configuration: SkyCaptureConfiguration,
-        joined: SkyJoinedFrame,
+        joined: SkyJoinedFrame<SkyAnalyzedFrame>,
         observer: SkyObserverContext?,
         stars: List<EquatorialStarDirection>,
         previous: SkyCaptureUiState,
