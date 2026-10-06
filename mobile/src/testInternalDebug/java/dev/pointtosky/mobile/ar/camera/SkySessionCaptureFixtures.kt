@@ -134,10 +134,24 @@ internal object SkySessionCaptureFixtures {
         rowStridePx: Int = BUFFER_WIDTH_PX,
         seed: Int = 0,
         exposure: SkyExposureSample = exposureSample(timestampNanos),
-    ): SkyJoinedFrame =
+    ): SkyJoinedFrame<SkyAnalyzedFrame> =
         SkyJoinedFrame(
             frame = analyzedFrame(timestampNanos = timestampNanos, rowStridePx = rowStridePx, seed = seed),
+            captureResult = captureResult(exposure),
+        )
+
+    /**
+     * Wraps [exposure] into the one-result snapshot the join carries, with a PTS-03 half that reports only
+     * the same `SENSOR_TIMESTAMP` (every other key absent) — what a minimal HAL result looks like.
+     */
+    fun captureResult(exposure: SkyExposureSample): SkyCaptureResultSnapshot =
+        SkyCaptureResultSnapshot(
             exposure = exposure,
+            cameraTruth =
+                pts03CaptureTruthOf(
+                    reader = { field -> if (field == Pts03CaptureResultField.SENSOR_TIMESTAMP) exposure.sensorTimestampNanos else null },
+                    sdkInt = 35,
+                ),
         )
 
     fun manualExposureCapability(

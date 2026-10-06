@@ -32,12 +32,16 @@ import kotlinx.serialization.json.put
  *   printable target's full physical geometry
  *   (`regularDotDiameterMm`/`markerDiameterMm`/`markerOffsetXMm`/`markerOffsetYMm`/`printableBounds`) so
  *   the exact target a device report was captured against is reproducible from the report alone.
- * - `4` (this revision): `target` gains `minimumBlobClearanceMm` — the real physical gap
+ * - `4`: `target` gains `minimumBlobClearanceMm` — the real physical gap
  *   [FrameContentTargetSpec.init] now validates between every pair of printed circles (marker-to-dot and
  *   dot-to-dot), so a physical target reproduced from a report can never silently drift into a
  *   physically-overlapping, undetectable configuration.
+ * - `5` (this revision, PTS-03): `captureResult` — the `CaptureResult` joined to this exact frame by
+ *   `SENSOR_TIMESTAMP` equality (active physical ID, effective distortion mode and
+ *   its metadata basis, focal length, per-frame intrinsics, focus/AF, crop, zoom, exposure, stabilisation,
+ *   hot-pixel/NR/edge provenance), JSON `null` when the snapshot carries none. Every schema-4 key is unchanged.
  */
-internal const val FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 4
+internal const val FRAME_CONTENT_EXPERIMENT_JSON_SCHEMA_VERSION: Int = 5
 
 private fun matrixValuesOrNull(snapshot: FrameContentCorrespondenceSnapshot): List<Double>? =
     snapshot.sensorToBufferTransformMatrix?.let {
@@ -101,6 +105,38 @@ internal fun buildFrameContentCorrespondenceReportText(snapshot: FrameContentCor
         appendLine("  rotationDegrees=${snapshot.rotationDegrees} (metadata only — see BUFFER ROTATION CONTRACT in each hypothesis below)")
         appendLine("  sensorToBufferTransformMatrix=" + (matrixValuesOrNull(snapshot)?.toString() ?: "unavailable"))
         appendLine("  zoomTargetRatio=${snapshot.zoomTargetRatio}, observedZoomRatio=${snapshot.observedZoomRatio}")
+        appendLine()
+
+        appendLine("CAPTURE RESULT (PTS-03; joined to this frame by exact SENSOR_TIMESTAMP)")
+        val truth = snapshot.captureResult
+        if (truth == null) {
+            appendLine("  unavailable (snapshot built without the CaptureResult join)")
+        } else {
+            val t = truth.cameraTruth
+            appendLine(
+                "  sensorTimestampNanos=${truth.sensorTimestampNanos} activePhysicalCameraId=${t.activePhysicalCameraId} " +
+                    "(${t.activePhysicalCameraIdAvailability})",
+            )
+            appendLine(
+                "  effectiveDistortionMode=${t.effectiveDistortionMode().label} " +
+                    "metadataCoordinateBasis=${t.effectiveDistortionMode().metadataCoordinateBasis()} " +
+                    "(mode is NOT evidence that the YUV is corrected)",
+            )
+            appendLine(
+                "  focalLengthMm=${t.lensFocalLengthMm} intrinsics=${t.lensIntrinsicCalibration} " +
+                    "focusDistanceDiopters=${t.lensFocusDistanceDiopters} lensState=${t.lensState?.name} " +
+                    "afMode=${t.controlAfMode?.name} afState=${t.controlAfState?.name}",
+            )
+            appendLine("  scalerCropRegion=${t.scalerCropRegion} zoomRatio=${t.controlZoomRatio} (${t.controlZoomRatioAvailability})")
+            appendLine(
+                "  exposureNanos=${truth.exposure.exposureTimeNanos} iso=${truth.exposure.sensitivityIso} " +
+                    "frameDurationNanos=${truth.exposure.frameDurationNanos} aeMode=${truth.exposure.aeMode}",
+            )
+            appendLine(
+                "  ois=${t.lensOpticalStabilizationMode?.name} videoStabilization=${t.controlVideoStabilizationMode?.name} " +
+                    "hotPixel=${t.hotPixelMode?.name} noiseReduction=${t.noiseReductionMode?.name} edge=${t.edgeMode?.name}",
+            )
+        }
         appendLine()
 
         appendLine("APPROXIMATE PHYSICAL PINHOLE K (never \"calibrated\" — see field names)")
@@ -370,6 +406,8 @@ internal fun buildFrameContentCorrespondenceJson(snapshot: FrameContentCorrespon
             put("observedZoomRatio", snapshot.observedZoomRatio?.toDouble())
             put("targetPlacementLabel", snapshot.targetPlacementLabel.name)
             put("distanceLabelMm", snapshot.distanceLabelMm)
+            // PTS-03 (schema 5): the exact-joined CaptureResult for this frame.
+            put("captureResult", pts03CaptureResultJson(snapshot.captureResult))
 
             // --- approximate pinhole K evidence (never "calibrated") ---
             put(

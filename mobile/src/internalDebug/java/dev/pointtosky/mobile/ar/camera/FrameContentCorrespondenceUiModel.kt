@@ -15,13 +15,14 @@ internal data class FrameContentCorrespondenceUiModel(
 internal fun FrameContentCorrespondenceUiModel.startAttempt(
     physicalCameraId: String,
     requestedAnalysisResolution: AnalysisResolutionCandidate? = null,
+    pts03Request: Pts03AttemptRequest = Pts03AttemptRequest(),
 ): FrameContentCorrespondenceUiModel =
     copy(
         nextAttemptId = nextAttemptId + 1,
-        session = initialFrameContentExperimentSessionState(nextAttemptId, physicalCameraId, requestedAnalysisResolution),
+        session = initialFrameContentExperimentSessionState(nextAttemptId, physicalCameraId, requestedAnalysisResolution, pts03Request),
     )
 
-internal fun FrameContentCorrespondenceUiModel.retry(): FrameContentCorrespondenceUiModel {
+internal fun FrameContentCorrespondenceUiModel.retry(nowEpochMillis: Long = System.currentTimeMillis()): FrameContentCorrespondenceUiModel {
     val current = session ?: return this
     val requestedResolution =
         if (current.requestedAnalysisResolutionWidthPx != null && current.requestedAnalysisResolutionHeightPx != null) {
@@ -33,7 +34,15 @@ internal fun FrameContentCorrespondenceUiModel.retry(): FrameContentCorresponden
         } else {
             null
         }
-    return startAttempt(current.physicalCameraId, requestedResolution)
+    return startAttempt(
+        current.physicalCameraId,
+        requestedResolution,
+        Pts03AttemptRequest(
+            distortionMode = current.pts03.requestedDistortionMode,
+            lighting = current.pts03.lighting,
+            startedAtEpochMillis = nowEpochMillis,
+        ),
+    )
 }
 
 internal fun FrameContentCorrespondenceUiModel.backToCandidates(): FrameContentCorrespondenceUiModel = copy(session = null)

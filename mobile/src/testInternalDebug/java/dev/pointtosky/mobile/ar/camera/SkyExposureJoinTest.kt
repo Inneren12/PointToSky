@@ -1,5 +1,6 @@
 package dev.pointtosky.mobile.ar.camera
 
+import dev.pointtosky.core.astro.projection.camera.skylog.SkyExposureSample
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -21,6 +22,9 @@ class SkyExposureJoinTest {
 
     private fun frameAt(timestampNanos: Long) = fixtures.analyzedFrame(timestampNanos = timestampNanos)
 
+    /** SKY-1's tests offer exposure samples; the join carries them inside a one-result snapshot. */
+    private fun SkyExposureJoin<SkyAnalyzedFrame>.offerExposure(sample: SkyExposureSample) = offerExposure(fixtures.captureResult(sample))
+
     private fun exposureAt(timestampNanos: Long?) =
         fixtures.exposureSample(sensorTimestampNanos = timestampNanos ?: 0L).copy(
             sensorTimestampNanos = timestampNanos,
@@ -32,7 +36,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `image then result completes the pair`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
         val frame = frameAt(1_000L)
 
         assertNull(join.offerFrame(frame).matched, "the frame alone cannot complete a pair")
@@ -46,7 +50,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `result then image completes the pair`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
 
         assertNull(join.offerExposure(exposureAt(2_000L)).matched, "the result alone cannot complete a pair")
         val frame = frameAt(2_000L)
@@ -59,7 +63,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `interleaved frames and results pair up by timestamp, not by arrival order`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
 
         join.offerFrame(frameAt(10L))
         join.offerFrame(frameAt(20L))
@@ -72,7 +76,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `a near-miss timestamp never matches`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
 
         join.offerFrame(frameAt(1_000L))
         val result = join.offerExposure(exposureAt(1_001L))
@@ -88,7 +92,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `a result with no sensor timestamp is dropped as unkeyed`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
 
         val result = join.offerExposure(exposureAt(null))
 
@@ -99,7 +103,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `a frame aged past the wait window times out`() {
-        val join = SkyExposureJoin(capacity = 8, maxWaitNanos = 1_000L)
+        val join = SkyExposureJoin<SkyAnalyzedFrame>(capacity = 8, maxWaitNanos = 1_000L)
         join.offerFrame(frameAt(100L))
 
         // A much newer frame advances the join's notion of "now" past the wait window.
@@ -112,7 +116,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `a result aged past the wait window times out`() {
-        val join = SkyExposureJoin(capacity = 8, maxWaitNanos = 1_000L)
+        val join = SkyExposureJoin<SkyAnalyzedFrame>(capacity = 8, maxWaitNanos = 1_000L)
         join.offerExposure(exposureAt(100L))
 
         val result = join.offerExposure(exposureAt(5_000L))
@@ -122,7 +126,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `a timed-out frame no longer matches its late result`() {
-        val join = SkyExposureJoin(capacity = 8, maxWaitNanos = 1_000L)
+        val join = SkyExposureJoin<SkyAnalyzedFrame>(capacity = 8, maxWaitNanos = 1_000L)
         join.offerFrame(frameAt(100L))
         join.offerFrame(frameAt(5_000L))
 
@@ -131,7 +135,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `pending frames evict oldest-first at capacity`() {
-        val join = SkyExposureJoin(capacity = 3, maxWaitNanos = Long.MAX_VALUE / 4)
+        val join = SkyExposureJoin<SkyAnalyzedFrame>(capacity = 3, maxWaitNanos = Long.MAX_VALUE / 4)
         (1L..3L).forEach { join.offerFrame(frameAt(it)) }
 
         val result = join.offerFrame(frameAt(4L))
@@ -145,7 +149,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `pending exposures evict oldest-first at capacity`() {
-        val join = SkyExposureJoin(capacity = 2, maxWaitNanos = Long.MAX_VALUE / 4)
+        val join = SkyExposureJoin<SkyAnalyzedFrame>(capacity = 2, maxWaitNanos = Long.MAX_VALUE / 4)
         (1L..2L).forEach { join.offerExposure(exposureAt(it)) }
 
         val result = join.offerExposure(exposureAt(3L))
@@ -156,7 +160,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `memory stays bounded across a long run`() {
-        val join = SkyExposureJoin(capacity = 4, maxWaitNanos = Long.MAX_VALUE / 4)
+        val join = SkyExposureJoin<SkyAnalyzedFrame>(capacity = 4, maxWaitNanos = Long.MAX_VALUE / 4)
 
         // A thousand frames whose results never arrive: the join must not accumulate a thousand luma
         // planes.
@@ -172,7 +176,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `a duplicate frame timestamp is refused and the first frame is kept`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
         val first = frameAt(7L)
         join.offerFrame(first)
 
@@ -185,7 +189,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `a duplicate exposure timestamp is refused and the first sample is kept`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
         join.offerExposure(exposureAt(9L).copy(sensitivityIso = 100))
 
         val result = join.offerExposure(exposureAt(9L).copy(sensitivityIso = 6400))
@@ -196,7 +200,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `a timestamp reused after its pair completed is treated as a fresh pending entry`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
         join.offerFrame(frameAt(5L))
         assertNotNull(join.offerExposure(exposureAt(5L)).matched)
 
@@ -212,7 +216,7 @@ class SkyExposureJoinTest {
 
     @Test
     fun `drain reports everything still waiting and empties the join`() {
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
         join.offerFrame(frameAt(1L))
         join.offerFrame(frameAt(2L))
         join.offerExposure(exposureAt(3L))
@@ -228,12 +232,12 @@ class SkyExposureJoinTest {
 
     @Test
     fun `drain on an empty join reports nothing`() {
-        assertEquals(emptyList(), SkyExposureJoin().drain())
+        assertEquals(emptyList(), SkyExposureJoin<SkyAnalyzedFrame>().drain())
     }
 
     @Test
     fun `non-positive bounds are rejected`() {
-        assertFailsWith<IllegalArgumentException> { SkyExposureJoin(capacity = 0) }
-        assertFailsWith<IllegalArgumentException> { SkyExposureJoin(maxWaitNanos = 0L) }
+        assertFailsWith<IllegalArgumentException> { SkyExposureJoin<SkyAnalyzedFrame>(capacity = 0) }
+        assertFailsWith<IllegalArgumentException> { SkyExposureJoin<SkyAnalyzedFrame>(maxWaitNanos = 0L) }
     }
 }

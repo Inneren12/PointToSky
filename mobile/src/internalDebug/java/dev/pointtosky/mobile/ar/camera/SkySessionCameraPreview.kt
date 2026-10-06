@@ -67,7 +67,7 @@ internal fun SkySessionCameraPreview(
     configuration: SkyCaptureConfiguration,
     onBind: (epoch: Long, configuration: SkyCaptureConfiguration, cameraInfo: CameraInfo) -> Unit = { _, _, _ -> },
     onExplicitBindFailure: (String) -> Unit = {},
-    onFrame: (epoch: Long, configuration: SkyCaptureConfiguration, joined: SkyJoinedFrame) -> Unit = { _, _, _ -> },
+    onFrame: (epoch: Long, configuration: SkyCaptureConfiguration, joined: SkyJoinedFrame<SkyAnalyzedFrame>) -> Unit = { _, _, _ -> },
     onJoinDrops: (epoch: Long, drops: List<SkyJoinDrop>) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
@@ -96,9 +96,9 @@ internal fun SkySessionCameraPreview(
         val scope = CoroutineScope(Dispatchers.Main + job)
         val session = CameraSessionLifecycle()
         val analysisExecutor = Executors.newSingleThreadExecutor()
-        val join = SkyExposureJoin()
+        val join = SkyExposureJoin<SkyAnalyzedFrame>()
 
-        fun deliver(result: SkyJoinResult) {
+        fun deliver(result: SkyJoinResult<SkyAnalyzedFrame>) {
             result.matched?.let { currentOnFrame(SkyFrameEvent(epoch, configuration, it)) }
             if (result.dropped.isNotEmpty()) currentOnJoinDrops(SkyJoinDropEvent(epoch, result.dropped))
         }
@@ -110,7 +110,9 @@ internal fun SkySessionCameraPreview(
                     request: CaptureRequest,
                     result: TotalCaptureResult,
                 ) {
-                    val sample = skyExposureSampleOf(result)
+                    // One CaptureResult -> one immutable snapshot (SKY-1 exposure + PTS-03 truth), built
+                    // here from the same result object before it leaves the callback thread.
+                    val sample = skyCaptureResultSnapshotOf(result)
                     // Hop to the analysis thread rather than locking the join: see the class KDoc.
                     // A rejection means the executor is already shut down, i.e. this bind is gone.
                     try {
@@ -249,7 +251,7 @@ private data class SkyBindEvent(
 private data class SkyFrameEvent(
     val epoch: Long,
     val configuration: SkyCaptureConfiguration,
-    val joined: SkyJoinedFrame,
+    val joined: SkyJoinedFrame<SkyAnalyzedFrame>,
 )
 
 /** Everything one offer (or one teardown) released without completing a pair. */
@@ -278,7 +280,9 @@ internal data class SkyAnalyzedFrame(
     val lumaWidthPx: Int,
     val lumaHeightPx: Int,
     val lumaRowStridePx: Int,
-) {
+) : SkyJoinFrame {
+    override val sensorTimestampNanos: Long get() = metadata.timestampNanos
+
     // A ByteArray field makes the generated equals/hashCode reference-based, which is both surprising
     // and useless here. Identity is the honest answer for a per-frame pixel buffer, so it is stated
     // explicitly rather than left to a data class's misleading default.

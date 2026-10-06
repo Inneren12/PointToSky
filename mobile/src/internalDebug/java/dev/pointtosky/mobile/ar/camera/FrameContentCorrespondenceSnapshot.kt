@@ -102,6 +102,13 @@ internal data class FrameContentCorrespondenceSnapshot(
     val summariesByHypothesis: Map<FrameContentMappingHypothesisId, FrameContentResidualSummary>,
     val verdict: FrameContentVerdictResult,
     val capturedAtEpochMillis: Long,
+    /**
+     * PTS-03: the `CaptureResult` joined to *this* frame by exact `SENSOR_TIMESTAMP` equality
+     * ([SkyExposureJoin]) — active physical ID, effective distortion mode, focal length, AF, crop, zoom,
+     * exposure. `null` only for a snapshot built without the join (unit tests of the CAM-2c core); a
+     * device frame always reaches the snapshot through the join.
+     */
+    val captureResult: SkyCaptureResultSnapshot? = null,
 ) {
     companion object {
         /** The one hypothesis this experiment's pose solver anchors to (task §4) — see
@@ -149,7 +156,11 @@ internal fun buildFrameContentCorrespondenceSnapshot(
     detectionTolerances: FrameContentDetectionTolerances,
     capturedAtEpochMillis: Long,
     verdictThresholds: FrameContentVerdictThresholds = FrameContentVerdictThresholds(),
+    captureResult: SkyCaptureResultSnapshot? = null,
 ): FrameContentCorrespondenceSnapshot {
+    require(captureResult == null || captureResult.sensorTimestampNanos != null) {
+        "a joined CaptureResult always carries its SENSOR_TIMESTAMP"
+    }
     val objectPoints = frameContentTargetObjectPoints(targetSpec)
     val detectedPoints =
         when (detectionResult) {
@@ -308,5 +319,6 @@ internal fun buildFrameContentCorrespondenceSnapshot(
         summariesByHypothesis = summariesByHypothesis,
         verdict = verdict,
         capturedAtEpochMillis = capturedAtEpochMillis,
+        captureResult = captureResult,
     )
 }
