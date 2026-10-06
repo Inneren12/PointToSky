@@ -4,12 +4,12 @@
 Repository:                 Inneren12/PointToSky (GitHub; single repository, phone + watch + shared core + tools)
 Code snapshot audited:      main @ 09b16549cac78fc6e9f2649bf142d146ccfd11eb  ("Merge pull request #241 …", 2026-09-04)
 Recon branch:               claude/pointtosky-master-audit-k4rws7  (PR #243 — this master recon)
-Document revision base:     revision 3 @ 5b733300adb0cfa57ffc457bdb50c72ba3b02a87 (this text is revision 4,
+Document revision base:     revision 4 @ a77bd8f7a503d56fbf758f015a418a0ed623f7eb (this text is revision 5,
                             committed on top of it; later revisions: `git log -- <this file>`)
-Earlier revisions:          revision 1 @ 7987ba8, revision 2 @ e846486
+Earlier revisions:          revision 1 @ 7987ba8, revision 2 @ e846486, revision 3 @ 5b73330
 Delta from audited snapshot: documentation only — docs/pointtosky/MASTER_POINTTOSKY_RECON_2026-10-06.md
                             (no production code, test, build or asset change)
-Recon date:                 2026-10-06 (revisions 2–4 same day: corrections listed in "Revision log" at the end)
+Recon date:                 2026-10-06 (revisions 2–5 same day: corrections listed in "Revision log" at the end)
 Relevant application modules: :mobile, :wear, :wear:sensors, :wear:benchmark, :core:astro-core, :core:astro,
                             :core:catalog, :core:common, :core:location, :core:time, :core:logging,
                             :tools:catalog-packer, :tools:sky-session-loader, :tools:ephem-cli, res/ (Python data builders)
@@ -804,10 +804,22 @@ A camera-domain proof that does not know the distortion-correction state is **in
 
 **Camera2 platform contract**, per the Camera2 reference for `CaptureRequest.DISTORTION_CORRECTION_MODE` (API 28+),
 `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE` and `LENS_INTRINSIC_CALIBRATION`:
-- `DISTORTION_CORRECTION_MODE_OFF`: metadata coordinates use `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`, and the
-  output retains lens distortion.
-- `DISTORTION_CORRECTION_MODE_FAST` / `HIGH_QUALITY`: metadata coordinates use `SENSOR_INFO_ACTIVE_ARRAY_SIZE`, and
-  processed outputs are corrected by the camera device.
+Two different things must be kept apart: the **metadata coordinate contract**, and the **actual pixel-domain
+correction** the HAL performs.
+
+*Pixel-domain correction (what the HAL does to processed output):*
+- `OFF`: no distortion correction.
+- `HIGH_QUALITY`: the highest-quality correction, even if capture slows.
+- `FAST`: a camera-selected correction that must not slow capture. It **may be effectively the same as `OFF`** if any
+  correction would slow capture.
+- So `FAST` does **not** imply fully corrected YUV.
+
+*Metadata coordinate contract (which basis affected metadata uses):*
+- mode `OFF`: the pre-correction active array (`SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`);
+- any mode other than `OFF` (`FAST` or `HIGH_QUALITY`): the active array (`SENSOR_INFO_ACTIVE_ARRAY_SIZE`).
+
+The metadata basis therefore follows the reported mode, while the residual distortion in the pixels must be
+**measured**.
 - Correction applies to processed outputs (YUV / Y8 / JPEG), not to RAW.
 - On devices that support the control, correction is **on by default**.
 - `LENS_INTRINSIC_CALIBRATION` is defined in the **pre-correction** active-array coordinate system.
@@ -826,14 +838,19 @@ A camera-domain proof that does not know the distortion-correction state is **in
 ```text
 distortion mode (per frame, CaptureResult)
   → source calibration coordinate space (LENS_INTRINSIC_CALIBRATION: pre-correction array)
-  → is the delivered YUV distortion-corrected by the camera device?
+  → metadata coordinate basis implied by that mode (pre-correction for OFF; active array otherwise)
+  → is measurable lens distortion still present in the delivered analysis YUV? (measured, not inferred from the mode)
+  → is an application-side distortion model required?
   → active vs pre-correction array relationship (offsets, sizes, per physical ID)
   → sensor-to-buffer matrix domain (CameraX: opened camera's SENSOR_INFO_ACTIVE_ARRAY_SIZE; §11.3)
   → final pixel coordinate space of the analysis buffer
 ```
 
 **Rules, for any strategy chosen in PTS-09:**
-- If the YUV is already camera-corrected, **do not** distort or undistort it again with `LENS_DISTORTION`. Express
+- Never assume correction is unnecessary just because the mode reports `FAST`. Whether distortion remains must be
+  measured, for example from edge residuals in the frame-content correspondence.
+- If the YUV is **measured** to be camera-corrected, **do not** distort or undistort it again with `LENS_DISTORTION`.
+  Express
   the intrinsics in the corrected (active-array) basis, through a transform that is proven and not assumed.
 - If correction is `OFF`, either model `LENS_DISTORTION` explicitly in the pre-correction basis, or **reject
   calibrated projection** until that transform exists.
@@ -1079,8 +1096,18 @@ is camera identity and consistency checks.
    consistent.
 5. A switch of active physical camera `id` selects that camera's own extrinsic and intrinsics. It never re-uses
    another id's estimated extrinsic silently.
-6. Multiplication order and quaternion conventions are pinned by tests using non-commuting rotations. The
-   `LENS_POSE_ROTATION` quaternion order (w/x/y/z), its direction (S→Cphys vs inverse), the magnetic/true
+6. Multiplication order and quaternion conventions are pinned by tests using non-commuting rotations.
+   - Camera2 `LENS_POSE_ROTATION` is four coefficients in the order **`[x, y, z, w]`**, describing the rotation
+     **from the Android sensor coordinate system `S` to the camera-aligned frame `Cphys`**.
+   - The parser must take `input array = [x, y, z, w]`. A quaternion helper whose constructor expects `(w, x, y, z)`
+     may be used only through an explicitly named reorder adapter. The repository's existing sky-log quaternion is
+     already scalar-last `(x, y, z, w)` (`skylog/SkySessionLog.kt:246-295`).
+   - **Regression test:**
+     - pick a non-trivial known rotation;
+     - parse its Camera2 `[x, y, z, w]` values and build `R_Cphys_from_S`;
+     - check the transformed basis vectors;
+     - check that reading the same four numbers as `[w, x, y, z]` gives a different matrix and fails.
+   - The direction (`S → Cphys`, not its inverse), the magnetic/true
    distinction, the display remap and `rotationDegrees` are each exercised. A wrong order, a wrong direction or a
    missing frame must fail.
 
@@ -1405,6 +1432,7 @@ Onboarding logic, Policy.
 | **active physical camera per frame** (`LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`) | **no** (never read; the SKY-1 capture callback that could read it exists) | — |
 | per-frame `LENS_FOCAL_LENGTH` / `LENS_INTRINSIC_CALIBRATION` / `SCALER_CROP_REGION` / zoom ratio / OIS state from the capture result | **no** | — |
 | per-frame `DISTORTION_CORRECTION_MODE` | **no** (never read) | — |
+| per-frame `HOT_PIXEL_MODE` / `NOISE_REDUCTION_MODE` / `EDGE_MODE` (optional detector provenance) | **no** (never read) | — |
 | per-physical-ID static `LENS_DISTORTION`, active / pre-correction arrays | partial: logical-camera snapshot only (`CameraCharacteristicsSource.kt`; CAM JSON `cam2c.metadata`) | — |
 | per-physical-ID `LENS_POSE_ROTATION` / `LENS_POSE_TRANSLATION` / `LENS_POSE_REFERENCE` | **no** (never read) | — |
 | frame resolution, crop, rotation, viewport | yes | HUD + JSON `geometry` |
@@ -1532,7 +1560,7 @@ matched on a device in any recorded artifact. Watch Aim, Identify and sensors ha
 | Near horizon | NOT TESTED (CAM-2a has no horizon gate; refraction off) | sessions spanning low to high altitude; **residual versus altitude** with and without the chosen refraction policy (§8.3 item 11) |
 | Active physical camera per frame (identity) | NOT TESTED | PTS-03 Group A: is `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` reported? stable in a star-mode session? does it switch in low light? do focal length/intrinsics change with it? can each result be matched to its analysis frame? |
 | Projection-domain compatibility per physical ID | NOT TESTED (no `ProvenActiveArrayLocal` ever constructed) | PTS-03 Group B: the matrix's source basis (logical vs physical active array); a legal composition with physical intrinsics; frame-content correspondence (printed target, later stars) for every occurring physical ID |
-| Distortion state per stream / physical ID | NOT TESTED (mode never read) | PTS-03 Group C: `DISTORTION_CORRECTION_MODE` per frame; YUV corrected or not; pre-correction vs active arrays; frame-content correspondence at image edges under each available mode (edge residuals reveal residual or double-corrected distortion) |
+| Distortion state per stream / physical ID | NOT TESTED (mode never read) | PTS-03 Group C: requested/effective `DISTORTION_CORRECTION_MODE` per frame; the metadata basis it implies; **measured** residual distortion in the YUV (never inferred from `FAST`); pre-correction vs active arrays; frame-content correspondence at image edges under each available mode (edge residuals reveal residual or double-corrected distortion) |
 | Camera↔device extrinsics per physical ID | NOT TESTED (`LENS_POSE_*` never read) | PTS-03 Group D: reported pose and reference; quaternion convention; comparison with nominal axes and printed-target optical evidence; provenance status |
 | CameraX 1.4.2 stream configuration | NOT TESTED (1.3.4 evidence only) | recorded analysis/preview resolution, crop, matrix and stream configuration under 1.4.2 |
 | Recovery under wrong magnetic heading | NOT TESTED (no matcher) | deliberately disturbed heading (e.g. tens of degrees, value TBD): optical acquisition still succeeds through the recovery path (§9.1) |
@@ -1594,7 +1622,7 @@ missing spatial index (or a nav-set-only scan) and the candidate predictor.
 | Autofocus failure | AF uncontrolled, unlogged | focus policy + logged focus distance | none | AF control | P0 |
 | Wrong camera (logical switch) | not detected (the active-physical-ID capture result is never read; its availability on Pixel 9 is uninvestigated) | read the per-frame active physical ID if the HAL reports it; otherwise pin binding/zoom, and as a last resort detect scale change in the solve | zoom pinned only in the debug override | PTS-03 probe, then the PTS-09 decision | P0 |
 | Incorrect intrinsics | Pixel 9 → unprojectable; legacy 56° elsewhere; labelled CALIBRATED loosely | geometry from truthful per-frame metadata (A, only with identity, a projection-domain/content proof **and** a known distortion state) or physical binding (B, also needing the domain proof and distortion state); a scale-tolerant solve (C) only as fallback; honest labels | CAM-2c gates | PTS-03 → PTS-09 | P0 |
-| Distortion double-applied or ignored | mode unknown; distortion never modelled; the intrinsics basis is checked only by pre==active equality | per stream: if the YUV is camera-corrected, do not re-apply `LENS_DISTORTION`; if correction is OFF, model it in the pre-correction basis or reject calibrated projection | partial (pre==active guard) | PTS-03 Group C → PTS-09 | P0 |
+| Distortion double-applied or ignored | mode unknown; distortion never modelled; the intrinsics basis is checked only by pre==active equality | per stream: if the YUV is measured as camera-corrected, do not re-apply `LENS_DISTORTION`; never infer "corrected" from `FAST`; where distortion remains, model it in the pre-correction basis or reject calibrated projection | partial (pre==active guard) | PTS-03 Group C → PTS-09 | P0 |
 | Wrong camera↔device boresight | nominal axes assumed; platform pose never read | per-physical-ID extrinsic with provenance (platform pose verified optically, or nominal, or optically refined); never stored in display frames | none | PTS-03 Group D → PTS-09/PTS-18 | P1 |
 | Proper motion ignored | epoch-2000 positions used against 2026 frames | epoch-propagated reference positions, or explicit exclusion of high-PM nav stars | none | proper-motion policy (§8.3 item 10) | P1 |
 | Low-altitude refraction | geometric (refraction-off) prediction; a matcher would absorb the displacement as attitude/intrinsics error | apparent-altitude correction (A) or a minimum-altitude exclusion (B), explicit and tested | none | refraction policy (§8.3 item 11) | P1 |
@@ -1727,8 +1755,8 @@ evidence required.
     (`SensorToBufferDomainProof`).
   - **The distortion-correction state is unknown** (moved here from G-18 in revision 4):
     - `DISTORTION_CORRECTION_MODE` is never read or set;
-    - it determines whether the YUV is already corrected, and whether metadata uses pre-correction or active-array
-      coordinates;
+    - the mode fixes the metadata coordinate basis (pre-correction for `OFF`, active array otherwise). The actual
+      pixel correction is HAL-dependent: `FAST` may be effectively `OFF`, so it must be measured;
     - `LENS_INTRINSIC_CALIBRATION` is defined in pre-correction coordinates;
     - so neither the pixel domain nor the correct intrinsics basis is established, and double correction cannot be
       ruled out.
@@ -2009,14 +2037,17 @@ D camera↔device extrinsics.
 5. If the active physical camera switches, does the relationship hold for **each** physical ID?
 
 *Group C, distortion state and pixel coordinate space (per stream and physical ID):*
-1. What `DISTORTION_CORRECTION_MODE` is in effect per frame (`OFF` / `FAST` / `HIGH_QUALITY`; on supporting devices
-   correction is on by default)? Is the control supported at all?
+1. What is the requested and the effective `DISTORTION_CORRECTION_MODE` per frame (`OFF` / `FAST` / `HIGH_QUALITY`;
+   on supporting devices correction is on by default)? Is the control supported at all?
 2. Which sensor coordinate system does the metadata use?
    - With mode `OFF`, Camera2 coordinates use `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`.
-   - With `FAST` / `HIGH_QUALITY`, they use `SENSOR_INFO_ACTIVE_ARRAY_SIZE`.
+   - With any other mode (`FAST` / `HIGH_QUALITY`), they use `SENSOR_INFO_ACTIVE_ARRAY_SIZE`.
+   - This is the metadata contract only. It says nothing about how much correction the pixels received.
    - Also record what the pre-correction vs active arrays are.
-3. Is the delivered processed YUV already distortion-corrected by the camera device? Correction applies to processed
-   outputs such as YUV/Y8/JPEG, not to RAW.
+3. Does **measurable** lens distortion remain in the delivered analysis YUV?
+   - Correction applies to processed outputs such as YUV/Y8/JPEG, not to RAW.
+   - `FAST` may be effectively `OFF`, so this must be measured, not inferred from the mode.
+3a. Therefore, is an **application-side distortion model** required for this stream?
 4. `LENS_INTRINSIC_CALIBRATION` is defined in **pre-correction** active-array coordinates. Which basis must it be
    transformed into to describe the delivered pixels, and is that transform known?
 5. Is the sensor-to-buffer matrix's source domain consistent with the mode-dependent basis?
@@ -2035,8 +2066,9 @@ D camera↔device extrinsics.
    platform pose is accurate enough.
 
 **Double-correction rule.**
-- If the processed YUV is already distortion-corrected by the camera device, the projection path must **not**
-  distort or undistort it again with `LENS_DISTORTION`.
+- If the processed YUV is **measured** to be distortion-corrected by the camera device, the projection path must
+  **not** distort or undistort it again with `LENS_DISTORTION`.
+- It must never assume correction is unnecessary merely because the mode reports `FAST`.
 - If correction is `OFF`, the path must either model `LENS_DISTORTION` explicitly, in the pre-correction basis, or
   **reject calibrated projection** until that transform is implemented.
 - Do not assume `LENS_DISTORTION` must always be applied manually.
@@ -2172,7 +2204,11 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
     - `CONTROL_AF_MODE`, `CONTROL_AF_STATE`;
     - `SCALER_CROP_REGION`, zoom ratio where supported;
     - exposure time, sensitivity/ISO, frame duration;
-    - OIS/stabilisation state where exposed.
+    - OIS/stabilisation state where exposed;
+    - *optional detector-provenance diagnostics*, where available: `HOT_PIXEL_MODE`, `NOISE_REDUCTION_MODE`,
+      `EDGE_MODE`. The detector is calibrated against processed YUV, and these ISP stages can change hot-pixel
+      persistence, background noise, PSF/source shape and weak-source detectability. They are diagnostic provenance
+      only. The architecture does not depend on them unless real Pixel 9 evidence shows it must.
 
     Each result is correlated with `ImageProxy.imageInfo.timestamp`.
   - **Per physical camera ID (static characteristics)**:
@@ -2191,8 +2227,12 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
   `CamDiagnosticSnapshotJson.kt`; `mobile/.../ar/camera/CameraCharacteristicsSource.kt` (additional reads for
   evidence); possibly `skylog/*` (schema bump).
 - **Depends on:** —.
-- **Tests:** unit tests for extraction (null-tolerant: every key optional), the timestamp join, quaternion
-  parsing/convention, and evidence-record serialisation.
+- **Tests:** unit tests for:
+  - extraction (null-tolerant: every key optional);
+  - the timestamp join;
+  - evidence-record serialisation;
+  - `LENS_POSE_ROTATION` parsing pinned to `input array = [x, y, z, w]` → `R_Cphys_from_S`, including the §14.1
+    invariant-6 regression (basis vectors checked; a `[w, x, y, z]` misreading must fail).
 - **Device:** Pixel 9 sessions (indoors with the printed target, and at night) answering:
   - **A, identity:** which physical camera produced each frame; whether it switches (including in low light);
     whether the join holds; whether focal length/intrinsics change.
@@ -2200,8 +2240,11 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
     basis; whether physical `LENS_INTRINSIC_CALIBRATION` can legally be composed with it; whether mapped geometry
     matches frame content; whether this holds for each physical ID.
   - **C, distortion state:**
-    - the mode per frame;
-    - whether the processed YUV is camera-corrected;
+    1. the requested and effective mode per frame;
+    2. the metadata coordinate basis implied by that mode;
+    3. whether measurable lens distortion remains in the delivered analysis YUV (measured, e.g. from frame-content
+       edge residuals, never inferred from `FAST`);
+    4. whether an application-side distortion model is required;
     - the active vs pre-correction relationship;
     - the basis `LENS_INTRINSIC_CALIBRATION` must be transformed from and into;
     - the full chain `mode → calibration space → YUV corrected? → array relationship → matrix domain → final pixel
@@ -2288,9 +2331,11 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
     - otherwise **C** (approximate logical intrinsics with a scale-uncertainty field).
   - Whichever strategy is chosen, it must define and record:
     - the distortion mode and the final pixel coordinate space;
-    - whether lens correction is already present in the YUV, with the **double-correction rule** (§28.2): never
-      re-apply `LENS_DISTORTION` to camera-corrected output; with correction `OFF`, model the distortion explicitly
-      or reject calibrated projection;
+    - whether measurable lens distortion remains in the YUV, as measured in PTS-03 and not inferred from the
+      reported mode;
+    - the **double-correction rule** (§28.2): never re-apply `LENS_DISTORTION` to output measured as camera-corrected;
+      never assume correction is unnecessary merely because the mode is `FAST`; when distortion remains (mode `OFF`,
+      or a `FAST` that is effectively `OFF`), model it explicitly or reject calibrated projection;
     - which intrinsic coordinate basis (pre-correction vs active) is transformed, and how;
     - the camera↔physical-device extrinsic provenance (`R_Cphys_from_S(id)` status from PTS-03 Group D).
   - Honest `CameraGeometryQuality` labels, extended with the distortion and extrinsic provenance; a zoom policy in
@@ -2446,7 +2491,8 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
        estimated `R_Cphys_from_S(id)`**, with the implied `R_Cbuf_from_S` invariant across the four display
        rotations;
     5. a physical-camera switch selects that id's own extrinsic;
-    6. pinned multiplication order and quaternion convention with non-commuting rotations;
+    6. pinned multiplication order and quaternion convention with non-commuting rotations, including the Camera2
+       `[x, y, z, w]` → `R_Cphys_from_S` regression (a `[w, x, y, z]` misreading must fail);
   - scripted sequences: cloud gap, fast pan, single star, stale prior, poisoned prior, heading jump, display
     rotation, physical-camera switch.
 
@@ -2615,8 +2661,9 @@ BUDGET / DEVICE TEST** where an error budget must be agreed first.
    - Until PTS-03 Group D answers, the status is `NOMINAL_FALLBACK`. Optical estimation of a body-fixed term is
      planned only if the platform pose is absent, unusable or contradicted.
 9a. **Distortion state on the Pixel 9.**
-   - Is `DISTORTION_CORRECTION_MODE` supported? Which mode does the CameraX 1.4.2 session actually run with? Is the
-     analysis YUV corrected?
+   - Is `DISTORTION_CORRECTION_MODE` supported? Which mode does the CameraX 1.4.2 session actually run with?
+   - Does measurable distortion remain in the analysis YUV? Is `FAST`, if reported, effectively `OFF` on this
+     device?
    - What are the Pixel 9 pre-correction and active arrays per physical ID?
    - UNKNOWN (PTS-03 Group C).
 9b. **Does CameraX's `sensorToBufferTransformMatrix` account for the distortion mode's coordinate basis?** It is
@@ -2751,3 +2798,16 @@ PTS numbers in the revision-2 rows use revision-2 numbering, which revision 3 su
 - the path-specific Wear target bug;
 - deferred constellation graphics;
 - CI SDK-setup failures recorded as they were observed.
+
+**Revision 5 (2026-10-06)** is a small documentation correction on top of revision 4 @
+`a77bd8f7a503d56fbf758f015a418a0ed623f7eb`.
+
+| # | Correction | Sections |
+|---|---|---|
+| 1 | `LENS_POSE_ROTATION` quaternion order corrected from "w/x/y/z" to Camera2's **`[x, y, z, w]`** (rotation `S → Cphys`). Parsing is pinned to `input array = [x, y, z, w]`, with an explicit reorder adapter required for any `(w, x, y, z)` helper. Added a regression test requirement: known non-trivial rotation, basis-vector check, and failure when the same numbers are read as `[w, x, y, z]` | §14.1 invariant 6 (used by PTS-03 / PTS-18) |
+| 2 | `FAST` distortion semantics corrected. The **metadata coordinate contract** (`OFF` → pre-correction array; any other mode → active array) is separated from the **actual pixel correction** (`HIGH_QUALITY` highest quality; `FAST` camera-selected, never slows capture, may be effectively `OFF`). Residual distortion in the YUV must be measured. PTS-03 Group C now asks: effective mode; implied metadata basis; measured residual distortion; whether an application-side model is needed. The double-correction rule gains "never assume no correction is needed because the mode is `FAST`" | §11.5, §21, §23, §25, §27 G-03, §28.2 Group C, §29 PTS-03/PTS-09, §31 9a |
+| 3 | Added optional detector-provenance diagnostics `HOT_PIXEL_MODE`, `NOISE_REDUCTION_MODE`, `EDGE_MODE`. They are diagnostic only; the architecture does not depend on them | §21, §29 PTS-03 |
+
+No conclusion, gap priority or roadmap order changed. Revision 4's own log row says "decides whether the YUV is
+corrected". That wording is superseded by row 2 above: the mode decides the metadata basis, and the pixel correction
+is measured.
