@@ -4,11 +4,12 @@
 Repository:                 Inneren12/PointToSky (GitHub; single repository, phone + watch + shared core + tools)
 Code snapshot audited:      main @ 09b16549cac78fc6e9f2649bf142d146ccfd11eb  ("Merge pull request #241 …", 2026-09-04)
 Recon branch:               claude/pointtosky-master-audit-k4rws7  (PR #243 — this master recon)
-Recon branch HEAD:          revision 1 = 7987ba8; revision 2 = e846486; revision 3 (this text) = the next commit
-                            on the branch (`git log -1 origin/claude/pointtosky-master-audit-k4rws7`)
+Document revision base:     revision 3 @ 5b733300adb0cfa57ffc457bdb50c72ba3b02a87 (this text is revision 4,
+                            committed on top of it; later revisions: `git log -- <this file>`)
+Earlier revisions:          revision 1 @ 7987ba8, revision 2 @ e846486
 Delta from audited snapshot: documentation only — docs/pointtosky/MASTER_POINTTOSKY_RECON_2026-10-06.md
                             (no production code, test, build or asset change)
-Recon date:                 2026-10-06 (revisions 2 and 3 same day: corrections listed in "Revision log" at the end)
+Recon date:                 2026-10-06 (revisions 2–4 same day: corrections listed in "Revision log" at the end)
 Relevant application modules: :mobile, :wear, :wear:sensors, :wear:benchmark, :core:astro-core, :core:astro,
                             :core:catalog, :core:common, :core:location, :core:time, :core:logging,
                             :tools:catalog-packer, :tools:sky-session-loader, :tools:ephem-cli, res/ (Python data builders)
@@ -102,6 +103,11 @@ The math is unit-tested to a high standard and the contracts are explicit.
    - **per-frame active-physical-camera identity is UNINVESTIGATED**. `ImageInfo` does not carry it, but a Camera2
      capture result may (`CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`, readable through the session
      capture callback the repository already installs in SKY-1);
+   - **distortion-correction state is unknown**. `DISTORTION_CORRECTION_MODE` is never read or set. It decides both
+     whether the YUV is lens-corrected and which sensor coordinate basis (pre-correction vs active array) the metadata
+     uses (§10.1, §11.5);
+   - **camera↔device extrinsics are unaudited**. `LENS_POSE_ROTATION` / `LENS_POSE_REFERENCE` are never read, and the
+     code relies on nominal axes (§14.1);
    - autofocus has never been configured anywhere in the repository or its history;
    - the current CameraX 1.4.2 analysis resolution is UNVERIFIED ON DEVICE. 640×480 was observed under 1.3.4;
    - Preview and ImageAnalysis are bound without a `ViewPort`.
@@ -117,9 +123,14 @@ replace the self-referential golden test. It is small, independent and P0-correc
 **PTS-02** (CI truth) follows. The current PR checks are not green: `smoke` and `Build catalog artifacts` fail in
 Android SDK setup (§2).
 
-**PTS-03** is the first PR on the autodetect path. It is the Pixel 9 experiment, and it covers both **physical-frame
-identity** and **projection-domain compatibility**. A known physical ID alone does not make per-frame
-physical-camera geometry valid (§11.3, §28.2).
+**PTS-03** is the first PR on the autodetect path. It is the Pixel 9 experiment, and it establishes four independent
+classes of camera truth (§28.2):
+- **A** physical-frame identity;
+- **B** projection-domain compatibility;
+- **C** distortion state and pixel coordinate space;
+- **D** camera↔device extrinsics.
+
+A known physical ID alone does not make per-frame physical-camera geometry valid.
 
 Revision 3 also:
 - replaces the frame-ambiguous correction formula with an explicit frame model (§14.1);
@@ -135,7 +146,7 @@ Revision 3 also:
 | Repository | `Inneren12/PointToSky` — PointToSky lives alone in this repository (no unrelated 2D/3D/AR-fabrication tracks) | `settings.gradle.kts:24-43` (`rootProject.name = "PointToSky"`) |
 | Code snapshot audited | `main @ 09b16549cac78fc6e9f2649bf142d146ccfd11eb` (= `origin/main` at recon time) | `git rev-parse origin/main` |
 | Recon branch / PR | `claude/pointtosky-master-audit-k4rws7`, PR #243 (this document). Not to be confused with the older README-only PR #242 | GitHub |
-| Recon branch HEAD | revision 1 `7987ba8`; revision 2 `e846486`; revision 3 = the next commit | `git log origin/main..origin/claude/pointtosky-master-audit-k4rws7` |
+| Document revisions | r1 `7987ba8`; r2 `e846486`; r3 `5b733300adb0cfa57ffc457bdb50c72ba3b02a87` (base of this revision 4). Revision 4 and later commits are identified by `git log -- docs/pointtosky/MASTER_POINTTOSKY_RECON_2026-10-06.md`, so this table cannot go self-stale | `git log origin/main..origin/claude/pointtosky-master-audit-k4rws7` |
 | CI on the PR #243 head (`e846486`, as reviewed) | **not green.** `Lint` PASS. `smoke` (Android PR Smoke) FAIL and `Build catalog artifacts` (Android CI) FAIL, both inside `android-actions/setup-android@v3`: the sdkmanager child process exits at "Computing updates…", about 15–19 s into the job, **before any Gradle/project step**. The failures are **not attributed** to this docs-only change: they occur in runner SDK setup, and nothing ties them to the diff. This reinforces PTS-02 | GitHub check runs 112153413673, 112153413173 (job logs) |
 | Delta from the snapshot | this one Markdown file only; no code, test, build or asset changes | `git diff --stat origin/main...origin/claude/pointtosky-master-audit-k4rws7` |
 | Commits on main | 192 (`git log --oneline \| wc -l`); history rebuilt about 2026-07-01 with 4 root commits | `docs/recon/RECON_main_2026-09-02.md` §2.1 |
@@ -590,7 +601,10 @@ recovery path therefore needs a hypothesis method whose cost is acceptable on th
 | Physical camera IDs (static) | declared IDs read for diagnostics (`CameraManager.getCameraCharacteristics(id).physicalCameraIds`). Production never binds one | `CameraSessionIntrinsicsCoordinator`/diagnostic JSON `cam2c.physicalCameraIds` |
 | **Active physical camera per frame** | **UNINVESTIGATED / UNVERIFIED ON PIXEL 9.** Details below this table | `CameraPreview.kt:51-59`; `SkyCaptureExposure.kt:252-267,455-466`; `SkySessionCameraPreview.kt:106-122` |
 | Per-frame Camera2 capture results | production: **none read**. SKY-1 (internalDebug) reads `TotalCaptureResult` per frame through `Camera2Interop.Extender.setSessionCaptureCallback` and joins it to the analysis frame by `SENSOR_TIMESTAMP` (`SkyExposureJoin`, `DEFAULT_CAPACITY = 6`, `DEFAULT_MAX_WAIT_NANOS = 4 s`, `SkyExposureJoin.kt:174,181`). Fields read: exposure, ISO, frame duration, AE mode, AWB mode, sensor timestamp only | same |
-| Distortion | `LENS_DISTORTION` recorded, **never applied** | `CameraCharacteristicsSource.kt:181-192` |
+| Distortion coefficients | `LENS_DISTORTION` read into the characteristics snapshot and captured verbatim in the CAM-2c frame-content evidence, **never applied** (the `SkySessionLog.kt:696-699` KDoc saying it is "not read anywhere" is stale) | `CameraCharacteristicsSource.kt:181-192`; `FrameContentMappingHypothesis.kt:100-105` |
+| **Distortion-correction mode** | **never read and never set** (`DISTORTION_CORRECTION_MODE` absent from the repository, grep). So the delivered YUV's correction state and the metadata's coordinate basis are **UNKNOWN** on every device. On devices that support the control, Camera2 enables correction by default | grep; Camera2 contract (§11.5) |
+| Pre-correction vs active array | both read (`CameraCharacteristicsSource.kt:155-199`). `LENS_INTRINSIC_CALIBRATION` is accepted only when the pre-correction array equals the active array on all four edges (`AnalysisBufferIntrinsicsResolver.kt:211-232,376`). That guard avoids an offset mismatch but **does not consider the distortion mode**. The Pixel 9 pre-correction array is not recorded in any committed evidence | — |
+| **Camera pose (extrinsics)** | `LENS_POSE_ROTATION`, `LENS_POSE_TRANSLATION`, `LENS_POSE_REFERENCE` **never read** (grep). Prediction assumes the nominal device↔camera axes (`DeviceToOpticalCameraTransform.kt`) | grep |
 | Exposure / ISO / shutter | production: CameraX auto. SKY-1 (internalDebug): manual `CONTROL_AE_MODE_OFF`, exposure, ISO and frame duration via `Camera2Interop` on ImageAnalysis; presets 0.5 s/ISO1600 (default), 0.125 s/3200, 1 s/800, 2 s/400; per-frame validation | `mobile/src/internalDebug/.../SkyCaptureExposure.kt:191-267,427-447`; `SkySessionCaptureScreen.kt:109-124` |
 | Night behaviour | none in production (no scene mode, extensions or low-light APIs) | grep |
 
@@ -729,6 +743,9 @@ AnalysisBufferScale: cameraRayFor (delegates to unproject), per-edge extents, en
   why `SensorToBufferDomainProof` exists separately from physical identity, and why `resolveCam2cForExplicitPhysicalCamera`
   refuses to unlock from identity alone (`mobile/src/internalDebug/.../SensorToBufferDomainProof.kt:1-20,85`);
 - (c) a single focal length is reported, plus sensor size and active array;
+- (c′) **the distortion-correction mode is known** for the stream, the intrinsics are expressed in the basis that mode
+  implies, and lens distortion is accounted for exactly once (§11.5). Today the mode is never read, so this is
+  unestablished on every device;
 - (d) the matrix is present and `AXIS_ALIGNED_0`;
 - (e) the crop region lies inside the active array;
 - (f) the buffer size is unchanged since resolution;
@@ -780,6 +797,49 @@ by §1/§3, though under CameraX 1.3.4. The older README-only PR #242 would remo
 - any star frame from any device.
 
 ---
+
+### 11.5 Distortion-correction state and coordinate basis (revision 4)
+
+A camera-domain proof that does not know the distortion-correction state is **incomplete**.
+
+**Camera2 platform contract**, per the Camera2 reference for `CaptureRequest.DISTORTION_CORRECTION_MODE` (API 28+),
+`SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE` and `LENS_INTRINSIC_CALIBRATION`:
+- `DISTORTION_CORRECTION_MODE_OFF`: metadata coordinates use `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`, and the
+  output retains lens distortion.
+- `DISTORTION_CORRECTION_MODE_FAST` / `HIGH_QUALITY`: metadata coordinates use `SENSOR_INFO_ACTIVE_ARRAY_SIZE`, and
+  processed outputs are corrected by the camera device.
+- Correction applies to processed outputs (YUV / Y8 / JPEG), not to RAW.
+- On devices that support the control, correction is **on by default**.
+- `LENS_INTRINSIC_CALIBRATION` is defined in the **pre-correction** active-array coordinate system.
+
+**Repository truth.**
+- `DISTORTION_CORRECTION_MODE` is never read and never set (grep), so every session runs on the device default.
+- `LENS_DISTORTION` is read but never applied (§10.1).
+- The intrinsics resolver uses `LENS_INTRINSIC_CALIBRATION` only when the pre-correction and active arrays are
+  identical (`AnalysisBufferIntrinsicsResolver.kt:211-232,376`).
+- No code knows whether the analysed YUV is distortion-corrected.
+- The pinhole projector applies **no** distortion (`PinholeProjectionModel.kt:110-122`). That is right for
+  camera-corrected output, and wrong for uncorrected output away from the image centre.
+
+**Chain to establish for every tested stream / physical camera** (PTS-03 Group C):
+
+```text
+distortion mode (per frame, CaptureResult)
+  → source calibration coordinate space (LENS_INTRINSIC_CALIBRATION: pre-correction array)
+  → is the delivered YUV distortion-corrected by the camera device?
+  → active vs pre-correction array relationship (offsets, sizes, per physical ID)
+  → sensor-to-buffer matrix domain (CameraX: opened camera's SENSOR_INFO_ACTIVE_ARRAY_SIZE; §11.3)
+  → final pixel coordinate space of the analysis buffer
+```
+
+**Rules, for any strategy chosen in PTS-09:**
+- If the YUV is already camera-corrected, **do not** distort or undistort it again with `LENS_DISTORTION`. Express
+  the intrinsics in the corrected (active-array) basis, through a transform that is proven and not assumed.
+- If correction is `OFF`, either model `LENS_DISTORTION` explicitly in the pre-correction basis, or **reject
+  calibrated projection** until that transform exists.
+- The current pre==active equality guard is necessary but **not sufficient**: equal arrays do not reveal whether the
+  pixels are corrected.
+- Residual lens-model refinement beyond the mode/basis truth stays P2 (G-18).
 
 ## 12. Star source detector
 
@@ -915,63 +975,114 @@ correction, no full-quaternion correction and no screen offset derived from the 
 
 ### 14.1 Frame model for future optical fusion (required before the tracker exists)
 
-Revision 3 replaces revision 2's unqualified `q_corr = R_opt · R_sensor⁻¹`. That formula multiplied a camera-frame
-attitude by a device-frame attitude as if both had the same source frame. They do not.
+Revision 3 replaced revision 2's unqualified `q_corr = R_opt · R_sensor⁻¹`, which multiplied a camera-frame attitude
+by a device-frame attitude as if both had the same source frame.
 
-**Frames already defined by the code.** The notation is `R_A_from_B`, which maps a vector in frame B to frame A.
+Revision 4 further separates the **physical** device frame from the **display-remapped** frame. A physical
+camera↔device extrinsic is body-fixed. The display-remapped frame changes with display rotation, so it must not
+carry body-fixed terms.
 
-| Frame | Meaning | Evidence |
-|---|---|---|
-| `Wmag` | world ENU referenced to **magnetic** north; the frame Android's rotation vector reports | `mobile/.../ar/RotationFrame.kt:62-75` |
-| `Wtrue` | world ENU referenced to **true** north; the frame catalog-derived directions are built in | `prediction/LocalSkyDirection.kt:116-126`; `R_Wmag_from_Wtrue = trueEnuToMagneticEnu`, `TrueNorthToMagneticNorthTransform.kt:73-87` |
-| `D` | **display-remapped device** frame: +x display right, +y display up, +z out of the display | `DeviceToOpticalCameraTransform.kt` (`DeviceVector` KDoc); `DisplayRemap.kt:7-30` |
-| `Cdisp` | display-aligned optical camera frame: +x image right, +y image down, +z forward | `DeviceToOpticalCameraTransform.kt` (`OpticalCameraVector` KDoc) |
-| `Cbuf` | buffer-aligned optical frame, i.e. `Cdisp` rotated by `ImageProxy` `rotationDegrees`. This is the frame `unprojectToCameraRay` returns rays in | `DisplayAlignedOpticalToBufferOpticalTransform.kt:88-109`; `PinholeProjectionModel.kt:165-184` |
+**Frames.** The notation is `R_A_from_B`, which maps a vector in frame B to frame A.
+
+| Frame | Meaning | Layer | Evidence |
+|---|---|---|---|
+| `Wmag` | world ENU referenced to **magnetic** north; the frame Android's rotation vector reports | world | `mobile/.../ar/RotationFrame.kt:62-75` |
+| `Wtrue` | world ENU referenced to **true** north; the frame catalog-derived directions are built in | world | `prediction/LocalSkyDirection.kt:116-126`; `R_Wmag_from_Wtrue = trueEnuToMagneticEnu` (`TrueNorthToMagneticNorthTransform.kt:73-87`) |
+| `S` | **Android sensor / device physical frame**, i.e. the device's natural-orientation axes that `SensorManager.getRotationMatrixFromVector` reports **before** `remapCoordinateSystem`. This is also the "Android sensor coordinate system" that Camera2 `LENS_POSE_ROTATION` is defined against | physical / body | `RotationFrame.kt:62-69` (matrix before `remapForDisplay`) |
+| `Ddisp` | **display-remapped device frame** (+x display right, +y display up, +z out of the display), i.e. `S` after `remapForDisplay(displayRotation)`. The production phone activity is portrait-locked, so today `Ddisp = S` in practice, but structurally this is a **presentation** transform | presentation | `DisplayRemap.kt:7-30`; `RotationFrame.kt:69`; `DeviceToOpticalCameraTransform.kt` (`DeviceVector` KDoc) |
+| `Cphys(id)` | **physical camera-aligned frame** of physical camera `id`: the image sensor's axes and optical axis. Body-fixed relative to `S` for a given physical camera. Its exact axis convention, as Camera2 defines it for `LENS_POSE_ROTATION`, must be pinned in PTS-03 against the platform reference | physical / body | Camera2 `LENS_POSE_*` (not read anywhere in the repo, grep) |
+| `Cdisp` | display-aligned optical camera frame (+x image right, +y image down, +z forward) | presentation | `DeviceToOpticalCameraTransform.kt` (`OpticalCameraVector` KDoc) |
+| `Cbuf` | buffer-aligned optical frame, i.e. `Cdisp` rotated by `ImageProxy` `rotationDegrees`. The analysis buffer is the unrotated sensor readout, so `Cbuf` follows the physical sensor's readout axes up to a fixed axis-convention permutation (to be pinned in PTS-03). `unprojectToCameraRay` returns rays in this frame | image / physical readout | `DisplayAlignedOpticalToBufferOpticalTransform.kt:88-109`; `PinholeProjectionModel.kt:165-184,223-253` |
+
+**Transform ownership.**
+
+| Transform | Kind | Changes when… | Source today |
+|---|---|---|---|
+| `R_Wtrue_from_Wmag` | world (declination) | location/date changes | WMM `GeomagneticField` |
+| `R_Wmag_from_S` | sensor attitude | the device moves | rotation vector (raw `R`, before remap) |
+| `R_S_from_Ddisp` | **presentation** | display rotation changes | `remapForDisplay` (identity under the portrait lock) |
+| `R_Cphys_from_S(id)` | **physical, body-fixed extrinsic** | never, for a given physical camera | **not represented explicitly**: implied by the nominal assumption below; candidate platform source `LENS_POSE_ROTATION` (never read) |
+| `R_Cbuf_from_Cphys(id)` | physical readout axis convention | never, for a given physical camera | implicit; to be pinned in PTS-03 |
+| `R_Cdisp_from_Ddisp` (nominal) | combined nominal assumption | — | `diag(1, −1, −1)` (`opticalX = deviceX`, `opticalY = −deviceY`, `opticalZ = −deviceZ`) |
+| `R_Cbuf_from_Cdisp` | **presentation / buffer** | `rotationDegrees` changes | `DisplayAlignedOpticalToBufferOpticalTransform` |
 
 **Repository-truth chain** (CAM-2a prediction, `CameraStarPredictor.kt:69-134`):
 
 ```text
-v_Cbuf = R_Cbuf_from_Cdisp(rotationDegrees) · R_Cdisp_from_D(nominal) · R_D_from_Wmag · R_Wmag_from_Wtrue · v_Wtrue
-
-where  R_Wmag_from_D       = the Android rotation matrix R (device → world; RotationMath.kt KDoc)
-       R_D_from_Wmag       = Rᵀ                (worldToDeviceVector, RotationMath.kt:38-51)
-       R_Cdisp_from_D      = diag(1, −1, −1)   (opticalX = deviceX, opticalY = −deviceY, opticalZ = −deviceZ;
-                                                self-inverse, so R_D_from_Cdisp is the same matrix)
-       R_Cbuf_from_Cdisp   = rotation by 0/90/180/270 per ImageProxy.imageInfo.rotationDegrees
+v_Cbuf = R_Cbuf_from_Cdisp(rotationDegrees) · R_Cdisp_from_Ddisp(nominal diag(1,−1,−1)) · R_Ddisp_from_Wmag · R_Wmag_from_Wtrue · v_Wtrue
+         with R_Ddisp_from_Wmag = Rᵀ of the display-remapped rotation matrix (worldToDeviceVector, RotationMath.kt:38-51)
 ```
+
+The code never isolates the body-fixed extrinsic. It is **implied**:
+
+```text
+R_Cbuf_from_S(implied) = R_Cbuf_from_Cdisp(rotationDegrees) · R_Cdisp_from_Ddisp(nominal) · R_Ddisp_from_S(displayRotation)
+```
+
+That expression mixes two presentation terms with one nominal physical assumption. For it to describe a physical
+extrinsic, the two presentation terms (display remap and `rotationDegrees`) must cancel consistently across display
+rotations, leaving a body-fixed `R_Cbuf_from_S`. Under the portrait lock only one combination is exercised. Exact
+invariance across rotations is **unpinned by tests** (PTS-18).
 
 **Sensor-predicted camera attitude** (composed only through matching inner frames):
 
 ```text
-R_Wtrue_from_D_sensor        = R_Wtrue_from_Wmag(decl) · R_Wmag_from_D(rotation vector)
-R_Wtrue_from_Cbuf_sensorPred = R_Wtrue_from_D_sensor · R_D_from_Cdisp(nominal) · R_Cdisp_from_Cbuf(rotationDegrees)
+R_Wtrue_from_S_sensor        = R_Wtrue_from_Wmag(decl) · R_Wmag_from_S(rotation vector)
+R_Wtrue_from_Cbuf_sensorPred = R_Wtrue_from_S_sensor · R_S_from_Cphys(id) · R_Cphys_from_Cbuf(id)
+                               (today: the implied nominal R_S_from_Cbuf above)
 ```
 
-**Optical attitude.** A future matcher plus Wahba solve pairs camera rays (`Cbuf`) with catalog directions (`Wtrue`,
-after the epoch/precession/refraction policy). It therefore returns `R_Wtrue_from_Cbuf_optical`, a camera-frame
-attitude, **not** a device-frame one.
+**Optical attitude.** A future matcher plus Wahba solve pairs `Cbuf` rays with `Wtrue` catalog directions (after the
+epoch/precession/refraction policy). It therefore returns `R_Wtrue_from_Cbuf_optical`.
 
-**Comparisons must have equal source and destination frames.** Two well-typed residuals exist, and they mean
-different things:
+**Comparisons must have equal source and destination frames.**
 - `ΔW = R_Wtrue_from_Cbuf_optical · (R_Wtrue_from_Cbuf_sensorPred)ᵀ` is a `Wtrue ← Wtrue` rotation. It is
   world-fixed, for example a magnetic heading error.
-- `ΔC = (R_Wtrue_from_Cbuf_sensorPred)ᵀ · R_Wtrue_from_Cbuf_optical` is a `Cbuf ← Cbuf` rotation. It is body-fixed,
-  for example a camera↔IMU boresight misalignment.
+- `ΔC = (R_Wtrue_from_Cbuf_sensorPred)ᵀ · R_Wtrue_from_Cbuf_optical` is a `Cbuf ← Cbuf` rotation. It is attributable
+  to the body-fixed physical extrinsic `R_Cphys_from_S(id)`, or to its readout convention, **per physical camera
+  id**.
+- It is **not** attributable to the display remap or to `rotationDegrees`, which are presentation terms with known
+  values.
 
-The recon does **not** choose a representation. The future tracker decides how to model world-frame attitude bias,
-body-fixed camera/device boresight, magnetic heading correction and short-term gyro/rotation-vector propagation,
-possibly as separate estimated terms. It must not collapse them into one frame-ambiguous constant quaternion.
+The recon does **not** choose a representation. The future tracker decides how to model world-fixed attitude bias,
+the body-fixed `S ↔ Cphys(id)` extrinsic, magnetic heading correction and short-term propagation. It must not
+collapse them into one frame-ambiguous constant quaternion, and it must not store a body-fixed term in `Ddisp` or
+`Cdisp`.
+
+**Extrinsic provenance.** `R_Cphys_from_S(id)` must carry one of these statuses, recorded per physical ID by PTS-03
+and consumed by PTS-09/PTS-18:
+
+| Status | Meaning |
+|---|---|
+| `CALIBRATED_PLATFORM_POSE` | `LENS_POSE_ROTATION` present, `LENS_POSE_REFERENCE` not `UNDEFINED`, **and** consistent with optical evidence (printed target / star solution) within a tolerance TBD BY DEVICE TEST |
+| `PLATFORM_POSE_PRESENT_BUT_UNVERIFIED` | present with a non-`UNDEFINED` reference, but not yet compared against optical evidence |
+| `PLATFORM_POSE_UNUSABLE` | absent, `UNDEFINED` reference, or inconsistent with optical evidence |
+| `NOMINAL_FALLBACK` | PointToSky's nominal axes (today's implicit behaviour) |
+| `OPTICALLY_REFINED` | estimated or refined by the optical solution / tracker, with its uncertainty |
+
+`LENS_POSE_REFERENCE` defines the origin of the pose translation and qualifies the pose fields. Its exact semantics
+for the rotation under each reference value must be confirmed against the Camera2 reference in PTS-03.
+`LENS_POSE_TRANSLATION` (metres) is recorded, but it is irrelevant for directions to stars at infinity. Its only use
+is camera identity and consistency checks.
 
 **Required invariants / tests for the future tracker** (PTS-18):
-1. With a perfect sensor orientation and the nominal device↔camera transform, the optical residual is identity
-   (`ΔW = ΔC = I` within numerical tolerance).
+1. With a perfect sensor orientation and the true extrinsic (nominal in synthetic tests), the optical residual is
+   identity (`ΔW = ΔC = I` within tolerance).
 2. With a valid correction held, rotating the phone propagates the camera pose correctly. A simulated world-fixed
    heading bias stays correct after rotation only when applied world-side. A simulated body-fixed misalignment stays
-   correct only when applied body-side. Applying either one on the wrong side must fail the test after a rotation.
-3. A body-fixed camera/device transform (the nominal `R_D_from_Cdisp`, or any estimated boresight) never becomes a
-   world-fixed correction.
-4. Multiplication order is pinned by tests using non-commuting rotations. The magnetic/true distinction, the display
-   remap and `rotationDegrees` are each exercised (a wrong order or a missing frame must fail).
+   correct only when applied as an `S ↔ Cphys` extrinsic. Applying either one on the wrong side must fail after a
+   rotation.
+3. A body-fixed camera/device transform never becomes a world-fixed correction.
+4. **Changing the display rotation, or `ImageProxy.rotationDegrees`, changes only the presentation/buffer-basis
+   terms** (`R_S_from_Ddisp`, `R_Cbuf_from_Cdisp`). It must not mutate the estimated physical `R_Cphys_from_S(id)`.
+   The implied `R_Cbuf_from_S` must be invariant across the four display rotations when `rotationDegrees` is
+   consistent.
+5. A switch of active physical camera `id` selects that camera's own extrinsic and intrinsics. It never re-uses
+   another id's estimated extrinsic silently.
+6. Multiplication order and quaternion conventions are pinned by tests using non-commuting rotations. The
+   `LENS_POSE_ROTATION` quaternion order (w/x/y/z), its direction (S→Cphys vs inverse), the magnetic/true
+   distinction, the display remap and `rotationDegrees` are each exercised. A wrong order, a wrong direction or a
+   missing frame must fail.
 
 ---
 
@@ -991,7 +1102,9 @@ says nothing about optical lock.
 
 A future tracker's surviving state must be **frame-labelled** (§14.1):
 - the last `R_Wtrue_from_Cbuf_optical` with its frame timestamp;
-- any estimated world-fixed and body-fixed correction terms, kept separate;
+- any estimated world-fixed correction term (`Wtrue`) and, **separately**, the body-fixed physical extrinsic
+  `R_Cphys_from_S(id)` per physical camera with its provenance status. Neither is ever stored in a display-remapped
+  frame (`Ddisp`/`Cdisp`), since display rotation changes those;
 - the rotation-sample history used to propagate between frames;
 - time-stamped `priorProjections` derived from those.
 
@@ -1291,6 +1404,9 @@ Onboarding logic, Policy.
 | camera ID, logical flag, declared physical IDs | yes | CAM diagnostic JSON `cam2c` (internalDebug, `CamDiagnosticSnapshotJson.kt`, schema v4) |
 | **active physical camera per frame** (`LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`) | **no** (never read; the SKY-1 capture callback that could read it exists) | — |
 | per-frame `LENS_FOCAL_LENGTH` / `LENS_INTRINSIC_CALIBRATION` / `SCALER_CROP_REGION` / zoom ratio / OIS state from the capture result | **no** | — |
+| per-frame `DISTORTION_CORRECTION_MODE` | **no** (never read) | — |
+| per-physical-ID static `LENS_DISTORTION`, active / pre-correction arrays | partial: logical-camera snapshot only (`CameraCharacteristicsSource.kt`; CAM JSON `cam2c.metadata`) | — |
+| per-physical-ID `LENS_POSE_ROTATION` / `LENS_POSE_TRANSLATION` / `LENS_POSE_REFERENCE` | **no** (never read) | — |
 | frame resolution, crop, rotation, viewport | yes | HUD + JSON `geometry` |
 | sensor-to-buffer matrix, class, frame counts | yes | JSON `cam2c.frameTransform` |
 | intrinsics (active/buffer fx, fy, cx, cy), quality, source | yes | JSON `calibration`, `cam2c.resolvedBufferK` |
@@ -1416,6 +1532,8 @@ matched on a device in any recorded artifact. Watch Aim, Identify and sensors ha
 | Near horizon | NOT TESTED (CAM-2a has no horizon gate; refraction off) | sessions spanning low to high altitude; **residual versus altitude** with and without the chosen refraction policy (§8.3 item 11) |
 | Active physical camera per frame (identity) | NOT TESTED | PTS-03 Group A: is `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` reported? stable in a star-mode session? does it switch in low light? do focal length/intrinsics change with it? can each result be matched to its analysis frame? |
 | Projection-domain compatibility per physical ID | NOT TESTED (no `ProvenActiveArrayLocal` ever constructed) | PTS-03 Group B: the matrix's source basis (logical vs physical active array); a legal composition with physical intrinsics; frame-content correspondence (printed target, later stars) for every occurring physical ID |
+| Distortion state per stream / physical ID | NOT TESTED (mode never read) | PTS-03 Group C: `DISTORTION_CORRECTION_MODE` per frame; YUV corrected or not; pre-correction vs active arrays; frame-content correspondence at image edges under each available mode (edge residuals reveal residual or double-corrected distortion) |
+| Camera↔device extrinsics per physical ID | NOT TESTED (`LENS_POSE_*` never read) | PTS-03 Group D: reported pose and reference; quaternion convention; comparison with nominal axes and printed-target optical evidence; provenance status |
 | CameraX 1.4.2 stream configuration | NOT TESTED (1.3.4 evidence only) | recorded analysis/preview resolution, crop, matrix and stream configuration under 1.4.2 |
 | Recovery under wrong magnetic heading | NOT TESTED (no matcher) | deliberately disturbed heading (e.g. tens of degrees, value TBD): optical acquisition still succeeds through the recovery path (§9.1) |
 | High-proper-motion reference star | NOT TESTED | residual of a high-PM bright star with and without epoch propagation, or its explicit exclusion (§8.3 item 10) |
@@ -1475,7 +1593,9 @@ missing spatial index (or a nav-set-only scan) and the candidate predictor.
 | Blur | no shape metric | reject elongated sources; warn | none | shape metrics | P2 |
 | Autofocus failure | AF uncontrolled, unlogged | focus policy + logged focus distance | none | AF control | P0 |
 | Wrong camera (logical switch) | not detected (the active-physical-ID capture result is never read; its availability on Pixel 9 is uninvestigated) | read the per-frame active physical ID if the HAL reports it; otherwise pin binding/zoom, and as a last resort detect scale change in the solve | zoom pinned only in the debug override | PTS-03 probe, then the PTS-09 decision | P0 |
-| Incorrect intrinsics | Pixel 9 → unprojectable; legacy 56° elsewhere; labelled CALIBRATED loosely | geometry from truthful per-frame metadata (A, only with **both** identity and a projection-domain/content proof) or physical binding (B, also needing the domain proof); a scale-tolerant solve (C) only as fallback; honest labels | CAM-2c gates | PTS-03 → PTS-09 | P0 |
+| Incorrect intrinsics | Pixel 9 → unprojectable; legacy 56° elsewhere; labelled CALIBRATED loosely | geometry from truthful per-frame metadata (A, only with identity, a projection-domain/content proof **and** a known distortion state) or physical binding (B, also needing the domain proof and distortion state); a scale-tolerant solve (C) only as fallback; honest labels | CAM-2c gates | PTS-03 → PTS-09 | P0 |
+| Distortion double-applied or ignored | mode unknown; distortion never modelled; the intrinsics basis is checked only by pre==active equality | per stream: if the YUV is camera-corrected, do not re-apply `LENS_DISTORTION`; if correction is OFF, model it in the pre-correction basis or reject calibrated projection | partial (pre==active guard) | PTS-03 Group C → PTS-09 | P0 |
+| Wrong camera↔device boresight | nominal axes assumed; platform pose never read | per-physical-ID extrinsic with provenance (platform pose verified optically, or nominal, or optically refined); never stored in display frames | none | PTS-03 Group D → PTS-09/PTS-18 | P1 |
 | Proper motion ignored | epoch-2000 positions used against 2026 frames | epoch-propagated reference positions, or explicit exclusion of high-PM nav stars | none | proper-motion policy (§8.3 item 10) | P1 |
 | Low-altitude refraction | geometric (refraction-off) prediction; a matcher would absorb the displacement as attitude/intrinsics error | apparent-altitude correction (A) or a minimum-altitude exclusion (B), explicit and tested | none | refraction policy (§8.3 item 11) | P1 |
 | Wrong location | phone renders at (0,0); watch NO_LOCATION | block with UNAVAILABLE(location) | watch gate only | phone gate | P1 |
@@ -1524,7 +1644,12 @@ missing spatial index (or a nav-set-only scan) and the candidate predictor.
 - `PredictedStarCatalogAdapter`: replace whole-sky brightest-200 with the candidate predictor (horizon, staged
   fail-open cone, nav set, epoch and refraction policy).
 - `HygRealCatalogParser` / PTSKCAT0 writer (or the nav-set generator): carry proper motion where the PM policy needs it.
-- SKY-1 capture callback (`SkyCaptureExposure.kt`): extend it to read the per-frame metadata listed in §21.
+- SKY-1 capture callback (`SkyCaptureExposure.kt`): extend it to read the per-frame metadata listed in §21, including
+  `DISTORTION_CORRECTION_MODE`.
+- `CameraCharacteristicsSource`: record per-physical-ID static evidence (`LENS_POSE_*`, distortion modes, both
+  arrays), as evidence first (PTS-03).
+- `SkySessionLog.kt:696-699` KDoc: it says `LENS_DISTORTION` is "not read anywhere", which is stale. Correct it when
+  that file is next touched.
 - `CameraStarPredictor`: optional horizon classification.
 - `CameraPreview` (production): luma tap, analysis resolution policy, AF/AE policy, optional ViewPort.
 - `AnalysisBufferIntrinsicsResolver`: honest quality labels; a Pixel 9 strategy chosen **after** the PTS-03 probe (§28.2).
@@ -1600,6 +1725,15 @@ evidence required.
     opened (logical) camera's active array (`cam_2c_sensor_to_buffer_domain_recon.md` §2.3). Physical intrinsics
     cannot be composed with it until domain compatibility and frame-content correspondence are proven
     (`SensorToBufferDomainProof`).
+  - **The distortion-correction state is unknown** (moved here from G-18 in revision 4):
+    - `DISTORTION_CORRECTION_MODE` is never read or set;
+    - it determines whether the YUV is already corrected, and whether metadata uses pre-correction or active-array
+      coordinates;
+    - `LENS_INTRINSIC_CALIBRATION` is defined in pre-correction coordinates;
+    - so neither the pixel domain nor the correct intrinsics basis is established, and double correction cannot be
+      ruled out.
+  - **The camera↔device extrinsics are unaudited**: `LENS_POSE_ROTATION` / `LENS_POSE_TRANSLATION` /
+    `LENS_POSE_REFERENCE` are never read, and the code relies on nominal axes.
   - AF has never been set.
   - The 1.4.2 analysis resolution is unverified (640×480 is 1.3.4 evidence).
   - There is no ViewPort.
@@ -1607,17 +1741,17 @@ evidence required.
 - **User impact:** projections are unusable or wrong.
 - **Risk:** high (device-specific).
 - **Direction:**
-  - first **measure** with the Pixel 9 experiment (PTS-03): physical-frame identity **and** projection-domain
-    compatibility;
+  - first **measure** with the Pixel 9 experiment (PTS-03): identity (A), projection domain (B), distortion state
+    (C) and extrinsics (D), as independent proofs;
   - then choose among:
-    - A (truthful per-frame physical-camera geometry, only if both proofs hold);
-    - B (explicit physical binding, which still needs the domain proof);
+    - A (truthful per-frame physical-camera geometry, only if A, B and C hold);
+    - B (explicit physical binding, which still needs B and C);
     - C (approximate logical intrinsics + scale-tolerant solve, **fallback only**);
   - explicit AF/AE policy, logged;
   - an analysis-resolution policy from measured 1.4.2 options;
   - honest quality labels.
 - **Depends on:** —.
-- **Evidence:** a PTS-03 report answering both question groups (§29); Pixel 9 sessions with focus logs.
+- **Evidence:** a PTS-03 report answering all four question groups (§29); Pixel 9 sessions with focus logs.
 
 **G-04 · No visible navigation-star candidate predictor with uncertainty and recovery.**
 - **Evidence:** §7, §9.
@@ -1747,7 +1881,8 @@ evidence required.
 - **G-16** `ArScreen.kt` monolith; no phone back stack.
 - **G-17** Duplicate parsers, tables and math (two `const_v1` parsers, two NELM tables, two alt/az implementations,
   three `JulianDate` copies).
-- **G-18** No lens distortion; no rolling shutter; start-of-exposure pose pairing.
+- **G-18** **Residual** lens-model refinement after the distortion-mode / coordinate-basis truth (now part of G-03)
+  is established; rolling shutter; start-of-exposure pose pairing.
 - **G-19** Inconsistent refraction usage in the SkyMap (UI rendering; distinct from the optical policy G-26).
 - **G-20** Missing translations and hard-coded strings.
 
@@ -1770,11 +1905,12 @@ notation.
 
 ```text
 1. Camera metadata truth                    EXISTING CameraFrameMetadata, pairing, CropScaleTransform, intrinsics
-   (per analysis frame)                     resolver + NEW per-frame Camera2 capture-result join (active physical ID,
-                                            focal length, intrinsics, focus, crop/zoom, exposure) keyed on
-                                            SENSOR_TIMESTAMP == ImageInfo.timestamp + a projection-domain proof
-                                            (identity alone is not enough; §11.3); honest geometry quality +
-                                            uncertainty
+   (per analysis frame, per physical id)    resolver + NEW per-frame Camera2 capture-result join (active physical ID,
+                                            DISTORTION_CORRECTION_MODE, focal length, intrinsics, focus, crop/zoom,
+                                            exposure) keyed on SENSOR_TIMESTAMP == ImageInfo.timestamp, plus four
+                                            independent proofs (§28.2): A identity, B projection domain, C distortion
+                                            state / pixel coordinate space, D camera↔device extrinsic provenance
+                                            (LENS_POSE_*). Honest geometry quality + uncertainty
         ↓
 2. Astronomy epoch / proper-motion /        EXISTING time, LST, RA/Dec↔Alt/Az + NEW single documented pipeline:
    precession / refraction truth            catalog epoch → observation epoch (proper motion per the chosen policy)
@@ -1800,8 +1936,11 @@ notation.
                                             body-fixed correction terms kept separate, age/decay, rotation-delta
                                             propagation, periodic wide re-verification
         ↓
-8. Corrected poses (typed, §28.2)           NEW CorrectedCameraPose  = R_Wtrue_from_Cbuf (+ timestamp, provenance)
-                                                CorrectedDevicePose  = R_Wtrue_from_D    (+ timestamp, provenance)
+8. Corrected poses (typed, §28.2)           NEW CorrectedCameraPose  = R_Wtrue_from_Cbuf (+ timestamp, physical id,
+                                                                       geometry + extrinsic provenance)
+                                                CorrectedDevicePose  = R_Wtrue_from_S    (+ timestamp, provenance)
+                                            (display-oriented poses are derived on demand through the presentation
+                                            transform R_S_from_Ddisp; never stored as a separate truth)
         ↓
 9. Navigation / overlay                     camera overlay ← CorrectedCameraPose; pointing/guidance ←
                                             CorrectedDevicePose (or the camera boresight, explicitly chosen);
@@ -1824,7 +1963,9 @@ Every attitude crossing a layer boundary carries its frame pair in its type or n
 | Detection (`camera/detect`) | `DetectedSource[]` per frame + source-quality contract | catalog, pose |
 | Matching (new, astro-core) | correspondences, `R_Wtrue_from_Cbuf_optical`, confidence; **stateless per call** | UI, Android |
 | Tracking (new, astro-core) | state machine, frame-labelled correction terms, decay, reacquire policy, re-verification cadence | Android |
-| Corrected poses (new, astro-core types) | `CorrectedCameraPose` and `CorrectedDevicePose` as **separate types**, related only through an explicit (nominal or estimated) `R_D_from_Cbuf` | UI |
+| Camera extrinsics (new, camera metadata + tracker) | `R_Cphys_from_S(id)` per physical ID with its provenance status (§14.1). **The only body-fixed camera↔device transform** | display rotation, UI |
+| Presentation transforms (existing) | `R_S_from_Ddisp` (display remap), `R_Cbuf_from_Cdisp` (`rotationDegrees`) | estimation; they are known, never estimated |
+| Corrected poses (new, astro-core types) | `CorrectedCameraPose` (`Wtrue ← Cbuf`) and `CorrectedDevicePose` (`Wtrue ← S`) as **separate types**, related only through the physical `R_S_from_Cphys(id) · R_Cphys_from_Cbuf(id)` | UI |
 | Navigation domain (shared) | target, guidance vector, phase/lock; declares which pose it consumes | camera internals |
 | UI (phone / watch) | rendering of navigation + autodetect state | math |
 
@@ -1832,16 +1973,23 @@ Every attitude crossing a layer boundary carries its frame pair in its type or n
 - The phone **camera overlay** needs `CorrectedCameraPose` (`Wtrue ← Cbuf`), because it projects through the pinhole
   model and `CropScaleTransform`.
 - **General navigation / pointing** needs a device or pointing pose. Examples are the phone's camera boresight (optical
-  +Z) and the watch's device +Y. It consumes `CorrectedDevicePose` (`Wtrue ← D`) or an explicitly named boresight
-  derived from the camera pose.
-- The two are related through `R_D_from_Cbuf = R_D_from_Cdisp(nominal or estimated boresight) ·
-  R_Cdisp_from_Cbuf(rotationDegrees)`, which is body-fixed (§14.1). They are not interchangeable.
-- The watch has its own `D` and no camera, so any phone-derived correction transferred to it is an open question
+  +Z) and the watch's device +Y. It consumes `CorrectedDevicePose` (`Wtrue ← S`, the **physical** device frame) or an
+  explicitly named boresight derived from the camera pose. A display-oriented view (`Ddisp`) is derived through the
+  presentation remap when the UI needs it.
+- The two poses are related **only** through the physical, body-fixed path `R_S_from_Cphys(id) · R_Cphys_from_Cbuf(id)`
+  (§14.1). The presentation transforms (`R_S_from_Ddisp`, `R_Cbuf_from_Cdisp`) are not part of that relationship.
+  Revision 3 described the whole `R_D_from_Cbuf` chain as body-fixed; that was wrong, because it contains presentation
+  terms.
+- The watch has its own `S` and no camera, so any phone-derived correction transferred to it is an open question
   (§31).
 
 **Pixel 9 camera-geometry strategy: decided after PTS-03, not before.**
 
-PTS-03 answers two **independent** question groups.
+PTS-03 answers four **independent** question groups: A identity, B projection domain, C distortion state,
+D camera↔device extrinsics.
+- Knowing the physical camera ID does not prove B, C or D.
+- A valid sensor-to-buffer matrix does not prove C or D.
+- A usable `LENS_POSE_ROTATION` does not prove the pixel-domain mapping.
 
 *Group A, physical-frame identity:*
 1. Which physical camera produced each frame (`LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`)?
@@ -1860,15 +2008,61 @@ PTS-03 answers two **independent** question groups.
    calibrated star sessions.
 5. If the active physical camera switches, does the relationship hold for **each** physical ID?
 
+*Group C, distortion state and pixel coordinate space (per stream and physical ID):*
+1. What `DISTORTION_CORRECTION_MODE` is in effect per frame (`OFF` / `FAST` / `HIGH_QUALITY`; on supporting devices
+   correction is on by default)? Is the control supported at all?
+2. Which sensor coordinate system does the metadata use?
+   - With mode `OFF`, Camera2 coordinates use `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`.
+   - With `FAST` / `HIGH_QUALITY`, they use `SENSOR_INFO_ACTIVE_ARRAY_SIZE`.
+   - Also record what the pre-correction vs active arrays are.
+3. Is the delivered processed YUV already distortion-corrected by the camera device? Correction applies to processed
+   outputs such as YUV/Y8/JPEG, not to RAW.
+4. `LENS_INTRINSIC_CALIBRATION` is defined in **pre-correction** active-array coordinates. Which basis must it be
+   transformed into to describe the delivered pixels, and is that transform known?
+5. Is the sensor-to-buffer matrix's source domain consistent with the mode-dependent basis?
+6. For every tested stream / physical camera, establish the chain:
+   `distortion mode → calibration source space → YUV corrected? → active/pre-correction relationship → matrix domain →
+   final pixel coordinate space`.
+
+*Group D, camera↔device extrinsics (per physical ID):*
+1. Are `LENS_POSE_ROTATION`, `LENS_POSE_TRANSLATION` and `LENS_POSE_REFERENCE` reported?
+2. What are the quaternion convention and direction (Android sensor frame `S` → camera-aligned `Cphys`)?
+3. If the reference is `UNDEFINED`, the pose is not calibrated truth.
+4. When a usable pose exists, compare it with PointToSky's nominal axes and with optical evidence (printed target,
+   later star solutions), per physical ID.
+5. Classify the result per physical ID: `CALIBRATED_PLATFORM_POSE`, `PLATFORM_POSE_PRESENT_BUT_UNVERIFIED`,
+   `PLATFORM_POSE_UNUSABLE`, `NOMINAL_FALLBACK` or `OPTICALLY_REFINED` (§14.1). The recon does not pre-decide that a
+   platform pose is accurate enough.
+
+**Double-correction rule.**
+- If the processed YUV is already distortion-corrected by the camera device, the projection path must **not**
+  distort or undistort it again with `LENS_DISTORTION`.
+- If correction is `OFF`, the path must either model `LENS_DISTORTION` explicitly, in the pre-correction basis, or
+  **reject calibrated projection** until that transform is implemented.
+- Do not assume `LENS_DISTORTION` must always be applied manually.
+
 A numerically plausible matrix is **not** proof. A known physical ID is **not** proof. Then choose:
-- **A. Truthful per-frame physical-camera geometry.** Allowed **only if Group A and Group B are both established**:
-  identity, a legal composition of the physical camera's intrinsics with the delivered matrix's domain, and
-  frame-content correspondence, for every physical ID that occurs. The domain proof is recorded through
-  `SensorToBufferDomainProof` (or its successor), never inferred from identity.
-- **B. Explicit physical-camera binding** (`CameraSelector.setPhysicalCameraId`). This fixes identity by construction,
-  but Group B still applies, because the matrix is predicted to stay logical-basis (§2.3, UNVERIFIED).
+- **A. Truthful per-frame physical-camera geometry.** Allowed **only if Groups A, B and C are established** for
+  every physical ID that occurs:
+  - identity;
+  - a legal composition of that camera's intrinsics with the delivered matrix's domain, and frame-content
+    correspondence;
+  - a known distortion mode and pixel coordinate space.
+
+  The domain proof is recorded through `SensorToBufferDomainProof` (or its successor), never inferred from identity.
+- **B. Explicit physical-camera binding** (`CameraSelector.setPhysicalCameraId`). Identity is fixed by construction,
+  but Groups B and C still apply, because the matrix is predicted to stay logical-basis (§2.3, UNVERIFIED).
 - **C. Fallback only.** Treat logical static intrinsics at 1.0× as **APPROXIMATE**, with an explicit focal-scale
   uncertainty, and make the first solve scale-tolerant. Used if A and B cannot be proven. It is **not** pre-selected.
+  Group C still determines whether residual distortion is present in the pixels.
+
+Every strategy must state:
+- its distortion mode and pixel domain;
+- whether lens correction is already present in the YUV;
+- which intrinsic coordinate basis is being transformed, and into what;
+- the camera↔physical-device extrinsic provenance from Group D.
+
+**`projectStars` Ready is not sufficient unless all four are known, or explicitly modelled as uncertainty.**
 
 ### 28.3 Proposed navigation / autodetect state model (input to the redesign)
 
@@ -1913,13 +2107,15 @@ to `docs/validation/`.
 - the matcher before attitude/tracker integration;
 - coordinate-frame-safe fusion before navigation consumes a corrected pose.
 
-Detector evidence (PTS-11) does **not** wait for the final geometry decision (PTS-09).
+Detector evidence (PTS-11) does **not** wait for the final geometry decision (PTS-09). The pure candidate predictor
+(PTS-10) does not wait for PTS-09 either, but its **production FOV-constrained filtering** is activated only with a
+PTS-09-approved geometry.
 
 ```text
 PTS-01 ─┐
 PTS-02 ─┤ (independent)
 PTS-03 ──────────────► PTS-09 ──► PTS-16 (calibrated optical sessions)
-PTS-04 ─► PTS-05 ─► PTS-06 ─► PTS-10 ─────────┐
+PTS-04 ─► PTS-05 ─► PTS-06 ─► PTS-10 (pure) ··· production FOV filtering gated on PTS-09 ··┐
 PTS-07 ─┬─► PTS-11 (early real-sky) ─► PTS-12 ─► PTS-13 ─► PTS-14 ─► PTS-15 ─► PTS-17 ─► PTS-18 ─► PTS-19 …
 PTS-08 ─┘            (needs PTS-03 for resolution evidence)
 ```
@@ -1956,45 +2152,72 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
 - **Depends on:** —.
 - **Exit:** green CI with those suites on a PR.
 
-**PTS-03 · Pixel 9 camera metadata, physical identity and coordinate-domain experiment (internalDebug)**
-- **Goal:** establish camera metadata truth **and** projection-domain truth before any geometry strategy is chosen.
+**PTS-03 · Pixel 9 camera truth experiment: identity, projection domain, distortion state, extrinsics (internalDebug)**
+- **Goal:** establish four **independent** classes of camera truth before any geometry strategy is chosen (§28.2):
+  - **A** frame identity;
+  - **B** projection-domain compatibility;
+  - **C** distortion state and pixel coordinate space;
+  - **D** camera↔device extrinsics.
+
+  None implies another. A known physical ID proves neither B, C nor D. A valid sensor-to-buffer matrix proves neither
+  C nor D. A usable `LENS_POSE_ROTATION` does not prove the pixel-domain mapping.
 - **Scope:**
   - Attach a `Camera2Interop.Extender.setSessionCaptureCallback(...)` callback to the **same** CameraX session that
     serves Preview and ImageAnalysis. Reuse or extend the SKY-1 callback and `SkyExposureJoin`.
-  - Record per result, where available:
+  - **Per capture result**, where available:
     - `SENSOR_TIMESTAMP`;
     - `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` (API 29+ guard);
+    - **`DISTORTION_CORRECTION_MODE`**;
     - `LENS_FOCAL_LENGTH`, `LENS_INTRINSIC_CALIBRATION`, `LENS_FOCUS_DISTANCE`, `LENS_STATE`;
     - `CONTROL_AF_MODE`, `CONTROL_AF_STATE`;
     - `SCALER_CROP_REGION`, zoom ratio where supported;
     - exposure time, sensitivity/ISO, frame duration;
     - OIS/stabilisation state where exposed.
-  - Correlate each result with `ImageProxy.imageInfo.timestamp`.
-  - Record, per frame and per active physical ID:
-    - the delivered `sensorToBufferTransformMatrix`;
-    - the logical and physical active arrays, pre-correction arrays and intrinsics;
-    - the 1.4.2 analysis/preview resolution and stream configuration.
-  - Run the existing CAM-2c frame-content correspondence workflow (`FrameContentTarget`, internalDebug) per
-    physical ID to compare mapped geometry against actual content.
+
+    Each result is correlated with `ImageProxy.imageInfo.timestamp`.
+  - **Per physical camera ID (static characteristics)**:
+    - `SENSOR_INFO_ACTIVE_ARRAY_SIZE`, `SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE`, `SENSOR_INFO_PIXEL_ARRAY_SIZE`;
+    - `LENS_INTRINSIC_CALIBRATION`, `LENS_DISTORTION`;
+    - the available distortion-correction modes;
+    - **`LENS_POSE_ROTATION`, `LENS_POSE_TRANSLATION`, `LENS_POSE_REFERENCE`**;
+    - the same for the logical camera.
+  - **Per frame and active physical ID:** the delivered `sensorToBufferTransformMatrix`, and the 1.4.2
+    analysis/preview resolution and stream configuration.
+  - Run the existing CAM-2c frame-content correspondence workflow (`FrameContentTarget`, internalDebug) per physical
+    ID, under each distortion mode the device allows, comparing mapped geometry against actual content.
   - Export through the CAM diagnostic JSON or the sky log.
 - **Files:** `mobile/src/internalDebug/.../SkyCaptureExposure.kt`, `SkySessionCameraPreview.kt`,
   `SkyExposureJoin.kt`, `FrameContent*`, `SensorToBufferDomainProof.kt` (evidence recording only),
-  `CamDiagnosticSnapshotJson.kt`; possibly `skylog/*` (schema bump).
+  `CamDiagnosticSnapshotJson.kt`; `mobile/.../ar/camera/CameraCharacteristicsSource.kt` (additional reads for
+  evidence); possibly `skylog/*` (schema bump).
 - **Depends on:** —.
-- **Tests:** unit tests for extraction, timestamp join (null-tolerant: every key optional), and evidence-record
-  serialisation.
-- **Device:** Pixel 9 sessions (indoors with the printed target, and at night) answering **both** §28.2 question
-  groups:
-  - **A, identity:** which physical camera produced each frame; whether it switches (including in low light); whether
-    the join holds; whether focal length/intrinsics change.
+- **Tests:** unit tests for extraction (null-tolerant: every key optional), the timestamp join, quaternion
+  parsing/convention, and evidence-record serialisation.
+- **Device:** Pixel 9 sessions (indoors with the printed target, and at night) answering:
+  - **A, identity:** which physical camera produced each frame; whether it switches (including in low light);
+    whether the join holds; whether focal length/intrinsics change.
   - **B, projection domain:** the matrix's source coordinate system per frame; logical vs physical active-array
     basis; whether physical `LENS_INTRINSIC_CALIBRATION` can legally be composed with it; whether mapped geometry
     matches frame content; whether this holds for each physical ID.
+  - **C, distortion state:**
+    - the mode per frame;
+    - whether the processed YUV is camera-corrected;
+    - the active vs pre-correction relationship;
+    - the basis `LENS_INTRINSIC_CALIBRATION` must be transformed from and into;
+    - the full chain `mode → calibration space → YUV corrected? → array relationship → matrix domain → final pixel
+      space`, per stream and physical ID.
+  - **D, extrinsics:**
+    - whether `LENS_POSE_*` is reported, and with which reference;
+    - the quaternion convention and direction relative to the raw Android sensor frame `S`;
+    - its comparison with PointToSky's nominal axes and with printed-target optical evidence, per physical ID.
 - **Exit:**
-  - a committed `docs/validation/` report with Group A and Group B answers and the 1.4.2 stream configuration;
-  - a recorded `SensorToBufferDomainProof` outcome per physical ID (proven / unresolved / mismatch).
-  - **No geometry strategy is chosen in this PR**, and a plausible-looking matrix or a known physical ID is not
-    accepted as proof.
+  - a committed `docs/validation/` report with A/B/C/D answers and the 1.4.2 stream configuration;
+  - a recorded `SensorToBufferDomainProof` outcome per physical ID (proven / unresolved / mismatch);
+  - a recorded distortion-state chain per stream and physical ID;
+  - an extrinsic provenance status per physical ID (`CALIBRATED_PLATFORM_POSE` /
+    `PLATFORM_POSE_PRESENT_BUT_UNVERIFIED` / `PLATFORM_POSE_UNUSABLE` / `NOMINAL_FALLBACK`).
+  - **No geometry strategy is chosen in this PR.** A plausible-looking matrix, a known physical ID or a present
+    platform pose is not accepted as proof of anything beyond its own class.
 
 **PTS-04 · Astronomy epoch pipeline: proper motion + precession in one seam**
 - **Goal:** remove the epoch mismatch (≈0.36° precession, plus per-star proper motion).
@@ -2059,17 +2282,30 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
 - **Goal:** a projectable, honestly-labelled camera model on the Pixel 9.
 - **Scope:**
   - implement the strategy the PTS-03 evidence supports (§28.2):
-    - **A** only if identity **and** projection-domain/content correspondence are both established for every
-      occurring physical ID;
-    - **B** only if the domain proof holds for the bound physical camera;
-    - otherwise **C** (approximate logical intrinsics with a scale-uncertainty field);
-  - honest `CameraGeometryQuality` labels; zoom policy in star mode;
-  - the decision recorded with its evidence.
-- **Files:** `AnalysisBufferIntrinsicsResolver.kt`, `CameraIntrinsicsResolution.kt`,
-  `SensorToBufferDomainProof.kt`, camera session code.
+    - **A** only if identity, projection-domain/content correspondence **and** distortion state are established for
+      every occurring physical ID;
+    - **B** only if the domain proof and distortion state hold for the bound physical camera;
+    - otherwise **C** (approximate logical intrinsics with a scale-uncertainty field).
+  - Whichever strategy is chosen, it must define and record:
+    - the distortion mode and the final pixel coordinate space;
+    - whether lens correction is already present in the YUV, with the **double-correction rule** (§28.2): never
+      re-apply `LENS_DISTORTION` to camera-corrected output; with correction `OFF`, model the distortion explicitly
+      or reject calibrated projection;
+    - which intrinsic coordinate basis (pre-correction vs active) is transformed, and how;
+    - the camera↔physical-device extrinsic provenance (`R_Cphys_from_S(id)` status from PTS-03 Group D).
+  - Honest `CameraGeometryQuality` labels, extended with the distortion and extrinsic provenance; a zoom policy in
+    star mode; the decision recorded with its evidence.
+- **Files:** `AnalysisBufferIntrinsicsResolver.kt` (today it accepts `LENS_INTRINSIC_CALIBRATION` only when the
+  pre-correction array equals the active array, `:211-232,376`, and ignores the distortion mode),
+  `CameraIntrinsicsResolution.kt`, `SensorToBufferDomainProof.kt`, camera session code.
 - **Depends on:** PTS-03, PTS-08.
-- **Device:** a Pixel 9 overlay plus diagnostics; for A/B, frame-content correspondence evidence.
-- **Exit:** `projectStars` Ready on the Pixel 9 with a label that matches its provenance and domain proof.
+- **Device:** a Pixel 9 overlay plus diagnostics; for A/B, frame-content correspondence evidence under the chosen
+  distortion mode.
+- **Exit:**
+  - `projectStars` Ready on the Pixel 9 **and** a geometry record stating distortion mode, pixel domain, intrinsic
+    basis and extrinsic provenance, each known or explicitly modelled as uncertainty;
+  - a label that matches that record.
+  - `projectStars` Ready alone is not an exit criterion.
 
 **PTS-10 · Visible candidate predictor with uncertainty + PTSKCAT0 spatial index**
 - **Goal:** bounded candidates in every state, without a hard magnetometer gate.
@@ -2080,10 +2316,17 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
   - the prior expressed as `R_Wtrue_from_Cbuf_sensorPred` with uncertainty (§14.1);
   - a Dec-band index in `PtskCat0Catalog`;
   - CAM-2b adapter and SKY-1 switched to it.
-- **Depends on:** PTS-04, PTS-05, PTS-06.
-- **Tests:** true FOV stars ⊂ candidates for each state, **including a deliberately wrong heading**; candidate
-  counts reported per state.
+- **Depends on:** PTS-04, PTS-05, PTS-06 for the **pure algorithm**. That algorithm may be implemented and tested
+  before PTS-09, using synthetic or explicitly-labelled geometry.
+- **Activation gate:** the predictor's **production camera-FOV-constrained filtering** (the narrow and widened cones
+  sized from a real camera FOV) must not become authoritative on guessed legacy geometry (56° /
+  `LEGACY_INTRINSICS_FALLBACK`). Activating it in production requires a `CameraGeometry` whose
+  provenance/uncertainty record passed PTS-09. Until then, production use is limited to the horizon and recovery
+  (heading-independent) sets, or to an explicitly widened uncertainty that covers the legacy-geometry error.
+- **Tests:** true FOV stars ⊂ candidates for each state, **including a deliberately wrong heading**; candidate counts
+  reported per state; the activation gate refuses a legacy-fallback geometry.
 - **Exit:** the CAM-2b overlay uses the predictor. Per-state counts are recorded, with targets TBD BY DEVICE TEST.
+  FOV-constrained production filtering stays off until a PTS-09-approved geometry exists.
 
 **PTS-11 · Early real-night dataset (detector evidence)**
 - **Goal:** real pixels for detector work, without waiting for final intrinsics.
@@ -2148,7 +2391,7 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
   - Wahba via SVD (or QUEST) from (`Cbuf` camera ray, `Wtrue` direction) pairs, returning `R_Wtrue_from_Cbuf_optical`;
   - residuals in px and arcmin, also binned by altitude;
   - a scale refinement only under strategy C.
-- **Tests:** known-rotation recovery; noise sensitivity; output-frame pinned (a `Cbuf`/`Cdisp`/`D` mix-up must fail).
+- **Tests:** known-rotation recovery; noise sensitivity; output-frame pinned (a `Cbuf`/`Cdisp`/`Ddisp`/`S` mix-up must fail).
 
 **PTS-15 · Confidence + false-lock protection**
 - **Scope:** inlier count, RMS, ambiguity ratio and consistency checks → `MatchVerdict`; a negative test corpus.
@@ -2179,22 +2422,33 @@ PTS-08 ─┘            (needs PTS-03 for resolution evidence)
 **PTS-18 · Tracker + frame-correct optical fusion**
 - **Scope:**
   - the §28.3 A-machine;
-  - frame-labelled state per §14.1: `R_Wtrue_from_Cbuf_optical`, separately modelled world-fixed and body-fixed
-    correction terms (representation chosen in this PR), age/decay;
+  - frame-labelled state per §14.1:
+    - `R_Wtrue_from_Cbuf_optical`;
+    - a separately modelled world-fixed term (`Wtrue`);
+    - a body-fixed physical extrinsic term `R_Cphys_from_S(id)` per physical camera, initialised from its PTS-03/09
+      provenance status (platform pose, or nominal) and possibly refined (`OPTICALLY_REFINED`);
+    - the representation is chosen in this PR;
+    - age/decay;
+  - presentation transforms (`R_S_from_Ddisp`, `R_Cbuf_from_Cdisp`) taken as known inputs, **never estimated**;
   - time-stamped `priorProjections` propagated by the rotation delta;
   - gated re-association, then re-verification;
   - periodic wide re-verification;
   - reacquisition through the recovery path;
-  - produce the typed `CorrectedCameraPose` and `CorrectedDevicePose` (§28.2).
+  - produce the typed `CorrectedCameraPose` (`Wtrue ← Cbuf`) and `CorrectedDevicePose` (`Wtrue ← S`) (§28.2).
 - **Depends on:** PTS-17.
 - **Tests:**
   - the §14.1 invariants:
-    - identity residual under a perfect sensor;
-    - correct propagation under rotation with a held correction;
-    - a body-fixed transform never becomes world-fixed;
-    - pinned multiplication order with non-commuting rotations;
-    - magnetic/true, display remap and `rotationDegrees` each exercised;
-  - scripted sequences: cloud gap, fast pan, single star, stale prior, poisoned prior, heading jump.
+    1. identity residual under a perfect sensor and the true extrinsic;
+    2. correct propagation under rotation with a held correction, with world-side vs body-side application
+       distinguished;
+    3. a body-fixed transform never becomes world-fixed;
+    4. **a display-rotation or `rotationDegrees` change alters only presentation terms and never mutates the
+       estimated `R_Cphys_from_S(id)`**, with the implied `R_Cbuf_from_S` invariant across the four display
+       rotations;
+    5. a physical-camera switch selects that id's own extrinsic;
+    6. pinned multiplication order and quaternion convention with non-commuting rotations;
+  - scripted sequences: cloud gap, fast pan, single star, stale prior, poisoned prior, heading jump, display
+    rotation, physical-camera switch.
 
 **PTS-19 · On-device integration**
 - **Scope:**
@@ -2270,12 +2524,15 @@ graphics would consume `CorrectedCameraPose`.
 Each criterion is measurable. Values without repository evidence are **TBD BY DEVICE TEST**, or **TBD BY ACCURACY
 BUDGET / DEVICE TEST** where an error budget must be agreed first.
 
-1. **Camera metadata and domain truth.**
+1. **Camera metadata, domain, distortion and extrinsic truth.**
    - For every analysed frame used in a solution, the camera geometry is one of:
-     - (A) per-frame physical-camera geometry, with **both** identity and a recorded projection-domain/frame-content
-       proof;
-     - (B) bound-physical geometry with a recorded domain proof;
+     - (A) per-frame physical-camera geometry, with recorded identity, a projection-domain/frame-content proof
+       **and** a known distortion state;
+     - (B) bound-physical geometry with a recorded domain proof and distortion state;
      - (C) an explicit, tested scale-uncertainty model.
+   - In every case, the distortion mode, the final pixel domain and the intrinsics basis are recorded, and lens
+     distortion is accounted for **exactly once** (never double-corrected).
+   - The camera↔device extrinsic carries a provenance status.
    - The chosen strategy and its PTS-03 evidence are recorded. Quality labels match provenance.
 2. **Detection on real frames.**
    - On recorded Pixel 9 sessions, at least X% (TBD BY DEVICE TEST) of predicted in-image nav stars brighter than
@@ -2295,8 +2552,13 @@ BUDGET / DEVICE TEST** where an error budget must be agreed first.
 6. **Correct optical attitude.** On locked frames, the RMS residual is ≤ E arcmin (TBD) and the solved
    `R_Wtrue_from_Cbuf_optical` agrees with independent verification within T° (TBD).
 7. **Frame-correct fusion.**
-   - The §14.1 invariant tests pass: identity residual under a perfect sensor; correct propagation under rotation;
-     a body-fixed transform never treated as world-fixed; pinned multiplication order.
+   - The §14.1 invariant tests pass:
+     - identity residual under a perfect sensor;
+     - correct propagation under rotation;
+     - a body-fixed transform never treated as world-fixed;
+     - display-rotation / `rotationDegrees` changes never mutating the estimated physical extrinsic;
+     - a per-physical-ID extrinsic selection;
+     - pinned multiplication order and quaternion convention.
    - No untyped pose crosses a layer boundary (code criterion).
 8. **No silent false lock.** On a negative corpus (wrong time ±1 h, wrong location, mirrored frames, random noise,
    urban frames without stars), there are zero LOCKED states.
@@ -2345,8 +2607,21 @@ BUDGET / DEVICE TEST** where an error budget must be agreed first.
 8. **Tracker correction representation.** How should world-fixed bias (magnetic heading), body-fixed boresight
    (camera↔IMU) and short-term propagation be modelled and separated? This is a design decision for PTS-18; the
    recon fixes only the frame invariants (§14.1).
-9. **Camera↔IMU extrinsics.** The code assumes the nominal `R_D_from_Cdisp = diag(1,−1,−1)` (identity misalignment).
-   The real Pixel 9 boresight offset is UNKNOWN, which is a reason to model a body-fixed term.
+9. **Camera↔IMU extrinsics.**
+   - The code assumes the nominal axes (`diag(1,−1,−1)` between the display-remapped device frame and the
+     display-aligned camera frame), which implies a body-fixed `R_Cphys_from_S` (§14.1).
+   - Does the Pixel 9 report `LENS_POSE_ROTATION` / `LENS_POSE_REFERENCE` per physical ID? With which reference, and
+     with what agreement with optical evidence?
+   - Until PTS-03 Group D answers, the status is `NOMINAL_FALLBACK`. Optical estimation of a body-fixed term is
+     planned only if the platform pose is absent, unusable or contradicted.
+9a. **Distortion state on the Pixel 9.**
+   - Is `DISTORTION_CORRECTION_MODE` supported? Which mode does the CameraX 1.4.2 session actually run with? Is the
+     analysis YUV corrected?
+   - What are the Pixel 9 pre-correction and active arrays per physical ID?
+   - UNKNOWN (PTS-03 Group C).
+9b. **Does CameraX's `sensorToBufferTransformMatrix` account for the distortion mode's coordinate basis?** It is
+    source-traced to the opened camera's `SENSOR_INFO_ACTIVE_ARRAY_SIZE` (CAM-2c recon §2.3). Its relationship to
+    pre-correction coordinates under correction `OFF` is UNKNOWN.
 10. **HYG `pmra` convention.** Does it already include cos δ (μα\*)? Must be verified before PTS-04.
 11. **Proper-motion exclusion threshold and refraction minimum altitude.** TBD BY ACCURACY BUDGET / DEVICE TEST.
 12. **Candidate-set size targets per state.** TBD BY DEVICE TEST (§24).
@@ -2362,7 +2637,7 @@ BUDGET / DEVICE TEST** where an error budget must be agreed first.
     signing cause.
 18. **`fix-volatile-running.diff`.** Delete it? It no longer applies (§26).
 19. **Navigation-star selection rules.** Number of stars, isolation radius, inclusion of planets: product decision.
-20. **Phone → watch optical correction.** The watch has a different device frame (`D`, forward +Y), no camera, and its
+20. **Phone → watch optical correction.** The watch has a different physical device frame (its own `S`, forward +Y), no camera, and its
     own magnetometer. Is any phone-derived correction transferable, and in which frame? There is no repository
     precedent.
 21. **Does the watch `DefaultAimControllerTest` still pass?** It has been excluded for an unrecorded period
@@ -2450,3 +2725,29 @@ PTS numbers in the revision-2 rows use revision-2 numbering, which revision 3 su
 - no production luma path;
 - missing matcher, attitude and tracker;
 - no real night-sky evidence.
+
+**Revision 4 (2026-10-06)** is documentation only, on the same branch and PR (#243), on top of revision 3 @
+`5b733300adb0cfa57ffc457bdb50c72ba3b02a87`.
+
+| # | Correction | Sections |
+|---|---|---|
+| 1 | Added **distortion-correction state** to camera truth. `DISTORTION_CORRECTION_MODE` (never read in the repository) decides whether the YUV is corrected and whether metadata uses pre-correction or active coordinates. `LENS_INTRINSIC_CALIBRATION` is pre-correction. A full chain is required per stream and physical ID, plus a double-correction rule. The issue moves from P2 G-18 into P0 G-03; residual lens refinement stays G-18 | §1, §10.1, §11.3, new §11.5, §21, §23, §25, §26, §27 G-03/G-18, §28.1, §28.2, §29 PTS-03/PTS-09, §30 item 1, §31 items 9a/9b |
+| 2 | **Camera pose metadata audited.** `LENS_POSE_ROTATION` / `TRANSLATION` / `REFERENCE` are never read. They are added to PTS-03 per physical ID, with provenance statuses `CALIBRATED_PLATFORM_POSE` / `PLATFORM_POSE_PRESENT_BUT_UNVERIFIED` / `PLATFORM_POSE_UNUSABLE` / `NOMINAL_FALLBACK` / `OPTICALLY_REFINED`. Optical boresight estimation is now conditional on that audit, not presumed | §1, §10.1, §14.1, §21, §23, §25, §28.2, §29 PTS-03/PTS-09/PTS-18, §31 item 9 |
+| 3 | **Physical frame separated from the display frame.** New frames `S` (raw Android sensor frame) and `Cphys(id)`; revision 3's `D` is renamed `Ddisp` (presentation). The only body-fixed term is `R_Cphys_from_S(id)`. Presentation terms (`R_S_from_Ddisp`, `R_Cbuf_from_Cdisp`) are known and never estimated. Corrected for revision 3's claim that `R_D_from_Cbuf` is body-fixed. `CorrectedDevicePose` is now `Wtrue ← S`. Added invariants: display-rotation / `rotationDegrees` changes never mutate the extrinsic; per-ID extrinsic selection | §14.1, §15, §28.1, §28.2, §29 PTS-18, §30 item 7 |
+| 4 | PTS-03 now establishes **four independent proofs** (A identity, B projection domain, C distortion state, D extrinsics). None implies another | §28.2, §29 PTS-03 |
+| 5 | PTS-09: every strategy must state the distortion mode and pixel domain, whether the YUV is already corrected, the intrinsic basis transformed, and the extrinsic provenance. `projectStars` Ready alone is not an exit | §28.2, §29 PTS-09 |
+| 6 | PTS-10: the pure algorithm may precede PTS-09. Production FOV-constrained filtering is gated on a PTS-09-approved geometry and must refuse legacy-fallback geometry | §29 PTS-10 and dependency note |
+| 7 | Header pinned to committed revisions (revision 3 @ `5b73330…` as base). No self-referential "next commit" wording | header, §2 |
+
+**Preserved from revisions 2–3:**
+- the ephemeris epoch defect and convention-matched ephemeris tests;
+- precession, proper motion and the optical refraction policy;
+- the fail-open candidate prediction and the navigation-star set requirement;
+- the physical-camera identity probe and the projection-domain proof;
+- detector real-sky evidence and hardening before the matcher;
+- frame-labelled optical attitudes and typed camera/device corrected poses;
+- no production luma path;
+- missing matcher, attitude solve and tracker;
+- the path-specific Wear target bug;
+- deferred constellation graphics;
+- CI SDK-setup failures recorded as they were observed.
