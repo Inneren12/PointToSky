@@ -2,20 +2,25 @@
 
 ```text
 Repository:                 Inneren12/PointToSky (GitHub; single repository, phone + watch + shared core + tools)
-Branch/ref audited:         main (origin/main) — the audit branch claude/pointtosky-master-audit-k4rws7 is identical to it
-HEAD:                       09b16549cac78fc6e9f2649bf142d146ccfd11eb  ("Merge pull request #241 …", 2026-09-04)
-Recon date:                 2026-10-06
+Code snapshot audited:      main @ 09b16549cac78fc6e9f2649bf142d146ccfd11eb  ("Merge pull request #241 …", 2026-09-04)
+Recon branch:               claude/pointtosky-master-audit-k4rws7  (PR #243 — this master recon)
+Recon branch HEAD:          revision 1 = 7987ba8; revision 2 (this text) = the next commit on the branch
+                            (`git log -1 origin/claude/pointtosky-master-audit-k4rws7`)
+Delta from audited snapshot: documentation only — docs/pointtosky/MASTER_POINTTOSKY_RECON_2026-10-06.md
+                            (no production code, test, build or asset change)
+Recon date:                 2026-10-06 (revision 2 same day: corrections listed in "Revision log" at the end)
 Relevant application modules: :mobile, :wear, :wear:sensors, :wear:benchmark, :core:astro-core, :core:astro,
                             :core:catalog, :core:common, :core:location, :core:time, :core:logging,
                             :tools:catalog-packer, :tools:sky-session-loader, :tools:ephem-cli, res/ (Python data builders)
 Relevant historical branches: none carry unmerged autodetect work. Open PRs: #236 (camera-ray angle helper,
-                            claude/camera-ray-angle-api-adb9hj, 3 commits, not merged), #242 (README wording,
-                            claude/readme-spectrum-axis-fix-h9dntw, 1 commit). 191 pre-2026-07 branches
+                            claude/camera-ray-angle-api-adb9hj, 3 commits, not merged), #242 (older README-only
+                            wording PR, claude/readme-spectrum-axis-fix-h9dntw, 1 commit — unrelated to this
+                            recon PR #243). 191 pre-2026-07 branches
                             (codex/*, older claude/*, feature/sqm-grid-v3) share no history with main.
 Previous recon:             docs/recon/RECON_main_2026-09-02.md (state at b6bdc7c; build/CI/asset audit)
 ```
 
-This document describes **repository truth at `09b1654`**. Every claim has a `path:line` reference. Status words:
+This document describes **repository truth of the code snapshot `main @ 09b1654`**. Every claim has a `path:line` reference. Status words:
 `DONE`, `PARTIAL`, `MISSING`, `BROKEN`, `DEAD / LEGACY`, `SCAFFOLD / MOCK`, `UNVERIFIED ON DEVICE`, `UNKNOWN`.
 Where it matters, evidence is split into *implemented / unit-tested / integration-tested / device-tested /
 production-used*. Nothing in this recon was device-tested by the recon itself (no device or emulator is attached to
@@ -68,8 +73,17 @@ The math is unit-tested to a high standard and the contracts are explicit.
   with the correct epoch, and 281.768° per Meeus. The golden test is a self-snapshot and cannot catch it.
 - **No precession.** J2000 star coordinates are compared with sidereal time of date, a systematic error of about
   0.36° in 2026 (estimate: about 50.3″/yr × 26 yr).
-- **Watch Aim overwrites phone-sent targets.** Every equatorial or star target sent from the phone becomes Polaris
-  (`wear/.../aim/ui/AimScreen.kt:248-260,550-563`).
+- **No proper motion.** The HYG source carries `pmra`/`pmdec`, but `HygRealCatalogParser` drops them, so PTSKCAT0
+  positions are epoch-2000 positions used against 2026 observations (§6.2, §8.3).
+- **No atmospheric-refraction policy for optical prediction.** CAM-2a and almost every caller use
+  `applyRefraction = false`. A future matcher would read low-altitude refraction as camera or attitude error (§8.3).
+- **Watch Aim can overwrite the requested target with a picker default.** There are two paths, with different
+  failure shapes (§17.1).
+  - `/app/open`: an equatorial or star `initialTarget` maps to picker index 4, which is Polaris.
+  - `/aim/set_target` entered from Home: the picker starts at index 0, the Sun, and its first emission may replace
+    the `externalAim` target.
+  - Evidence: `wear/.../aim/ui/AimScreen.kt:115-118,160-168,241-260,550-563`. Found by code reading; UNVERIFIED ON
+    DEVICE.
 - **Watch Identify falls back to a body at any distance.** The nearest-body fallback has no distance cap, so
   Identify can return the Moon 150° away (`wear/.../identify/IdentifyViewModel.kt:220-242`).
 - **Watch Tonight tile never gets a location** (`wear/.../tile/tonight/TonightTileService.kt:77-82` with
@@ -83,19 +97,26 @@ The math is unit-tested to a high standard and the contracts are explicit.
 2. **No on-device detection path.** Production `ImageAnalysis` reads metadata only
    (`mobile/.../ar/camera/CameraFrameAnalyzer.kt`), and `detectStars` has never run on a device or on real sky.
 3. **Camera model not trustworthy on the Pixel 9 target**:
-   - calibrated intrinsics are blocked by `UnsupportedLogicalMultiCameraMapping` (device-observed);
+   - calibrated intrinsics are blocked by `UnsupportedLogicalMultiCameraMapping` (device-observed under CameraX
+     1.3.4);
+   - **per-frame active-physical-camera identity is UNINVESTIGATED**. `ImageInfo` does not carry it, but a Camera2
+     capture result may (`CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`, readable through the session
+     capture callback the repository already installs in SKY-1);
    - autofocus has never been configured anywhere in the repository or its history;
-   - the default analysis buffer is 640×480;
+   - the current CameraX 1.4.2 analysis resolution is UNVERIFIED ON DEVICE. 640×480 was observed under 1.3.4;
    - Preview and ImageAnalysis are bound without a `ViewPort`.
 4. **No visible navigation-star candidate predictor.** There is no navigation set, no horizon gate in CAM-2a, no
-   attitude cone and no spatial index. The 41k-star PTSKCAT0 port is unused.
-5. **No real night-sky evidence**, plus astronomy-truth defects (ephemeris lag, no precession) that would poison
-   both prediction and navigation.
+   uncertainty-aware candidate cone, no recovery search independent of magnetic heading, and no spatial index. The
+   41k-star PTSKCAT0 port is unused.
+5. **No real night-sky evidence**, plus astronomy-truth defects that would poison both prediction and navigation:
+   ephemeris lag, no precession, no proper-motion policy, no refraction policy.
 
-**First recommended PR.** **PTS-01: fix the ephemeris epoch and replace the self-referential golden test with an
-external-reference test.** It is small, independent and P0-correct. **PTS-02** (CI: run the pure-JVM suites on every
-PR) and **PTS-03** (J2000→of-date precession) follow. The first PR *on the autodetect path itself* is **PTS-05**, the
-production luma frame tap (§29).
+**First recommended PR.** **PTS-01: fix the ephemeris epoch and add convention-explicit reference tests** that
+replace the self-referential golden test. It is small, independent and P0-correct.
+
+**PTS-02** (CI: run the pure-JVM suites on every PR) follows. **PTS-03**, the Pixel 9 per-frame Camera2 metadata
+probe, is the first PR on the autodetect path. It must answer whether truthful per-frame physical-camera geometry is
+available **before** the roadmap commits to a camera-geometry strategy (§28.2, §29).
 
 ---
 
@@ -104,7 +125,10 @@ production luma frame tap (§29).
 | Item | Value | Evidence |
 |---|---|---|
 | Repository | `Inneren12/PointToSky` — PointToSky lives alone in this repository (no unrelated 2D/3D/AR-fabrication tracks) | `settings.gradle.kts:24-43` (`rootProject.name = "PointToSky"`) |
-| HEAD | `09b1654` = `origin/main` = audit branch | `git rev-parse HEAD`; `git log origin/main..HEAD` is empty |
+| Code snapshot audited | `main @ 09b16549cac78fc6e9f2649bf142d146ccfd11eb` (= `origin/main` at recon time) | `git rev-parse origin/main` |
+| Recon branch / PR | `claude/pointtosky-master-audit-k4rws7`, PR #243 (this document). Not to be confused with the older README-only PR #242 | GitHub |
+| Recon branch HEAD | revision 1 `7987ba8`; revision 2 = the next commit | `git log origin/main..origin/claude/pointtosky-master-audit-k4rws7` |
+| Delta from the snapshot | this one Markdown file only; no code, test, build or asset changes | `git diff --stat origin/main...origin/claude/pointtosky-master-audit-k4rws7` |
 | Commits on main | 192 (`git log --oneline \| wc -l`); history rebuilt about 2026-07-01 with 4 root commits | `docs/recon/RECON_main_2026-09-02.md` §2.1 |
 | Merged since the previous recon | #237 (that recon), #238 (LICENSE/NOTICE/cruft), #239 (English README), #240 (test-suite/CI fixes), #241 (README reconcile) | `git log b6bdc7c..09b1654 --merges` |
 | Open PR #236 | "Publish angleBetweenRad as the canonical ray→angle function". Makes `AnalysisBufferScale.angleBetweenRad` public, adds a unit-ray precondition and scale-safe `unprojectToCameraRay` normalisation; +627/−20 over 5 files. **Not merged; on main the helper is still `private`** (`core/astro-core/.../match/AnalysisBufferScale.kt:261-275`) | GitHub API; `git diff origin/main...origin/claude/camera-ray-angle-api-adb9hj --stat` |
@@ -248,7 +272,14 @@ The previous recon's numbers (41,487 / mag ≤ 8.00 phone; 8,920 / mag ≤ 6.50 
   - Carries a constellation index (u16) and flags `BRIGHT=0x01`, `LINE_NODE=0x02`, `AUX_ONLY=0x08`.
   - The name is a string-pool offset; B−V is present from v5.
   - **No HIP id**, so PTSKCAT4 and PTSKCAT0 records cannot be joined by identity.
-- **Proper motion:** neither format carries it; it is never applied (MISSING). **Precession:** never applied (MISSING, §8.3).
+- **Proper motion:** neither runtime format carries it, and it is never applied (MISSING).
+  - The HYG source has proper-motion columns (`pmra`, `pmdec`, per the HYG catalogue documentation). The packer
+    **drops them deliberately**: `HygRealCatalogParser.read` keeps only `id`, `ra`, `dec`, `mag`, `ci`, `hip`,
+    `proper` and `bf` (`tools/catalog-packer/.../ptskcat0/HygRealCatalogParser.kt:8-21,38-66`).
+  - Whether HYG `pmra` already includes the cos δ factor (μα\*) or is μα must be **verified against the HYG source
+    documentation before any implementation**. The recon has not established it. The source CSV is not committed.
+  - For optical navigation this has to be an explicit design decision (§8.3, G-25).
+- **Precession:** never applied (MISSING, §8.3).
 - **Epoch handling:** the PTSKCAT0 header has `epoch = 2000` (`tools/catalog-packer/.../ptskcat0/PtskCat0Writer.kt:34`). Nothing reads it to transform coordinates.
 
 ### 6.3 Generators
@@ -320,10 +351,13 @@ Closest existing material:
 5. **CAM-2b candidate list**: the brightest **200** PTSKCAT4 stars with mag ≤ `effectiveMagLimit` over the **whole
    sphere** (`PredictedStarCatalogAdapter.kt:36-65`; the 200th star is about mag 3.13).
 
-**Implication.** A navigation-star set must be created: a data file plus generator, keyed by HIP and resolved to the
-PTSKCAT0 record index at load. It needs explicit selection rules: brightness, isolation from near neighbours (to
-avoid ambiguous pairs), sky coverage, and colour if useful. The visible-subset and FOV-subset computations then sit on
-top of it (§28, PTS-04/PTS-05).
+**Implication.** A navigation-star set must be created.
+- It is a data file plus generator, keyed by an identity that survives re-packing (HIP is the obvious candidate,
+  since PTSKCAT0 record indices do not survive), and resolved to the runtime record at load.
+- It needs explicit selection rules: brightness, isolation from near neighbours (to avoid ambiguous pairs), sky
+  coverage, colour if useful, and a **proper-motion rule** (§8.3 item 10).
+- The visible-subset and FOV-subset computations sit on top of it, through a staged fail-open candidate policy so a
+  wrong magnetic heading cannot exclude the true stars (§9.1, §28.2, PTS-06/PTS-10).
 
 ---
 
@@ -403,6 +437,49 @@ point at the viewport centre, rejection when `z ≥ −0.01` or NDC radius > 1.2
    that case.
 9. **Dead math**: `math/Vector3.kt:71-80` uses a different azimuth convention (math, not compass), with no callers;
    `Vec3`/`Mat3` in `java/.../math/VectorMath.kt` are also unused.
+10. **MISSING: proper-motion policy.** The facts:
+    - PTSKCAT0 positions are catalog-epoch (2000) positions, and the packer drops HYG `pmra`/`pmdec` (§6.2).
+    - Camera observations are made in 2026. Most stars move negligibly over 26 years, but some bright stars do not.
+      The per-star displacement has not been quantified in the repository.
+    - Nothing documents an accuracy budget against which "negligible" could be judged.
+
+    Requirements for optical navigation:
+    - Navigation-reference positions must be **propagated from catalog epoch to observation epoch** before matching.
+    - Proper motion and precession must be applied in **one explicitly documented coordinate pipeline**.
+    - Epoch-2000 positions must never be silently mixed with 2026 camera observations.
+    - The HYG `pmra` convention must be verified first (§6.2).
+
+    An acceptable smaller v1: **exclude** navigation stars whose accumulated proper-motion displacement since the
+    catalog epoch exceeds a justified threshold. That threshold is **TBD BY ACCURACY BUDGET / DEVICE TEST**, and the
+    exclusion must be explicit and tested.
+11. **MISSING: atmospheric-refraction policy for optical matching.**
+    - Observed star positions are displaced upward by atmospheric refraction. The displacement grows quickly toward
+      the horizon.
+    - The only refraction model is the optional Saemundsson term in `raDecToAltAz`
+      (`EquatorialHorizontalTransform.kt:81-92`). CAM-2a builds geometric directions with refraction off
+      (`prediction/LocalSkyDirection.kt:96`), and so do almost all other callers (§8.2).
+    - A geometric catalog prediction must not let a matcher or attitude solver silently absorb refraction as
+      camera, intrinsics or attitude error.
+
+    A v1 policy must be chosen explicitly between:
+    - **(A)** an apparent-altitude correction in the candidate/prediction path, with documented assumptions
+      (pressure, temperature, model validity range); or
+    - **(B)** excluding reference stars below a configurable minimum altitude until a refraction model is adopted.
+
+    The final altitude threshold is **TBD BY ACCURACY BUDGET / DEVICE TEST**. Either way, tests and device validation
+    must report **residual versus altitude** (§23, §30).
+
+**Ephemeris reference-test conventions (for PTS-01).**
+- An external-reference test must state the reference frame (mean equator/equinox of date vs J2000/ICRF), the
+  apparent-vs-geometric setting (aberration, light time, nutation), the observer (geocentric vs topocentric) and the
+  time scale (UT vs TT).
+- It must compare like with like. `SimpleEphemerisComputer` is a low-precision, geocentric, mean-obliquity model with
+  no aberration or light-time correction (§8.3 items 3-4). It must not be compared blindly with a JPL Horizons
+  apparent topocentric value, which would create false failures unrelated to the epoch.
+- Suitable references: worked examples computed with the same model convention (for example, a Schlyter-epoch
+  reimplementation and Meeus' low-precision examples with their stated frames). If Horizons is used, request
+  geocentric, astrometric or mean-of-date output and set tolerances from the documented model accuracy.
+- The test's job is to prove the epoch correction. Model-accuracy limits must not turn it into a false failure.
 
 ### 8.4 Tests pinning conventions (all JVM)
 
@@ -419,7 +496,8 @@ point at the viewport centre, rejection when `z ≥ −0.01` or NDC radius > 1.2
 | `wear/sensors/.../RotationVectorOrientationRepositoryTest` | +Y forward, cardinals, offset sign |
 | `SimpleEphemerisComputerGoldenTest` | **self-snapshot only** (see 8.3.2) |
 
-Gaps: no test asserts any ephemeris against an external reference. No test covers precession. No instrumentation
+Gaps: no test asserts any ephemeris against an external reference. No test covers precession, proper motion, or
+refraction in the optical-prediction path. No instrumentation
 test covers the real `SensorManager.remapCoordinateSystem`. The KDoc of `LocalSkyDirection.kt:21-25` cites a
 "cardinal agreement" test that does not exist.
 
@@ -453,6 +531,34 @@ test covers the real `SensorManager.remapCoordinateSystem`. The KDoc of `LocalSk
 Docs drift: `docs/camera_star_prediction_contract.md:945` says CAM-2b never uses "the full ~42k-star catalog". True,
 but its source is the 9,241-record PTSKCAT4, not PTSKCAT0.
 
+### 9.1 Required candidate policy: the sensor prior must fail open
+
+Nothing below exists yet. It is the requirement the future `VisibleCandidatePredictor` must satisfy.
+
+The rough IMU/magnetometer attitude is a **hint, not a hard gate**. Optical identification exists partly *to recover
+from* a bad magnetic heading, so the true solution must never be excluded solely because the magnetometer prior is
+wrong.
+
+The same principle already appears in the matcher contract: "a correct matcher must work with [the prior] empty"
+(`StarMatcherInput.kt:80-90`). Candidate generation needs a staged policy:
+
+| Stage / state | Prior used | Candidate region | Purpose |
+|---|---|---|---|
+| Trusted sensor prior (good accuracy, no interference flag, consistent with recent optical solution) | sensor attitude + small uncertainty | narrow cone: `enclosingConeRadiusRad` + attitude-uncertainty margin | normal acquisition |
+| Degraded / uncertain prior (low accuracy, stale, large variance) | sensor attitude + large uncertainty | widened cone | acquisition under doubt |
+| Magnetic interference / LOST / repeated failure | **no heading assumption** (pitch/roll from gravity may still bound altitude) | nav-star-wide or hemisphere-scale above-horizon set — a recovery / lost-in-space search | recover from a wrong heading |
+| After optical lock (tracking) | timestamped `priorProjections` from the last verified solution, propagated by the rotation delta | gated neighbourhoods of predicted positions (fast path) | cheap per-frame tracking |
+| Periodic re-verification while locked | none, or a deliberately widened prior | wider hypothesis path at a cadence TBD | stops a poisoned prior from becoming permanent |
+
+Candidate-set size targets must be stated **per state**. They cannot be one number:
+- **Normal locked operation**: small (gated neighbourhoods of predicted stars).
+- **Initial acquisition**: the cone-limited nav-star subset.
+- **Recovery / lost-in-space**: the above-horizon nav-star set, potentially O(10²) stars.
+
+All of these numbers are **TBD BY DEVICE TEST**. The recon does not promise O(10¹) candidates for every state. The
+recovery path therefore needs a hypothesis method whose cost is acceptable on the full above-horizon nav-star set
+(for example pattern invariants over a precomputed pair/triangle index), not only the cone-limited fast path.
+
 ---
 
 ## 10. Camera pipeline
@@ -464,7 +570,7 @@ but its source is the 9,241-record PTSKCAT4, not PTSKCAT0.
 | API / version | CameraX **1.4.2** (camera-core, camera2, lifecycle, view) | `gradle/libs.versions.toml:31,75-78` |
 | Camera selection | `cameraSelectorOverride ?: CameraSelector.DEFAULT_BACK_CAMERA`. Production passes no override, so it uses the **logical** default back camera. No zoom call (zoom pinned 1.0× only on the internalDebug override path) | `CameraPreview.kt:60,273,305-331`; `ArScreen.kt:540-550` |
 | Preview | `Preview.Builder().build()`: no resolution selector, no target rotation. `PreviewView.scaleType = FILL_CENTER` | `:191,224-227` |
-| ImageAnalysis | `STRATEGY_KEEP_ONLY_LATEST`; no `setOutputImageFormat` (YUV_420_888 default); no target rotation; **no resolution selector in production**, so the CameraX default (observed **640×480** on a Pixel 9) | `:238-271`; `docs/validation/cam_2c_pixel9_evidence.md:193-210` |
+| ImageAnalysis | `STRATEGY_KEEP_ONLY_LATEST`; no `setOutputImageFormat` (YUV_420_888 default); no target rotation; **no resolution selector in production**, so CameraX picks its own default. **640×480 was device-observed on a Pixel 9 under CameraX 1.3.4** (`cam_2c_pixel9_evidence.md` §3). The resolution and stream configuration under the **current 1.4.2** production bind are **UNVERIFIED ON DEVICE**. The `CameraPreview.kt:160` KDoc says only "typically 640×480" | `:238-271`; `docs/validation/cam_2c_pixel9_evidence.md:193-210` |
 | Executor | single-thread executor, shut down on dispose or bind failure | `:215,345-346,410-424` |
 | Bind | Preview + ImageAnalysis in one `bindToLifecycle`. On `IllegalArgumentException`, falls back to **Preview-only** (then no metadata, geometry stays `MissingFrame`) | `:278-283,371-407` |
 | ViewPort / UseCaseGroup | **none** | repository grep; `docs/camera_coordinate_calibration_contract.md:479` |
@@ -472,10 +578,30 @@ but its source is the 9,241-record PTSKCAT4, not PTSKCAT0.
 | Frame timestamps | `imageInfo.timestamp` (start of exposure); paired to the nearest rotation sample, no interpolation, ≤ 50 ms; clock-mismatch heuristic 5 s; history 120 | `core/astro-core/.../FrameRotationPairing.kt:72-127`; `TimestampSyncConfig.kt:21-54` |
 | Timestamp source | production never reads `SENSOR_INFO_TIMESTAMP_SOURCE` (only SKY-1 does) | `mobile/src/internalDebug/.../SkyCaptureClock.kt:74-94` |
 | Intrinsics | resolved **once per session**: analysis-buffer K′ (needs a non-logical camera + `AXIS_ALIGNED_0` matrix), then active-array K mapped through the matrix, then CAM-1b `PhysicalSensor` FOV, then legacy 56° | `mobile/.../ar/camera/AnalysisBufferIntrinsicsResolver.kt:314-589`; `SessionScopedCameraIntrinsicsResolver.kt:92-108`; `CameraIntrinsicsResolver.kt:83-131`; `core/astro-core/.../LegacyFallbackCameraIntrinsics.kt:32-63` |
-| Physical camera ID | read for diagnostics (`CameraManager.physicalCameraIds`). Production never binds one; there is no per-frame physical identity API in 1.4.2 | `CameraPreview.kt:51-59` |
+| Physical camera IDs (static) | declared IDs read for diagnostics (`CameraManager.getCameraCharacteristics(id).physicalCameraIds`). Production never binds one | `CameraSessionIntrinsicsCoordinator`/diagnostic JSON `cam2c.physicalCameraIds` |
+| **Active physical camera per frame** | **UNINVESTIGATED / UNVERIFIED ON PIXEL 9.** Details below this table | `CameraPreview.kt:51-59`; `SkyCaptureExposure.kt:252-267,455-466`; `SkySessionCameraPreview.kt:106-122` |
+| Per-frame Camera2 capture results | production: **none read**. SKY-1 (internalDebug) reads `TotalCaptureResult` per frame through `Camera2Interop.Extender.setSessionCaptureCallback` and joins it to the analysis frame by `SENSOR_TIMESTAMP` (`SkyExposureJoin`, `DEFAULT_CAPACITY = 6`, `DEFAULT_MAX_WAIT_NANOS = 4 s`, `SkyExposureJoin.kt:174,181`). Fields read: exposure, ISO, frame duration, AE mode, AWB mode, sensor timestamp only | same |
 | Distortion | `LENS_DISTORTION` recorded, **never applied** | `CameraCharacteristicsSource.kt:181-192` |
 | Exposure / ISO / shutter | production: CameraX auto. SKY-1 (internalDebug): manual `CONTROL_AE_MODE_OFF`, exposure, ISO and frame duration via `Camera2Interop` on ImageAnalysis; presets 0.5 s/ISO1600 (default), 0.125 s/3200, 1 s/800, 2 s/400; per-frame validation | `mobile/src/internalDebug/.../SkyCaptureExposure.kt:191-267,427-447`; `SkySessionCaptureScreen.kt:109-124` |
 | Night behaviour | none in production (no scene mode, extensions or low-light APIs) | grep |
+
+**Active physical camera per frame (corrected in revision 2).** Revision 1 repeated the code's claim that CameraX
+1.4.2 offers no way to learn the active physical camera of a logical multi-camera stream. That conclusion is **too
+strong**. The repository has not proved it:
+- `ImageProxy` / `ImageInfo` do **not** expose the active physical ID directly.
+  - This is the claim actually made at `CameraPreview.kt:51-59`: "no per-frame physical-camera-identity callback".
+  - That is correct only as a statement about CameraX's own types.
+- **A Camera2 repeating capture result may expose it.**
+  - Android Camera2 defines `CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` (API 29+; `minSdkMobile = 26`,
+    so it needs an API guard, `gradle/libs.versions.toml:10`).
+  - CameraX's `Camera2Interop.Extender.setSessionCaptureCallback(...)` installs a `CameraCaptureSession.CaptureCallback`
+    on the same session that serves Preview and ImageAnalysis.
+  - **The repository already uses exactly this mechanism** for SKY-1 exposure read-back (`SkyCaptureExposure.kt:259`).
+    It joins results to frames by `SENSOR_TIMESTAMP` but never reads the active-physical-ID key.
+- **Whether the Pixel 9 HAL actually reports the key** for this CameraX configuration, whether the value is stable,
+  and whether it can be matched to every analysis frame **must be tested on the device** (PTS-03).
+
+Until then the status is **UNINVESTIGATED / UNVERIFIED ON PIXEL 9**, not "unavailable".
 
 ### 10.2 Autofocus (repository truth)
 
@@ -499,8 +625,11 @@ removed AF code.** The historical "replace fixed focus with continuous AF" work 
 
 - **Same logical camera:** yes. Preview and ImageAnalysis are bound together in every bind site
   (`CameraPreview.kt:278-283`, `SkySessionCameraPreview.kt:187-192`, `FrameContentCameraPreview.kt:187`).
-- **Same physical sensor per frame:** UNKNOWN. On a logical multi-camera, CameraX 1.4.2 gives no per-frame physical
-  identity.
+- **Same physical sensor per frame:** UNKNOWN.
+  - `ImageInfo` carries no physical identity.
+  - The Camera2 capture-result route (`LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` via the session capture callback,
+    §10.1) is **uninvestigated**.
+  - No code reads the key, and nothing has been tested on the Pixel 9.
 - **Same FOV / crop between Preview and Analysis:** not enforced (no ViewPort) and UNVERIFIED.
 - **Geometry valid for every analysed frame:** PARTIAL.
   - Per frame: pairing and `CropScaleTransform` are rebuilt (`CameraSessionGeometryProvider.kt:152-165`).
@@ -512,10 +641,17 @@ removed AF code.** The historical "replace fixed focus with continuous AF" work 
 ### 10.4 Camera risks for star detection
 
 1. AF is uncontrolled and unlogged: it may hunt in the dark, and a defocused session cannot be recognised afterwards.
-2. The production analysis is 640×480 by default, so the plate scale is coarse. The exact °/px depends on the Pixel 9
-   main-camera FOV, not established in the repository (TBD BY DEVICE TEST).
+2. The production analysis resolution is whatever CameraX picks.
+   - 640×480 was observed under 1.3.4. The 1.4.2 value is UNVERIFIED ON DEVICE.
+   - A buffer that small would make the plate scale coarse. The exact °/px depends on the Pixel 9 main-camera FOV,
+     which the repository has not established (TBD BY DEVICE TEST).
 3. Auto exposure (production) is unsuitable for faint point sources. Manual exposure exists only in SKY-1.
-4. A logical multi-camera (Pixel 9: logical "0", physical "2,3,4") can switch sensors silently (low light, OEM policy).
+4. A logical multi-camera (Pixel 9: logical "0", physical "2,3,4") may switch sensors, for example in low light or by
+   OEM policy.
+   - Whether the switch is *silent* is not established. The capture-result active-physical-ID route (§10.1) has not
+     been tried.
+   - Whether focal length and intrinsics change with the active sensor (`LENS_FOCAL_LENGTH`,
+     `LENS_INTRINSIC_CALIBRATION` in the capture result) is also untested.
 5. No ViewPort, so the overlay can be offset from the visible preview.
 6. Start-of-exposure timestamp with nearest-sample pose and no interpolation. With 0.5–2 s exposures, the pose at
    mid-exposure differs from the paired one. Rolling shutter is not modelled.
@@ -571,7 +707,9 @@ AnalysisBufferScale: cameraRayFor (delegates to unproject), per-edge extents, en
 **By construction yes, but only when every one of these holds:**
 - (a) the frame's luma came through an ImageAnalysis path that keeps pixels (today: SKY-1 / FrameContent,
   internalDebug only);
-- (b) the camera is not a logical multi-camera;
+- (b) the camera is not a logical multi-camera. The current resolver treats this as a hard gate. It could become
+  "the active physical camera of this frame is known and its geometry is used", if the Camera2 capture-result route
+  (§10.1) proves usable on the device;
 - (c) a single focal length is reported, plus sensor size and active array;
 - (d) the matrix is present and `AXIS_ALIGNED_0`;
 - (e) the crop region lies inside the active array;
@@ -584,7 +722,11 @@ Unit tests pin this equality (`PixelConventionBridgeTest`, `CalibratedAnalysisBu
 
 - **On the Pixel 9 today**, (b) fails. The chain is `UnsupportedLogicalMultiCameraMapping`, then the CAM-1b
   `PhysicalSensor` reference, then `projectStars` returns `IntrinsicsMappingUnavailable(PHYSICAL_SENSOR_REFERENCE_SPACE_UNSUPPORTED)`
-  (`CameraStarPredictor.kt:46-60`). **No projectable prediction exists to compare with.**
+  (`CameraStarPredictor.kt:46-60`). **No projectable prediction exists to compare with.** The geometry strategy
+  that lifts this must wait for the PTS-03 metadata probe (§28.2). The candidates are:
+  - **A.** truthful per-frame physical-camera geometry;
+  - **B.** explicit physical binding;
+  - **C.** approximate logical intrinsics plus a scale-tolerant solve, kept as the fallback.
 - **Legacy-fallback trap**: when characteristics are unreadable or ambiguous, `legacyFallbackCameraIntrinsics`
   returns an `AnalysisBuffer` reference. `projectStars` accepts it and projects with a guessed 56° FOV, labelled
   `LEGACY_INTRINSICS_FALLBACK` (`LegacyFallbackCameraIntrinsics.kt:46-50`).
@@ -603,8 +745,19 @@ Unit tests pin this equality (`PixelConventionBridgeTest`, `CalibratedAnalysisBu
 | everything after the 1.4.2 upgrade (physical binding, frame-content target, SKY-1) | 1.4.2 | **code-only**: "INSTRUMENTED/DEVICE EXECUTION PENDING" | `cam_2c_pixel9_evidence.md:783-787,1565ff.`; `docs/SPRINT_STATUS.md:16-21,1633` |
 
 So the README's "confirmed on a real Pixel 9's rear camera" for `UnsupportedLogicalMultiCameraMapping` **is backed**
-by §1/§3, though under CameraX 1.3.4. Open PR #242 would remove that claim and should be revisited. No SKY-1 session,
-no detector run and no star frame from any device is recorded.
+by §1/§3, though under CameraX 1.3.4. The older README-only PR #242 would remove that claim and should be revisited.
+
+**Resolution provenance.**
+- The committed 640×480 buffer observation comes from the **1.3.4** run (§3).
+- The 1.4.2 matrix scale `640/4080` *suggests* a 640-px-wide buffer, but no committed 1.4.2 export records the
+  buffer size, crop or stream configuration. So the **1.4.2 production resolution remains UNVERIFIED ON DEVICE**.
+- PTS-03 must record it.
+
+**Not recorded anywhere:**
+- any per-frame Camera2 capture result (active physical ID, focal length, focus distance, AF state, crop region);
+- any SKY-1 session;
+- any detector run;
+- any star frame from any device.
 
 ---
 
@@ -830,12 +983,30 @@ Status: implemented and JVM-integration-tested on **synthetic** sessions. **No r
 8. **Haptics.** ENTER 60 ms; LOCK a triple waveform; LOST 130 ms (fires on any transition to SEARCHING, including
    target changes) (`wear/.../haptics/HapticPolicy.kt`; `AimScreen.kt:184-198`).
 
-**Delivery bugs.** Both are BROKEN by code reading and UNVERIFIED ON DEVICE:
-- The picker's `snapshotFlow { pickerState.selectedOption }` effect runs after the external and initial-target
-  effects. Its first emission calls `setTarget(options[initialIndex])`, and `targetIndexFor` maps every
-  Equatorial/Star target to index 4 (POLARIS). So a phone-sent Vega becomes Polaris (`AimScreen.kt:115-118,160-168,248-260,550-563`).
-- `WearBridge` uses `MutableSharedFlow(replay = 0)`, and `MainActivity` emits in `onCreate` before `setContent`, so
-  cold-start targets are dropped (`wear/.../datalayer/WearBridge.kt:33-45`; `wear/.../MainActivity.kt:135`).
+**Delivery bugs** (BROKEN by code reading; UNVERIFIED ON DEVICE).
+
+There are three `setTarget` writers in the Aim screen:
+- `AimRoute`'s `externalAim` effect (`AimScreen.kt:115-118`);
+- `AimScreen`'s one-shot `initialTarget` effect (`:160-168`);
+- the picker effect, `snapshotFlow { pickerState.selectedOption }.collect { setTarget(options[idx]) }` (`:248-260`).
+
+The picker is seeded only from `initialTarget`: `initialIndex = targetIndexFor(initialTarget)` (`:241`), and
+`targetIndexFor` maps `null` to 0 (SUN), Body targets to their slot, and **Equatorial/Star targets to 4 (POLARIS)**
+(`:550-563`). The two delivery paths therefore fail differently:
+
+| Path | How it arrives | Picker seed | Likely outcome | Must be tested |
+|---|---|---|---|---|
+| `/app/open` with a target | `WearBridge.appOpens` → `latestAppOpen` → `AimRoute(initialTarget = appOpenRequest?.target)` (`wear/.../MainActivity.kt:381-386,416-420`) | `targetIndexFor(EquatorialTarget/StarTarget) = 4` → POLARIS | the initial effect sets the requested target, then the picker's first emission can overwrite it with **Polaris** | first composition of Aim via `/app/open` with an equatorial target (e.g. Vega) |
+| `/aim/set_target` entered from Home (`initialTarget == null`) | `WearBridge.aimLaunches` → `latestAim` → `AimRoute(externalAim = aimRequest)` → `controller.setTarget(it.target)` directly (`MainActivity.kt:376-379,414-420`; `AimScreen.kt:115-118`) | `targetIndexFor(null) = 0` → SUN | the picker's first emission may overwrite the external target with the **Sun** | navigate Home → Aim with a pending `externalAim` |
+| `/aim/set_target` while Aim is already mounted | new `externalAim.seq` re-runs the `AimRoute` effect | the picker has already emitted, and `selectedOption` does not change | ordering and emission behaviour differ (the picker may not re-emit) | a separate test: target arrives while the screen is visible |
+| Phone "send to watch" (both messages) | the phone sends `/aim/set_target` **and then** `/app/open` carrying the same target (`mobile/.../MainActivity.kt:198-228`) | `initialTarget` set → 4 (POLARIS) for equatorial targets | combined interplay of the rows above | end-to-end test with both messages |
+
+Separately, `WearBridge` uses `MutableSharedFlow(replay = 0)`, and `MainActivity` emits in `onCreate` before
+`setContent`, so cold-start requests can be dropped (`wear/.../datalayer/WearBridge.kt:33-45`;
+`wear/.../MainActivity.kt:135`).
+
+Revision 1 said "every phone-sent equatorial/star target becomes Polaris". That overstated a bug that is path- and
+ordering-dependent, as tabled above.
 
 ### 17.2 Phone (production)
 
@@ -856,7 +1027,7 @@ Status: implemented and JVM-integration-tested on **synthetic** sessions. **No r
 | hybrid | never |
 
 **UX failure points:**
-- Phone-sent targets are replaced (watch).
+- Phone-sent targets can be overwritten by the watch picker's default (Polaris via `/app/open`, Sun via `/aim/set_target` from Home; §17.1).
 - Stale or unknown location renders at (0,0) on the phone.
 - The watch has no GPS path, and its location relay is double opt-in, default off (§18).
 - Magnetic error is invisible to the Aim user.
@@ -873,7 +1044,7 @@ Status: implemented and JVM-integration-tested on **synthetic** sessions. **No r
 | Calculations on the watch | **everything itself**: ephemeris, LST, alt/az, Aim, Identify, Tonight tile. The phone sends only targets, heading and location |
 | Catalogs | phone `star.bin` PTSKCAT4 v5, 9,241 records, ≤ 6.5; watch `star.bin` PTSKCAT4 v4, **904 records, ≤ 4.5**. The watch `stars_real.bin` is never opened |
 | Protocol | `DATA_LAYER_PROTOCOL_VERSION = 1`; kotlinx JSON with `ignoreUnknownKeys`; `Envelope` unused; a mismatched `v` is dropped silently (`core/common/.../datalayer/BridgeMessages.kt:7-16`, `JsonCodec.kt:14-24`) |
-| `/aim/set_target` P→W | sent from WearMenu demo, Card and AR reticle (`mobile/.../MainActivity.kt:198-245`). PARTIAL: overridden on the watch (§17.1). The STAR kind is never sent. `AimSender`/`AimSetTargetBuilder` are DEAD |
+| `/aim/set_target` P→W | sent from WearMenu demo, Card and AR reticle (`mobile/.../MainActivity.kt:198-245`). PARTIAL: can be overwritten by the picker's default (Sun when entered with no `initialTarget`), and the follow-up `/app/open` seeds Polaris for equatorial targets (§17.1). The STAR kind is never sent. `AimSender`/`AimSetTargetBuilder` are DEAD |
 | `/app/open` P→W | DONE (same cold-start caveat) |
 | `/sensor/heading` P→W | 2 Hz; stale after 2 s on the watch (`wear/.../datalayer/PhoneHeadingBridge.kt:16`). **Ineffective** (§14) |
 | `/location/request_one` ↔ `/location/response_one` | PARTIAL. Needs watch `usePhoneFallback` **and** phone `shareLocationWithWatch` (both default false, `core/location/.../prefs/LocationPrefs.kt:67,79`), and the phone `MainActivity` must be STARTED (`mobile/.../MainActivity.kt:283-292`). The watch times out after 5 s |
@@ -920,27 +1091,32 @@ Status: implemented and JVM-integration-tested on **synthetic** sessions. **No r
 
 ### Future constellation graphics integration points (architectural only)
 
-**Constraints a new system must respect or remove:**
-- Figure geometry is encoded *inside* star ids. There is no explicit edge list, no per-edge style and no branching.
-- Line endpoints are PTSKCAT4 records, which have no HIP, so they cannot join the PTSKCAT0/navigation identity space.
-- Two projectors (legacy and CAM-2a) exist, and constellations are tied to the legacy one.
-- Overlay rebuild runs at sensor rate on the main thread.
-- The watch ships v4 data with no figures.
+**Status of the future constellation-graphics work: REQUIREMENTS PENDING.** The product and visual specification will
+be supplied separately. This recon makes **no** commitment to a figure data model, line-geometry method, clipping
+method or watch rendering architecture.
+
+**Current-architecture facts any future design will meet** (observations, not decisions):
+- Figure geometry is encoded *inside* PTSKCAT4 star ids (`cc/pp/ss` + flags). There is no explicit edge list,
+  per-edge style or branching.
+- PTSKCAT4 records have no HIP, so today's figure endpoints share no identity with PTSKCAT0 or a future
+  navigation-star set.
+- Two projectors exist (legacy and CAM-2a), and constellation drawing currently uses the legacy one.
+- The AR overlay rebuild runs at sensor rate on the main thread.
+- The watch ships PTSKCAT4 v4 data with no figures.
 - Constellation identity is an index 0..87 with no localisation keys.
 
-**Clean integration points:**
-1. **Data**: a new fourcc section in PTSKCAT4 (the parser looks sections up by fourcc, `PtskCatalogLoader.kt:235-253`),
-   or preferably a separate HIP-keyed figure file shared by phone, watch and navigation stars.
-2. **Domain**: an `AstroCatalog` accessor next to `asterismsByConstellation` (`Models.kt:501-516`).
-3. **Assembly**: `AstroCatalogState` in `ArViewModel.loadAstroCatalog` (`:302-318`).
-4. **Projection**: one projector service (CAM-2a when calibrated, legacy otherwise) replacing the local
-   `projectStarRecord` closure in `calculateOverlay`.
-5. **Output**: `OverlayData` / `ScreenLineSegment` consumed by `ConstellationLayer`; on the sky map,
-   `ConstellationProjection` / `drawConstellations`.
-6. **Build**: `res/build_catalog_variant_b.py` + `res/<abbr>.json`.
-
-The constellation layer should consume the same *corrected pose* as navigation (§28), so graphics register with the
-real sky once optical correction exists.
+**Integration seams already justified by the current architecture:**
+1. **Stable star/object identity**: whatever figure data is chosen must reference stars through an identity that
+   survives catalog re-packing and is shared with navigation (§7).
+2. **Corrected-pose source**: graphics consume the same pose as navigation (`CorrectedPoseSource`, §28), so they
+   register with the real sky once optical correction exists.
+3. **Common projection interface**: one projector abstraction (today: legacy `Projection.kt` vs CAM-2a
+   `projectStars`), replacing the local `projectStarRecord` closure in `ArScreen.calculateOverlay`.
+4. **Rendering-layer boundary**: today `OverlayData` / `ScreenLineSegment` → `ConstellationLayer` (phone AR) and
+   `ConstellationProjection` / `drawConstellations` (SkyMap). Graphics stay behind such a boundary, so the astronomy
+   and navigation layers do not depend on them.
+5. **Phone/watch data availability**: the phone has boundaries + figures + 9 asterisms; the watch has boundaries
+   only. Any requirement involving the watch must account for that.
 
 ---
 
@@ -1020,7 +1196,9 @@ Onboarding logic, Policy.
 
 | Signal | Available today | Where |
 |---|---|---|
-| camera ID, logical flag, physical IDs | yes | CAM diagnostic JSON `cam2c` (internalDebug, `CamDiagnosticSnapshotJson.kt`, schema v4) |
+| camera ID, logical flag, declared physical IDs | yes | CAM diagnostic JSON `cam2c` (internalDebug, `CamDiagnosticSnapshotJson.kt`, schema v4) |
+| **active physical camera per frame** (`LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`) | **no** (never read; the SKY-1 capture callback that could read it exists) | — |
+| per-frame `LENS_FOCAL_LENGTH` / `LENS_INTRINSIC_CALIBRATION` / `SCALER_CROP_REGION` / zoom ratio / OIS state from the capture result | **no** | — |
 | frame resolution, crop, rotation, viewport | yes | HUD + JSON `geometry` |
 | sensor-to-buffer matrix, class, frame counts | yes | JSON `cam2c.frameTransform` |
 | intrinsics (active/buffer fx, fy, cx, cy), quality, source | yes | JSON `calibration`, `cam2c.resolvedBufferK` |
@@ -1036,7 +1214,14 @@ Onboarding logic, Policy.
 | magnetic accuracy | watch only | `SensorsDebugScreen` |
 
 **Add during the finishing phase** (not in this recon):
-- AF/lens fields (mode, state, focus distance, lens state) in both the JSON and the sky log (schema v3);
+- per-frame Camera2 capture-result fields, correlated to `ImageInfo.timestamp` (PTS-03 probe first; the subset that
+  proves useful then goes into the sky log as schema v3):
+  - camera identity and timing: `SENSOR_TIMESTAMP`, `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`;
+  - lens: `LENS_FOCAL_LENGTH`, `LENS_INTRINSIC_CALIBRATION`, `LENS_FOCUS_DISTANCE`, `LENS_STATE`;
+  - focus: `CONTROL_AF_MODE`, `CONTROL_AF_STATE`;
+  - framing: `SCALER_CROP_REGION`, zoom ratio where supported;
+  - exposure: exposure time, ISO, frame duration;
+  - stabilisation (OIS) state where exposed;
 - per-stage latency and FPS for the detect→match→track loop;
 - detection count and the background σ histogram;
 - candidate count before and after each filter;
@@ -1119,9 +1304,11 @@ matched on a device in any recorded artifact. Watch Aim, Identify and sensors ha
 **Pixel 9 assumptions in the current code:**
 - logical rear camera "0" with physical "2,3,4";
 - 4080×3072 active array;
-- a CameraX default analysis buffer of 640×480 with rotation 90;
+- an analysis buffer of 640×480 with rotation 90 — **observed under CameraX 1.3.4 only**; the 1.4.2 value is
+  UNVERIFIED ON DEVICE;
 - CameraX 1.4.2 matrix `AXIS_ALIGNED_0` (uniform scale ≈ 0.157 plus a symmetric crop);
 - calibrated intrinsics blocked by the logical-multi-camera gate;
+- per-frame active physical camera: **UNINVESTIGATED** (§10.1);
 - AndroidX Test pinned for Pixel 9 / Android 16 compatibility (PR #217).
 
 | Scenario | Current status | Required evidence |
@@ -1134,11 +1321,15 @@ matched on a device in any recorded artifact. Watch Aim, Identify and sensors ha
 | Fast pan | NOT TESTED | tracker loss/reacquire timings |
 | Portrait | NOT TESTED (activity is portrait-locked; the only orientation in use) | overlay registration error px |
 | Landscape | NOT APPLICABLE today (portrait lock) | — |
-| Near horizon | NOT TESTED (CAM-2a has no horizon gate; refraction off) | session with alt < 15° stars; residual vs altitude |
+| Near horizon | NOT TESTED (CAM-2a has no horizon gate; refraction off) | sessions spanning low to high altitude; **residual versus altitude** with and without the chosen refraction policy (§8.3 item 11) |
+| Active physical camera per frame | NOT TESTED | PTS-03 probe: is `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` reported? stable in a star-mode session? does it switch in low light? do focal length/intrinsics change with it? can each result be matched to its analysis frame? |
+| CameraX 1.4.2 stream configuration | NOT TESTED (1.3.4 evidence only) | recorded analysis/preview resolution, crop, matrix and stream configuration under 1.4.2 |
+| Recovery under wrong magnetic heading | NOT TESTED (no matcher) | deliberately disturbed heading (e.g. tens of degrees, value TBD): optical acquisition still succeeds through the recovery path (§9.1) |
+| High-proper-motion reference star | NOT TESTED | residual of a high-PM bright star with and without epoch propagation, or its explicit exclusion (§8.3 item 10) |
 | Zenith | NOT TESTED | session at alt > 75°; azimuth singularity behaviour |
 | Magnetically disturbed area | NOT TESTED (no interference detection) | session near a steel structure; optical correction recovers the yaw error |
 | Loss / reacquisition | NOT TESTED (no tracker) | cover the lens, uncover; time to relock |
-| Watch Aim to a phone-sent target | NOT TESTED (code-reading bug, §17.1) | send Vega from the Card; the watch shows Vega |
+| Watch Aim to a phone-sent target | NOT TESTED (code-reading bug, §17.1) | each path separately: `/app/open` with Vega (not replaced by Polaris); `/aim/set_target` entered from Home (not replaced by Sun); `/aim/set_target` while Aim is mounted; phone send-to-watch (both messages) |
 | Watch Identify | NOT TESTED | identify Vega/Arcturus at night; no "Moon" when the Moon is far |
 | Phone/watch parity | NOT TESTED | same target, same location: alt/az agree within TBD BY DEVICE TEST |
 
@@ -1160,16 +1351,20 @@ matched on a device in any recorded artifact. Watch Aim, Identify and sensors ha
 | Watch orientation | sensor thread → flow | 15 Hz, whenever the activity is STARTED | no | runs on Home |
 | Data layer | binder/IO | heading 2 Hz | no | — |
 
-**Candidate-set reduction.** The matcher's catalog work scales with the candidate count. Rough sizes (estimate):
-- the whole PTSKCAT0 catalog at mag ≤ 8.0 is 41,487 stars;
-- PTSKCAT4 is 9,241;
-- a navigation set of O(10²) stars (size TBD), filtered to above-horizon (about ½) and then to an attitude-uncertainty
-  cone around the camera FOV (on the order of 1/10–1/30 of the sphere for a phone FOV plus margin), leaves
-  **O(10¹)** candidates per frame.
+**Candidate-set reduction.** The matcher's catalog work scales with the candidate count. Reference sizes: the whole
+PTSKCAT0 catalog at mag ≤ 8.0 is 41,487 stars; PTSKCAT4 is 9,241. A navigation set is O(10²) stars (size TBD). Per
+state (§9.1), all **estimates, TBD BY DEVICE TEST**:
 
-That turns pair/triangle hypothesis generation from infeasible-per-frame into trivially cheap. With a valid tracker
-state, `priorProjections` (time-stamped) can reduce per-frame association to gated nearest-neighbour checks after
-verification. Both require the missing spatial index (or the nav-set-only scan) and the candidate predictor.
+| State | Candidate source | Order of magnitude (estimate) |
+|---|---|---|
+| Locked / tracking | gated neighbourhoods around time-stamped predicted positions | a handful to O(10¹) |
+| Initial acquisition with a trusted prior | above-horizon nav stars within the FOV cone + attitude margin (≈1/10–1/30 of the sphere for a phone FOV) | O(10¹) |
+| Degraded prior | widened cone | O(10¹)–O(10²) |
+| Recovery / lost-in-space (no heading trust) | all above-horizon nav stars | O(10²) |
+
+Only the cone-limited states make naive per-frame pair/triangle generation cheap. The recovery state needs a
+pattern-index method (e.g. precomputed nav-star pair/triangle invariants), run at a lower cadence. Both require the
+missing spatial index (or a nav-set-only scan) and the candidate predictor.
 
 ---
 
@@ -1186,12 +1381,14 @@ verification. Both require the missing spatial index (or the nav-set-only scan) 
 | Wrong exposure | production uses AE | night exposure policy | SKY-1 manual exposure (debug) | production policy | P1 |
 | Blur | no shape metric | reject elongated sources; warn | none | shape metrics | P2 |
 | Autofocus failure | AF uncontrolled, unlogged | focus policy + logged focus distance | none | AF control | P0 |
-| Wrong camera (logical switch) | undetectable | detect via scale change in the solve; pin a physical camera or zoom | zoom pinned only in the debug override | provenance | P1 |
-| Incorrect intrinsics | Pixel 9 → unprojectable; legacy 56° elsewhere; labelled CALIBRATED loosely | the matcher estimates scale; label honestly | CAM-2c gates | scale-tolerant matcher | P0 |
+| Wrong camera (logical switch) | not detected (the active-physical-ID capture result is never read; its availability on Pixel 9 is uninvestigated) | read the per-frame active physical ID if the HAL reports it; otherwise pin binding/zoom, and as a last resort detect scale change in the solve | zoom pinned only in the debug override | PTS-03 probe, then the PTS-09 decision | P0 |
+| Incorrect intrinsics | Pixel 9 → unprojectable; legacy 56° elsewhere; labelled CALIBRATED loosely | geometry from truthful per-frame metadata (A) or physical binding (B); a scale-tolerant solve (C) only as fallback; honest labels | CAM-2c gates | PTS-03 → PTS-09 | P0 |
+| Proper motion ignored | epoch-2000 positions used against 2026 frames | epoch-propagated reference positions, or explicit exclusion of high-PM nav stars | none | proper-motion policy (§8.3 item 10) | P1 |
+| Low-altitude refraction | geometric (refraction-off) prediction; a matcher would absorb the displacement as attitude/intrinsics error | apparent-altitude correction (A) or a minimum-altitude exclusion (B), explicit and tested | none | refraction policy (§8.3 item 11) | P1 |
 | Wrong location | phone renders at (0,0); watch NO_LOCATION | block with UNAVAILABLE(location) | watch gate only | phone gate | P1 |
 | Stale location | watch Identify keeps stale fixes; TTL elsewhere | age displayed; degrade | TTLs (120 s remote) | consistency | P2 |
 | Wrong time | system clock trusted | sanity check vs GNSS time (optional) | none | — | P3 |
-| Magnetic interference | invisible; Aim confidence uses azimuth variance only | detect field magnitude/inclination anomaly; optical correction overrides | accuracy status (watch Identify only) | detection + optical | P1 |
+| Magnetic interference | invisible; Aim confidence uses azimuth variance only | detect field magnitude/inclination anomaly; the candidate predictor **fails open** into the recovery search so optical correction can override (§9.1) | accuracy status (watch Identify only) | detection + fail-open candidates + optical | P1 |
 | Sensor drift | none | optical correction bounds it | none | — | P1 |
 | Insufficient navigation stars | n/a | report "too few reference stars"; widen to the full catalog | none | — | P1 |
 | Matcher ambiguity | n/a | ambiguity ratio gate; never lock on ties | contract only | matcher | P0 |
@@ -1230,10 +1427,15 @@ verification. Both require the missing spatial index (or the nav-set-only scan) 
 - `SimpleEphemerisComputer`: epoch fix; external-reference tests; optional topocentric Moon.
 - Coordinates: add J2000 → of-date precession at a single seam.
 - `PtskCat0Catalog`: spatial index (Dec bands / HEALPix-lite) for `nearby`.
-- `PredictedStarCatalogAdapter`: replace whole-sky brightest-200 with the candidate predictor (horizon + cone + nav set).
+- `PredictedStarCatalogAdapter`: replace whole-sky brightest-200 with the candidate predictor (horizon, staged
+  fail-open cone, nav set, epoch and refraction policy).
+- `HygRealCatalogParser` / PTSKCAT0 writer (or the nav-set generator): carry proper motion where the PM policy needs it.
+- SKY-1 capture callback (`SkyCaptureExposure.kt`): extend it to read the per-frame metadata listed in §21.
 - `CameraStarPredictor`: optional horizon classification.
 - `CameraPreview` (production): luma tap, analysis resolution policy, AF/AE policy, optional ViewPort.
-- `AnalysisBufferIntrinsicsResolver`: honest quality labels; a Pixel 9 strategy (§28.2).
+- `AnalysisBufferIntrinsicsResolver`: honest quality labels; a Pixel 9 strategy chosen **after** the PTS-03 probe (§28.2).
+- `CameraPreview.kt:51-59` KDoc: it says there is "no per-frame physical-camera-identity callback". Narrow this to the
+  CameraX types once PTS-03 reports (a documentation fix, outside this recon's scope).
 - Phone `RotationFrame`: accuracy plumbing; optional gyro/game-RV fusion.
 - Watch: `AimScreen` target arbitration; `WearBridge` replay; `IdentifyViewModel` body cap + stale fix; the
   `TonightTileService` location argument; `OfflineStarResolver` (point at a shipped catalog);
@@ -1252,7 +1454,7 @@ verification. Both require the missing spatial index (or the nav-set-only scan) 
 - `math/Vector3.vectorFromSphericalDegrees`, `java/.../math/VectorMath.kt` (`Vec3`/`Mat3`): unused, conflicting
   convention.
 - PTSKSTAR (`BinaryCatalogHeader`, packer default `--format=ptskstar`); the unreachable `ConstellationCommand`.
-- The wear `stars_real.bin` (unused 183 KB), *unless* PTS-17 adopts it for watch parity.
+- The wear `stars_real.bin` (unused 183 KB), *unless* PTS-19 adopts it for watch parity.
 - `TonightOpenActivity`; the wear placeholder `AimScreen()`/`IdentifyScreen()`; `identifyDestination`; `AimSender`,
   `AimSetTargetBuilder`, `Envelope`, `DlAcks`, `/ack`, `/location/last_fix`, `/tile/tonight/open` (or implement them).
 - `TonightTileRefreshWorker` (no scheduler), or wire it.
@@ -1274,10 +1476,14 @@ evidence required.
 - **Affected:** all of autodetect.
 - **User impact:** no camera identification; magnetic error goes uncorrected.
 - **Risk:** high (algorithmic; false locks).
-- **Direction:** a constrained hypothesis matcher over the visible nav-star candidates: angular pair/triangle
-  invariants among the brightest detections, tolerances from `AnalysisBufferScale`, verification by projection,
-  Wahba/SVD attitude, a scale-tolerant first solve (§28).
-- **Depends on:** G-04, G-05.
+- **Direction:** a hypothesis matcher with two paths:
+  - (i) a constrained fast path over the cone-limited nav-star candidates;
+  - (ii) a **recovery path** that does not depend on magnetic heading (pattern invariants over the above-horizon nav
+    set, §9.1).
+  - Both use angular invariants via `cameraRayFor`, tolerances from `AnalysisBufferScale`, verification by projection
+    and a Wahba/SVD attitude.
+  - It must tolerate scale uncertainty only to the degree the chosen camera-geometry strategy requires (§28.2).
+- **Depends on:** G-03, G-04, G-05, G-06, G-25, G-26.
 - **Evidence:** synthetic + recorded-session metrics; device sessions.
 
 **G-02 · No on-device pixel path / detector never run on device.**
@@ -1291,75 +1497,108 @@ evidence required.
 - **Evidence:** per-frame latency on a Pixel 9; detection counts on real sky.
 
 **G-03 · Camera model not trustworthy on the Pixel 9.**
-- **Evidence:** §10.2, §11.3–11.4.
-- **Affected:** intrinsics, AF, resolution.
+- **Evidence:** §10.1–10.4, §11.3–11.4.
+  - Calibrated intrinsics are blocked for logical multi-cameras.
+  - **Per-frame active physical camera is UNINVESTIGATED**: `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` is never read,
+    although the SKY-1 session capture callback that could read it exists.
+  - AF has never been set.
+  - The 1.4.2 analysis resolution is unverified (640×480 is 1.3.4 evidence).
+  - There is no ViewPort.
+- **Affected:** intrinsics, AF, resolution, provenance.
 - **User impact:** projections are unusable or wrong.
 - **Risk:** high (device-specific).
 - **Direction:**
-  - explicit AF policy (manual focus at infinity when `LENS_INFO_MINIMUM_FOCUS_DISTANCE > 0` and the manual-focus
-    capability exists; otherwise documented continuous), logged;
-  - an analysis-resolution policy above 640×480 (value TBD BY DEVICE TEST);
-  - a Pixel 9 intrinsics strategy that does not need `ProvenActiveArrayLocal` (accept logical static intrinsics at
-    1.0× as *approximate* and let the matcher estimate focal scale; or bind a physical camera);
+  - first **measure** with the Pixel 9 per-frame Camera2 metadata probe (PTS-03);
+  - then choose among A (truthful per-frame physical-camera geometry), B (explicit physical binding) and
+    C (approximate logical intrinsics + scale-tolerant solve, **fallback only**);
+  - explicit AF/AE policy, logged;
+  - an analysis-resolution policy from measured 1.4.2 options;
   - honest quality labels.
 - **Depends on:** —.
-- **Evidence:** Pixel 9 sessions with focus logs; fx estimated by the solver vs the static value.
+- **Evidence:** PTS-03 report answering the five probe questions (§29); Pixel 9 sessions with focus logs.
 
-**G-04 · No visible navigation-star candidate predictor.**
+**G-04 · No visible navigation-star candidate predictor with uncertainty and recovery.**
 - **Evidence:** §7, §9.
 - **Affected:** CAM-2b adapter, SKY-1, the future matcher.
-- **User impact:** a matcher would be slow and ambiguous.
-- **Risk:** low.
-- **Direction:** a navigation-star data file (HIP-keyed) plus a pure-JVM `VisibleCandidatePredictor(time, location,
-  rough attitude ± σ, camera FOV)`: above-horizon (with margin), then a cone of `enclosingConeRadiusRad + attitude
-  margin`, then a magnitude cut. Add a spatial index for PTSKCAT0.
-- **Depends on:** G-06.
-- **Evidence:** unit tests; replay of real sessions shows the true stars ⊂ candidates.
+- **User impact:** a matcher would be slow, ambiguous, or blind to a wrong heading.
+- **Risk:** medium. A hard magnetometer gate would make optical recovery impossible.
+- **Direction:** a navigation-star data file plus a pure-JVM `VisibleCandidatePredictor(time, location, attitude
+  prior with uncertainty + trust state, camera model with uncertainty)`:
+  - above-horizon (with margin);
+  - the epoch, proper-motion and refraction policy applied (G-06, G-25, G-26);
+  - a **staged fail-open** region (trusted → narrow cone; degraded → widened cone; interference/lost →
+    nav-star-wide / hemisphere recovery set; locked → time-stamped prior fast path with periodic wide
+    re-verification);
+  - a spatial index for PTSKCAT0.
+- **Depends on:** G-06, G-25.
+- **Evidence:** unit tests (true stars ⊂ candidates for every state, including a deliberately wrong heading);
+  replay of real sessions.
 
 **G-05 · No real night-sky dataset.**
 - **Evidence:** no session or frame in the repository (§22.1); no doc reports a real run.
 - **Affected:** all tuning.
 - **User impact:** unknown performance.
 - **Risk:** high.
-- **Direction:** a Pixel 9 capture campaign with SKY-1 (after the AF/log fields land); store sessions outside git and
-  commit a small fixture subset.
-- **Depends on:** G-03 (AF logging).
+- **Direction:** a Pixel 9 capture campaign with SKY-1, after the metadata and AF fields land; store sessions outside
+  git and commit a small fixture subset.
+- **Depends on:** G-03.
 - **Evidence:** `sky-session-loader` reports.
 
 **G-06 · Astronomy truth defects.**
-- **Evidence:** §8.3.1–3 (ephemeris −1 day; no precession; self-referential golden).
+- **Evidence:** §8.3 items 1–3: ephemeris −1 day; no precession; self-referential golden.
 - **Affected:** all body positions on both devices; all stars (≈0.36°).
-- **User impact:** the Moon is ≈13° wrong; planets and the Sun are about 1° wrong; star overlays carry a systematic
-  offset.
+- **User impact:** the Moon is ≈13° wrong; the Sun and planets about 1°; star overlays carry a systematic offset.
 - **Risk:** low (fixes are well understood).
-- **Direction:** fix the epoch; external-reference tests (Meeus examples / JPL Horizons values hard-coded); a
-  precession seam.
+- **Direction:**
+  - fix the epoch;
+  - reference tests with **explicit frame, apparent/geometric, observer and time-scale conventions** that match the
+    model under test (§8.3 "Ephemeris reference-test conventions");
+  - precession applied in the same documented pipeline as proper motion (G-25).
 - **Depends on:** —.
-- **Evidence:** unit tests against published values.
+- **Evidence:** unit tests against convention-matched published values.
 
 ### P1 — required for reliable release
 
 - **G-07 · No temporal tracker / correction fusion.** Evidence §15. Direction: correction quaternion with age and
-  decay; gyro-propagated `priorProjections` with timestamps; re-verification; reacquisition.
+  decay; gyro/rotation-delta-propagated `priorProjections` with timestamps; re-verification; reacquisition through
+  the recovery path.
 - **G-08 · No confidence / false-lock protection.** No code. Direction: inlier count, residual, ambiguity ratio,
-  sensor-prior consistency; thresholds TBD BY DEVICE TEST.
+  consistency checks; thresholds TBD BY DEVICE TEST. Sensor-prior consistency may raise confidence but must not veto
+  a well-verified solution, since the prior can be the thing that is wrong.
 - **G-09 · Watch navigation bugs.** Evidence §17.1, §18:
-  - picker overrides external targets;
-  - cold-start drop;
-  - unbounded body fallback in Identify;
+  - Aim target overwrite by the picker default, which is path-dependent:
+    - `/app/open` with an equatorial/star target → Polaris (index 4);
+    - `/aim/set_target` entered from Home → Sun (index 0);
+    - an already-mounted screen has different behaviour;
+  - cold-start request drop;
+  - unbounded body fallback in Identify (no angular cap);
   - stale fix in Identify;
-  - dead offline star resolver;
+  - `OfflineStarResolver` asset mismatch (`stars_V1.bin` not shipped);
   - Tonight tile never gets a location;
-  - ineffective phone heading override;
+  - phone heading override does not update `forward`;
   - Aim controller tests excluded.
-- **G-10 · Phone has no navigation guidance and renders at (0,0) without a location.** Evidence §17.2, §8.3.8.
+- **G-10 · Phone has no navigation guidance and renders at (0,0) without a location.** Evidence §17.2, §8.3 item 8.
 - **G-11 · CI does not run the core suites.** `android-full` has been dead since 2026-02-13. astro-core (677),
   core:astro, wear:sensors, tools and internalDebug tests do not run on PRs. Wear `DefaultAimControllerTest` is
   excluded.
 - **G-12 · Magnetic interference invisible.** Evidence §14. Direction: field-magnitude/inclination check vs WMM;
-  surface it in the state.
+  surface it in the state; it drives the candidate predictor into recovery mode (G-04).
 - **G-13 · Overlay computation on the main thread at sensor rate.** Evidence §24.
 - **G-14 · Phone/watch catalog and algorithm divergence.** Evidence §18.
+- **G-25 · No proper-motion policy for navigation references.**
+  - **Evidence:** HYG `pmra`/`pmdec` are dropped at pack time (`HygRealCatalogParser.kt:38-66`); runtime positions
+    are epoch 2000 (§6.2, §8.3 item 10).
+  - **Direction:** verify the HYG `pmra` convention; propagate nav-reference positions to the observation epoch in
+    the same documented pipeline as precession. Acceptable v1: explicitly exclude nav stars whose accumulated
+    displacement exceeds a threshold that is **TBD BY ACCURACY BUDGET / DEVICE TEST**, with tests.
+  - **Depends on:** G-06.
+  - Must land before matcher tolerances are calibrated (PTS-14).
+- **G-26 · No refraction policy for optical prediction.**
+  - **Evidence:** §8.2, §8.3 item 11 (`applyRefraction = false` in CAM-2a and almost every caller).
+  - **Direction:** v1 policy A (apparent-altitude correction with documented assumptions) or B (minimum-altitude
+    exclusion, threshold **TBD BY ACCURACY BUDGET / DEVICE TEST**); tests and device evidence of residual versus
+    altitude.
+  - Must land before matcher tolerances are calibrated.
 
 ### P2 — quality / performance / UX
 
@@ -1368,12 +1607,13 @@ evidence required.
 - **G-17** Duplicate parsers, tables and math (two `const_v1` parsers, two NELM tables, two alt/az implementations,
   three `JulianDate` copies).
 - **G-18** No lens distortion; no rolling shutter; start-of-exposure pose pairing.
-- **G-19** Inconsistent refraction usage (SkyMap).
+- **G-19** Inconsistent refraction usage in the SkyMap (UI rendering; distinct from the optical policy G-26).
 - **G-20** Missing translations and hard-coded strings.
 
 ### P3 — later
 
-- **G-21** Constellation graphics data model (HIP-keyed edges, labels, art, watch).
+- **G-21** Constellation graphics: **REQUIREMENTS PENDING**. The product and visual specification will be supplied
+  separately; only the §19 integration seams are recorded here.
 - **G-22** Global light-pollution grid (one 10° tile today).
 - **G-23** Topocentric Moon, more planets (Mercury, Venus, Mars absent: `SimpleEphemerisComputer.kt:15-20`), DSOs.
 - **G-24** Tiles → ProtoLayout migration.
@@ -1384,50 +1624,79 @@ evidence required.
 
 ### 28.1 Pipeline (adapting existing components)
 
+Ordered truth layers. Each layer consumes only the one above it plus its own declared inputs:
+
 ```text
-ObservationContext                         (NEW, pure JVM)  time (frame timestamp → UTC), location+age,
-  ├─ camera model  ◀── CameraSessionGeometry + AnalysisBufferScale (EXISTING), quality + scale uncertainty
-  └─ rough attitude ◀── paired rotation sample (EXISTING FrameRotationPairing) ⊗ last optical correction
+1. Camera metadata truth                    EXISTING CameraFrameMetadata, pairing, CropScaleTransform, intrinsics
+   (per analysis frame)                     resolver + NEW per-frame Camera2 capture-result join (active physical ID,
+                                            focal length, intrinsics, focus, crop/zoom, exposure) keyed on
+                                            SENSOR_TIMESTAMP == ImageInfo.timestamp; honest geometry quality +
+                                            uncertainty
         ↓
-VisibleCandidatePredictor                  (NEW) nav-star set (NEW data) ∪ optional PTSKCAT0 cone via
-        ↓                                   StarCatalogQuery (EXISTING port + NEW spatial index); precession (NEW)
-Predicted candidates in/near FOV           EquatorialStarDirection[] + PredictedStarProjection[] (EXISTING types,
-        ↓                                   + NEW timestamp/attitude provenance wrapper)
-Detector                                   detectStars (EXISTING) on a production luma tap (NEW), capped + SNR
+2. Astronomy epoch / proper-motion /        EXISTING time, LST, RA/Dec↔Alt/Az + NEW single documented pipeline:
+   precession / refraction truth            catalog epoch → observation epoch (proper motion per the chosen policy)
+                                            → precession J2000→date → topocentric alt/az → refraction policy
+                                            (apparent-altitude correction OR minimum-altitude exclusion)
         ↓
-Constrained matcher                        (NEW) StarMatcherInput (EXISTING) → hypotheses → verification
+3. Candidate prediction with uncertainty    NEW VisibleCandidatePredictor over the NEW nav-star set (+ optional
+                                            PTSKCAT0 cone via EXISTING StarCatalogQuery + NEW spatial index);
+                                            staged fail-open regions (§9.1): trusted → narrow cone; degraded →
+                                            widened; interference/lost → recovery set independent of heading;
+                                            locked → timestamped priorProjections fast path + periodic wide re-check
         ↓
-OpticalAttitudeSolution + confidence       (NEW) R_world←camera, inliers, residual, ambiguity, scale estimate
+4. Detector                                 EXISTING detectStars on a NEW production luma tap; capped + SNR
         ↓
-Temporal tracker                           (NEW) states (§28.3); correction q_corr = R_opt · R_sensor⁻¹ with age
+5. Matcher                                  NEW; StarMatcherInput (EXISTING contract) → hypotheses (fast path and
+                                            recovery path) → verification by projection
         ↓
-CorrectedPoseSource                        (NEW interface) consumed by navigation + overlay + constellations
+6. Optical attitude                         NEW: R_world←camera, inliers, residual, ambiguity (+ scale estimate only
+                                            if geometry strategy C is in force)
         ↓
-Navigation domain (shared AimController)   (EXISTING watch controller → moved to shared module)
+7. Temporal tracker                         NEW: §28.3 machine A; correction q_corr = R_opt · R_sensor⁻¹ with age/decay
         ↓
-Phone UI (overlay via CAM-2a projector) / Wear (Aim, optionally phone-supplied correction)
+8. Corrected pose                           NEW CorrectedPoseSource interface (consumed by navigation, overlay, and
+                                            any future constellation layer)
+        ↓
+9. Navigation                               EXISTING watch AimController/phase machine → moved to a shared module;
+                                            phone guidance + Wear Aim
 ```
+
+**Recovery invariant.** Layer 3 always has a path that does not depend on a correct magnetic heading. A wrong
+magnetometer prior may slow acquisition, but it must never exclude the true solution.
 
 ### 28.2 Ownership and interfaces
 
 | Layer | Owns | Must not know about |
 |---|---|---|
-| Astronomy truth (`core/astro-core` time/transform/ephem + precession) | JD, LST, RA/Dec ↔ Alt/Az, bodies | camera, UI |
-| Camera geometry (`camera/*`, mobile camera session) | intrinsics + quality, pairing, crop/rotation, luma tap | catalog, matching |
+| Camera metadata truth (`camera/*`, mobile camera session) | per-frame geometry + provenance + quality/uncertainty, pairing, crop/rotation, luma tap | catalog, matching |
+| Astronomy truth (`core/astro-core` time/transform/ephem + epoch/PM/precession/refraction) | JD, LST, apparent/geometric directions per declared policy, bodies | camera, UI |
+| Candidate prediction (new, astro-core) | candidate sets per trust state + time-stamped priors | pixels |
 | Detection (`camera/detect`) | `DetectedSource[]` per frame | catalog, pose |
-| Candidate prediction (new, astro-core) | visible nav-star candidates + priors with timestamps | pixels |
 | Matching (new, astro-core) | correspondences, attitude, confidence; **stateless per call** | UI, Android |
-| Tracking (new, astro-core) | state machine, correction, decay, reacquire policy | Android |
+| Tracking (new, astro-core) | state machine, correction, decay, reacquire policy, re-verification cadence | Android |
 | Navigation domain (shared) | target, guidance vector, phase/lock | camera internals |
 | UI (phone / watch) | rendering of navigation + autodetect state | math |
 
-**Pixel 9 strategy.**
-- Do not wait for `ProvenActiveArrayLocal`.
-- Treat logical-camera static intrinsics at zoom 1.0× as **APPROXIMATE**, with an explicit focal-scale uncertainty
-  (magnitude TBD BY DEVICE TEST).
-- Make the first solve **scale-tolerant**: angular invariants are ratios, or a small scale search. Feed the estimated
-  scale back as a session refinement.
-- This turns the CAM-2c block from a prerequisite into a refinement.
+**Pixel 9 camera-geometry strategy: decided after PTS-03, not before.**
+
+The PTS-03 probe answers:
+1. Does the Pixel 9 report `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`?
+2. Is it stable during a star-mode session?
+3. Does it switch in low light?
+4. Are focal length and intrinsics dynamic when the physical sensor changes?
+5. Can each capture result be matched reliably to its analysis frame?
+
+Then choose:
+- **A. Truthful per-frame physical-camera geometry.** Use the active physical camera's characteristics and the
+  per-frame capture-result focal length/intrinsics for each frame. Preferred if 1, 2 and 5 hold.
+- **B. Explicit physical-camera binding.** Use `CameraSelector.setPhysicalCameraId` on CameraX 1.4.2, so the sensor
+  cannot change. It still needs the matrix-domain question answered
+  (`docs/recon/cam_2c_sensor_to_buffer_domain_recon.md:134-155`, UNVERIFIED).
+- **C. Fallback only.** Treat logical static intrinsics at 1.0× as **APPROXIMATE**, with an explicit focal-scale
+  uncertainty, and make the first solve scale-tolerant.
+
+C is retained as a fallback if A and B are unavailable or unreliable on the device. It is **not** the pre-selected
+architecture.
 
 ### 28.3 Proposed navigation / autodetect state model (input to the redesign)
 
@@ -1436,20 +1705,20 @@ NO_LOCATION). The code suggests **two orthogonal state machines** rather than on
 
 **A. Pose-quality machine** (autodetect / tracking; phone first, optionally shared with the watch):
 
-| State | Entry | Exit | Data required | UI must communicate |
-|---|---|---|---|---|
-| UNAVAILABLE | no camera / no permission / no location / no time / no rotation sensor | prerequisite restored → PREPARING | reason enum | what is missing and how to fix it |
-| PREPARING | session bound; waiting for intrinsics, first paired frame, exposure settle | geometry Ready → SEARCHING | geometry status | "starting camera" |
-| SENSOR_ONLY | autodetect disabled/unsupported, or repeated failure; navigation still possible | user enables / conditions improve | sensor accuracy, magnetic flag | pointing is approximate |
-| SEARCHING | geometry ready, no accepted solution | candidate hypothesis → CANDIDATE | detections, candidates | "looking for stars"; detection/candidate counts (debug) |
-| CANDIDATE | hypothesis passes invariants, not yet verified across K frames (K TBD) | verified → LOCKED; rejected → SEARCHING | correspondences, residual, ambiguity | tentative |
-| LOCKED | verified solution; correction applied | residual/inliers degrade → LOW_CONFIDENCE; detections lost → LOST | correction, inliers, residual, age | pointing is camera-corrected |
-| LOW_CONFIDENCE | lock degrading (few stars, cloud, blur) | recovers → LOCKED; times out → LOST | confidence trend | correction may be stale |
-| LOST | no verification for T s (TBD) | reacquire attempt → RECOVERING | last correction + age | using the last known correction / sensor only |
-| RECOVERING | full solve with a widened prior (correction kept, decaying) | success → LOCKED; timeout → SEARCHING | — | re-finding stars |
+| State | Entry | Exit | Candidate policy (§9.1) | Data required | UI must communicate |
+|---|---|---|---|---|---|
+| UNAVAILABLE | no camera / no permission / no location / no time / no rotation sensor | prerequisite restored → PREPARING | — | reason enum | what is missing and how to fix it |
+| PREPARING | session bound; waiting for geometry/metadata, first paired frame, exposure settle | geometry Ready → SEARCHING | — | geometry status, provenance | "starting camera" |
+| SENSOR_ONLY | autodetect disabled/unsupported, or repeated failure; navigation still possible | user enables / conditions improve | — | sensor accuracy, magnetic flag | pointing is approximate |
+| SEARCHING | geometry ready, no accepted solution | candidate hypothesis → CANDIDATE | narrow or widened cone by prior trust | detections, candidates | "looking for stars"; counts (debug) |
+| CANDIDATE | hypothesis passes invariants, not yet verified across K frames (K TBD) | verified → LOCKED; rejected → SEARCHING | same as the generating path | correspondences, residual, ambiguity | tentative |
+| LOCKED | verified solution; correction applied | residual/inliers degrade → LOW_CONFIDENCE; detections lost → LOST | time-stamped prior fast path + periodic wide re-verification | correction, inliers, residual, age | pointing is camera-corrected |
+| LOW_CONFIDENCE | lock degrading (few stars, cloud, blur) | recovers → LOCKED; times out → LOST | fast path + more frequent re-verification | confidence trend | correction may be stale |
+| LOST | no verification for T s (TBD) | reacquire attempt → RECOVERING | — | last correction + age | using the last known correction / sensor only |
+| RECOVERING | solve without trusting heading (correction kept, decaying) | success → LOCKED; timeout → SEARCHING | **recovery set** (nav-star-wide / hemisphere) | — | re-finding stars |
 
 The prompt's `ACQUIRED` collapses into CANDIDATE→LOCKED. `ALIGNING` belongs to the pointing machine, not the pose
-machine.
+machine. The magnetic-interference flag (G-12) can move SEARCHING straight to the recovery candidate policy.
 
 **B. Pointing / guidance machine** (the existing `AimPhase`, generalised and moved to a shared module):
 NO_TARGET → (NO_LOCATION | BELOW_HORIZON | SEARCHING) → IN_TOLERANCE (= "aligning") → LOCKED. Inputs: the corrected
@@ -1465,220 +1734,351 @@ to `docs/validation/`.
 
 ### Phase A — establish truth / unblock autodetect
 
-**PTS-01 · Ephemeris epoch fix + external reference tests**
-- **Goal:** correct the Sun, Moon, Jupiter and Saturn positions.
-- **Scope:** `JD_AT_2000_01_01_00UT` → 2451543.5 (with a rename); external-reference test values (Meeus ch.25 / 47
-  worked examples, plus a few hard-coded JPL Horizons vectors); regenerate `ephem_golden_v1.json`; stop
-  auto-regeneration from being the only check.
+**PTS-01 · Ephemeris epoch fix + convention-explicit reference tests**
+- **Goal:** correct the Sun, Moon, Jupiter and Saturn positions, and prove the correction.
+- **Scope:**
+  - `JD_AT_2000_01_01_00UT` → 2451543.5 (with a rename);
+  - reference tests whose frame, apparent/geometric setting, observer (geocentric) and time scale are stated and
+    **match the model's own conventions**, e.g. a Schlyter-epoch reimplementation and Meeus low-precision worked
+    examples. JPL Horizons values only if requested in a matching geocentric/astrometric or mean-of-date
+    configuration, with tolerances taken from the model's documented accuracy;
+  - regenerate `ephem_golden_v1.json`, and stop self-regeneration from being the only check.
 - **Files:** `core/astro-core/.../ephem/SimpleEphemerisComputer.kt`, `core/astro/src/test/.../ephem/*`.
 - **Depends on:** —.
-- **Tests:** new reference tests within stated tolerances.
+- **Tests:** the new convention-matched reference tests; a regression test that the old epoch fails them.
 - **Device:** none needed.
-- **Exit:** the Sun is within 0.05° and the Moon within 0.5° of the references (exact tolerances chosen in the PR from
-  the model's documented accuracy).
+- **Exit:** the epoch correction is demonstrated, with no false failure from mismatched conventions. Tolerances are
+  justified in the PR.
 
 **PTS-02 · CI truth**
 - **Goal:** every PR runs the pure-JVM and core Android unit suites.
-- **Scope:** add `:core:astro-core:test`, `:core:astro`, `:core:catalog`, `:wear:sensors`, `:tools:*` and
-  `testInternalDebugUnitTest` to the PR workflow; get `android-full` running; fix or quarantine-with-issue the known
-  `RedactorTest` / `core:location` failures; port `DefaultAimControllerTest` to virtual time and un-exclude it.
+- **Scope:**
+  - add `:core:astro-core:test`, `:core:astro`, `:core:catalog`, `:wear:sensors`, `:tools:*` and
+    `testInternalDebugUnitTest` to the PR workflow;
+  - get `android-full` running;
+  - fix, or quarantine with a tracked issue, the known `RedactorTest` / `core:location` failures;
+  - port `DefaultAimControllerTest` to virtual time and un-exclude it.
 - **Files:** `.github/workflows/*`, `wear/build.gradle.kts`, the affected tests.
 - **Depends on:** —.
 - **Exit:** green CI with those suites on a PR.
 
-**PTS-03 · J2000 → of-date precession seam**
-- **Goal:** remove the ≈0.36° systematic offset.
-- **Scope:** an IAU 1976 (Lieske) precession helper; applied once at the catalog → topocentric boundary
-  (`equatorialToLocalSky`, `raDecToAltAz` callers, or a `StarCatalogQuery` decorator); bodies kept in a consistent
-  frame.
-- **Files:** `core/astro-core/.../transform`, `prediction/LocalSkyDirection.kt`.
-- **Tests:** Meeus Ex. 21.b.
-- **Exit:** the reference example within 1″.
-
-**PTS-04 · Navigation-star set (data + loader)**
-- **Goal:** a curated, HIP-keyed set.
-- **Scope:** selection rules (brightness, isolation radius, sky coverage; final numbers decided in the PR and
-  justified); generator in `tools/catalog-packer`; asset (both devices); runtime resolution HIP → PTSKCAT0 record
-  index; tests on the shipped asset (count, uniqueness, every HIP resolves).
+**PTS-03 · Pixel 9 per-frame Camera2 metadata probe (internalDebug)**
+- **Goal:** establish camera metadata truth before choosing a geometry strategy.
+- **Scope:**
+  - Attach a `Camera2Interop.Extender.setSessionCaptureCallback(...)` callback to the **same** CameraX session that
+    serves Preview and ImageAnalysis. Reuse or extend the SKY-1 callback and `SkyExposureJoin`.
+  - Record per result, where available:
+    - `SENSOR_TIMESTAMP`;
+    - `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` (API 29+ guard);
+    - `LENS_FOCAL_LENGTH`, `LENS_INTRINSIC_CALIBRATION`, `LENS_FOCUS_DISTANCE`, `LENS_STATE`;
+    - `CONTROL_AF_MODE`, `CONTROL_AF_STATE`;
+    - `SCALER_CROP_REGION`, zoom ratio where supported;
+    - exposure time, sensitivity/ISO, frame duration;
+    - OIS/stabilisation state where exposed.
+  - Correlate each result with `ImageProxy.imageInfo.timestamp`.
+  - Also record the actual 1.4.2 analysis/preview resolution and stream configuration.
+  - Export through the existing CAM diagnostic JSON or the sky log.
+- **Files:** `mobile/src/internalDebug/.../SkyCaptureExposure.kt`, `SkySessionCameraPreview.kt`,
+  `SkyExposureJoin.kt`, `CamDiagnosticSnapshotJson.kt`; possibly `skylog/*` (schema bump).
 - **Depends on:** —.
-- **Exit:** set loaded on both devices.
+- **Tests:** unit tests for extraction and timestamp join (null-tolerant: every key optional).
+- **Device:** Pixel 9 sessions (indoors and night) answering:
+  1. Does the Pixel 9 report an active physical ID?
+  2. Is it stable during a star-mode session?
+  3. Does it switch in low light?
+  4. Are focal length/intrinsics dynamic when the physical sensor changes?
+  5. Can the metadata be matched reliably to each analysis frame?
+- **Exit:** a committed `docs/validation/` report with those five answers and the 1.4.2 stream configuration.
+  **No geometry strategy is chosen in this PR.**
 
-**PTS-05 · Production luma tap**
-- **Goal:** pixels in production behind a flag.
-- **Scope:** stride-aware Y-plane copy into a reused `LumaFrame` buffer in `CameraFrameAnalyzer`; the analysis
-  resolution policy (request ≥ 1280×720, final value TBD BY DEVICE TEST); a flag (off by default in public).
+**PTS-04 · Astronomy epoch pipeline: proper motion + precession in one seam**
+- **Goal:** remove the epoch mismatch (≈0.36° precession, plus per-star proper motion).
+- **Scope:**
+  - verify the HYG `pmra` convention (μα vs μα·cos δ) against the source documentation;
+  - choose a proper-motion policy: carry PM for nav stars and propagate to the observation epoch, **or** explicitly
+    exclude nav stars above a displacement threshold (TBD BY ACCURACY BUDGET / DEVICE TEST);
+  - add an IAU 1976 (Lieske) precession helper;
+  - apply both in a single documented catalog → topocentric pipeline (e.g. a `StarCatalogQuery` decorator, or before
+    `equatorialToLocalSky`), with bodies in a consistent frame;
+  - make the packer carry PM if the chosen policy needs it.
+- **Files:** `core/astro-core/.../transform`, `prediction/LocalSkyDirection.kt`, `tools/catalog-packer/.../ptskcat0/*`.
+- **Depends on:** PTS-01 (shared test conventions).
+- **Tests:** Meeus Ex. 21.b (precession); a proper-motion worked example; an exclusion-rule test if that policy is
+  chosen.
+- **Exit:** reference examples pass. No path mixes epoch-2000 positions with observation-epoch frames undocumented.
+
+**PTS-05 · Refraction policy for optical prediction**
+- **Goal:** keep refraction from being absorbed as camera, intrinsics or attitude error.
+- **Scope:**
+  - **either** an apparent-altitude correction in the candidate/prediction path, with assumptions documented
+    (pressure, temperature, model validity range);
+  - **or** a configurable minimum reference-star altitude (threshold TBD BY ACCURACY BUDGET / DEVICE TEST);
+  - expose residual-versus-altitude in the offline loader output.
+- **Files:** `core/astro-core/.../prediction/*`, `transform/EquatorialHorizontalTransform.kt`,
+  `tools/sky-session-loader`.
+- **Depends on:** PTS-04.
+- **Tests:** unit tests at several altitudes; the policy is applied once, never twice.
+- **Device:** residual vs altitude on real sessions (after PTS-11).
+- **Exit:** the policy is explicit, configurable and tested.
+
+**PTS-06 · Navigation-star set (data + loader)**
+- **Goal:** a curated set with a re-pack-stable identity.
+- **Scope:**
+  - selection rules: brightness, isolation radius, sky coverage, and the proper-motion rule from PTS-04. Final
+    numbers decided and justified in the PR;
+  - generator in `tools/catalog-packer`;
+  - asset for both devices;
+  - runtime resolution identity → PTSKCAT0 record;
+  - tests on the shipped asset (count, uniqueness, every id resolves).
+- **Depends on:** PTS-04.
+- **Exit:** the set is loaded on both devices.
+
+**PTS-07 · Production luma tap + analysis-resolution policy**
+- **Goal:** pixels in production, behind a flag.
+- **Scope:** a stride-aware Y-plane copy into a reused `LumaFrame` buffer in `CameraFrameAnalyzer`; an
+  analysis-resolution policy informed by the PTS-03 measured 1.4.2 configuration; the flag off by default in public.
 - **Files:** `mobile/.../ar/CameraPreview.kt`, `mobile/.../ar/camera/CameraFrameAnalyzer.kt`.
-- **Tests:** unit (stride/pixelStride); instrumentation if available.
-- **Device:** Pixel 9 frame latency and resolution captured.
-- **Exit:** the luma frame is available per frame with measured cost.
+- **Depends on:** PTS-03 (resolution evidence).
+- **Tests:** unit (stride / pixelStride); instrumentation if available.
+- **Device:** Pixel 9 frame latency and bound resolution.
+- **Exit:** a luma frame per frame, with measured cost.
 
-**PTS-06 · Night camera policy + AF/lens diagnostics**
-- **Goal:** controlled focus/exposure, logged.
-- **Scope:** AF policy (manual infinity where supported, else continuous; documented); production AE policy for star
-  mode; AF mode/state, `LENS_FOCUS_DISTANCE` and `LENS_STATE` added to the CAM JSON and the sky log (schema v3 with
-  migration); `SENSOR_INFO_TIMESTAMP_SOURCE` read in production.
-- **Files:** `CameraPreview.kt`, `SkyCaptureExposure.kt`, `skylog/*`.
-- **Device:** Pixel 9 focus-distance evidence.
-- **Exit:** a logged focus distance in a real session.
+**PTS-08 · Night camera control policy + per-frame metadata in production logs**
+- **Goal:** controlled focus and exposure, logged.
+- **Scope:**
+  - AF policy: manual infinity where supported (`LENS_INFO_MINIMUM_FOCUS_DISTANCE`, manual-sensor capability), else
+    documented continuous;
+  - a production AE policy for star mode;
+  - the PTS-03 metadata subset that proved useful, carried into the CAM JSON and sky log (schema v3 with migration);
+  - `SENSOR_INFO_TIMESTAMP_SOURCE` read in production.
+- **Depends on:** PTS-03.
+- **Device:** Pixel 9 focus-distance evidence at night.
+- **Exit:** a logged focus distance and AF state in a real session.
 
-**PTS-07 · Visible candidate predictor + PTSKCAT0 spatial index**
-- **Goal:** O(10¹) candidates per frame.
-- **Scope:** `VisibleCandidatePredictor` (pure JVM): horizon margin, attitude-uncertainty cone, magnitude cut,
-  nav-set first; a Dec-band index in `PtskCat0Catalog`; CAM-2b adapter and SKY-1 switched to it; a horizon
-  classification option in `CameraStarPredictor`.
-- **Depends on:** PTS-03, PTS-04.
-- **Tests:** property-style coverage (true FOV stars ⊂ candidates under the stated attitude error).
-- **Exit:** the CAM-2b overlay uses the predictor.
+**PTS-09 · Camera-geometry decision and implementation (A / B / C)**
+- **Goal:** a projectable, honestly-labelled camera model on the Pixel 9.
+- **Scope:**
+  - implement the strategy chosen from the PTS-03 evidence (§28.2): A per-frame physical geometry, B explicit
+    physical binding, or C approximate logical intrinsics with a scale-uncertainty field (fallback only);
+  - honest `CameraGeometryQuality` labels;
+  - zoom policy in star mode;
+  - the decision recorded with its evidence.
+- **Files:** `AnalysisBufferIntrinsicsResolver.kt`, `CameraIntrinsicsResolution.kt`, camera session code.
+- **Depends on:** PTS-03, PTS-08.
+- **Device:** a Pixel 9 overlay plus diagnostics.
+- **Exit:** `projectStars` Ready on the Pixel 9 with a label that matches its provenance.
 
-**PTS-08 · Pixel 9 intrinsics strategy**
-- **Goal:** a projectable camera model on the Pixel 9.
-- **Scope:** an explicit `APPROXIMATE_LOGICAL_STATIC` quality with a scale-uncertainty field; honest
-  `CameraGeometryQuality` labels; pinned zoom 1.0× in production star mode; documented decision vs physical binding.
-- **Files:** `AnalysisBufferIntrinsicsResolver.kt`, `CameraIntrinsicsResolution.kt`.
-- **Device:** a Pixel 9 overlay screenshot plus diagnostics.
-- **Exit:** `projectStars` Ready on the Pixel 9 with an honest label.
+**PTS-10 · Visible candidate predictor with uncertainty + PTSKCAT0 spatial index**
+- **Goal:** bounded candidates in every state, without a hard magnetometer gate.
+- **Scope:**
+  - `VisibleCandidatePredictor` (pure JVM) with the staged fail-open policy (§9.1): trusted / degraded / recovery /
+    locked fast path / periodic wide re-verification;
+  - horizon margin and the epoch / proper-motion / refraction policy (PTS-04/05);
+  - nav set first;
+  - a Dec-band index in `PtskCat0Catalog`;
+  - CAM-2b adapter and SKY-1 switched to it;
+  - a horizon classification option in `CameraStarPredictor`.
+- **Depends on:** PTS-04, PTS-05, PTS-06.
+- **Tests:** true FOV stars ⊂ candidates for each state, **including a deliberately wrong heading** (the recovery
+  set must still contain them); candidate counts reported per state.
+- **Exit:** the CAM-2b overlay uses the predictor. Per-state candidate counts are recorded, with targets TBD BY
+  DEVICE TEST.
 
-**PTS-09 · Real night-sky capture campaign (docs + fixtures)**
+**PTS-11 · Real night-sky capture campaign (docs + fixtures)**
 - **Goal:** a dataset.
-- **Scope:** procedure doc; ≥ N sessions covering the §23 matrix rows (N TBD); off-repo storage; a small committed
-  fixture (cropped frames + jsonl) for JVM tests; `sky-session-loader` report committed.
-- **Depends on:** PTS-05/06/08.
-- **Exit:** detector metrics on real sky are recorded.
+- **Scope:**
+  - a procedure doc;
+  - ≥ N sessions covering the §23 matrix rows (N TBD), including low-altitude and disturbed-heading sessions;
+  - off-repo storage;
+  - a small committed fixture (cropped frames + jsonl);
+  - a committed `sky-session-loader` report.
+- **Depends on:** PTS-07, PTS-08, PTS-09.
+- **Exit:** detector metrics and residual-vs-altitude on real sky are recorded.
 
 ### Phase B — identification
 
-**PTS-10 · Matcher v1 (lost-in-space-lite, constrained)**
-- **Scope:** pure JVM; brightest-K detections × candidates; angular pair/triangle invariants via `cameraRayFor` /
-  `angleBetweenRad` (merge or supersede PR #236); scale-tolerant hypothesis generation; verification by projecting
-  all candidates; inlier set.
-- **Tests:** synthetic scenes (rotations, scale error, missing/extra sources, hot pixels, mirrored sky, wrong time).
-- **Exit:** the synthetic suite plus PTS-09 fixtures identify correctly.
+**PTS-12 · Matcher v1 (fast path + recovery path)**
+- **Scope:**
+  - pure JVM; brightest-K detections × candidates;
+  - angular pair/triangle invariants via `cameraRayFor` / `angleBetweenRad` (merge or supersede PR #236);
+  - a recovery path over the full above-horizon nav set using precomputed invariants;
+  - scale tolerance only as required by the PTS-09 strategy;
+  - verification by projecting all candidates; an inlier set.
+- **Tests:** synthetic scenes (rotations, scale error if C, missing/extra sources, hot pixels, mirrored sky, wrong
+  time, **wrong heading by tens of degrees**).
+- **Exit:** the synthetic suite plus PTS-11 fixtures identify correctly.
 
-**PTS-11 · Attitude solve + scale refinement**
-- **Scope:** Wahba via SVD (or QUEST) from (camera ray, world direction) pairs; residuals in px and arcmin; optional
-  focal-scale estimate.
+**PTS-13 · Attitude solve (+ scale refinement if strategy C)**
+- **Scope:** Wahba via SVD (or QUEST) from (camera ray, world direction) pairs; residuals in px and arcmin, also
+  binned by altitude.
 - **Tests:** known-rotation recovery; noise sensitivity.
 
-**PTS-12 · Confidence + false-lock protection**
-- **Scope:** inlier count, RMS, ambiguity ratio, sensor-prior consistency → `MatchVerdict`; negative test corpus.
-- **Exit:** zero confident locks on the negative corpus; thresholds recorded as TBD BY DEVICE TEST until PTS-09 data
+**PTS-14 · Confidence + false-lock protection**
+- **Scope:** inlier count, RMS, ambiguity ratio and consistency checks → `MatchVerdict`; a negative test corpus.
+  Sensor-prior disagreement alone does not veto a verified solution.
+- **Exit:** zero confident locks on the negative corpus. Thresholds stay TBD BY DEVICE TEST until PTS-11 data
   calibrates them.
 
-**PTS-13 · Matcher in the offline loader**
+**PTS-15 · Matcher in the offline loader**
 - **Scope:** `tools/sky-session-loader` runs detect → predict → match → solve on sessions and reports identification
-  rate and residuals.
+  rate and residuals (including vs altitude).
 - **Exit:** a real-session report committed.
 
 ### Phase C — stable navigation
 
-**PTS-14 · Tracker + correction fusion**
-- **Scope:** the §28.3 A-machine; `q_corr` with age and decay; time-stamped `priorProjections` propagated by the
-  rotation-vector delta; gated re-association followed by re-verification; periodic full solve; reacquisition.
-- **Tests:** scripted sequences (cloud gap, fast pan, single star, stale prior).
+**PTS-16 · Tracker + correction fusion**
+- **Scope:**
+  - the §28.3 A-machine;
+  - `q_corr` with age and decay;
+  - time-stamped `priorProjections` propagated by the rotation delta;
+  - gated re-association, then re-verification;
+  - periodic wide re-verification;
+  - reacquisition through the recovery path.
+- **Tests:** scripted sequences (cloud gap, fast pan, single star, stale prior, poisoned prior, heading jump).
 
-**PTS-15 · On-device integration**
-- **Scope:** an analyzer-thread pipeline (detect → predict → match/track) throttled to a measured budget; a
+**PTS-17 · On-device integration**
+- **Scope:** an analyzer-thread pipeline (detect → predict → match/track) throttled to a measured budget; the
   `CorrectedPoseSource` interface; the AR overlay switched from the legacy 56° projector to the CAM-2a projector +
   corrected pose; alt/az at 1 Hz off the main thread.
 - **Device:** Pixel 9 latency and FPS; lock under hand motion.
 
-**PTS-16 · Shared navigation domain + phone guidance**
-- **Scope:** move `AimController`/the phase machine into a shared module; phone guidance (arrow / offset / lock /
+**PTS-18 · Shared navigation domain + phone guidance**
+- **Scope:** move `AimController` / the phase machine into a shared module; phone guidance (arrow / offset / lock /
   haptics) driven by the corrected pose; the phone location gate (no (0,0) rendering).
 
-**PTS-17 · Watch correctness + parity**
+**PTS-19 · Watch correctness + parity**
 - **Scope:**
-  - Aim target arbitration (no picker override), `WearBridge` replay;
-  - Identify body cap + stale-fix handling;
+  - Aim target arbitration, so no picker default overwrites a requested target;
+  - **path-specific regression tests**:
+    - (a) `/app/open` with an equatorial target (must not become Polaris);
+    - (b) `/aim/set_target` entered from Home with `initialTarget == null` (must not become Sun);
+    - (c) `/aim/set_target` while Aim is mounted;
+    - (d) the phone's send-to-watch sequence (`/aim/set_target` then `/app/open`);
+  - `WearBridge` replay for cold start;
+  - Identify body angular cap + stale-fix handling;
   - Tonight tile location injection;
   - `OfflineStarResolver` → a shipped catalog;
-  - phone heading override on `forward` with a consistent sign;
+  - phone heading override applied to `forward` with a consistent sign;
   - declination cache;
   - decide the watch catalog (PTSKCAT0 6.5 or the nav set);
   - a parity test fixture (same time/location/target → same alt/az on both code paths);
-  - optional phone → watch correction message (`/sensor/correction`, versioned).
+  - optional phone → watch correction message (versioned).
 
 ### Phase D — validation
 
-**PTS-18 · Device validation matrix:** the §23 rows executed on a Pixel 9 and a watch; results committed.
+**PTS-20 · Device validation matrix:** the §23 rows executed on a Pixel 9 and a watch; results committed.
 
-**PTS-19 · Performance:** JVM microbenchmarks (detector, predictor, matcher) plus on-device traces; allocation fixes
-(no boxing, reused buffers).
+**PTS-21 · Performance:** JVM microbenchmarks (detector, predictor per state, matcher fast and recovery paths) plus
+on-device traces; allocation fixes (no boxing, reused buffers).
 
-**PTS-20 · Failure handling:** the §25 rows implemented as states and reasons; magnetic interference flag.
+**PTS-22 · Failure handling:** the §25 rows implemented as states and reasons; magnetic-interference flag wired to
+the recovery candidate policy.
 
 ### Phase E — redesign foundation
 
-**PTS-21** Gate debug UI on both devices (`internal` flavor / debug); move LocationSetup out of "Debug tools".
+**PTS-23** Gate debug UI on both devices (`internal` flavor / debug); move LocationSetup out of "Debug tools".
 
-**PTS-22** Phone navigation shell with a back stack; extract `ArScreen` into presenter + composables; kill dead
+**PTS-24** Phone navigation shell with a back stack; extract `ArScreen` into presenter + composables; kill dead
 screens.
 
-**PTS-23** UI state contracts: expose the A/B machines (§28.3) as immutable UI state on both devices.
+**PTS-25** UI state contracts: expose the A/B machines (§28.3) as immutable UI state on both devices.
 
 ### Phase F — visual redesign
 
-**PTS-24…** Per-screen redesign PRs against PTS-23 state contracts (requirements to be supplied).
+**PTS-26…** Per-screen redesign PRs against the PTS-25 state contracts (requirements to be supplied).
 
-### Phase G — constellation graphics (requirements to be supplied separately)
+### Phase G — constellation graphics
 
-**PTS-3x** HIP-keyed figure data model shared with the nav set; a single projector consuming the corrected pose; great-circle
-segment subdivision and clipping; labels and localisation keys; watch support.
+**REQUIREMENTS PENDING — product/visual specification to be supplied separately.** No PRs are planned in this recon.
+Implementation must use the §19 integration seams (stable identity, corrected-pose source, common projection
+interface, rendering-layer boundary, phone/watch data availability) once requirements exist.
 
 ---
 
 ## 30. Definition of "autodetect complete"
 
-Each criterion is measurable. Values without repository evidence are **TBD BY DEVICE TEST**.
+Each criterion is measurable. Values without repository evidence are **TBD BY DEVICE TEST**, or **TBD BY ACCURACY
+BUDGET / DEVICE TEST** where an error budget must be agreed first.
 
-1. **Detection on real frames.** On recorded Pixel 9 sessions, at least X% (TBD BY DEVICE TEST) of predicted
+1. **Camera metadata truth.**
+   - For every analysed frame used in a solution, the active physical camera and its geometry are either known from
+     per-frame metadata (strategy A), fixed by binding (B), or covered by an explicit, tested scale-uncertainty model
+     (C).
+   - The chosen strategy and its PTS-03 evidence are recorded.
+   - Quality labels match provenance.
+2. **Detection on real frames.** On recorded Pixel 9 sessions, at least X% (TBD BY DEVICE TEST) of predicted
    in-image nav stars brighter than mag M (TBD) are detected within R px (TBD), measured by `sky-session-loader`.
-2. **Prediction correctness.** On real sessions with a verified optical solution, every true in-FOV nav star is in
-   the candidate set (100% recall), and the candidate count per frame is ≤ C (TBD; target O(10¹)).
-3. **Constrained matching.** The matcher never queries more than the predictor's candidate set. There is no
-   whole-catalog scan per frame (a code-review criterion and a unit-test assertion).
-4. **Correct optical correction.** On locked frames, the RMS residual is ≤ E arcmin (TBD) and the corrected pointing
+3. **Prediction correctness.**
+   - On real sessions with a verified optical solution, every true in-FOV nav star is in the candidate set
+     (100% recall) **in every candidate state**, including the recovery state under a deliberately wrong heading.
+   - Candidate counts per state are within targets (TBD BY DEVICE TEST).
+4. **Constrained matching.** The matcher never scans the whole catalog per frame. The fast path uses only the
+   predictor's cone-limited set, and the recovery path only the above-horizon nav set (a code-review criterion plus
+   a unit-test assertion).
+5. **Epoch and refraction truth.**
+   - Reference positions are propagated to the observation epoch (proper motion + precession), or high-PM stars are
+     explicitly excluded per a tested rule.
+   - The refraction policy is applied.
+   - Residual versus altitude on real sessions shows no systematic trend beyond E_alt (TBD BY ACCURACY BUDGET /
+     DEVICE TEST).
+6. **Correct optical correction.** On locked frames, the RMS residual is ≤ E arcmin (TBD) and the corrected pointing
    error vs the solved attitude is ≤ T° (TBD).
-5. **No silent false lock.** On a negative corpus (wrong time ±1 h, wrong location, mirrored frames, random noise,
+7. **No silent false lock.** On a negative corpus (wrong time ±1 h, wrong location, mirrored frames, random noise,
    urban frames without stars), there are zero LOCKED states. Ambiguous scenes stay in SEARCHING/CANDIDATE.
-6. **Lock survives normal hand motion.** On the recorded hand-held sequences, the lock is retained for ≥ P% (TBD) of
+8. **Recovery from a wrong heading.** With the magnetometer prior offset by a large error (TBD), the system still
+   reaches LOCKED within ≤ S₁ s (TBD) through the recovery path.
+9. **Lock survives normal hand motion.** On the recorded hand-held sequences, the lock is retained for ≥ P% (TBD) of
    frames.
-7. **Recovery.** After a cover/uncover or a cloud gap of D s, the system reaches LOCKED again within ≤ S s (TBD).
-8. **Navigation uses the corrected pose.** Phone guidance and the overlay consume `CorrectedPoseSource`. The legacy
-   56° projector is not on the star-mode path (code criterion).
-9. **Latency.** Frame-to-overlay latency ≤ L ms and pipeline rate ≥ F Hz on a Pixel 9 (TBD).
-10. **Phone/watch consistency.** The parity test passes. Phone- and watch-computed target alt/az agree within Q°
-    (TBD) for the same inputs. The watch shows the phone-sent target.
-11. **Diagnostics.** The §21 "add" list is present in the CAM JSON and sky log, including AF and focus distance.
-12. **Real-device evidence.** Every §23 matrix row has a committed validation record with session ids.
-13. **Astronomy truth.** The PTS-01 and PTS-03 reference tests pass.
+10. **Recovery after loss.** After a cover/uncover or a cloud gap of D s, the system reaches LOCKED again within
+    ≤ S s (TBD). A poisoned prior is cleared by periodic wide re-verification within ≤ V s (TBD).
+11. **Navigation uses the corrected pose.** Phone guidance and the overlay consume `CorrectedPoseSource`. The legacy
+    56° projector is not on the star-mode path (code criterion).
+12. **Latency.** Frame-to-overlay latency ≤ L ms and pipeline rate ≥ F Hz on a Pixel 9 (TBD).
+13. **Phone/watch consistency.** The parity test passes. Phone- and watch-computed target alt/az agree within Q°
+    (TBD) for the same inputs. The watch shows the requested target on every delivery path (PTS-19 a–d).
+14. **Diagnostics.** The §21 "add" list is present in the CAM JSON and sky log, including the per-frame Camera2
+    metadata and AF/focus distance.
+15. **Real-device evidence.** Every §23 matrix row has a committed validation record with session ids.
+16. **Astronomy truth.** The PTS-01 (convention-matched) and PTS-04/05 reference tests pass.
 
 ---
 
 ## 31. Open questions backed by repository evidence
 
-1. **Pixel 9 intrinsics.** Accept logical static intrinsics as approximate and solve scale optically (recommended),
-   or invest in physical binding (`setPhysicalCameraId`)? The recon predicts the matrix stays logical-basis under
-   physical binding (`docs/recon/cam_2c_sensor_to_buffer_domain_recon.md:134-155`, UNVERIFIED).
-2. **Analysis resolution.** What resolution and frame rate can the Pixel 9 sustain for detect + match? The repository
-   only knows the 640×480 default and the SKY-1 options (1280×720 default, 1920×1080).
-3. **AF behaviour at night.** What does CameraX's default AF actually do on the Pixel 9 in the dark? It is never
+1. **Pixel 9 per-frame physical identity.** Does the HAL report `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` for this
+   CameraX 1.4.2 Preview + ImageAnalysis configuration? Is it stable, does it switch in low light, and are focal
+   length and intrinsics dynamic with it? UNINVESTIGATED / UNVERIFIED ON PIXEL 9 (PTS-03).
+2. **Can capture results be matched to every analysis frame?** SKY-1's `SkyExposureJoin` matches by
+   `SENSOR_TIMESTAMP`, but it has never been run on a device (UNVERIFIED).
+3. **Strategy B feasibility.** The recon predicts the sensor-to-buffer matrix stays in the logical basis under
+   `setPhysicalCameraId` (`docs/recon/cam_2c_sensor_to_buffer_domain_recon.md:134-155`, UNVERIFIED).
+4. **CameraX 1.4.2 analysis resolution / stream configuration on the Pixel 9.** UNVERIFIED ON DEVICE. 640×480 is
+   1.3.4 evidence.
+5. **AF behaviour at night.** What does CameraX's default AF actually do on the Pixel 9 in the dark? It is never
    logged. Is manual focus supported (`LENS_INFO_MINIMUM_FOCUS_DISTANCE`, `MANUAL_SENSOR`)?
-4. **Does SKY-1's Camera2Interop on ImageAnalysis also govern the Preview stream?** UNVERIFIED (§10.1).
-5. **Watch catalog.** Should the watch adopt PTSKCAT0 (the unused 8,920-star asset), the nav set, or keep the PTSKCAT4
-   904-star file? Today it ships both and uses only the latter.
-6. **Wear `star.bin` provenance.** Which script and magnitude limit built it? UNKNOWN (§6.3).
-7. **Open PR #242** corrects the README's Pixel 9 claim in the wrong direction (§11.4). **PR #236** should be merged
-   or folded into PTS-10.
-8. **Release signing.** `Android Release Artifacts` bundle jobs are red on every main push. The previous recon
-   attributes this to the missing `storeFile`; the current run's cause is UNVERIFIED.
-9. **`fix-volatile-running.diff`.** Delete it? It no longer applies (§26).
-10. **Navigation-star selection rules.** Number of stars, isolation radius, inclusion of planets as optical
+6. **Does SKY-1's Camera2Interop on ImageAnalysis also govern the Preview stream's repeating request?** UNVERIFIED
+   (§10.1).
+7. **HYG `pmra` convention.** Does it already include cos δ (μα\*)? Must be verified against the HYG source
+   documentation before PTS-04.
+8. **Proper-motion exclusion threshold and refraction minimum altitude.** TBD BY ACCURACY BUDGET / DEVICE TEST. Both
+   depend on the plate scale (unknown until PTS-03/PTS-07) and the residual budget.
+9. **Candidate-set size targets per state.** TBD BY DEVICE TEST (§24).
+10. **Watch catalog.** Should the watch adopt PTSKCAT0 (the unused 8,920-star asset), the nav set, or keep the PTSKCAT4
+    904-star file? Today it ships both and uses only the latter.
+11. **Wear `star.bin` provenance.** Which script and magnitude limit built it? UNKNOWN (§6.3).
+12. **Watch Aim ordering on device.** Which of the §17.1 paths actually overwrite the target on a real watch, and does
+    the already-mounted case re-emit? UNVERIFIED ON DEVICE.
+13. **Open PRs.** The older README-only PR #242 corrects the README's Pixel 9 claim in the wrong direction (§11.4).
+    PR #236 should be merged or folded into PTS-12.
+14. **Release signing.** `Android Release Artifacts` bundle jobs are red on every main push. The previous recon
+    attributes this to the missing `storeFile`; the current run's cause is UNVERIFIED.
+15. **`fix-volatile-running.diff`.** Delete it? It no longer applies (§26).
+16. **Navigation-star selection rules.** Number of stars, isolation radius, inclusion of planets as optical
     references: product decision, no repository precedent.
-11. **Phone → watch optical correction.** Should a phone-derived correction be sent to the watch? The two devices
+17. **Phone → watch optical correction.** Should a phone-derived correction be sent to the watch? The two devices
     have different forward axes and independent magnetometers, so a phone yaw correction does not transfer to the
     watch frame without a shared reference. The repository has no precedent.
-12. **Does the watch `DefaultAimControllerTest` still pass?** It has been excluded for an unrecorded period
+18. **Does the watch `DefaultAimControllerTest` still pass?** It has been excluded for an unrecorded period
     (`wear/build.gradle.kts:132-148`).
 
 ---
@@ -1687,11 +2087,54 @@ Each criterion is measurable. Values without repository evidence are **TBD BY DE
 
 - **Repository and branches:** `git fetch origin '+refs/heads/*:refs/remotes/origin/*'` (248 refs); for history,
   `git log --remotes -S` for `CONTROL_AF_MODE` and `FocusMeteringAction`, and `--grep` for matcher terms.
-- **GitHub:** the API was used to list PRs (#236 and #242 open).
+- **GitHub:** the API was used to list PRs (#236 and the older README-only #242 open; this recon is PR #243).
 - **Assets:** Python `struct` parses of every catalog asset header (scratch scripts, not committed).
 - **Code:** call-site tracing with ripgrep for `detectStars`, `projectStars`, `StarMatcherInput`, `.nearby(`, AF and
   exposure keys, and data-layer paths.
 - **Ephemeris cross-check:** an independent Python Schlyter + Meeus Sun computation for 2025-01-01T00Z (§8.3).
 - **Gradle:** could not run in this container (no Android SDK, JDK 21 only, Maven 429, license plugin unresolved).
   Test status is taken from source counts, the 2026-09-02 recon and the GitHub Actions history.
+- **Platform references (revision 2).**
+  - Camera2 `CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` (API 29+):
+    https://developer.android.com/reference/android/hardware/camera2/CaptureResult#LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID
+  - CameraX `Camera2Interop.Extender.setSessionCaptureCallback`:
+    https://developer.android.com/reference/androidx/camera/camera2/interop/Camera2Interop.Extender
+  - The CameraX mechanism is also proven in-repo: SKY-1 calls `extender.setSessionCaptureCallback(captureCallback)`
+    (`mobile/src/internalDebug/.../SkyCaptureExposure.kt:259`) against CameraX 1.4.2.
+  - The reference pages were too large to read in full from this container. The Camera2 key's semantics are taken
+    from the platform API, and **its behaviour on the Pixel 9 is exactly what PTS-03 must measure**.
+  - HYG `pmra`/`pmdec` column presence is per the HYG catalogue documentation (astronexus/HYG-Database). The source
+    CSV is not committed, and the `pmra` cos δ convention is unverified (§6.2).
 - **No production code was changed.** The only file added is this document.
+
+---
+
+## Revision log
+
+**Revision 2 (2026-10-06)** is a documentation-only correction, made on the same branch and in the same PR (#243).
+
+| # | Correction | Sections |
+|---|---|---|
+| 1 | Separated *code snapshot audited* (`main @ 09b1654`) from *recon branch*, *recon branch HEAD* and *delta*. The branch is no longer described as identical to main. This PR (#243) is distinguished from the older README-only PR #242 | header, §2, Appendix A |
+| 2 | Re-opened per-frame active physical camera. Status changed from "no API" to **UNINVESTIGATED / UNVERIFIED ON PIXEL 9**. `ImageInfo` does not expose it, but Camera2 `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` via the session capture callback (already used by SKY-1) may. Added the PTS-03 probe. The A/B/C geometry choice is deferred until after it, with C (approximate logical + scale-tolerant solve) as fallback only | §1, §10.1, §10.3, §10.4, §11.3, §11.4, §21, §23, §25, §26, §27 G-01/G-03, §28.2, §29, §30, §31 |
+| 3 | Added a proper-motion gap and requirement. HYG `pmra`/`pmdec` are dropped by the packer. Propagate to the observation epoch in one pipeline with precession, or apply an explicit tested exclusion (threshold TBD BY ACCURACY BUDGET / DEVICE TEST). The `pmra` convention must be verified first | §1, §6.2, §7, §8.3 item 10, §25, §27 G-25, §28.1, §29 PTS-04, §30, §31 |
+| 4 | Added a refraction policy for optical matching: (A) apparent-altitude correction, or (B) minimum-altitude exclusion (threshold TBD). Residual-vs-altitude testing and device evidence are required | §1, §8.3 item 11, §23, §25, §27 G-26, §28.1, §29 PTS-05, §30 |
+| 5 | The sensor prior now fails open. A staged candidate policy (trusted / degraded / recovery / locked fast path / periodic wide re-verification) is defined. Candidate-size targets are stated per state, and O(10¹) is no longer promised everywhere | §7, §9.1, §24, §25, §27 G-04/G-08, §28, §29 PTS-10/PTS-12, §30 |
+| 6 | Corrected the Wear Aim overwrite description. It is path-dependent: `/app/open` maps to Polaris (index 4); `/aim/set_target` from Home maps to Sun (index 0); the already-mounted case differs; the phone sends both messages. Regression tests are specified per path | §1, §17.1, §17.3, §18, §23, §27 G-09, §29 PTS-19, §30 |
+| 7 | 640×480 is now recorded as Pixel 9 + CameraX **1.3.4** evidence. The 1.4.2 production resolution is UNVERIFIED ON DEVICE, and PTS-03 must record it | §1, §10.1, §10.4, §11.4, §23, §31 |
+| 8 | Removed premature constellation-graphics design (HIP-keyed figure model, great-circle subdivision, clipping, watch architecture). Kept only the justified seams, and marked Phase G **REQUIREMENTS PENDING** | §19, §27 G-21, §29 Phase G |
+| 9 | Ephemeris reference tests must match frame, apparent/geometric setting, observer and time-scale conventions to the model under test | §8.3, §27 G-06, §29 PTS-01 |
+| 10 | Architecture reordered into explicit truth layers: camera metadata → astronomy epoch/PM/precession/refraction → candidates with uncertainty → detector → matcher → attitude → tracker → corrected pose → navigation. Added a recovery invariant. The roadmap was renumbered (PTS-01…PTS-26) | §28, §29 |
+
+**Preserved unchanged (no contrary evidence):**
+- the ephemeris one-day epoch defect, and the absence of external ephemeris reference tests;
+- missing precession;
+- missing matcher, optical attitude solution and temporal optical tracker;
+- no navigation-star set;
+- no production luma/detector path; the detector is synthetic-only;
+- the linear PTSKCAT0 `nearby` query;
+- no recorded real night-sky dataset;
+- the Tonight tile location wiring defect;
+- the `OfflineStarResolver` asset mismatch;
+- `PhoneHeadingOverrideRepository` not updating `forward`;
+- the Identify body fallback without an angular cap.
