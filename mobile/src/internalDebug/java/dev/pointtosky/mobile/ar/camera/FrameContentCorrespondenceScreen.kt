@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -51,7 +52,7 @@ import java.io.File
 /**
  * CAM-2c frame-content correspondence experiment (`internalDebug`-only, task §7). Standalone screen —
  * same "own the whole camera session" reasoning as [PhysicalCameraBindingExperimentScreen] — optimized
- * for the Pixel 9 device workflow: physical camera 3 listed first, 640x480/1280x720 resolution buttons,
+ * for the Pixel 9 device workflow: declared physical cameras in sorted ID order, 640x480/1280x720 resolution buttons,
  * Freeze, Copy report, Share JSON, target-placement label, distance label, live detected-point count and
  * per-hypothesis RMS.
  *
@@ -88,6 +89,10 @@ private sealed interface ResolutionChoice {
     data class Fixed(val candidate: AnalysisResolutionCandidate) : ResolutionChoice
 }
 
+/** Every declared physical camera ID, deduplicated and in deterministic sorted order. */
+internal fun orderedPhysicalCameraCandidates(declaredIdsPerCamera: List<List<String>>): List<String> =
+    declaredIdsPerCamera.flatten().distinct().sorted()
+
 /** The logical back camera that declares [physicalCameraId] as a child, from the static topology. */
 internal fun logicalCameraIdDeclaring(
     topology: CameraTopologyReport,
@@ -107,12 +112,8 @@ internal fun FrameContentCorrespondenceScreen() {
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> hasCameraPermission = granted }
 
     val topology = remember { buildCameraTopologyReport(context, boundCameraInfo = null) }
-    // Task §7: physical camera 3 first, when declared; every other candidate follows in sorted order.
-    val candidates =
-        remember(topology) {
-            val declared = topology.entries.flatMap { it.declaredPhysicalCameraIds }.distinct().sorted()
-            declared.sortedBy { if (it == "3") 0 else 1 }
-        }
+    // Declared physical cameras, discovered from the topology and ordered generically; no ID is privileged.
+    val candidates = remember(topology) { orderedPhysicalCameraCandidates(topology.entries.map { it.declaredPhysicalCameraIds }) }
 
     var uiModel by remember { mutableStateOf(FrameContentCorrespondenceUiModel()) }
     var pendingCandidate by remember { mutableStateOf<String?>(null) }
@@ -206,6 +207,7 @@ internal const val TAG_PTS03_SAVE_JSON = "frame_content_experiment_pts03_save_js
 internal const val TAG_PTS03_SHARE_SUMMARY = "frame_content_experiment_pts03_share_summary"
 internal const val TAG_PTS03_STATUS = "frame_content_experiment_pts03_status"
 internal const val TAG_PTS03_SUMMARY = "frame_content_experiment_pts03_summary"
+internal const val TAG_PTS03_SAVE_NON_FINAL = "frame_content_experiment_pts03_save_non_final"
 
 @Composable
 private fun CandidatePicker(
@@ -345,6 +347,7 @@ internal fun FrameContentCorrespondenceSession(
 
     val context = LocalContext.current
     val isLogicalSession = state.sessionClass == Pts03SessionClass.LOGICAL_UNPINNED
+    val joinControl = remember(attemptId) { FrameContentJoinControl() }
     Box(modifier = Modifier.fillMaxSize()) {
         FrameContentCameraPreview(
             modifier = Modifier.fillMaxSize(),
@@ -379,10 +382,13 @@ internal fun FrameContentCorrespondenceSession(
                 onUpdateSession(attemptId) { it.reduceFrame(attemptId, frame, detection, capturedAtEpochMillisProvider(), captureResult) }
             },
             onJoinStatistics = { stats -> onUpdateSession(attemptId) { it.reducePts03JoinStatistics(attemptId, stats) } },
+            joinControl = joinControl,
+            onJoinFinalized = { stats -> onUpdateSession(attemptId) { it.reducePts03Finalized(attemptId, stats) } },
         )
         FrameContentExperimentLiveOverlay(
             state = state,
             onUpdateSession = onUpdateSession,
+            joinControl = joinControl,
         )
     }
 }
@@ -417,6 +423,7 @@ internal fun FrameContentCorrespondenceSession(
 internal fun FrameContentExperimentLiveOverlay(
     state: FrameContentExperimentSessionState,
     onUpdateSession: (Long, (FrameContentExperimentSessionState) -> FrameContentExperimentSessionState) -> Unit,
+    joinControl: FrameContentJoinControl? = null,
 ) {
     var frozenSnapshot by remember(state.attemptId) { mutableStateOf<FrameContentCorrespondenceSnapshot?>(null) }
     val isFrozen = frozenSnapshot != null
@@ -530,13 +537,23 @@ internal fun FrameContentExperimentLiveOverlay(
             }
 
             // PTS-03 evidence actions. "Add" appends exactly the displayed snapshot (frozen or live), which
-            // carries its own exact-joined CaptureResult. The saved file is the authoritative record.
+            // carries its own exact-joined CaptureResult and its own frame's lighting label (so changing the
+            // label below never relabels an already-frozen frame). "Finalize & save" stops the join, drains
+            // it into the pending-at-stop counts, freezes the statistics, then writes the authoritative file.
             Pts03LightingRow(
                 lighting = state.pts03.lighting,
                 enabled = true,
                 onLighting = { label -> onUpdateSession(state.attemptId) { it.reducePts03Lighting(state.attemptId, label) } },
             )
             var pts03Status by remember(state.attemptId) { mutableStateOf("") }
+            var finalSaveRequested by remember(state.attemptId) { mutableStateOf(false) }
+            // The authoritative save runs only once the finalized state (with frozen statistics) has arrived.
+            LaunchedEffect(state.attemptId, state.pts03.finalized, finalSaveRequested) {
+                if (finalSaveRequested && state.pts03.finalized) {
+                    pts03Status = savePts03CameraTruthJson(context, state.pts03)
+                    finalSaveRequested = false
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -550,9 +567,23 @@ internal fun FrameContentExperimentLiveOverlay(
                     modifier = Modifier.testTag(TAG_PTS03_ADD_EVIDENCE),
                 ) { Text("Add PTS-03 evidence (${state.pts03.evidenceCaptures.size})") }
                 Button(
-                    onClick = { pts03Status = savePts03CameraTruthJson(context, state.pts03) },
+                    onClick = {
+                        if (state.pts03.finalized) {
+                            pts03Status = savePts03CameraTruthJson(context, state.pts03)
+                        } else if (joinControl?.requestFinalize() == true) {
+                            finalSaveRequested = true
+                            pts03Status = "finalizing join…"
+                        } else {
+                            pts03Status = "finalize unavailable: no live bind for this attempt"
+                        }
+                    },
                     modifier = Modifier.testTag(TAG_PTS03_SAVE_JSON),
-                ) { Text("Save PTS-03 JSON") }
+                ) { Text(if (state.pts03.finalized) "Save final PTS-03 JSON" else "Finalize & save PTS-03 JSON") }
+                Button(
+                    onClick = { pts03Status = savePts03CameraTruthJson(context, state.pts03) },
+                    enabled = !state.pts03.finalized,
+                    modifier = Modifier.testTag(TAG_PTS03_SAVE_NON_FINAL),
+                ) { Text("Save non-final snapshot") }
                 Button(
                     onClick = {
                         shareCamDiagnosticText(
@@ -591,9 +622,10 @@ internal fun FrameContentExperimentLiveOverlay(
 }
 
 /**
- * Writes the full PTS-03 export (every retained raw frame record) to
- * `<external files dir>/pts03_sessions/<sessionId>.json` and returns a status line naming the path, for
- * `adb pull`. Never throws into the UI: a failure is reported in the returned line.
+ * Writes the full PTS-03 export (every retained raw frame record) and returns a status line naming the
+ * path, for `adb pull`. A finalized session is written to `<external files dir>/pts03_sessions/<sessionId>.json`
+ * (authoritative); a non-final one to `<sessionId>-nonfinal-<millis>.json`, so a live snapshot can never
+ * overwrite or be mistaken for the final file. Never throws into the UI.
  */
 internal fun savePts03CameraTruthJson(
     context: Context,
@@ -601,10 +633,9 @@ internal fun savePts03CameraTruthJson(
 ): String =
     try {
         val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, PTS03_SESSIONS_DIRECTORY).apply { mkdirs() }
-        val file = File(dir, "${session.sessionId}.json")
-        file.writeText(
-            buildPts03CameraTruthJson(session, pts03CurrentEnvironment(), System.currentTimeMillis(), includeAllRetainedFrameRecords = true),
-        )
+        val now = System.currentTimeMillis()
+        val file = File(dir, if (session.finalized) "${session.sessionId}.json" else "${session.sessionId}-nonfinal-$now.json")
+        file.writeText(buildPts03CameraTruthJson(session, pts03CurrentEnvironment(), now, includeAllRetainedFrameRecords = true))
         "saved ${file.absolutePath} (${file.length()} bytes)"
     } catch (e: java.io.IOException) {
         "save failed: ${e.javaClass.simpleName}: ${e.message}"

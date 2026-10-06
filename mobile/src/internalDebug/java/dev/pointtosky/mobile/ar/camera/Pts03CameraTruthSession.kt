@@ -12,8 +12,11 @@ import dev.pointtosky.core.astro.projection.camera.SensorToBufferMatrix3
  * Two session classes are kept apart and never merged:
  * - [Pts03SessionClass.LOGICAL_UNPINNED] (A1): the logical rear camera bound as production binds it — no
  *   physical pin, no zoom pin. This is the only class from which natural physical-camera switching can be read.
- * - [Pts03SessionClass.EXPLICIT_PHYSICAL] (A2): one declared child pinned with `setPhysicalCameraId`. Identity
- *   here is fixed by construction; the reported active ID can only *confirm* or *contradict* the pin.
+ * - [Pts03SessionClass.EXPLICIT_PHYSICAL] (A2): one declared child pinned with `setPhysicalCameraId`. The
+ *   analysed output is that physical camera's **by configuration**. The top-level logical active ID is a
+ *   diagnostic of the logical camera's backing sensor and never confirms or contradicts the pin; what A2
+ *   records is whether a timestamp-matched physical result exists for the requested ID. See
+ *   [attributePts03Frame].
  */
 internal enum class Pts03SessionClass {
     LOGICAL_UNPINNED,
@@ -33,6 +36,9 @@ internal const val PTS03_LOGICAL_UNPINNED_CANDIDATE: String = "LOGICAL_UNPINNED"
 
 /** Map key standing for "the result carried no `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`". */
 internal const val PTS03_ACTIVE_ID_NOT_REPORTED_KEY: String = "<not reported>"
+
+/** Map key standing for "the producing physical camera of this frame is unknown". */
+internal const val PTS03_PRODUCER_UNKNOWN_KEY: String = "<unknown producer>"
 
 /** CameraX's post-bind `ResolutionInfo` for one use case. */
 internal data class Pts03ResolutionInfo(
@@ -84,107 +90,145 @@ internal fun CameraFrameMetadata.toPts03AnalysisGeometry(): Pts03AnalysisGeometr
 
 internal fun SensorToBufferMatrix3.rowMajor(): List<Double> = listOf(m00, m01, m02, m10, m11, m12, m20, m21, m22)
 
-/** One matched frame: the `ImageProxy` geometry and the `CaptureResult` with the identical sensor timestamp. */
+/**
+ * One matched frame: the `ImageProxy` geometry, the `CaptureResult` with the identical sensor timestamp,
+ * and the camera attribution computed for exactly this frame.
+ */
 internal data class Pts03FrameTruthRecord(
     val frameIndex: Long,
     val sensorTimestampNanos: Long,
     val lighting: Pts03LightingLabel,
     val geometry: Pts03AnalysisGeometry,
     val captureResult: SkyCaptureResultSnapshot,
+    val attribution: Pts03FrameCameraAttribution,
 )
 
+/**
+ * A change of the top-level logical active physical ID between two **reported** values. Frames that do not
+ * report the ID are gaps, not identities, so they never start or end a transition. [frameIndex],
+ * [sensorTimestampNanos] and [lighting] belong to the first frame that reports [toActivePhysicalCameraId].
+ */
 internal data class Pts03PhysicalIdTransition(
     val frameIndex: Long,
     val sensorTimestampNanos: Long,
-    val fromActivePhysicalCameraId: String?,
-    val toActivePhysicalCameraId: String?,
+    val fromActivePhysicalCameraId: String,
+    val toActivePhysicalCameraId: String,
     val lighting: Pts03LightingLabel,
 )
 
 /**
  * Group A session summary, folded incrementally so it covers **every** matched frame even though only a
- * bounded window of raw records is retained. Keys use [PTS03_ACTIVE_ID_NOT_REPORTED_KEY] for frames whose
- * result carried no active physical ID.
+ * bounded window of raw records is retained.
+ *
+ * Two kinds of key are kept apart:
+ * - `*ByLogicalActivePhysicalId`: the top-level `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`
+ *   ([PTS03_ACTIVE_ID_NOT_REPORTED_KEY] when absent). The A1 identity observation; in A2 a diagnostic.
+ * - `*ByProducingPhysicalId`: dynamic metadata aggregated under the frame's attributed producing camera,
+ *   only from the attributed [Pts03FrameCameraAttribution.dynamicTruth] ([PTS03_PRODUCER_UNKNOWN_KEY] when
+ *   the producer is unknown). In A2 a frame without a usable physical result contributes nothing here.
  */
 internal data class Pts03IdentitySummary(
     val matchedFrameCount: Long = 0,
-    val framesByActivePhysicalId: Map<String, Long> = emptyMap(),
+    val framesByLogicalActivePhysicalId: Map<String, Long> = emptyMap(),
     val framesWithNullActivePhysicalId: Long = 0,
     val activePhysicalIdAvailabilityCounts: Map<Pts03KeyAvailability, Long> = emptyMap(),
-    val framesByLightingAndActivePhysicalId: Map<Pts03LightingLabel, Map<String, Long>> = emptyMap(),
+    val framesByLightingAndLogicalActivePhysicalId: Map<Pts03LightingLabel, Map<String, Long>> = emptyMap(),
     val transitionCount: Long = 0,
     /** The first [MAX_TRANSITIONS] transitions, in order. [transitionCount] counts all of them. */
     val transitions: List<Pts03PhysicalIdTransition> = emptyList(),
-    val focalLengthsMmByActivePhysicalId: Map<String, List<Float>> = emptyMap(),
-    val intrinsicsByActivePhysicalId: Map<String, List<List<Float>>> = emptyMap(),
-    val cropRegionsByActivePhysicalId: Map<String, List<Pts03IntRect>> = emptyMap(),
-    val zoomRatiosByActivePhysicalId: Map<String, List<Float>> = emptyMap(),
-    val effectiveDistortionModeCountsByActivePhysicalId: Map<String, Map<String, Long>> = emptyMap(),
-    val afStateCountsByActivePhysicalId: Map<String, Map<String, Long>> = emptyMap(),
-    val hasPrevious: Boolean = false,
-    val previousActivePhysicalCameraId: String? = null,
+    /** The last **reported** logical active ID; frames that do not report it leave this unchanged. */
+    val lastReportedActivePhysicalCameraId: String? = null,
+    val dynamicMetadataSourceCounts: Map<Pts03DynamicMetadataSource, Long> = emptyMap(),
+    /** A2: status of the requested ID's physical result per frame. Empty in A1. */
+    val physicalResultStatusCounts: Map<Pts03PhysicalResultStatus, Long> = emptyMap(),
+    /** Which physical IDs appeared in each frame's physical-result map (any session class). */
+    val framesByPhysicalResultCameraId: Map<String, Long> = emptyMap(),
+    val framesByProducingPhysicalId: Map<String, Long> = emptyMap(),
+    val focalLengthsMmByProducingPhysicalId: Map<String, List<Float>> = emptyMap(),
+    val intrinsicsByProducingPhysicalId: Map<String, List<List<Float>>> = emptyMap(),
+    val cropRegionsByProducingPhysicalId: Map<String, List<Pts03IntRect>> = emptyMap(),
+    val zoomRatiosByProducingPhysicalId: Map<String, List<Float>> = emptyMap(),
+    val activePhysicalSensorCropRegionsByProducingPhysicalId: Map<String, List<Pts03IntRect>> = emptyMap(),
+    val effectiveDistortionModeCountsByProducingPhysicalId: Map<String, Map<String, Long>> = emptyMap(),
+    val afStateCountsByProducingPhysicalId: Map<String, Map<String, Long>> = emptyMap(),
 ) {
     fun plus(record: Pts03FrameTruthRecord): Pts03IdentitySummary {
-        val truth = record.captureResult.cameraTruth
-        val id = truth.activePhysicalCameraId
-        val key = id ?: PTS03_ACTIVE_ID_NOT_REPORTED_KEY
-        val isTransition = hasPrevious && previousActivePhysicalCameraId != id
+        val logical = record.captureResult.logicalTruth
+        val id = logical.activePhysicalCameraId
+        val logicalKey = id ?: PTS03_ACTIVE_ID_NOT_REPORTED_KEY
+        val previous = lastReportedActivePhysicalCameraId
         val transition =
-            Pts03PhysicalIdTransition(
-                record.frameIndex,
-                record.sensorTimestampNanos,
-                previousActivePhysicalCameraId,
-                id,
-                record.lighting,
+            if (id != null && previous != null && id != previous) {
+                Pts03PhysicalIdTransition(record.frameIndex, record.sensorTimestampNanos, previous, id, record.lighting)
+            } else {
+                null
+            }
+
+        val attribution = record.attribution
+        val producerKey = attribution.producingPhysicalCameraId ?: PTS03_PRODUCER_UNKNOWN_KEY
+        val dynamic = attribution.dynamicTruth
+        var next =
+            copy(
+                matchedFrameCount = matchedFrameCount + 1,
+                framesByLogicalActivePhysicalId = framesByLogicalActivePhysicalId.increment(logicalKey),
+                framesWithNullActivePhysicalId = framesWithNullActivePhysicalId + if (id == null) 1 else 0,
+                activePhysicalIdAvailabilityCounts =
+                    activePhysicalIdAvailabilityCounts.increment(logical.activePhysicalCameraIdAvailability),
+                framesByLightingAndLogicalActivePhysicalId =
+                    framesByLightingAndLogicalActivePhysicalId +
+                        (
+                            record.lighting to
+                                (framesByLightingAndLogicalActivePhysicalId[record.lighting] ?: emptyMap())
+                                    .increment(logicalKey)
+                        ),
+                transitionCount = transitionCount + if (transition != null) 1 else 0,
+                transitions =
+                    if (transition != null &&
+                        transitions.size < MAX_TRANSITIONS
+                    ) {
+                        transitions + transition
+                    } else {
+                        transitions
+                    },
+                lastReportedActivePhysicalCameraId = id ?: previous,
+                dynamicMetadataSourceCounts = dynamicMetadataSourceCounts.increment(attribution.dynamicMetadataSource),
+                physicalResultStatusCounts =
+                    attribution.physicalResultStatus?.let { physicalResultStatusCounts.increment(it) }
+                        ?: physicalResultStatusCounts,
+                framesByPhysicalResultCameraId =
+                    record.captureResult.physicalResultsByCameraId.keys
+                        .fold(framesByPhysicalResultCameraId) { acc, k -> acc.increment(k) },
+                framesByProducingPhysicalId = framesByProducingPhysicalId.increment(producerKey),
             )
-        return copy(
-            matchedFrameCount = matchedFrameCount + 1,
-            framesByActivePhysicalId = framesByActivePhysicalId.increment(key),
-            framesWithNullActivePhysicalId = framesWithNullActivePhysicalId + if (id == null) 1 else 0,
-            activePhysicalIdAvailabilityCounts =
-                activePhysicalIdAvailabilityCounts.increment(
-                    truth.activePhysicalCameraIdAvailability,
+        if (dynamic != null) {
+            next =
+                next.copy(
+                    focalLengthsMmByProducingPhysicalId =
+                        focalLengthsMmByProducingPhysicalId.addDistinct(producerKey, dynamic.lensFocalLengthMm),
+                    intrinsicsByProducingPhysicalId =
+                        intrinsicsByProducingPhysicalId.addDistinct(producerKey, dynamic.lensIntrinsicCalibration),
+                    cropRegionsByProducingPhysicalId =
+                        cropRegionsByProducingPhysicalId.addDistinct(producerKey, dynamic.scalerCropRegion),
+                    zoomRatiosByProducingPhysicalId =
+                        zoomRatiosByProducingPhysicalId.addDistinct(producerKey, dynamic.controlZoomRatio),
+                    activePhysicalSensorCropRegionsByProducingPhysicalId =
+                        activePhysicalSensorCropRegionsByProducingPhysicalId.addDistinct(
+                            producerKey,
+                            dynamic.activePhysicalSensorCropRegion,
+                        ),
+                    afStateCountsByProducingPhysicalId =
+                        afStateCountsByProducingPhysicalId.incrementNested(
+                            producerKey,
+                            dynamic.controlAfState?.name ?: "NOT_REPORTED",
+                        ),
+                )
+        }
+        return next.copy(
+            effectiveDistortionModeCountsByProducingPhysicalId =
+                effectiveDistortionModeCountsByProducingPhysicalId.incrementNested(
+                    producerKey,
+                    attribution.effectiveDistortionMode().label,
                 ),
-            framesByLightingAndActivePhysicalId =
-                framesByLightingAndActivePhysicalId +
-                    (
-                        record.lighting to
-                            (framesByLightingAndActivePhysicalId[record.lighting] ?: emptyMap()).increment(key)
-                    ),
-            transitionCount = transitionCount + if (isTransition) 1 else 0,
-            transitions =
-                if (isTransition &&
-                    transitions.size < MAX_TRANSITIONS
-                ) {
-                    transitions + transition
-                } else {
-                    transitions
-                },
-            focalLengthsMmByActivePhysicalId =
-                focalLengthsMmByActivePhysicalId.addDistinct(
-                    key,
-                    truth.lensFocalLengthMm,
-                ),
-            intrinsicsByActivePhysicalId =
-                intrinsicsByActivePhysicalId.addDistinct(
-                    key,
-                    truth.lensIntrinsicCalibration,
-                ),
-            cropRegionsByActivePhysicalId =
-                cropRegionsByActivePhysicalId.addDistinct(
-                    key,
-                    truth.scalerCropRegion,
-                ),
-            zoomRatiosByActivePhysicalId = zoomRatiosByActivePhysicalId.addDistinct(key, truth.controlZoomRatio),
-            effectiveDistortionModeCountsByActivePhysicalId =
-                effectiveDistortionModeCountsByActivePhysicalId.incrementNested(
-                    key,
-                    truth.effectiveDistortionMode().label,
-                ),
-            afStateCountsByActivePhysicalId =
-                afStateCountsByActivePhysicalId.incrementNested(key, truth.controlAfState?.name ?: "NOT_REPORTED"),
-            hasPrevious = true,
-            previousActivePhysicalCameraId = id,
         )
     }
 
@@ -213,54 +257,66 @@ private fun <V : Any> Map<String, List<V>>.addDistinct(
     return this + (key to existing + value)
 }
 
-/** For an explicit-physical session: does the reported active ID confirm the pin? */
-internal enum class Pts03ExplicitIdentityConfirmation {
+/**
+ * A2 session-level physical-result status for the requested ID. Deliberately says nothing about the
+ * top-level logical active ID, which cannot confirm or contradict a physical-camera-specific output.
+ */
+internal enum class Pts03ExplicitPhysicalResultStatus {
     NOT_APPLICABLE_LOGICAL_SESSION,
     NO_MATCHED_FRAMES,
-    ACTIVE_PHYSICAL_ID_NOT_REPORTED,
-    CONTRADICTED_BY_ACTIVE_PHYSICAL_ID,
-    PARTIALLY_CONFIRMED_SOME_FRAMES_UNREPORTED,
-    CONFIRMED_BY_ACTIVE_PHYSICAL_ID,
+
+    /** Every matched frame had a timestamp-matched physical result for the requested ID. */
+    PHYSICAL_RESULT_PRESENT,
+
+    /** Some frames had one, others did not (any other status). */
+    PHYSICAL_RESULT_PARTIALLY_PRESENT,
+
+    /** No frame had a physical result entry for the requested ID. */
+    PHYSICAL_RESULT_NOT_REPORTED,
+
+    /** Entries existed but none had a matching `SENSOR_TIMESTAMP` (mismatched or missing). */
+    PHYSICAL_RESULT_TIMESTAMP_MISMATCH,
 }
 
-internal fun confirmPts03ExplicitIdentity(
+internal fun summarizePts03ExplicitPhysicalResults(
     sessionClass: Pts03SessionClass,
     requestedPhysicalCameraId: String?,
     summary: Pts03IdentitySummary,
-): Pts03ExplicitIdentityConfirmation {
+): Pts03ExplicitPhysicalResultStatus {
     if (sessionClass == Pts03SessionClass.LOGICAL_UNPINNED || requestedPhysicalCameraId == null) {
-        return Pts03ExplicitIdentityConfirmation.NOT_APPLICABLE_LOGICAL_SESSION
+        return Pts03ExplicitPhysicalResultStatus.NOT_APPLICABLE_LOGICAL_SESSION
     }
-    if (summary.matchedFrameCount == 0L) return Pts03ExplicitIdentityConfirmation.NO_MATCHED_FRAMES
-    val reported = summary.framesByActivePhysicalId.keys - PTS03_ACTIVE_ID_NOT_REPORTED_KEY
+    if (summary.matchedFrameCount == 0L) return Pts03ExplicitPhysicalResultStatus.NO_MATCHED_FRAMES
+    val counts = summary.physicalResultStatusCounts
+    val matched = counts[Pts03PhysicalResultStatus.PRESENT_TIMESTAMP_MATCHED] ?: 0L
+    val notReported = counts[Pts03PhysicalResultStatus.NOT_REPORTED] ?: 0L
     return when {
-        reported.isEmpty() -> Pts03ExplicitIdentityConfirmation.ACTIVE_PHYSICAL_ID_NOT_REPORTED
-        reported.any {
-            it != requestedPhysicalCameraId
-        } -> Pts03ExplicitIdentityConfirmation.CONTRADICTED_BY_ACTIVE_PHYSICAL_ID
-        summary.framesWithNullActivePhysicalId > 0 ->
-            Pts03ExplicitIdentityConfirmation.PARTIALLY_CONFIRMED_SOME_FRAMES_UNREPORTED
-        else -> Pts03ExplicitIdentityConfirmation.CONFIRMED_BY_ACTIVE_PHYSICAL_ID
+        matched == summary.matchedFrameCount -> Pts03ExplicitPhysicalResultStatus.PHYSICAL_RESULT_PRESENT
+        matched > 0L -> Pts03ExplicitPhysicalResultStatus.PHYSICAL_RESULT_PARTIALLY_PRESENT
+        notReported == summary.matchedFrameCount -> Pts03ExplicitPhysicalResultStatus.PHYSICAL_RESULT_NOT_REPORTED
+        else -> Pts03ExplicitPhysicalResultStatus.PHYSICAL_RESULT_TIMESTAMP_MISMATCH
     }
 }
 
 /**
  * One operator-captured printed-target placement: the frozen frame-content snapshot (which carries its own
- * exact-joined `CaptureResult`), the Group B evidence computed from that same frame, and the residual
- * points Group C measures. Nothing here is recomputed from a later frame.
+ * exact-joined `CaptureResult` and the lighting label of its own frame), the camera attribution of that
+ * frame, the Group B evidence computed from it, and the residual points Group C measures. Nothing here is
+ * recomputed from a later frame or read from mutable session state.
  */
 internal data class Pts03TargetEvidenceCapture(
     val captureIndex: Int,
+    /** Always [FrameContentCorrespondenceSnapshot.lightingAtCapture] — never the session's current label. */
     val lighting: Pts03LightingLabel,
     val requestedDistortionMode: Pts03DistortionModeRequest,
     val snapshot: FrameContentCorrespondenceSnapshot,
+    val attribution: Pts03FrameCameraAttribution,
     val domainEvidence: Pts03ProjectionDomainEvidence,
     val residualPoints: List<Pts03TargetResidualPoint>,
 ) {
+    /** The analysed stream's mode from the attributed dynamic metadata; never the logical mode in A2. */
     val effectiveDistortionMode: Pts03EffectiveDistortionMode
-        get() =
-            snapshot.captureResult?.cameraTruth?.effectiveDistortionMode()
-                ?: Pts03EffectiveDistortionMode.NotReported
+        get() = attribution.effectiveDistortionMode()
 }
 
 /**
@@ -304,6 +360,11 @@ internal data class Pts03TruthSessionState(
     val streamConfiguration: Pts03StreamConfiguration? = null,
     val identity: Pts03IdentitySummary = Pts03IdentitySummary(),
     val joinStatistics: SkyJoinStatistics = SkyJoinStatistics.EMPTY,
+    /**
+     * `true` once the join was finalized (offers stopped, pending entries drained into the pending-at-stop
+     * counts, statistics frozen). After that the statistics and frame records never change again.
+     */
+    val finalized: Boolean = false,
     val analysisGeometryCounts: Map<Pts03AnalysisGeometry, Long> = emptyMap(),
     /** The first [MAX_HEAD_RECORDS] matched frames, kept so the session's start is always inspectable. */
     val headRecords: List<Pts03FrameTruthRecord> = emptyList(),
@@ -331,15 +392,20 @@ internal fun pts03SessionId(
     requestedPhysicalCameraId: String?,
 ): String =
     "pts03-$startedAtEpochMillis-a$attemptId-" +
-        (
-            if (sessionClass ==
-                Pts03SessionClass.LOGICAL_UNPINNED
-            ) {
-                "logical"
-            } else {
-                "phys${requestedPhysicalCameraId ?: "unknown"}"
-            }
-        )
+        if (sessionClass ==
+            Pts03SessionClass.LOGICAL_UNPINNED
+        ) {
+            "logical"
+        } else {
+            "phys${requestedPhysicalCameraId ?: "unknown"}"
+        }
+
+/** Attributes one exact-joined frame of this session. */
+internal fun Pts03TruthSessionState.attribute(
+    frameSensorTimestampNanos: Long,
+    captureResult: SkyCaptureResultSnapshot,
+): Pts03FrameCameraAttribution =
+    attributePts03Frame(sessionClass, requestedPhysicalCameraId, frameSensorTimestampNanos, captureResult)
 
 internal fun Pts03TruthSessionState.withMatchedFrame(
     frame: CameraFrameMetadata,
@@ -349,6 +415,7 @@ internal fun Pts03TruthSessionState.withMatchedFrame(
         "a PTS-03 frame record requires the exact SENSOR_TIMESTAMP join; " +
             "frame=${frame.timestampNanos} result=${captureResult.sensorTimestampNanos}"
     }
+    if (finalized) return this
     val geometry = frame.toPts03AnalysisGeometry()
     val record =
         Pts03FrameTruthRecord(
@@ -357,6 +424,7 @@ internal fun Pts03TruthSessionState.withMatchedFrame(
             lighting = lighting,
             geometry = geometry,
             captureResult = captureResult,
+            attribution = attribute(frame.timestampNanos, captureResult),
         )
     val (head, tail) =
         if (headRecords.size < Pts03TruthSessionState.MAX_HEAD_RECORDS) {
@@ -380,22 +448,39 @@ internal fun Pts03TruthSessionState.withMatchedFrame(
 
 private const val MAX_DISTINCT_GEOMETRIES = 32
 
+/** Live (non-final) statistics; ignored once [Pts03TruthSessionState.finalized]. */
+internal fun Pts03TruthSessionState.withJoinStatistics(statistics: SkyJoinStatistics): Pts03TruthSessionState =
+    if (finalized) this else copy(joinStatistics = statistics)
+
 /**
- * Appends one evidence capture built entirely from [snapshot] (which carries its own joined result).
- * A snapshot with no joined `CaptureResult` is refused: its distortion mode and active ID would be unknown.
+ * Freezes the final join statistics (already drained by [SkyExposureJoin.finalizeJoin]). Idempotent: a
+ * second finalize keeps the first statistics, so pending entries are never counted twice.
+ */
+internal fun Pts03TruthSessionState.finalizedWith(finalStatistics: SkyJoinStatistics): Pts03TruthSessionState =
+    if (finalized) this else copy(joinStatistics = finalStatistics, finalized = true)
+
+/**
+ * Appends one evidence capture built entirely from [snapshot] (which carries its own joined result and its
+ * own frame's lighting label). A snapshot with no joined `CaptureResult` is refused: its camera
+ * attribution would be unknown.
+ *
+ * Static characteristics are selected by the attributed **producing** camera (A2: the requested ID; A1:
+ * the reported logical active ID). Dynamic metadata comes only from the attribution; when it is
+ * unresolved the Group C mode is [Pts03EffectiveDistortionMode.PhysicalResultUnavailable].
  */
 internal fun Pts03TruthSessionState.withEvidenceCapture(
     snapshot: FrameContentCorrespondenceSnapshot,
 ): Pts03TruthSessionState {
-    if (snapshot.captureResult == null ||
-        evidenceCaptures.size >= Pts03TruthSessionState.MAX_EVIDENCE_CAPTURES
-    ) {
-        return this
-    }
-    val activeId = snapshot.captureResult.cameraTruth.activePhysicalCameraId
+    val captureResult = snapshot.captureResult
+    if (captureResult == null || evidenceCaptures.size >= Pts03TruthSessionState.MAX_EVIDENCE_CAPTURES) return this
+    val frameTimestamp = captureResult.sensorTimestampNanos ?: return this
+    val attribution = attribute(frameTimestamp, captureResult)
+    val producing = attribution.producingPhysicalCameraId
     val physical =
-        characteristics?.forCameraId(snapshot.provenance.physicalCameraId)?.snapshot
-            ?: snapshot.selectedPhysicalCharacteristics
+        producing?.let { id ->
+            characteristics?.forCameraId(id)?.snapshot
+                ?: snapshot.selectedPhysicalCharacteristics.takeIf { it.cameraId == id }
+        }
     val domain =
         buildPts03ProjectionDomainEvidence(
             matrix = snapshot.sensorToBufferTransformMatrix,
@@ -403,29 +488,36 @@ internal fun Pts03TruthSessionState.withEvidenceCapture(
             bufferHeightPx = snapshot.bufferHeightPx,
             logical = characteristics?.logical?.snapshot ?: snapshot.openedLogicalCharacteristics,
             physical = physical,
-            activePhysicalCameraId = activeId,
+            producingPhysicalCameraId = producing,
+            logicalActivePhysicalCameraId = attribution.logicalActivePhysicalCameraId,
             requestedPhysicalCameraId = requestedPhysicalCameraId,
             frameContentVerdict = snapshot.verdict.verdict,
         )
     val capture =
         Pts03TargetEvidenceCapture(
             captureIndex = evidenceCaptures.size,
-            lighting = lighting,
+            lighting = snapshot.lightingAtCapture,
             requestedDistortionMode = requestedDistortionMode,
             snapshot = snapshot,
+            attribution = attribution,
             domainEvidence = domain,
             residualPoints = pts03ResidualPointsOf(snapshot),
         )
     return copy(evidenceCaptures = evidenceCaptures + capture)
 }
 
-/** Group C residual measurements per (producing camera, effective mode), across every evidence capture. */
+/**
+ * Group C residual measurements per (producing camera, effective mode), across every evidence capture.
+ * Captures whose producing camera is unknown are grouped under [PTS03_PRODUCER_UNKNOWN_KEY].
+ */
 internal fun Pts03TruthSessionState.distortionChains(
     thresholds: Pts03ResidualDistortionThresholds = Pts03ResidualDistortionThresholds(),
 ): List<Pts03DistortionChain> =
     evidenceCaptures
-        .groupBy { (it.snapshot.provenance.physicalCameraId) to it.effectiveDistortionMode.label }
-        .toSortedMap(compareBy({ it.first }, { it.second }))
+        .groupBy {
+            (it.attribution.producingPhysicalCameraId ?: PTS03_PRODUCER_UNKNOWN_KEY) to
+                it.effectiveDistortionMode.label
+        }.toSortedMap(compareBy({ it.first }, { it.second }))
         .map { (key, captures) ->
             val outcomes = captures.map { it.domainEvidence.outcome }.distinct()
             buildPts03DistortionChain(

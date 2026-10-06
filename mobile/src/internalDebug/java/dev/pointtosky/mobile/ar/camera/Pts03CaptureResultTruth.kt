@@ -2,8 +2,11 @@ package dev.pointtosky.mobile.ar.camera
 
 import android.graphics.Rect
 import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.os.Build
 import dev.pointtosky.core.astro.projection.camera.skylog.SkyExposureSample
+import java.util.Collections
+import java.util.TreeMap
 
 /**
  * PTS-03 (`internalDebug`-only): the per-`CaptureResult` camera-truth metadata the Pixel 9 experiment
@@ -23,6 +26,16 @@ import dev.pointtosky.core.astro.projection.camera.skylog.SkyExposureSample
  * - [Pts03CaptureResultReader] answers "what plain value did the result carry for this
  *   [Pts03CaptureResultField]?" — the only Android-facing part ([Camera2CaptureResultReader]);
  * - [pts03CaptureTruthOf] is pure: API gating, enum naming, immutable copies, null semantics.
+ *
+ * ## Logical top-level result vs physical results
+ * A `TotalCaptureResult` carries two kinds of metadata, and they are kept apart, never merged:
+ * - the **top-level (logical) result** — the logical camera's own metadata. Its
+ *   `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` names the physical sensor backing the logical camera's
+ *   non-physical-specific streams; it does **not** describe a physical-camera-specific output;
+ * - the **per-physical-camera results** (`getPhysicalCameraTotalResults()` on API 31+,
+ *   `getPhysicalCameraResults()` on API 28–30), present when the request targets physical-camera
+ *   surfaces (e.g. a `CameraSelector.setPhysicalCameraId` bind). Each carries its own `SENSOR_TIMESTAMP`,
+ *   which is recorded and checked against the frame, never assumed equal.
  *
  * ## Null means "not reported"
  * Every optional Camera2 key may be absent on some HAL. `null` is never a stand-in for zero or for a
@@ -51,6 +64,9 @@ internal enum class Pts03CaptureResultField(
     HOT_PIXEL_MODE(21),
     NOISE_REDUCTION_MODE(21),
     EDGE_MODE(21),
+
+    /** Optional diagnostic: crop of the currently active physical sensor for logical-camera operation. */
+    LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_SENSOR_CROP_REGION(35),
 }
 
 /**
@@ -124,25 +140,127 @@ internal data class Pts03CaptureTruth(
     val hotPixelMode: Pts03EnumValue?,
     val noiseReductionMode: Pts03EnumValue?,
     val edgeMode: Pts03EnumValue?,
+    /**
+     * API 35+ `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_SENSOR_CROP_REGION`, in the active physical sensor's
+     * coordinates. Diagnostic only, recorded independently of [scalerCropRegion] and [controlZoomRatio];
+     * nothing depends on it.
+     */
+    val activePhysicalSensorCropRegion: Pts03IntRect? = null,
+    val activePhysicalSensorCropRegionAvailability: Pts03KeyAvailability = Pts03KeyAvailability.NOT_REPORTED,
 )
 
 /**
- * One `CaptureResult` → one immutable snapshot: SKY-1's [exposure] contract unchanged, plus the
- * PTS-03 [cameraTruth]. [sensorTimestampNanos] is the single join key [SkyExposureJoin] uses.
+ * One per-physical-camera entry of a `TotalCaptureResult`, extracted from that entry's own result object:
+ * its exposure fields and its PTS-03 fields. [truth]'s `sensorTimestampNanos` is the entry's own
+ * `SENSOR_TIMESTAMP` (possibly `null`), never copied from the top-level result.
+ */
+internal data class Pts03PhysicalCaptureResult(
+    val physicalCameraId: String,
+    val exposure: SkyExposureSample,
+    val truth: Pts03CaptureTruth,
+)
+
+/** How a physical result entry relates to the frame it is being considered for. */
+internal enum class Pts03PhysicalResultStatus {
+    /** Entry present and its own `SENSOR_TIMESTAMP` equals the joined frame's timestamp: usable as frame truth. */
+    PRESENT_TIMESTAMP_MATCHED,
+
+    /** Entry present but its `SENSOR_TIMESTAMP` differs from the frame's: never used as this frame's truth. */
+    TIMESTAMP_MISMATCH,
+
+    /** Entry present but carries no `SENSOR_TIMESTAMP`: cannot be attributed, never used as frame truth. */
+    TIMESTAMP_MISSING,
+
+    /** No entry for this physical camera ID in the `TotalCaptureResult`. */
+    NOT_REPORTED,
+}
+
+/** The physical result for one ID and one frame, and whether it may be used as that frame's truth. */
+internal data class Pts03PhysicalResultLookup(
+    val physicalCameraId: String,
+    val status: Pts03PhysicalResultStatus,
+    /** Non-null only for [Pts03PhysicalResultStatus.PRESENT_TIMESTAMP_MATCHED]. */
+    val usable: Pts03PhysicalCaptureResult?,
+    /** The entry's own timestamp when present (also for a mismatch), for the evidence record. */
+    val entrySensorTimestampNanos: Long?,
+)
+
+/**
+ * One `TotalCaptureResult` → one immutable snapshot:
+ * - [exposure]: SKY-1's contract, unchanged (top-level result);
+ * - [logicalTruth]: the top-level (logical) result's PTS-03 fields;
+ * - [physicalResultsByCameraId]: every per-physical-camera entry, keyed and iterated in sorted ID order.
+ *
+ * [sensorTimestampNanos] — the top-level `SENSOR_TIMESTAMP` — is the single join key [SkyExposureJoin]
+ * uses. Physical entries are never used to join; their own timestamps are checked per frame by
+ * [physicalResultFor].
+ *
+ * Build through [skyCaptureResultSnapshot], which copies the physical map into an unmodifiable sorted map.
  */
 internal data class SkyCaptureResultSnapshot(
     val exposure: SkyExposureSample,
-    val cameraTruth: Pts03CaptureTruth,
+    val logicalTruth: Pts03CaptureTruth,
+    val physicalResultsByCameraId: Map<String, Pts03PhysicalCaptureResult> = emptyMap(),
 ) {
     init {
-        require(exposure.sensorTimestampNanos == cameraTruth.sensorTimestampNanos) {
-            "exposure and cameraTruth must come from the same CaptureResult; timestamps " +
-                "${exposure.sensorTimestampNanos} != ${cameraTruth.sensorTimestampNanos}"
+        require(exposure.sensorTimestampNanos == logicalTruth.sensorTimestampNanos) {
+            "exposure and logicalTruth must come from the same top-level CaptureResult; timestamps " +
+                "${exposure.sensorTimestampNanos} != ${logicalTruth.sensorTimestampNanos}"
+        }
+        require(physicalResultsByCameraId.all { (id, entry) -> id == entry.physicalCameraId }) {
+            "physical result map keys must equal each entry's physicalCameraId"
+        }
+        require(physicalResultsByCameraId.keys.toList() == physicalResultsByCameraId.keys.sorted()) {
+            "physical result map must iterate in sorted ID order"
         }
     }
 
     val sensorTimestampNanos: Long? get() = exposure.sensorTimestampNanos
+
+    /**
+     * The physical result for [physicalCameraId], usable only when its own `SENSOR_TIMESTAMP` equals
+     * [frameTimestampNanos] exactly. No nearest-timestamp fallback of any kind.
+     */
+    fun physicalResultFor(
+        physicalCameraId: String,
+        frameTimestampNanos: Long,
+    ): Pts03PhysicalResultLookup {
+        val entry =
+            physicalResultsByCameraId[physicalCameraId]
+                ?: return Pts03PhysicalResultLookup(
+                    physicalCameraId,
+                    Pts03PhysicalResultStatus.NOT_REPORTED,
+                    null,
+                    null,
+                )
+        val entryTimestamp = entry.truth.sensorTimestampNanos
+        val status =
+            when (entryTimestamp) {
+                null -> Pts03PhysicalResultStatus.TIMESTAMP_MISSING
+                frameTimestampNanos -> Pts03PhysicalResultStatus.PRESENT_TIMESTAMP_MATCHED
+                else -> Pts03PhysicalResultStatus.TIMESTAMP_MISMATCH
+            }
+        return Pts03PhysicalResultLookup(
+            physicalCameraId = physicalCameraId,
+            status = status,
+            usable = entry.takeIf { status == Pts03PhysicalResultStatus.PRESENT_TIMESTAMP_MATCHED },
+            entrySensorTimestampNanos = entryTimestamp,
+        )
+    }
 }
+
+/** Builds a snapshot, copying [physicalResults] into an unmodifiable, ID-sorted map. */
+internal fun skyCaptureResultSnapshot(
+    exposure: SkyExposureSample,
+    logicalTruth: Pts03CaptureTruth,
+    physicalResults: Collection<Pts03PhysicalCaptureResult> = emptyList(),
+): SkyCaptureResultSnapshot =
+    SkyCaptureResultSnapshot(
+        exposure = exposure,
+        logicalTruth = logicalTruth,
+        physicalResultsByCameraId =
+            Collections.unmodifiableMap(TreeMap(physicalResults.associateBy { it.physicalCameraId })),
+    )
 
 /**
  * Builds the PTS-03 half of one result. Pure: [reader] supplies plain values and [sdkInt] decides which
@@ -184,6 +302,8 @@ internal fun pts03CaptureTruthOf(
     val physicalId = (raw(Pts03CaptureResultField.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID) as? String)
     val distortionMode = enumOf(Pts03CaptureResultField.DISTORTION_CORRECTION_MODE, PTS03_DISTORTION_MODE_NAMES)
     val zoomRatio = raw(Pts03CaptureResultField.CONTROL_ZOOM_RATIO) as? Float
+    val activeSensorCrop =
+        (raw(Pts03CaptureResultField.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_SENSOR_CROP_REGION) as? Pts03IntRect)?.copy()
 
     return Pts03CaptureTruth(
         sensorTimestampNanos = raw(Pts03CaptureResultField.SENSOR_TIMESTAMP) as? Long,
@@ -209,6 +329,12 @@ internal fun pts03CaptureTruthOf(
         hotPixelMode = enumOf(Pts03CaptureResultField.HOT_PIXEL_MODE, PTS03_HOT_PIXEL_MODE_NAMES),
         noiseReductionMode = enumOf(Pts03CaptureResultField.NOISE_REDUCTION_MODE, PTS03_NOISE_REDUCTION_MODE_NAMES),
         edgeMode = enumOf(Pts03CaptureResultField.EDGE_MODE, PTS03_EDGE_MODE_NAMES),
+        activePhysicalSensorCropRegion = activeSensorCrop,
+        activePhysicalSensorCropRegionAvailability =
+            availability(
+                Pts03CaptureResultField.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_SENSOR_CROP_REGION,
+                activeSensorCrop,
+            ),
     )
 }
 
@@ -292,19 +418,71 @@ internal class Camera2CaptureResultReader(
             Pts03CaptureResultField.HOT_PIXEL_MODE -> result.get(CaptureResult.HOT_PIXEL_MODE)
             Pts03CaptureResultField.NOISE_REDUCTION_MODE -> result.get(CaptureResult.NOISE_REDUCTION_MODE)
             Pts03CaptureResultField.EDGE_MODE -> result.get(CaptureResult.EDGE_MODE)
+            Pts03CaptureResultField.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_SENSOR_CROP_REGION ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    result.get(CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_SENSOR_CROP_REGION)?.toPts03IntRect()
+                } else {
+                    null
+                }
         }
 }
 
 internal fun Rect.toPts03IntRect(): Pts03IntRect = Pts03IntRect(left, top, right, bottom)
 
+/** Extracts one physical entry from its own result object (pure apart from the reader). */
+internal fun pts03PhysicalCaptureResultOf(
+    physicalCameraId: String,
+    exposure: SkyExposureSample,
+    reader: Pts03CaptureResultReader,
+    sdkInt: Int,
+): Pts03PhysicalCaptureResult {
+    val truth = pts03CaptureTruthOf(reader, sdkInt)
+    // Both read SENSOR_TIMESTAMP from the same entry object; keep the exposure half authoritative.
+    return Pts03PhysicalCaptureResult(
+        physicalCameraId,
+        exposure,
+        truth.copy(sensorTimestampNanos = exposure.sensorTimestampNanos),
+    )
+}
+
 /**
- * The one entry point the camera callback uses: both halves are read from the same [result] object in
- * one call, so they can never describe two different frames.
+ * The per-physical-camera results of [result]: `getPhysicalCameraTotalResults()` on API 31+,
+ * `getPhysicalCameraResults()` on API 28–30, nothing below. Never throws.
  */
-internal fun skyCaptureResultSnapshotOf(result: CaptureResult): SkyCaptureResultSnapshot {
+@Suppress("DEPRECATION")
+internal fun physicalCaptureResultsOf(result: TotalCaptureResult): Map<String, CaptureResult> =
+    try {
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> result.physicalCameraTotalResults
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> result.physicalCameraResults
+            else -> emptyMap()
+        }
+    } catch (_: RuntimeException) {
+        emptyMap()
+    }
+
+/**
+ * The one entry point the camera callback uses. Every part is read from the same [result] object (and
+ * its own physical entries) in one call, so no part can describe a different capture.
+ */
+internal fun skyCaptureResultSnapshotOf(result: TotalCaptureResult): SkyCaptureResultSnapshot {
+    val sdk = Build.VERSION.SDK_INT
     val exposure = skyExposureSampleOf(result)
-    val truth = pts03CaptureTruthOf(Camera2CaptureResultReader(result), Build.VERSION.SDK_INT)
-    // Both halves read SENSOR_TIMESTAMP from the same immutable result, so they agree; the copy below
+    val truth = pts03CaptureTruthOf(Camera2CaptureResultReader(result), sdk)
+    val physical =
+        physicalCaptureResultsOf(result).map { (id, physicalResult) ->
+            pts03PhysicalCaptureResultOf(
+                id,
+                skyExposureSampleOf(physicalResult),
+                Camera2CaptureResultReader(physicalResult),
+                sdk,
+            )
+        }
+    // Both top-level halves read SENSOR_TIMESTAMP from the same immutable result, so they agree; the copy
     // only guards a pathological reader failure on one side from tripping the snapshot's invariant.
-    return SkyCaptureResultSnapshot(exposure, truth.copy(sensorTimestampNanos = exposure.sensorTimestampNanos))
+    return skyCaptureResultSnapshot(
+        exposure,
+        truth.copy(sensorTimestampNanos = exposure.sensorTimestampNanos),
+        physical,
+    )
 }

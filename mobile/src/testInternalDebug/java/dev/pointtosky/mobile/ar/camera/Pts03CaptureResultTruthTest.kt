@@ -157,12 +157,12 @@ class Pts03CaptureResultTruthTest {
     fun `one snapshot holds both halves of one result and refuses halves from different frames`() {
         val snapshot = Pts03Fixtures.captureResult(timestampNanos = 77L)
         assertEquals(77L, snapshot.sensorTimestampNanos)
-        assertEquals(77L, snapshot.cameraTruth.sensorTimestampNanos)
+        assertEquals(77L, snapshot.logicalTruth.sensorTimestampNanos)
 
         assertFailsWith<IllegalArgumentException> {
             SkyCaptureResultSnapshot(
                 exposure = Pts03Fixtures.exposure(77L),
-                cameraTruth = Pts03Fixtures.captureResult(timestampNanos = 78L).cameraTruth,
+                logicalTruth = Pts03Fixtures.captureResult(timestampNanos = 78L).logicalTruth,
             )
         }
     }

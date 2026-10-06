@@ -41,21 +41,39 @@ does not report it). "Not yet failed" is never PROVEN.
 
 ## A — Physical identity
 
-Two session classes, never merged:
+Each joined frame carries one immutable snapshot of its `TotalCaptureResult`, with two parts kept apart:
+- **`logicalTopLevelResult`** — the top-level (logical) result. Its `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID`
+  names the physical sensor backing the logical camera's non-physical-specific streams.
+- **`physicalResultsByCameraId`** — every per-physical-camera result (`getPhysicalCameraTotalResults()` on
+  API 31+, `getPhysicalCameraResults()` on API 28–30), sorted by ID, each with its **own**
+  `SENSOR_TIMESTAMP`. A physical entry is used as frame truth only when that timestamp equals the frame's
+  exactly; otherwise it is recorded as `TIMESTAMP_MISMATCH` / `TIMESTAMP_MISSING` (no nearest matching).
+
+Two session classes, never merged, with different identity semantics (per-frame `attribution` in the JSON):
 - **A1 `LOGICAL_UNPINNED`** — logical rear camera bound as production binds it (`DEFAULT_BACK_CAMERA`, no
-  `setPhysicalCameraId`, no zoom call). The only class that can show natural switching.
-- **A2 `EXPLICIT_PHYSICAL`** — one declared child pinned; the reported active ID can only confirm or
-  contradict the pin (`groupA_identity.explicitBindingIdentityConfirmation`).
+  `setPhysicalCameraId`, no zoom call). Producing camera = the top-level active ID when reported, else
+  unknown; the top-level result is the stream's dynamic metadata. **Only here** is natural switching inferred.
+- **A2 `EXPLICIT_PHYSICAL`** — `setPhysicalCameraId(id)` configures a physical-camera-specific output, so the
+  producing camera is the requested ID **by configuration**. The top-level active ID describes the logical
+  camera's backing sensor, not this output: it is recorded as a **diagnostic only** and never confirms or
+  contradicts the pin. Dynamic metadata for the output comes only from `physicalResultsByCameraId[id]` with a
+  matching timestamp; when absent or mismatched it is **UNRESOLVED** and the logical values are not substituted.
+
+Transitions are counted only between two **reported** top-level active IDs; a frame without the key is a gap
+(`3 → (missing) → 3` = no transition; `3 → (missing) → 4` = one transition `3 → 4`, stamped on the first
+frame reporting `4`). Missing-key frames are still counted (`framesWithNullActivePhysicalId`).
 
 | Question | Status | Evidence field |
 |---|---|---|
-| Is `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` reported? | UNRESOLVED (pending) | `groupA_identity.activePhysicalIdAvailabilityCounts` |
-| Which physical camera produces A1 analysis frames (normal light)? | UNRESOLVED (pending) | `groupA_identity.framesByLightingAndActivePhysicalId.NORMAL_INDOOR` |
-| Does it switch in low light? When? | UNRESOLVED (pending) | `groupA_identity.transitions[]` (timestamp, from, to, lighting) |
-| Does it switch at night? | night-sky device evidence pending | `framesByLightingAndActivePhysicalId.NIGHT_SKY` |
-| Do focal length / intrinsics / crop / zoom change with it? | UNRESOLVED (pending) | `focalLengthsMmByActivePhysicalId`, `intrinsicsByActivePhysicalId`, `cropRegionsByActivePhysicalId`, `zoomRatiosByActivePhysicalId` |
-| Does the active ID confirm each explicit pin? | UNRESOLVED (pending) | `explicitBindingIdentityConfirmation` per A2 session |
-| AF / focus behaviour per physical ID | UNRESOLVED (pending) | `afStateCountsByActivePhysicalId`; per frame `controlAfMode`, `controlAfState`, `lensFocusDistanceDiopters`, `lensState` |
+| Is `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` reported? | UNRESOLVED (pending) | `groupA_identity.logicalTopLevel.activePhysicalIdAvailabilityCounts` |
+| Which physical camera produces A1 analysis frames (normal light)? | UNRESOLVED (pending) | A1: `groupA_identity.logicalTopLevel.framesByLightingAndLogicalActivePhysicalId.NORMAL_INDOOR` |
+| Does it switch in low light? When? | UNRESOLVED (pending) | A1: `groupA_identity.logicalTopLevel.transitions[]` (timestamp, from, to, lighting) |
+| Does it switch at night? | night-sky device evidence pending | A1: `framesByLightingAndLogicalActivePhysicalId.NIGHT_SKY` |
+| Do focal length / intrinsics / crop / zoom change with the producing camera? | UNRESOLVED (pending) | `groupA_identity.producingCamera.{focalLengthsMm,intrinsics,cropRegions,zoomRatios,activePhysicalSensorCropRegions}ByProducingPhysicalId` |
+| A2: requested physical output ID | UNRESOLVED (pending) | `groupA_identity.explicitPhysicalOutput.requestedPhysicalOutputId` |
+| A2: physical result present for it? timestamp matched? | UNRESOLVED (pending) | `explicitPhysicalOutput.physicalResultStatus` (`PHYSICAL_RESULT_PRESENT` / `_PARTIALLY_PRESENT` / `_NOT_REPORTED` / `_TIMESTAMP_MISMATCH`), `physicalResultStatusCounts`; per frame `attribution.physicalResultTimestampMatched` |
+| A2: top-level logical active ID | diagnostic only | `groupA_identity.logicalTopLevel.framesByLogicalActivePhysicalId` (role `DIAGNOSTIC_ONLY`) |
+| AF / focus behaviour per producing camera | UNRESOLVED (pending) | `producingCamera.afStateCountsByProducingPhysicalId`; per frame `controlAfMode`, `controlAfState`, `lensFocusDistanceDiopters`, `lensState` |
 
 ## B — Projection domain (per physical ID)
 
@@ -69,8 +87,14 @@ residual is recorded as **UNRESOLVED**.
 |---|---|---|---|---|---|
 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | UNRESOLVED (pending) |
 
-Fields: `groupB_and_C_targetEvidence[].projectionDomain.*`; per frame `sensorToBufferTransformMatrix`,
-buffer size, crop, rotation; static logical and physical arrays in `staticCharacteristics`.
+Attribution (never pixels from camera X with metadata from camera Y): static arrays are taken for the
+attributed **producing** camera (`projectionDomain.producingPhysicalCameraId`; A2 = requested ID, A1 =
+reported active ID, unknown → UNRESOLVED). The top-level active ID appears only as
+`projectionDomain.logicalActivePhysicalCameraIdDiagnostic`.
+
+Fields: `groupB_and_C_targetEvidence[].{attribution,projectionDomain}.*`; per frame
+`sensorToBufferTransformMatrix`, buffer size, crop, rotation; static logical and physical arrays in
+`staticCharacteristics`.
 
 ## C — Distortion state / pixel domain (per physical ID and mode)
 
@@ -79,6 +103,11 @@ Requested and effective modes are separate fields. The **metadata basis** follow
 corrected is measured from printed-target residuals (`d_radial = a·ρ + b·ρ³`, cubic term = distortion
 signature; `measurePts03ResidualDistortion`), never inferred from the mode. `LENS_DISTORTION` is never
 applied. Only modes the logical camera advertises are offered.
+
+The effective mode of an A2 stream is read from the physical result for the requested ID; without a
+timestamp-matched entry it is `UNRESOLVED_PHYSICAL_RESULT_UNAVAILABLE` (metadata basis UNKNOWN) — the logical
+mode is never substituted. Each evidence capture's `lighting` is the label frozen with its own frame
+(`lightingSource = FRAME_AT_CAPTURE`), never the label selected later.
 
 | Physical ID | Requested | Effective | Metadata basis | Active vs pre-correction | Residual distortion | Guidance | Final pixel domain |
 |---|---|---|---|---|---|---|---|
@@ -122,10 +151,16 @@ Exact `CaptureResult.SENSOR_TIMESTAMP == ImageProxy.imageInfo.timestamp` (`SkyEx
 Unmatched `CaptureResult`s are expected under `STRATEGY_KEEP_ONLY_LATEST` (frames CameraX dropped before
 analysis); `matchedFraction` is therefore defined over **analysis frames**.
 
+Only a **finalized** export (`session.finalized = true`) carries final statistics: **Finalize & save**
+stops the join, drains it into `framesPendingAtStopCount` / `captureResultsPendingAtStopCount`, freezes the
+statistics, then writes the file. Finalizing again changes nothing (no double counting); offers arriving
+afterwards are only counted in `offersIgnoredAfterFinalizeCount`.
+
 ## Raw evidence files
 
-Authoritative: `Save PTS-03 JSON` → `/sdcard/Android/data/dev.pointtosky.mobile.int/files/pts03_sessions/<sessionId>.json`
-(`adb pull`). Large raw files stay off-repo; commit only compact summaries and list session IDs here.
+Authoritative: **Finalize & save PTS-03 JSON** → `/sdcard/Android/data/dev.pointtosky.mobile.int/files/pts03_sessions/<sessionId>.json`
+(`adb pull`). **Save non-final snapshot** writes `<sessionId>-nonfinal-<millis>.json`, which is never
+authoritative. Large raw files stay off-repo; commit only compact summaries and list session IDs here.
 
 | Session ID | Class | Physical ID | Lighting | Mode requested | File (off-repo / committed summary) |
 |---|---|---|---|---|---|
@@ -165,12 +200,12 @@ Prerequisites: Pixel 9 with USB debugging; this branch built as **internalDebug*
 **A1 — logical, normal light**
 4. Lighting `NORMAL_INDOOR`, mode `DEVICE_DEFAULT`, candidate **Logical rear camera (no pin) — PTS-03 A1**,
    resolution **CameraX default (no selector, as production)**.
-5. Hold on a lit scene ≥ 60 s. Watch the PTS-03 summary lines (join fraction, active IDs). **Save PTS-03 JSON**.
+5. Hold on a lit scene ≥ 60 s. Watch the PTS-03 summary lines (join fraction, active IDs). **Finalize & save PTS-03 JSON**.
 
 **A1 — logical, low light (same session class)**
 6. Start a new A1 attempt (Back → same choices) with lighting `NORMAL_INDOOR`; after ~20 s switch the label
    to `LOW_LIGHT_INDOOR` and dim/cover the room light (a dark room is sufficient); hold ≥ 60 s; restore light
-   and switch back. **Save PTS-03 JSON**. Transitions are recorded with timestamp and label.
+   and switch back. **Finalize & save PTS-03 JSON**. Transitions are recorded with timestamp and label.
 7. Repeat 4–6 with resolution 640×480 and 1280×720 if time permits (stream-configuration evidence).
 
 **A2/B/C — every declared physical child, every advertised mode**
@@ -180,11 +215,11 @@ Prerequisites: Pixel 9 with USB debugging; this branch built as **internalDebug*
    label `CENTER`, `TOP_LEFT`, `TOP_RIGHT`, `BOTTOM_LEFT`, `BOTTOM_RIGHT`: frame the target near that
    image region (edges/corners as close as detection allows), select the label, **Freeze**, then
    **Add PTS-03 evidence**, then **Resume live**. Aim for ≥ 2 captures per placement.
-10. **Save PTS-03 JSON** before leaving each attempt. Optionally **Share JSON** (frame-content, schema 5)
+10. **Finalize & save PTS-03 JSON** before leaving each attempt. Optionally **Share JSON** (frame-content, schema 5)
     for one representative frozen frame per attempt.
 
 **Night (optional for PTS-03)**
-11. Outdoors at night: A1 with lighting `NIGHT_SKY`, ≥ 2 min, **Save PTS-03 JSON**. If not possible, leave
+11. Outdoors at night: A1 with lighting `NIGHT_SKY`, ≥ 2 min, **Finalize & save PTS-03 JSON**. If not possible, leave
     "night-sky device evidence pending".
 
 **Collect**
@@ -202,8 +237,12 @@ Prerequisites: Pixel 9 with USB debugging; this branch built as **internalDebug*
 `LENS_INTRINSIC_CALIBRATION`, `LENS_FOCUS_DISTANCE`, `LENS_STATE`, `CONTROL_AF_MODE`, `CONTROL_AF_STATE`,
 `SCALER_CROP_REGION`, `CONTROL_ZOOM_RATIO` (API 30+), `SENSOR_EXPOSURE_TIME`, `SENSOR_SENSITIVITY`,
 `SENSOR_FRAME_DURATION`, `CONTROL_AE_MODE`, `CONTROL_AWB_MODE`, `LENS_OPTICAL_STABILIZATION_MODE`,
-`CONTROL_VIDEO_STABILIZATION_MODE`, `HOT_PIXEL_MODE`, `NOISE_REDUCTION_MODE`, `EDGE_MODE`. `null` = not
-reported; unknown enum values kept as `UNKNOWN_<raw>`.
+`CONTROL_VIDEO_STABILIZATION_MODE`, `HOT_PIXEL_MODE`, `NOISE_REDUCTION_MODE`, `EDGE_MODE`,
+`LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_SENSOR_CROP_REGION` (API 35+, optional diagnostic, recorded independently
+of `SCALER_CROP_REGION` / `CONTROL_ZOOM_RATIO`; nothing depends on it). `null` = not reported; unknown enum
+values kept as `UNKNOWN_<raw>`. The same fields are recorded for the top-level result
+(`logicalTopLevelResult`) and for every physical result entry (`physicalResultsByCameraId[id]`, with its own
+timestamp).
 
 **Per frame (`ImageProxy`):** buffer width/height, crop rect, `rotationDegrees`, `sensorToBufferTransformMatrix[9]`.
 
@@ -222,7 +261,7 @@ toolchain, Android SDK 35) with `--rerun-tasks`:
 | Command | Result |
 |---|---|
 | `./gradlew :core:astro-core:test` | 681 tests, 0 failures |
-| `./gradlew :mobile:testInternalDebugUnitTest` | 818 tests, 0 failures (59 new PTS-03 tests across 8 classes) |
+| `./gradlew :mobile:testInternalDebugUnitTest` | 847 tests, 0 failures (88 PTS-03 tests across 9 classes) |
 | `./gradlew :mobile:testPublicDebugUnitTest` | 371 tests, 0 failures (variant boundary unaffected) |
 | `./gradlew :mobile:compileInternalDebugKotlin` | success |
 | `./gradlew :mobile:assembleInternalDebug` | success |
@@ -231,5 +270,5 @@ toolchain, Android SDK 35) with `--rerun-tasks`:
 
 Focused PTS-03 classes: `Pts03CaptureResultTruthTest`, `SkyExposureJoinPts03Test`, `Pts03LensPoseTest`,
 `Pts03DistortionStateTest`, `Pts03ProjectionDomainEvidenceTest`, `Pts03StaticCharacteristicsTest`,
-`Pts03CameraTruthSessionTest`, `Pts03CameraTruthExportTest`; the unchanged-rule SKY-1 `SkyExposureJoinTest`
+`Pts03CameraTruthSessionTest`, `Pts03CameraTruthExportTest`, `Pts03PhysicalResultTest`; the unchanged-rule SKY-1 `SkyExposureJoinTest`
 still passes.

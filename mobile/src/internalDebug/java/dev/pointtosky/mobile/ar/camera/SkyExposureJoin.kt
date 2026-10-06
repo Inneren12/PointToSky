@@ -78,6 +78,7 @@ internal class SkyExposureJoin<F : SkyJoinFrame>(
      * anomalous in the first place — Camera2 does not reuse them.
      */
     fun offerFrame(frame: F): SkyJoinResult<F> {
+        if (isFinalized) return ignoredAfterFinalize()
         counters.analysisFrameCount++
         val timestamp = frame.sensorTimestampNanos
         observe(timestamp)
@@ -107,6 +108,7 @@ internal class SkyExposureJoin<F : SkyJoinFrame>(
      * [SkyJoinDropReason.EXPOSURE_UNKEYED] rather than guessed at — see [SkyExposureJoin]'s KDoc.
      */
     fun offerExposure(captureResult: SkyCaptureResultSnapshot): SkyJoinResult<F> {
+        if (isFinalized) return ignoredAfterFinalize()
         counters.captureResultCount++
         val timestamp =
             captureResult.sensorTimestampNanos
@@ -137,6 +139,29 @@ internal class SkyExposureJoin<F : SkyJoinFrame>(
      * when a capture session ends so a HUD can state how many frames were never completed rather than
      * leaving them silently unaccounted for.
      */
+    /** `true` once [finalizeJoin] ran: no further offer is accepted or counted as a frame/result. */
+    var isFinalized: Boolean = false
+        private set
+
+    /**
+     * Ends this join for evidence purposes: stops accepting offers, drains everything still pending into
+     * the pending-at-stop counts, and returns the final statistics. Idempotent — a second call drains
+     * nothing (nothing can be pending once offers stopped) and returns identical statistics, so pending
+     * entries are never counted twice.
+     */
+    fun finalizeJoin(): SkyJoinStatistics {
+        if (!isFinalized) {
+            drain()
+            isFinalized = true
+        }
+        return statistics
+    }
+
+    private fun ignoredAfterFinalize(): SkyJoinResult<F> {
+        counters.offersIgnoredAfterFinalizeCount++
+        return SkyJoinResult()
+    }
+
     fun drain(): List<SkyJoinDrop> {
         val drops =
             pendingFrames.keys.map { SkyJoinDrop(it, SkyJoinDropReason.PENDING_AT_STOP) } +
@@ -277,6 +302,8 @@ internal data class SkyJoinStatistics(
     val unkeyedCaptureResultCount: Long,
     val framesPendingAtStopCount: Long,
     val captureResultsPendingAtStopCount: Long,
+    /** Offers that arrived after [SkyExposureJoin.finalizeJoin]; not counted as frames or results. */
+    val offersIgnoredAfterFinalizeCount: Long = 0,
 ) {
     /** Fraction of analysis frames that received their own `CaptureResult`; `null` before any frame. */
     val matchedFraction: Double?
@@ -300,6 +327,7 @@ private class SkyJoinCounters {
     var unkeyedCaptureResultCount = 0L
     var framesPendingAtStopCount = 0L
     var captureResultsPendingAtStopCount = 0L
+    var offersIgnoredAfterFinalizeCount = 0L
 
     fun count(reason: SkyJoinDropReason) {
         when (reason) {
@@ -329,6 +357,7 @@ private class SkyJoinCounters {
             unkeyedCaptureResultCount = unkeyedCaptureResultCount,
             framesPendingAtStopCount = framesPendingAtStopCount,
             captureResultsPendingAtStopCount = captureResultsPendingAtStopCount,
+            offersIgnoredAfterFinalizeCount = offersIgnoredAfterFinalizeCount,
         )
 }
 

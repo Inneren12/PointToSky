@@ -37,7 +37,10 @@ internal fun classifyPts03ProjectionDomain(proof: SensorToBufferDomainProof): Pt
     }
 
 internal data class Pts03ProjectionDomainEvidence(
-    val activePhysicalCameraId: String?,
+    /** The attributed producing camera whose static arrays were assessed (A2: requested; A1: reported active). */
+    val producingPhysicalCameraId: String?,
+    /** Top-level logical active ID; diagnostic only (in A2 it does not describe the analysed output). */
+    val logicalActivePhysicalCameraId: String?,
     val requestedPhysicalCameraId: String?,
     val bufferWidthPx: Int,
     val bufferHeightPx: Int,
@@ -55,9 +58,9 @@ internal data class Pts03ProjectionDomainEvidence(
 )
 
 /**
- * Builds the evidence for one frame. [physical] is the characteristics of the camera that produced the
- * frame as far as identity evidence says (explicit binding or reported active physical ID); `null` when
- * it is unknown, in which case only the logical hypothesis can be assessed.
+ * Builds the evidence for one frame. [physical] is the static characteristics of the attributed
+ * [producingPhysicalCameraId] (see [attributePts03Frame]); `null` when the producer is unknown, in which case
+ * only the logical hypothesis can be assessed and the outcome is UNRESOLVED.
  */
 internal fun buildPts03ProjectionDomainEvidence(
     matrix: SensorToBufferMatrix3?,
@@ -65,7 +68,8 @@ internal fun buildPts03ProjectionDomainEvidence(
     bufferHeightPx: Int,
     logical: CameraCharacteristicsSnapshot?,
     physical: CameraCharacteristicsSnapshot?,
-    activePhysicalCameraId: String?,
+    producingPhysicalCameraId: String?,
+    logicalActivePhysicalCameraId: String?,
     requestedPhysicalCameraId: String?,
     frameContentVerdict: FrameContentVerdict?,
 ): Pts03ProjectionDomainEvidence {
@@ -93,7 +97,8 @@ internal fun buildPts03ProjectionDomainEvidence(
         )
     val outcome = if (physical == null) Pts03EvidenceOutcome.UNRESOLVED else classifyPts03ProjectionDomain(proof)
     return Pts03ProjectionDomainEvidence(
-        activePhysicalCameraId = activePhysicalCameraId,
+        producingPhysicalCameraId = producingPhysicalCameraId,
+        logicalActivePhysicalCameraId = logicalActivePhysicalCameraId,
         requestedPhysicalCameraId = requestedPhysicalCameraId,
         bufferWidthPx = bufferWidthPx,
         bufferHeightPx = bufferHeightPx,

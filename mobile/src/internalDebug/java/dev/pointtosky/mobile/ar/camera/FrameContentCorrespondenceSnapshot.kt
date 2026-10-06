@@ -109,6 +109,11 @@ internal data class FrameContentCorrespondenceSnapshot(
      * device frame always reaches the snapshot through the join.
      */
     val captureResult: SkyCaptureResultSnapshot? = null,
+    /**
+     * PTS-03: the operator lighting label that was active when **this frame** was joined. Frozen with the
+     * frame so evidence built from this snapshot never takes a label chosen later.
+     */
+    val lightingAtCapture: Pts03LightingLabel = Pts03LightingLabel.UNSPECIFIED,
 ) {
     companion object {
         /** The one hypothesis this experiment's pose solver anchors to (task §4) — see
@@ -157,6 +162,7 @@ internal fun buildFrameContentCorrespondenceSnapshot(
     capturedAtEpochMillis: Long,
     verdictThresholds: FrameContentVerdictThresholds = FrameContentVerdictThresholds(),
     captureResult: SkyCaptureResultSnapshot? = null,
+    lightingAtCapture: Pts03LightingLabel = Pts03LightingLabel.UNSPECIFIED,
 ): FrameContentCorrespondenceSnapshot {
     require(captureResult == null || captureResult.sensorTimestampNanos != null) {
         "a joined CaptureResult always carries its SENSOR_TIMESTAMP"
@@ -320,5 +326,6 @@ internal fun buildFrameContentCorrespondenceSnapshot(
         verdict = verdict,
         capturedAtEpochMillis = capturedAtEpochMillis,
         captureResult = captureResult,
+        lightingAtCapture = lightingAtCapture,
     )
 }

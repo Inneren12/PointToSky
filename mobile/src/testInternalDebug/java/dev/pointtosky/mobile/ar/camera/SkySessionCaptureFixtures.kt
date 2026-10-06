@@ -147,7 +147,7 @@ internal object SkySessionCaptureFixtures {
     fun captureResult(exposure: SkyExposureSample): SkyCaptureResultSnapshot =
         SkyCaptureResultSnapshot(
             exposure = exposure,
-            cameraTruth =
+            logicalTruth =
                 pts03CaptureTruthOf(
                     reader = { field -> if (field == Pts03CaptureResultField.SENSOR_TIMESTAMP) exposure.sensorTimestampNanos else null },
                     sdkInt = 35,

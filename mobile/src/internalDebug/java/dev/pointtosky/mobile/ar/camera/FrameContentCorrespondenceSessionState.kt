@@ -28,6 +28,8 @@ internal data class FrameContentExperimentSessionState(
     val latestSnapshot: FrameContentCorrespondenceSnapshot? = null,
     /** PTS-03: the `CaptureResult` exact-joined to [latestFrame]; always replaced together with it. */
     val latestCaptureResult: SkyCaptureResultSnapshot? = null,
+    /** PTS-03: the lighting label active when [latestFrame] arrived; replaced together with it. */
+    val latestFrameLighting: Pts03LightingLabel = Pts03LightingLabel.UNSPECIFIED,
     /** PTS-03: [Pts03SessionClass.LOGICAL_UNPINNED] binds the logical camera with no physical/zoom pin (A1). */
     val sessionClass: Pts03SessionClass = Pts03SessionClass.EXPLICIT_PHYSICAL,
     /** PTS-03 camera-truth evidence for this attempt (this bind) only. */
@@ -142,7 +144,19 @@ internal fun FrameContentExperimentSessionState.reducePts03JoinStatistics(
     statistics: SkyJoinStatistics,
 ): FrameContentExperimentSessionState {
     if (attemptId != this.attemptId || isTerminallyFailed) return this
-    return copy(pts03 = pts03.copy(joinStatistics = statistics))
+    return copy(pts03 = pts03.withJoinStatistics(statistics))
+}
+
+/**
+ * PTS-03: the join was finalized (offers stopped, pending entries drained, statistics frozen). Idempotent —
+ * see [Pts03TruthSessionState.finalizedWith]. The authoritative export is written only after this.
+ */
+internal fun FrameContentExperimentSessionState.reducePts03Finalized(
+    attemptId: Long,
+    finalStatistics: SkyJoinStatistics,
+): FrameContentExperimentSessionState {
+    if (attemptId != this.attemptId) return this
+    return copy(pts03 = pts03.finalizedWith(finalStatistics))
 }
 
 /**
@@ -184,6 +198,7 @@ internal fun FrameContentExperimentSessionState.reduceFrame(
         latestFrame = frame,
         latestDetection = detection,
         latestCaptureResult = joined,
+        latestFrameLighting = pts03.lighting,
         framesObserved = framesObserved + 1,
         pts03 = if (joined != null) pts03.withMatchedFrame(frame, joined) else pts03,
     ).recomputeSnapshot(capturedAtEpochMillis)
@@ -260,6 +275,7 @@ private fun FrameContentExperimentSessionState.recomputeSnapshot(capturedAtEpoch
             detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,
             capturedAtEpochMillis = capturedAtEpochMillis,
             captureResult = latestCaptureResult,
+            lightingAtCapture = latestFrameLighting,
         )
     return copy(latestSnapshot = snapshot)
 }

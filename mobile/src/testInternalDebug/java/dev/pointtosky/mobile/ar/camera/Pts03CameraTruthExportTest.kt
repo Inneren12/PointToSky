@@ -18,18 +18,22 @@ import kotlin.test.assertTrue
 
 /** PTS-03 export: versioned, deterministic, nulls honest, and safety facts always stated. */
 class Pts03CameraTruthExportTest {
-    private val environment =
-        Pts03Environment(
-            deviceManufacturer = "TestCo",
-            deviceModel = "Model",
-            deviceName = "device",
-            buildFingerprint = "fp",
-            androidRelease = "16",
-            sdkInt = 36,
-            securityPatch = null,
-            appVersionName = "0.1.0",
-            appVersionCode = 1,
-        )
+    private val environment = TEST_ENVIRONMENT
+
+    companion object {
+        internal val TEST_ENVIRONMENT =
+            Pts03Environment(
+                deviceManufacturer = "TestCo",
+                deviceModel = "Model",
+                deviceName = "device",
+                buildFingerprint = "fp",
+                androidRelease = "16",
+                sdkInt = 36,
+                securityPatch = null,
+                appVersionName = "0.1.0",
+                appVersionCode = 1,
+            )
+    }
 
     private fun session(): Pts03TruthSessionState {
         var state =
@@ -106,7 +110,7 @@ class Pts03CameraTruthExportTest {
     fun `nulls are JSON null, unknown stream configuration is UNKNOWN, and safety facts are false`() {
         val root = parse(buildPts03CameraTruthJson(session(), environment, 5L, true))
         val frame = root["frameRecords"]!!.jsonArray.single().jsonObject
-        val result = frame["captureResult"]!!.jsonObject
+        val result = frame["captureResult"]!!.jsonObject["logicalTopLevelResult"]!!.jsonObject
         assertIs<JsonNull>(result["activePhysicalCameraId"])
         assertEquals("NOT_REPORTED", result["activePhysicalCameraIdAvailability"]!!.jsonPrimitive.content)
         assertEquals(10L, result["sensorTimestampNanos"]!!.jsonPrimitive.long)
@@ -177,8 +181,19 @@ class Pts03CameraTruthExportTest {
         assertEquals(5, withResult["schemaVersion"]!!.jsonPrimitive.int)
         assertEquals(
             "FAST",
-            withResult["captureResult"]!!.jsonObject["effectiveDistortionMode"]!!.jsonPrimitive.content,
+            withResult["captureResult"]!!
+                .jsonObject["logicalTopLevelResult"]!!
+                .jsonObject["effectiveDistortionMode"]!!
+                .jsonPrimitive.content,
         )
+        assertEquals(
+            listOf("3"),
+            withResult["captureResult"]!!
+                .jsonObject["physicalResultsByCameraId"]!!
+                .jsonObject.keys
+                .toList(),
+        )
+        assertEquals("UNSPECIFIED", withResult["lightingAtCapture"]!!.jsonPrimitive.content)
         assertTrue("target" in withResult && "verdict" in withResult && "hypotheses" in withResult)
 
         val without = parse(buildFrameContentCorrespondenceJson(Pts03Fixtures.snapshot(captureResult = null)))
@@ -188,5 +203,46 @@ class Pts03CameraTruthExportTest {
                 Pts03Fixtures.snapshot(),
             ).contains("mode is NOT evidence that the YUV is corrected"),
         )
+    }
+
+    @Test
+    fun `A2 export reports the physical output, its physical result, and the logical active ID only as a diagnostic`() {
+        val json = buildPts03CameraTruthJson(session(), environment, 5L, true)
+        assertFalse(json.contains("CONTRADICTED"), "no contradiction semantics for A2")
+        assertFalse(json.contains("explicitBindingIdentityConfirmation"))
+        val root = parse(json)
+        val identity = root["groupA_identity"]!!.jsonObject
+        val output = identity["explicitPhysicalOutput"]!!.jsonObject
+        assertEquals("3", output["requestedPhysicalOutputId"]!!.jsonPrimitive.content)
+        // The one frame fed in session() carried no physical result for 3.
+        assertEquals("PHYSICAL_RESULT_NOT_REPORTED", output["physicalResultStatus"]!!.jsonPrimitive.content)
+        assertTrue(
+            identity["logicalTopLevel"]!!
+                .jsonObject["role"]!!
+                .jsonPrimitive.content
+                .startsWith("DIAGNOSTIC_ONLY"),
+        )
+
+        val attribution =
+            root["frameRecords"]!!
+                .jsonArray
+                .single()
+                .jsonObject["attribution"]!!
+                .jsonObject
+        assertEquals("3", attribution["producingPhysicalCameraId"]!!.jsonPrimitive.content)
+        assertEquals(
+            "UNRESOLVED_PHYSICAL_RESULT_NOT_REPORTED",
+            attribution["dynamicMetadataSource"]!!.jsonPrimitive.content,
+        )
+        assertEquals("DIAGNOSTIC_ONLY", attribution["logicalActivePhysicalCameraIdRole"]!!.jsonPrimitive.content)
+        assertFalse(attribution["physicalResultTimestampMatched"]!!.jsonPrimitive.boolean)
+
+        val capture = root["groupB_and_C_targetEvidence"]!!.jsonArray.single().jsonObject
+        assertEquals(
+            "PHYSICAL_RESULT_FOR_REQUESTED_ID",
+            capture["attribution"]!!.jsonObject["dynamicMetadataSource"]!!.jsonPrimitive.content,
+        )
+        assertEquals("FRAME_AT_CAPTURE", capture["lightingSource"]!!.jsonPrimitive.content)
+        assertFalse(root["session"]!!.jsonObject["finalized"]!!.jsonPrimitive.boolean)
     }
 }

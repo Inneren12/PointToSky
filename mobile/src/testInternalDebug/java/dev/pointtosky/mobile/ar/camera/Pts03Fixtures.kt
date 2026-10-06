@@ -52,14 +52,51 @@ internal object Pts03Fixtures {
         activePhysicalId: String? = "3",
         distortionMode: Int? = 1,
         sdkInt: Int = 35,
+        physicalIds: List<String> = emptyList(),
+        physicalTimestampNanos: Long? = timestampNanos,
+        physicalDistortionMode: Int? = distortionMode,
     ): SkyCaptureResultSnapshot =
-        SkyCaptureResultSnapshot(
+        skyCaptureResultSnapshot(
             exposure = exposure(timestampNanos),
-            cameraTruth =
+            logicalTruth =
                 pts03CaptureTruthOf(
                     reader(fullResultValues(timestampNanos, activePhysicalId, distortionMode)),
                     sdkInt,
                 ),
+            physicalResults =
+                physicalIds.map {
+                    physicalResult(
+                        it,
+                        physicalTimestampNanos,
+                        physicalDistortionMode,
+                        sdkInt,
+                    )
+                },
+        )
+
+    /**
+     * One physical result entry. Its values deliberately differ from the logical fixture (focal 2.2 mm,
+     * crop 4032x3024, no active-ID key) so a test can tell which result a field came from.
+     */
+    fun physicalResult(
+        id: String,
+        timestampNanos: Long?,
+        distortionMode: Int? = 1,
+        sdkInt: Int = 35,
+    ): Pts03PhysicalCaptureResult =
+        pts03PhysicalCaptureResultOf(
+            physicalCameraId = id,
+            exposure = exposure(timestampNanos).copy(sensitivityIso = 800),
+            reader =
+                reader(
+                    fullResultValues(timestampNanos ?: 0L, activePhysicalId = null, distortionMode = distortionMode) +
+                        mapOf(
+                            Pts03CaptureResultField.SENSOR_TIMESTAMP to timestampNanos,
+                            Pts03CaptureResultField.LENS_FOCAL_LENGTH to 2.2f,
+                            Pts03CaptureResultField.SCALER_CROP_REGION to Pts03IntRect(0, 0, 4032, 3024),
+                        ),
+                ),
+            sdkInt = sdkInt,
         )
 
     fun frameMetadata(timestampNanos: Long): CameraFrameMetadata =
@@ -150,7 +187,8 @@ internal object Pts03Fixtures {
         generation: Long = 0L,
         placement: TargetPlacementLabel = TargetPlacementLabel.CENTER,
         translationMm: Vec3 = Vec3(-40.0, -30.0, 600.0),
-        captureResult: SkyCaptureResultSnapshot? = captureResult(),
+        captureResult: SkyCaptureResultSnapshot? = captureResult(physicalIds = listOf("3")),
+        lightingAtCapture: Pts03LightingLabel = Pts03LightingLabel.UNSPECIFIED,
     ): FrameContentCorrespondenceSnapshot {
         val physical = physicalSnapshot()
         val matrix =
@@ -216,6 +254,7 @@ internal object Pts03Fixtures {
             detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,
             capturedAtEpochMillis = 0L,
             captureResult = captureResult,
+            lightingAtCapture = lightingAtCapture,
         )
     }
 

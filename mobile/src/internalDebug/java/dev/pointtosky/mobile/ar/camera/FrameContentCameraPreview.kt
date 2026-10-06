@@ -120,6 +120,18 @@ internal data class FrameContentBindInfo(
 )
 
 /**
+ * PTS-03: the handle the screen uses to finalize the live bind's join before writing the authoritative
+ * export. The bind installs [finalizer] while it is live and clears it on dispose; [requestFinalize]
+ * returns `false` when no live bind is attached (nothing to finalize).
+ */
+internal class FrameContentJoinControl {
+    @Volatile
+    internal var finalizer: (() -> Boolean)? = null
+
+    fun requestFinalize(): Boolean = finalizer?.invoke() ?: false
+}
+
+/**
  * The PTS-03 join depth for this experiment. The frame side holds only metadata and a detection result (no
  * pixels), so it can be deeper than SKY-1's luma-holding default without a memory cost; the depth absorbs
  * `KEEP_ONLY_LATEST` dropping frames whose `CaptureResult`s still arrive.
@@ -163,6 +175,8 @@ internal fun FrameContentCameraPreview(
     onExplicitBindFailure: (String) -> Unit = {},
     onFrame: (CameraFrameMetadata, FrameContentDetectionResult, SkyCaptureResultSnapshot) -> Unit = { _, _, _ -> },
     onJoinStatistics: (SkyJoinStatistics) -> Unit = {},
+    joinControl: FrameContentJoinControl? = null,
+    onJoinFinalized: (SkyJoinStatistics) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -178,6 +192,7 @@ internal fun FrameContentCameraPreview(
         onFrame(joined.frame.metadata, joined.frame.detection, joined.captureResult)
     }
     val currentOnJoinStatistics = rememberStableCallback(onJoinStatistics)
+    val currentOnJoinFinalized = rememberStableCallback(onJoinFinalized)
 
     DisposableEffect(Unit) {
         val job = Job()
@@ -196,6 +211,18 @@ internal fun FrameContentCameraPreview(
         ) {
             result.matched?.let { currentOnFrame(it) }
             if (fromFrameOffer || result.matched != null) currentOnJoinStatistics(join.statistics)
+        }
+
+        // Finalize runs on the analysis executor, so it is serialized with every offer: after it, the join
+        // accepts nothing, its pending entries are in the pending-at-stop counts, and the statistics handed
+        // to onJoinFinalized are final. Repeated requests return the same statistics.
+        joinControl?.finalizer = {
+            try {
+                analysisExecutor.execute { currentOnJoinFinalized(join.finalizeJoin()) }
+                true
+            } catch (_: RejectedExecutionException) {
+                false
+            }
         }
 
         val captureCallback =
@@ -334,10 +361,12 @@ internal fun FrameContentCameraPreview(
         }
 
         onDispose {
+            joinControl?.finalizer = null
             session.markDisposed()
             job.cancel()
             session.cleanupAndShutdown { analysisExecutor.shutdownNow() }
-            // Whatever never completed a pair is counted once, so the statistics account for the whole bind.
+            // Best effort only: the session may already be gone. The authoritative final statistics come
+            // from an explicit finalize (FrameContentJoinControl) before the export is written.
             join.drain()
             currentOnJoinStatistics(join.statistics)
         }

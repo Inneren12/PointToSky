@@ -52,6 +52,12 @@ internal sealed interface Pts03EffectiveDistortionMode {
 
     /** API < 28: the key does not exist on this platform. */
     data object ApiUnsupported : Pts03EffectiveDistortionMode
+
+    /**
+     * A2 explicit-physical frame with no usable physical result for the bound camera: the stream's mode is
+     * unknown, and the logical (top-level) mode is deliberately not substituted.
+     */
+    data object PhysicalResultUnavailable : Pts03EffectiveDistortionMode
 }
 
 internal val Pts03EffectiveDistortionMode.label: String
@@ -63,6 +69,7 @@ internal val Pts03EffectiveDistortionMode.label: String
             is Pts03EffectiveDistortionMode.UnknownValue -> "UNKNOWN_$raw"
             Pts03EffectiveDistortionMode.NotReported -> "NOT_REPORTED"
             Pts03EffectiveDistortionMode.ApiUnsupported -> "API_UNSUPPORTED"
+            Pts03EffectiveDistortionMode.PhysicalResultUnavailable -> "UNRESOLVED_PHYSICAL_RESULT_UNAVAILABLE"
         }
 
 internal fun Pts03CaptureTruth.effectiveDistortionMode(): Pts03EffectiveDistortionMode =
@@ -95,6 +102,7 @@ internal fun Pts03EffectiveDistortionMode.metadataCoordinateBasis(): Pts03Metada
         is Pts03EffectiveDistortionMode.UnknownValue,
         Pts03EffectiveDistortionMode.NotReported,
         Pts03EffectiveDistortionMode.ApiUnsupported,
+        Pts03EffectiveDistortionMode.PhysicalResultUnavailable,
         -> Pts03MetadataCoordinateBasis.UNKNOWN
     }
 

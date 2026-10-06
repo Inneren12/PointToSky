@@ -1,5 +1,7 @@
 package dev.pointtosky.mobile.ar.camera
 
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -24,8 +26,8 @@ class SkyExposureJoinPts03Test {
         val matched = assertNotNull(join.offerExposure(result).matched)
 
         assertSame(result, matched.captureResult, "the very snapshot instance reaches the consumer")
-        assertEquals("4", matched.captureResult.cameraTruth.activePhysicalCameraId)
-        assertEquals(Pts03EffectiveDistortionMode.Off, matched.captureResult.cameraTruth.effectiveDistortionMode())
+        assertEquals("4", matched.captureResult.logicalTruth.activePhysicalCameraId)
+        assertEquals(Pts03EffectiveDistortionMode.Off, matched.captureResult.logicalTruth.effectiveDistortionMode())
         assertSame(result.exposure, matched.exposure, "SKY-1's view is the same result's exposure half")
     }
 
@@ -50,7 +52,7 @@ class SkyExposureJoinPts03Test {
         join.offerExposure(
             SkyCaptureResultSnapshot(
                 Pts03Fixtures.exposure(null),
-                Pts03Fixtures.captureResult().cameraTruth.copy(sensorTimestampNanos = null),
+                Pts03Fixtures.captureResult().logicalTruth.copy(sensorTimestampNanos = null),
             ),
         ) // unkeyed
         join.offerExposure(Pts03Fixtures.captureResult(timestampNanos = 400L))
@@ -84,5 +86,80 @@ class SkyExposureJoinPts03Test {
     fun `matchedFraction is null before any frame, never zero`() {
         assertNull(SkyExposureJoin<Frame>().statistics.matchedFraction)
         assertEquals(SkyJoinStatistics.EMPTY, SkyExposureJoin<Frame>().statistics)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Finalize: the exported statistics include what was pending, exactly once
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `a pending frame before finalize is counted as pending at stop in the final statistics`() {
+        val join = SkyExposureJoin<Frame>()
+        join.offerFrame(Frame(10L))
+        val final = join.finalizeJoin()
+        assertEquals(1L, final.framesPendingAtStopCount)
+        assertEquals(0L, final.captureResultsPendingAtStopCount)
+        assertEquals(0, join.pendingFrameCount)
+    }
+
+    @Test
+    fun `a pending result before finalize is counted as pending at stop in the final statistics`() {
+        val join = SkyExposureJoin<Frame>()
+        join.offerExposure(Pts03Fixtures.captureResult(timestampNanos = 10L))
+        assertEquals(1L, join.finalizeJoin().captureResultsPendingAtStopCount)
+    }
+
+    @Test
+    fun `finalizing twice, or draining after finalize, never changes the counts`() {
+        val join = SkyExposureJoin<Frame>()
+        join.offerFrame(Frame(10L))
+        join.offerExposure(Pts03Fixtures.captureResult(timestampNanos = 20L))
+        val first = join.finalizeJoin()
+        assertEquals(first, join.finalizeJoin())
+        join.drain()
+        assertEquals(first, join.statistics)
+    }
+
+    @Test
+    fun `offers after finalize are ignored and counted separately, never as frames or results`() {
+        val join = SkyExposureJoin<Frame>()
+        val first = join.finalizeJoin()
+        assertNull(join.offerFrame(Frame(10L)).matched)
+        assertNull(join.offerExposure(Pts03Fixtures.captureResult(timestampNanos = 10L)).matched)
+        val after = join.statistics
+        assertEquals(first.analysisFrameCount, after.analysisFrameCount)
+        assertEquals(first.captureResultCount, after.captureResultCount)
+        assertEquals(2L, after.offersIgnoredAfterFinalizeCount)
+        assertEquals(0, join.pendingFrameCount)
+    }
+
+    @Test
+    fun `the finalized session state exports the pending-at-stop counts`() {
+        val join = SkyExposureJoin<Frame>()
+        join.offerFrame(Frame(10L))
+        join.offerExposure(Pts03Fixtures.captureResult(timestampNanos = 20L))
+        val state =
+            initialFrameContentExperimentSessionState(attemptId = 1L, physicalCameraId = "3")
+                .reducePts03Finalized(1L, join.finalizeJoin())
+                .reducePts03Finalized(1L, join.finalizeJoin())
+        val stats = state.pts03.joinStatistics
+        assertEquals(1L, stats.framesPendingAtStopCount)
+        assertEquals(1L, stats.captureResultsPendingAtStopCount)
+        val json = buildPts03CameraTruthJson(state.pts03, Pts03CameraTruthExportTest.TEST_ENVIRONMENT, 0L, true)
+        val root =
+            kotlinx.serialization.json.Json
+                .parseToJsonElement(json)
+                .jsonObject
+        val exported = root.getValue("joinStatistics").jsonObject
+        assertEquals("1", exported.getValue("framesPendingAtStopCount").jsonPrimitive.content)
+        assertEquals("1", exported.getValue("captureResultsPendingAtStopCount").jsonPrimitive.content)
+        assertEquals(
+            "true",
+            root
+                .getValue("session")
+                .jsonObject
+                .getValue("finalized")
+                .jsonPrimitive.content,
+        )
     }
 }

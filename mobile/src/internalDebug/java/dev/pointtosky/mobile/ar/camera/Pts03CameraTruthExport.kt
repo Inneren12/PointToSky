@@ -99,14 +99,14 @@ private fun countsJson(counts: Map<String, Long>): JsonObject =
 // Per-frame CaptureResult
 // -------------------------------------------------------------------------------------------------
 
-/** One joined `CaptureResult`: SKY-1 exposure fields plus every PTS-03 field, nulls kept as JSON null. */
-internal fun pts03CaptureResultJson(captureResult: SkyCaptureResultSnapshot?): JsonElement {
-    if (captureResult == null) return JsonNull
-    val e = captureResult.exposure
-    val t = captureResult.cameraTruth
+/** The PTS-03 fields of one result object (top-level or physical) plus its exposure fields. */
+private fun resultTruthJson(
+    e: dev.pointtosky.core.astro.projection.camera.skylog.SkyExposureSample,
+    t: Pts03CaptureTruth,
+): JsonObject {
     val effective = t.effectiveDistortionMode()
     return buildJsonObject {
-        put("sensorTimestampNanos", captureResult.sensorTimestampNanos)
+        put("sensorTimestampNanos", t.sensorTimestampNanos)
         put("activePhysicalCameraId", t.activePhysicalCameraId)
         put("activePhysicalCameraIdAvailability", t.activePhysicalCameraIdAvailability.name)
         put("distortionCorrectionMode", pts03EnumJson(t.distortionCorrectionMode))
@@ -122,6 +122,8 @@ internal fun pts03CaptureResultJson(captureResult: SkyCaptureResultSnapshot?): J
         put("scalerCropRegion", pts03RectJson(t.scalerCropRegion))
         put("controlZoomRatio", t.controlZoomRatio?.toDouble())
         put("controlZoomRatioAvailability", t.controlZoomRatioAvailability.name)
+        put("activePhysicalSensorCropRegion", pts03RectJson(t.activePhysicalSensorCropRegion))
+        put("activePhysicalSensorCropRegionAvailability", t.activePhysicalSensorCropRegionAvailability.name)
         put("sensorExposureTimeNanos", e.exposureTimeNanos)
         put("sensorSensitivityIso", e.sensitivityIso)
         put("sensorFrameDurationNanos", e.frameDurationNanos)
@@ -134,6 +136,57 @@ internal fun pts03CaptureResultJson(captureResult: SkyCaptureResultSnapshot?): J
         put("edgeMode", pts03EnumJson(t.edgeMode))
     }
 }
+
+/**
+ * One joined `TotalCaptureResult`: the top-level (logical) result and every per-physical-camera result,
+ * kept apart, physical IDs in sorted order, nulls kept as JSON null.
+ */
+internal fun pts03CaptureResultJson(captureResult: SkyCaptureResultSnapshot?): JsonElement {
+    if (captureResult == null) return JsonNull
+    return buildJsonObject {
+        put("sensorTimestampNanos", captureResult.sensorTimestampNanos)
+        put("logicalTopLevelResult", resultTruthJson(captureResult.exposure, captureResult.logicalTruth))
+        put(
+            "physicalResultsByCameraId",
+            buildJsonObject {
+                captureResult.physicalResultsByCameraId.toSortedMap().forEach { (id, r) ->
+                    put(id, resultTruthJson(r.exposure, r.truth))
+                }
+            },
+        )
+    }
+}
+
+/** One frame's camera attribution (A1/A2 semantics; see [attributePts03Frame]). */
+internal fun pts03AttributionJson(a: Pts03FrameCameraAttribution): JsonObject =
+    buildJsonObject {
+        put("sessionClass", a.sessionClass.name)
+        put("requestedPhysicalCameraId", a.requestedPhysicalCameraId)
+        put("logicalActivePhysicalCameraId", a.logicalActivePhysicalCameraId)
+        put(
+            "logicalActivePhysicalCameraIdRole",
+            if (a.sessionClass ==
+                Pts03SessionClass.EXPLICIT_PHYSICAL
+            ) {
+                "DIAGNOSTIC_ONLY"
+            } else {
+                "PRODUCER"
+            },
+        )
+        put("producingPhysicalCameraId", a.producingPhysicalCameraId)
+        put("dynamicMetadataSource", a.dynamicMetadataSource.name)
+        put("physicalResultStatus", a.physicalResultStatus?.name)
+        put("physicalResultSensorTimestampNanos", a.physicalResultSensorTimestampNanos)
+        put(
+            "physicalResultTimestampMatched",
+            a.physicalResultStatus?.let {
+                it ==
+                    Pts03PhysicalResultStatus.PRESENT_TIMESTAMP_MATCHED
+            },
+        )
+        put("physicalDynamicMetadataResolved", a.physicalDynamicMetadataResolved)
+        put("effectiveDistortionMode", a.effectiveDistortionMode().label)
+    }
 
 internal fun pts03GeometryJson(geometry: Pts03AnalysisGeometry): JsonObject =
     buildJsonObject {
@@ -160,6 +213,7 @@ internal fun pts03JoinStatisticsJson(stats: SkyJoinStatistics): JsonObject =
         put("unkeyedCaptureResultCount", stats.unkeyedCaptureResultCount)
         put("framesPendingAtStopCount", stats.framesPendingAtStopCount)
         put("captureResultsPendingAtStopCount", stats.captureResultsPendingAtStopCount)
+        put("offersIgnoredAfterFinalizeCount", stats.offersIgnoredAfterFinalizeCount)
     }
 
 // -------------------------------------------------------------------------------------------------
@@ -252,7 +306,8 @@ internal fun pts03ExtrinsicJson(e: Pts03ExtrinsicEvidence): JsonObject =
 internal fun pts03DomainEvidenceJson(d: Pts03ProjectionDomainEvidence): JsonObject =
     buildJsonObject {
         put("requestedPhysicalCameraId", d.requestedPhysicalCameraId)
-        put("activePhysicalCameraId", d.activePhysicalCameraId)
+        put("producingPhysicalCameraId", d.producingPhysicalCameraId)
+        put("logicalActivePhysicalCameraIdDiagnostic", d.logicalActivePhysicalCameraId)
         put("bufferWidthPx", d.bufferWidthPx)
         put("bufferHeightPx", d.bufferHeightPx)
         put("sensorToBufferTransformMatrix", doubles(d.matrixRowMajor))
@@ -328,10 +383,12 @@ private fun evidenceCaptureJson(capture: Pts03TargetEvidenceCapture): JsonObject
         put("captureIndex", capture.captureIndex)
         put("generation", snapshot.generation)
         put("lighting", capture.lighting.name)
+        put("lightingSource", "FRAME_AT_CAPTURE")
         put("targetPlacementLabel", snapshot.targetPlacementLabel.name)
         put("distanceLabelMm", snapshot.distanceLabelMm)
         put("requestedDistortionMode", capture.requestedDistortionMode.name)
         put("effectiveDistortionMode", capture.effectiveDistortionMode.label)
+        put("attribution", pts03AttributionJson(capture.attribution))
         put("captureResult", pts03CaptureResultJson(snapshot.captureResult))
         put(
             "geometry",
@@ -401,8 +458,17 @@ private fun frameRecordJson(r: Pts03FrameTruthRecord): JsonObject =
         put("sensorTimestampNanos", r.sensorTimestampNanos)
         put("lighting", r.lighting.name)
         put("geometry", pts03GeometryJson(r.geometry))
+        put("attribution", pts03AttributionJson(r.attribution))
         put("captureResult", pts03CaptureResultJson(r.captureResult))
     }
+
+private fun nestedCountsJson(m: Map<String, Map<String, Long>>): JsonObject =
+    buildJsonObject { m.toSortedMap().forEach { (k, v) -> put(k, countsJson(v)) } }
+
+private fun <V> listsJson(
+    m: Map<String, List<V>>,
+    element: (V) -> JsonElement,
+): JsonObject = buildJsonObject { m.toSortedMap().forEach { (k, v) -> put(k, JsonArray(v.map(element))) } }
 
 private fun identityJson(
     summary: Pts03IdentitySummary,
@@ -410,92 +476,121 @@ private fun identityJson(
 ): JsonObject =
     buildJsonObject {
         put("matchedFrameCount", summary.matchedFrameCount)
-        put("framesByActivePhysicalId", countsJson(summary.framesByActivePhysicalId))
-        put("framesWithNullActivePhysicalId", summary.framesWithNullActivePhysicalId)
         put(
-            "activePhysicalIdAvailabilityCounts",
-            countsJson(
-                summary.activePhysicalIdAvailabilityCounts.mapKeys {
-                    it.key.name
-                },
-            ),
-        )
-        put(
-            "framesByLightingAndActivePhysicalId",
+            "logicalTopLevel",
             buildJsonObject {
-                summary.framesByLightingAndActivePhysicalId.toSortedMap(compareBy { it.ordinal }).forEach { (l, m) ->
-                    put(l.name, countsJson(m))
-                }
-            },
-        )
-        put("transitionCount", summary.transitionCount)
-        put(
-            "transitions",
-            buildJsonArray {
-                summary.transitions.forEach { t ->
-                    add(
-                        buildJsonObject {
-                            put("frameIndex", t.frameIndex)
-                            put("sensorTimestampNanos", t.sensorTimestampNanos)
-                            put("from", t.fromActivePhysicalCameraId)
-                            put("to", t.toActivePhysicalCameraId)
-                            put("lighting", t.lighting.name)
+                put(
+                    "role",
+                    if (session.sessionClass == Pts03SessionClass.EXPLICIT_PHYSICAL) {
+                        "DIAGNOSTIC_ONLY: describes the logical camera's backing sensor, " +
+                            "not the explicit physical output"
+                    } else {
+                        "PRODUCER: the A1 logical stream's producing physical camera"
+                    },
+                )
+                put("framesByLogicalActivePhysicalId", countsJson(summary.framesByLogicalActivePhysicalId))
+                put("framesWithNullActivePhysicalId", summary.framesWithNullActivePhysicalId)
+                put(
+                    "activePhysicalIdAvailabilityCounts",
+                    countsJson(
+                        summary.activePhysicalIdAvailabilityCounts.mapKeys {
+                            it.key.name
                         },
-                    )
-                }
+                    ),
+                )
+                put(
+                    "framesByLightingAndLogicalActivePhysicalId",
+                    buildJsonObject {
+                        summary.framesByLightingAndLogicalActivePhysicalId
+                            .toSortedMap(
+                                compareBy { it.ordinal },
+                            ).forEach { (l, m) ->
+                                put(l.name, countsJson(m))
+                            }
+                    },
+                )
+                put(
+                    "transitionRule",
+                    "between two REPORTED active IDs only; frames without the key are gaps, not identities",
+                )
+                put("transitionCount", summary.transitionCount)
+                put(
+                    "transitions",
+                    buildJsonArray {
+                        summary.transitions.forEach { t ->
+                            add(
+                                buildJsonObject {
+                                    put("frameIndex", t.frameIndex)
+                                    put("sensorTimestampNanos", t.sensorTimestampNanos)
+                                    put("from", t.fromActivePhysicalCameraId)
+                                    put("to", t.toActivePhysicalCameraId)
+                                    put("lighting", t.lighting.name)
+                                },
+                            )
+                        }
+                    },
+                )
             },
         )
         put(
-            "focalLengthsMmByActivePhysicalId",
+            "explicitPhysicalOutput",
             buildJsonObject {
-                summary.focalLengthsMmByActivePhysicalId.toSortedMap().forEach { (k, v) ->
-                    put(k, floats(v))
-                }
+                put("requestedPhysicalOutputId", session.requestedPhysicalCameraId)
+                put(
+                    "physicalResultStatus",
+                    summarizePts03ExplicitPhysicalResults(
+                        session.sessionClass,
+                        session.requestedPhysicalCameraId,
+                        summary,
+                    ).name,
+                )
+                put(
+                    "physicalResultStatusCounts",
+                    countsJson(summary.physicalResultStatusCounts.mapKeys { it.key.name }),
+                )
             },
         )
+        put("framesByPhysicalResultCameraId", countsJson(summary.framesByPhysicalResultCameraId))
+        put("dynamicMetadataSourceCounts", countsJson(summary.dynamicMetadataSourceCounts.mapKeys { it.key.name }))
         put(
-            "intrinsicsByActivePhysicalId",
+            "producingCamera",
             buildJsonObject {
-                summary.intrinsicsByActivePhysicalId.toSortedMap().forEach { (k, v) ->
-                    put(k, JsonArray(v.map { floats(it) }))
-                }
+                put(
+                    "rule",
+                    "A1: reported logical active ID; A2: requested physical output ID; " +
+                        "dynamic values only from the attributed result",
+                )
+                put("framesByProducingPhysicalId", countsJson(summary.framesByProducingPhysicalId))
+                put(
+                    "focalLengthsMmByProducingPhysicalId",
+                    listsJson(summary.focalLengthsMmByProducingPhysicalId) {
+                        JsonPrimitive(it.toDouble())
+                    },
+                )
+                put(
+                    "intrinsicsByProducingPhysicalId",
+                    listsJson(summary.intrinsicsByProducingPhysicalId) { floats(it) },
+                )
+                put(
+                    "cropRegionsByProducingPhysicalId",
+                    listsJson(summary.cropRegionsByProducingPhysicalId) { pts03RectJson(it) },
+                )
+                put(
+                    "zoomRatiosByProducingPhysicalId",
+                    listsJson(summary.zoomRatiosByProducingPhysicalId) {
+                        JsonPrimitive(it.toDouble())
+                    },
+                )
+                put(
+                    "activePhysicalSensorCropRegionsByProducingPhysicalId",
+                    listsJson(summary.activePhysicalSensorCropRegionsByProducingPhysicalId) { pts03RectJson(it) },
+                )
+                put(
+                    "effectiveDistortionModeCountsByProducingPhysicalId",
+                    nestedCountsJson(summary.effectiveDistortionModeCountsByProducingPhysicalId),
+                )
+                put("afStateCountsByProducingPhysicalId", nestedCountsJson(summary.afStateCountsByProducingPhysicalId))
             },
-        )
-        put(
-            "cropRegionsByActivePhysicalId",
-            buildJsonObject {
-                summary.cropRegionsByActivePhysicalId.toSortedMap().forEach { (k, v) ->
-                    put(k, JsonArray(v.map { pts03RectJson(it) }))
-                }
-            },
-        )
-        put(
-            "zoomRatiosByActivePhysicalId",
-            buildJsonObject {
-                summary.zoomRatiosByActivePhysicalId.toSortedMap().forEach { (k, v) ->
-                    put(k, floats(v))
-                }
-            },
-        )
-        put(
-            "effectiveDistortionModeCountsByActivePhysicalId",
-            buildJsonObject {
-                summary.effectiveDistortionModeCountsByActivePhysicalId.toSortedMap().forEach { (k, v) ->
-                    put(k, countsJson(v))
-                }
-            },
-        )
-        put(
-            "afStateCountsByActivePhysicalId",
-            buildJsonObject {
-                summary.afStateCountsByActivePhysicalId.toSortedMap().forEach { (k, v) ->
-                    put(k, countsJson(v))
-                }
-            },
-        )
-        put(
-            "explicitBindingIdentityConfirmation",
-            confirmPts03ExplicitIdentity(session.sessionClass, session.requestedPhysicalCameraId, summary).name,
         )
     }
 
@@ -538,6 +633,7 @@ internal fun buildPts03CameraTruthJson(
                     put("requestedPhysicalCameraId", session.requestedPhysicalCameraId)
                     put("requestedDistortionMode", session.requestedDistortionMode.name)
                     put("lightingAtExport", session.lighting.name)
+                    put("finalized", session.finalized)
                     put("zoomPinned", session.sessionClass == Pts03SessionClass.EXPLICIT_PHYSICAL)
                 },
             )
@@ -660,20 +756,25 @@ internal fun buildPts03CameraTruthSummaryText(session: Pts03TruthSessionState): 
                 "matched=${stats.matchedCount} " +
                 "fraction=${stats.matchedFraction?.let { "%.3f".format(it) } ?: "n/a"}",
         )
+        appendLine("finalized=${session.finalized}")
         appendLine(
-            "activePhysicalIds=${session.identity.framesByActivePhysicalId.toSortedMap()} " +
-                "transitions=${session.identity.transitionCount}",
+            "logicalActiveIds=${session.identity.framesByLogicalActivePhysicalId.toSortedMap()} " +
+                "transitions(reported-only)=${session.identity.transitionCount}",
         )
+        if (session.sessionClass == Pts03SessionClass.EXPLICIT_PHYSICAL) {
+            appendLine(
+                "A2 output=${session.requestedPhysicalCameraId} physicalResult=" +
+                    summarizePts03ExplicitPhysicalResults(
+                        session.sessionClass,
+                        session.requestedPhysicalCameraId,
+                        session.identity,
+                    ) +
+                    " (logical active ID is diagnostic only)",
+            )
+        }
         appendLine(
-            "explicitIdentity=${confirmPts03ExplicitIdentity(
-                session.sessionClass,
-                session.requestedPhysicalCameraId,
-                session.identity,
-            )}",
-        )
-        appendLine(
-            "distortion requested=${session.requestedDistortionMode} effective=" +
-                session.identity.effectiveDistortionModeCountsByActivePhysicalId.toSortedMap(),
+            "distortion requested=${session.requestedDistortionMode} effective(by producer)=" +
+                session.identity.effectiveDistortionModeCountsByProducingPhysicalId.toSortedMap(),
         )
         appendLine("evidenceCaptures=${session.evidenceCaptures.size}")
         session.distortionChains().forEach {

@@ -49,7 +49,8 @@ class Pts03ProjectionDomainEvidenceTest {
                 bufferHeightPx = snapshot.bufferHeightPx,
                 logical = Pts03Fixtures.logicalSnapshot(),
                 physical = Pts03Fixtures.physicalSnapshot(),
-                activePhysicalCameraId = "3",
+                producingPhysicalCameraId = "3",
+                logicalActivePhysicalCameraId = "2",
                 requestedPhysicalCameraId = "3",
                 frameContentVerdict = snapshot.verdict.verdict,
             )
@@ -74,6 +75,7 @@ class Pts03ProjectionDomainEvidenceTest {
                 Pts03Fixtures.logicalSnapshot(),
                 Pts03Fixtures.physicalSnapshot(),
                 "3",
+                null,
                 "3",
                 snapshot.verdict.verdict,
             )
@@ -106,6 +108,7 @@ class Pts03ProjectionDomainEvidenceTest {
                 Pts03Fixtures.logicalSnapshot(),
                 bigPhysical,
                 "3",
+                null,
                 "3",
                 null,
             )
@@ -122,6 +125,7 @@ class Pts03ProjectionDomainEvidenceTest {
                 640,
                 480,
                 Pts03Fixtures.logicalSnapshot(),
+                null,
                 null,
                 null,
                 null,
