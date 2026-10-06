@@ -29,27 +29,59 @@ interface EphemerisComputer {
     fun compute(body: Body, instant: Instant): Ephemeris
 }
 
+/**
+ * Paul Schlyter orbital-element day zero ("How to compute planetary positions"):
+ * 2000 Jan 0.0 = 1999-12-31T00:00 = JD 2451543.5. Schlyter's `d` is days since this instant.
+ * It is neither J2000.0 (JD 2451545.0) nor 2000-01-01T00:00 (JD 2451544.5).
+ */
+internal const val SCHLYTER_DAY_ZERO_JD: Double = 2451543.5
+
+/**
+ * J2000.0 = 2000-01-01T12:00 TT = JD 2451545.0, origin of the Julian centuries `T` used by the
+ * mean-obliquity polynomial. Not interchangeable with [SCHLYTER_DAY_ZERO_JD].
+ */
+internal const val J2000_JD: Double = 2451545.0
+
+private const val DAYS_PER_JULIAN_CENTURY = 36525.0
+
+/** Schlyter day number `d` for the orbital elements: `JD - 2451543.5`. */
+internal fun schlyterDayNumber(julianDay: Double): Double = julianDay - SCHLYTER_DAY_ZERO_JD
+
+/** Julian centuries from J2000.0: `(JD - 2451545.0) / 36525`. */
+internal fun julianCenturiesFromJ2000(julianDay: Double): Double = (julianDay - J2000_JD) / DAYS_PER_JULIAN_CENTURY
+
+/**
+ * Low-precision geocentric ephemeris after Paul Schlyter's tutorial
+ * (https://stjarnhimlen.se/comp/tutorial.html).
+ *
+ * Two time arguments are derived from the same Julian day and must not be mixed:
+ * - orbital elements, perturbation arguments: Schlyter day number, `JD - 2451543.5` ([SCHLYTER_DAY_ZERO_JD]);
+ * - mean obliquity of the ecliptic: Julian centuries from J2000.0, `(JD - 2451545.0) / 36525` ([J2000_JD]).
+ *
+ * Output: geocentric, geometric, mean equator and equinox of date; no light-time, aberration, nutation or
+ * precession to another epoch. The UTC instant is used as the time argument (ΔT ignored).
+ */
 class SimpleEphemerisComputer : EphemerisComputer {
 
     override fun compute(body: Body, instant: Instant): Ephemeris {
         val jd = instantToJulianDay(instant)
-        val d = jd - JD_AT_2000_01_01_00UT
-        val eclDeg = meanObliquityDegrees(d)
+        val schlyterDay = schlyterDayNumber(jd)
+        val eclDeg = meanObliquityDegrees(julianCenturiesFromJ2000(jd))
         val eclRad = degToRad(eclDeg)
 
-        val sun = computeSun(d, eclRad)
+        val sun = computeSun(schlyterDay, eclRad)
         val jupiterMeanAnomalyDeg = wrapDeg0To360(
-            JUPITER_ELEMENTS.meanAnomaly + JUPITER_ELEMENTS.meanAnomalyRate * d,
+            JUPITER_ELEMENTS.meanAnomaly + JUPITER_ELEMENTS.meanAnomalyRate * schlyterDay,
         )
         val saturnMeanAnomalyDeg = wrapDeg0To360(
-            SATURN_ELEMENTS.meanAnomaly + SATURN_ELEMENTS.meanAnomalyRate * d,
+            SATURN_ELEMENTS.meanAnomaly + SATURN_ELEMENTS.meanAnomalyRate * schlyterDay,
         )
 
         return when (body) {
             Body.SUN -> Ephemeris(sun.equatorial, sun.distanceAu)
-            Body.MOON -> computeMoon(d, eclRad, sun)
+            Body.MOON -> computeMoon(schlyterDay, eclRad, sun)
             Body.JUPITER -> computePlanet(
-                d,
+                schlyterDay,
                 eclRad,
                 sun,
                 JUPITER_ELEMENTS,
@@ -58,7 +90,7 @@ class SimpleEphemerisComputer : EphemerisComputer {
                 ::applyJupiterPerturbations,
             )
             Body.SATURN -> computePlanet(
-                d,
+                schlyterDay,
                 eclRad,
                 sun,
                 SATURN_ELEMENTS,
@@ -288,8 +320,8 @@ class SimpleEphemerisComputer : EphemerisComputer {
         )
     }
 
-    private fun meanObliquityDegrees(d: Double): Double {
-        val t = d / 36525.0
+    /** [t] is Julian centuries from J2000.0 ([julianCenturiesFromJ2000]), never the Schlyter day number. */
+    private fun meanObliquityDegrees(t: Double): Double {
         // Meeus-style approximation. TODO: upgrade to IAU-2006 precession in v1.
         return 23.439291 - 0.0130042 * t - 1.64e-7 * t * t + 5.04e-7 * t * t * t
     }
@@ -366,7 +398,6 @@ class SimpleEphemerisComputer : EphemerisComputer {
     )
 
     private companion object {
-        private const val JD_AT_2000_01_01_00UT = 2451544.5
         private const val EARTH_RADIUS_AU = 0.0000426349653318 // 6378.14 km / AU
 
         // TODO: replace with high-precision solar theory (VSOP87/ELP/IAU-2006/SOFA) in v1.
