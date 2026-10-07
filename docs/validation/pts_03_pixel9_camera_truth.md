@@ -313,22 +313,29 @@ timestamp).
 `LENS_POSE_REFERENCE`, `SENSOR_ORIENTATION`, `LENS_FACING`, `REQUEST_AVAILABLE_CAPABILITIES`,
 `INFO_SUPPORTED_HARDWARE_LEVEL`, `SENSOR_INFO_TIMESTAMP_SOURCE`.
 
-## Local validation (this revision, base `main @ bfd5530`)
+## Local validation (this revision, base `main @ dfffb23bef7022a61f6cfe8bbaf61da3ddbacf74`)
 
-CI execution pending GitHub Actions availability; required local suites pass. Run locally (JDK 17
-toolchain, Android SDK 35) with `--rerun-tasks`:
+Tested PR head: `979f7053d5cfb06d9f2be3c355b88d8ed87944c1` (all code and tests of this revision; the commit that
+follows it changes only this document). Run locally with a JDK 17 toolchain and Android SDK 35. In this sandbox,
+Maven Central answered HTTP 429, so a local-only Gradle init script outside the repository resolved it via
+Google's public Maven Central mirror; no build file was changed.
 
 | Command | Result |
 |---|---|
-| `./gradlew :core:astro-core:test` | 681 tests, 0 failures |
-| `./gradlew :mobile:testInternalDebugUnitTest` | 847 tests, 0 failures (88 PTS-03 tests across 9 classes) |
-| `./gradlew :mobile:testPublicDebugUnitTest` | 371 tests, 0 failures (variant boundary unaffected) |
-| `./gradlew :mobile:compileInternalDebugKotlin` | success |
-| `./gradlew :mobile:assembleInternalDebug` | success |
-| `./gradlew :mobile:compileInternalDebugAndroidTestKotlin` | success (instrumented tests compiled, **not run**: no device) |
-| `./gradlew :mobile:lintInternalDebug` | success |
+| `./gradlew :core:astro-core:test --rerun-tasks` | PASS — 681 tests, 0 failures, 0 errors |
+| `./gradlew :mobile:testInternalDebugUnitTest --rerun-tasks` | PASS — 860 tests, 0 failures, 0 errors (83 classes) |
+| `./gradlew :mobile:testInternalDebugUnitTest --tests '*Pts03PhysicalBindingRequestTest*' --rerun-tasks` | PASS — 13 tests, 0 failures |
+| `./gradlew :mobile:testPublicDebugUnitTest --rerun-tasks` | PASS — 371 tests, 0 failures, 0 errors |
+| `./gradlew :mobile:compileInternalDebugKotlin` | PASS |
+| `./gradlew :mobile:assembleInternalDebug` | PASS |
+| `./gradlew :mobile:compileInternalDebugAndroidTestKotlin` | PASS — instrumented tests compiled, **not executed** on a device |
+| `./gradlew :mobile:lintInternalDebug` | PASS |
 
-Focused PTS-03 classes: `Pts03CaptureResultTruthTest`, `SkyExposureJoinPts03Test`, `Pts03LensPoseTest`,
-`Pts03DistortionStateTest`, `Pts03ProjectionDomainEvidenceTest`, `Pts03StaticCharacteristicsTest`,
-`Pts03CameraTruthSessionTest`, `Pts03CameraTruthExportTest`, `Pts03PhysicalResultTest`; the unchanged-rule SKY-1 `SkyExposureJoinTest`
-still passes.
+Focused PTS-03 classes, 101 tests across 10 classes, all passing in the run above: `Pts03CaptureResultTruthTest` (9),
+`SkyExposureJoinPts03Test` (9), `Pts03LensPoseTest` (12), `Pts03DistortionStateTest` (9),
+`Pts03ProjectionDomainEvidenceTest` (5), `Pts03StaticCharacteristicsTest` (5), `Pts03CameraTruthSessionTest` (21),
+`Pts03CameraTruthExportTest` (8), `Pts03PhysicalResultTest` (10), `Pts03PhysicalBindingRequestTest` (13).
+
+GitHub Actions: the Android jobs fail in `android-actions/setup-android` (`sdkmanager`: "Failed to find package
+'tools'") before any project build step, identically on base `main @ dfffb23`. That is the known PTS-02 SDK-setup
+infrastructure failure and is not addressed here.
