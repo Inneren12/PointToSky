@@ -1,6 +1,7 @@
 package dev.pointtosky.core.astro.projection.camera.prediction
 
 import dev.pointtosky.core.astro.projection.camera.PixelPoint
+import dev.pointtosky.core.astro.projection.camera.match.angleBetweenRad
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.atan
@@ -165,6 +166,102 @@ class PinholeProjectionModelUnprojectTest {
             "the fixture should expose the plate-scale approximation error; guess=$plateScaleGuess exact=$collinearRad",
         )
     }
+
+    @Test
+    fun `returns a unit forward ray for pixels at the extremes of the finite range`() {
+        // Squaring the raw normalized components overflows long before Double does: each of these is a
+        // perfectly legal PixelPoint, and the unscaled sqrt(x^2 + y^2 + 1) turned them into (0, 0, 0) —
+        // finite, so nothing threw, but not a direction either.
+        val model = asymmetricModel(axisSwapped = true, negateXInput = true, negateYInput = true)
+
+        for (point in extremePixels()) {
+            val ray = model.unprojectToCameraRay(point)
+
+            assertTrue(
+                ray.x.isFinite() && ray.y.isFinite() && ray.z.isFinite(),
+                "components must be finite at $point; was $ray",
+            )
+            assertTrue(ray.z > 0.0, "ray at $point must face forward; was $ray")
+
+            val normSquared = ray.x * ray.x + ray.y * ray.y + ray.z * ray.z
+            assertEquals(1.0, normSquared, UNIT_TOLERANCE, "ray at $point is not unit length; was $ray")
+
+            // The consumer-side gate on the same promise: angleBetweenRad refuses anything that is not a
+            // unit ray, so this is the producer and the consumer agreeing rather than a restatement.
+            assertEquals(0.0, angleBetweenRad(ray, ray), "a ray against itself must be zero at $point")
+        }
+    }
+
+    @Test
+    fun `an extreme pixel keeps its direction, not merely unit length`() {
+        // Unit length alone is a weak claim — (0, 0, 1) would satisfy it for every input. The direction
+        // is what the ray is for, so check the ratios the inverse is defined by: x/z and y/z must come
+        // back as the normalized components that produced the pixel. Going through the model's own
+        // forward map keeps the orientation flags out of the expectation, so this asserts the ratio
+        // rather than re-deriving the algebra.
+        val model = asymmetricModel(axisSwapped = true, negateXInput = true)
+
+        for ((normalizedX, normalizedY) in listOf(
+            1.0e300 to -3.0e299,
+            -7.5e250 to 2.5e250,
+            1.0e150 to 4.0e-3,
+            2.0e40 to -6.0e40,
+        )) {
+            val pixel = model.project(normalizedX = normalizedX, normalizedY = normalizedY)
+            val ray = model.unprojectToCameraRay(pixel)
+
+            // Relative, because these magnitudes have no meaningful absolute tolerance.
+            assertEquals(1.0, (ray.x / ray.z) / normalizedX, 1e-12, "x/z ratio lost for $normalizedX")
+            assertEquals(1.0, (ray.y / ray.z) / normalizedY, 1e-12, "y/z ratio lost for $normalizedY")
+        }
+    }
+
+    @Test
+    fun `ordinary pixels are bit-for-bit unaffected by the scale-safe normalization`() {
+        // Whenever both normalized components fall inside the unit square — every pixel of a real frame,
+        // and every pixel this file samples — the scale factor is exactly 1.0 and the arithmetic reduces
+        // to what it was before. Asserted as exact equality against the pre-fix expression, not a
+        // tolerance, so a future rewrite that merely stays "close enough" on the ordinary path is caught.
+        // The flags are off here so the normalized components are `(px - c) / f` by definition, which is
+        // what lets the expected value be written without re-deriving the flag logic.
+        val model = model(fx = 493.7, fy = 612.1, cx = 201.5, cy = 311.25)
+
+        for (point in samplePixels()) {
+            val normalizedX = (point.x - 201.5) / 493.7
+            val normalizedY = (point.y - 311.25) / 612.1
+            assertTrue(
+                abs(normalizedX) <= 1.0 && abs(normalizedY) <= 1.0,
+                "this fixture must stay on the scale-factor-1.0 path to mean anything; was $point",
+            )
+            val length = sqrt(normalizedX * normalizedX + normalizedY * normalizedY + 1.0)
+
+            val ray = model.unprojectToCameraRay(point)
+
+            assertEquals(normalizedX / length, ray.x, "x drifted at $point")
+            assertEquals(normalizedY / length, ray.y, "y drifted at $point")
+            assertEquals(1.0 / length, ray.z, "z drifted at $point")
+        }
+    }
+
+    /**
+     * Finite pixels chosen to break the normalization rather than the model: `Double.MAX_VALUE` in each
+     * sign, both axes at once, one huge axis beside an ordinary one, and large off-frame coordinates in
+     * both signs. Every one of these is accepted by [PixelPoint], and with these focal lengths every one
+     * of them squares to `Infinity` in the unscaled form.
+     */
+    private fun extremePixels(): List<PixelPoint> =
+        listOf(
+            PixelPoint(Double.MAX_VALUE, 240.0),
+            PixelPoint(-Double.MAX_VALUE, 240.0),
+            PixelPoint(320.0, Double.MAX_VALUE),
+            PixelPoint(Double.MAX_VALUE, Double.MAX_VALUE),
+            PixelPoint(-Double.MAX_VALUE, Double.MAX_VALUE),
+            PixelPoint(Double.MAX_VALUE, -Double.MAX_VALUE),
+            PixelPoint(1.0e200, -4.0e200),
+            PixelPoint(-1.0e200, 4.0e200),
+            PixelPoint(1.0e300, 97.1),
+            PixelPoint(-5.5e175, -2.25e175),
+        )
 
     /** The angle between the rays of two buffer pixels, straight from the dot product of the unit rays. */
     private fun separationRad(

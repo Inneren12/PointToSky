@@ -6,6 +6,7 @@ import dev.pointtosky.core.astro.projection.camera.PixelPoint
 import dev.pointtosky.core.astro.projection.camera.prediction.BufferOpticalCameraVector
 import dev.pointtosky.core.astro.projection.camera.prediction.PinholeProjectionModel
 import dev.pointtosky.core.astro.projection.camera.quality
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
@@ -25,8 +26,8 @@ import kotlin.math.sqrt
  *
  * ## The path a matcher is expected to take
  * ```text
- * detected pixel (DetectedSource.xPx/yPx)  ->  cameraRayFor(...)  ->  unit camera ray  ->  angular
- * invariant (e.g. acos of the dot product of two rays)
+ * detected pixel (DetectedSource.xPx/yPx)  ->  cameraRayFor(...)  ->  unit camera ray  ->
+ * angleBetweenRad(...)  ->  angular invariant
  * ```
  * [cameraRayFor] is the **only** sanctioned pixel→ray step. It delegates to
  * [PinholeProjectionModel.unprojectToCameraRay], the single canonical inverse of the production forward
@@ -34,6 +35,12 @@ import kotlin.math.sqrt
  * `axisSwapped`/`negateXInput`/`negateYInput` orientation flags. A consumer must not re-derive that
  * inverse: a second hand-written inversion is a second camera-coordinate contract, and the flags are
  * exactly the part that a from-the-outside re-derivation gets wrong.
+ *
+ * [angleBetweenRad] is the sanctioned ray→angle step for the same kind of reason: it is the function the
+ * angular extents below are already measured with, and its `atan2` form stays numerically stable at the
+ * fractions of a degree a matcher works at, where an open-coded `acos` of a dot product does not (see
+ * its own KDoc). It takes **unit** rays — which is what [cameraRayFor] returns — and rejects anything
+ * else rather than guessing.
  *
  * [radiansPerPixelXOnAxis]/[radiansPerPixelYOnAxis] are **not** part of that path. They are a
  * first-order, on-axis plate scale for sizing a search radius or a match tolerance, and they degrade
@@ -249,27 +256,100 @@ data class AnalysisBufferScale(
 }
 
 /**
- * Angle between two camera rays, radians, in `[0, π]`.
+ * The unsigned angle between two **unit** camera rays, radians, in `[0, π]` — the matcher's ray→angle
+ * step.
  *
- * `atan2(|a × b|, a · b)` rather than `acos(a · b)`: for the small angles this type is mostly used at —
- * an image edge a few degrees off axis, two stars a fraction of a degree apart — `acos` loses roughly
- * half its significant digits, because its argument sits on the flat part of the cosine near 1. The
- * `atan2` form stays accurate across the whole range and needs no clamping to survive a dot product
- * that floating point nudged just past 1.
+ * ## What the arguments must be
+ * [a] and [b] are finite unit rays, normally obtained from [AnalysisBufferScale.cameraRayFor], and that
+ * is **enforced**, not merely documented: each argument's squared norm must sit within `1e-6` of `1.0`
+ * (`UNIT_RAY_NORM_SQUARED_TOLERANCE`, whose KDoc justifies the value) or the call throws.
+ * [BufferOpticalCameraVector] itself
+ * guarantees only that its components are finite, so without this check `angleBetweenRad(zero, ray)`
+ * would evaluate `atan2(0, 0)` and hand back `0.0` — an angle, from a vector that has no direction —
+ * and a vector with `1e300`-scale components would overflow the intermediate products into `Infinity`
+ * before `atan2` ever saw them. Both are rejected here instead.
  *
- * Not a matcher utility, and deliberately not public: it exists so the angular extents above can be
- * measured between real rays. A consumer computing an invariant takes the dot product of two
- * [AnalysisBufferScale.cameraRayFor] results itself — both are unit vectors, so nothing here is needed
- * to interpret them.
+ * Nothing is silently normalized. Along the sanctioned path every ray is already unit, so a non-unit
+ * argument means the geometry was assembled wrong somewhere upstream; normalizing it would make that
+ * bug produce a plausible angle instead of a stack trace. A caller holding a ray from the *prediction*
+ * chain ([dev.pointtosky.core.astro.projection.camera.prediction.worldToDeviceVector] onward, which
+ * never renormalizes and inherits the attitude matrix's orthonormality error) must normalize it itself,
+ * deliberately, before calling.
+ *
+ * The result is the angle between the two *directions*: symmetric in its arguments and zero for a ray
+ * against itself, and unsigned — which of the two rays is "first" is not a fact this can report, and a
+ * matcher that needs an orientation has to get it from the geometry it is fitting, not from here.
+ *
+ * ## Why `atan2`, not `acos`
+ * `atan2(|a × b|, a · b)` rather than `acos(a · b)`: for the small angles this is mostly used at — an
+ * image edge a few degrees off axis, two stars a fraction of a degree apart — `acos` loses roughly half
+ * its significant digits, because its argument sits on the flat part of the cosine near 1. The `atan2`
+ * form is far better conditioned across the whole range (it is still floating-point arithmetic, not an
+ * exact answer) and needs no clamping to survive a dot product that floating point nudged just past 1.
+ * `CameraRayAngleTest` measures the gap against an analytic reference: at a sixty-fourth of a pixel of
+ * separation `acos(a · b)` is already wrong in its eighth significant digit, and at ten nanoradians it
+ * collapses to exactly zero, while this form matches the reference to within the tested tolerance at
+ * both.
+ *
+ * Public **so that there is exactly one of it**. The angular extents on [AnalysisBufferScale] are
+ * measured with this function, and a consumer computing an angular invariant calls the same one rather
+ * than open-coding `acos` of a dot product a second time — which is the version that quietly loses the
+ * precision an invariant is built out of. Still not a matcher utility beyond that: no association, no
+ * invariant, no descriptor lives here.
+ *
+ * @throws IllegalArgumentException if either argument is not a unit ray — the zero vector, a vector
+ *   whose components are finite but whose squared norm overflows or underflows, or any other
+ *   measurably non-unit vector.
  */
-private fun angleBetweenRad(
+fun angleBetweenRad(
     a: BufferOpticalCameraVector,
     b: BufferOpticalCameraVector,
 ): Double {
+    requireUnitRay(a, "a")
+    requireUnitRay(b, "b")
+
     val crossX = a.y * b.z - a.z * b.y
     val crossY = a.z * b.x - a.x * b.z
     val crossZ = a.x * b.y - a.y * b.x
     val crossMagnitude = sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ)
     val dot = a.x * b.x + a.y * b.y + a.z * b.z
     return atan2(crossMagnitude, dot)
+}
+
+/**
+ * How far a ray's **squared** norm may sit from `1.0` before [angleBetweenRad] refuses it.
+ *
+ * Squared rather than the norm itself so the check costs no `sqrt`; near `1.0` the two differ only by a
+ * factor of two, which is well inside the margin this value is chosen with.
+ *
+ * `1e-6` is generous against the producers it has to accept and decisive against everything it has to
+ * reject. [PinholeProjectionModel.unprojectToCameraRay] divides by a `sqrt` in `Double` and lands within
+ * two ulps — `CameraRayAngleTest` measures `4.5e-16` as the worst case over the buffer, on and off axis,
+ * with the orientation flags set — and unit vectors built from `sin`/`cos` or `1/sqrt(3)` land within
+ * one. That leaves ten orders of magnitude of headroom, while `(2, 0, 0)`, the zero vector, and any
+ * vector whose squared norm overflows to `Infinity` or underflows to `0.0` are all far outside it. It is
+ * deliberately much tighter than `SkySessionLog.kt`'s `ROTATION_MATRIX_ORTHONORMAL_TOLERANCE` (`1e-3`),
+ * which is loose because it has to tolerate `Float`-derived sensor attitude: nothing on this function's
+ * contract comes from that path.
+ */
+private const val UNIT_RAY_NORM_SQUARED_TOLERANCE: Double = 1e-6
+
+/**
+ * Refuses [ray] unless it is a unit vector, naming [argumentName] so the caller can tell which of
+ * [angleBetweenRad]'s two arguments was malformed.
+ *
+ * The finiteness check is not redundant with [BufferOpticalCameraVector]'s own: its components can each
+ * be finite while their squares overflow, and `Infinity` reaching `atan2` would surface as a quiet `0.0`
+ * or `NaN` rather than as the contract violation it is.
+ */
+private fun requireUnitRay(
+    ray: BufferOpticalCameraVector,
+    argumentName: String,
+) {
+    val normSquared = ray.x * ray.x + ray.y * ray.y + ray.z * ray.z
+    require(normSquared.isFinite() && abs(normSquared - 1.0) <= UNIT_RAY_NORM_SQUARED_TOLERANCE) {
+        "angleBetweenRad requires unit rays (normally from AnalysisBufferScale.cameraRayFor); " +
+            "argument $argumentName had squared norm $normSquared, which is not within " +
+            "$UNIT_RAY_NORM_SQUARED_TOLERANCE of 1.0; was $ray"
+    }
 }

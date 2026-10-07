@@ -4,6 +4,8 @@ import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsReference
 import dev.pointtosky.core.astro.projection.camera.CameraIntrinsicsResolution
 import dev.pointtosky.core.astro.projection.camera.CameraSessionGeometry
 import dev.pointtosky.core.astro.projection.camera.PixelPoint
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.sqrt
 import kotlin.math.tan
 
@@ -161,6 +163,24 @@ data class PinholeProjectionModel(
      * Ray magnitudes are never clamped and [point] is never required to lie inside the image: a
      * detection near the frame border and a candidate that projected just outside it are both
      * meaningful, exactly as [project] never clamps its own output.
+     *
+     * ## Scale safety
+     * "Any finite pixel" means the whole finite range, not just plausible ones, and the normalization
+     * below is written for that: it divides by the largest component before squaring, so no intermediate
+     * ever overflows and no component is flushed to zero on the way. Squaring the raw components first —
+     * the obvious `sqrt(x² + y² + 1)` — breaks down well inside the finite range: a `PixelPoint` near
+     * `Double.MAX_VALUE` makes `x²` infinite and the whole vector collapses to `(0, 0, 0)`, which is
+     * finite, silent, and not a direction. That matters beyond tidiness, because
+     * [dev.pointtosky.core.astro.projection.camera.match.angleBetweenRad] enforces the unit-ray promise
+     * made here; a producer that quietly broke it would surface as a rejected argument in the consumer.
+     * `PinholeProjectionModelUnprojectTest` pins the extremes, including that the returned direction
+     * still has the right `x/z` and `y/z` ratios rather than merely being some unit vector.
+     *
+     * The one way out of that guarantee is a degenerate model rather than an extreme pixel: a focal
+     * length far below `1.0`, or a principal point whose magnitude rivals `Double.MAX_VALUE`, can
+     * overflow the subtract-and-divide *above* this normalization. The non-finite component is then
+     * rejected by [BufferOpticalCameraVector]'s own constructor instead of being normalized into a
+     * plausible-looking ray.
      */
     fun unprojectToCameraRay(point: PixelPoint): BufferOpticalCameraVector {
         // Undo project()'s pixel scaling first, then its axis relabelling, in the reverse order it was
@@ -173,13 +193,26 @@ data class PinholeProjectionModel(
         val normalizedY = if (axisSwapped) xInput else yInput
 
         // (normalizedX, normalizedY, 1) is the ray at unit depth, by projectBufferOpticalDirection's own
-        // definition (normalizedX = cameraX / cameraZ). The length is never zero — the z component alone
-        // contributes 1 — so normalization here can never divide by zero for any finite pixel.
-        val length = sqrt(normalizedX * normalizedX + normalizedY * normalizedY + 1.0)
+        // definition (normalizedX = cameraX / cameraZ). Normalizing it directly would square the raw
+        // components, and squaring is what fails first: a pixel far enough off axis makes
+        // normalizedX * normalizedX overflow to Infinity, after which every component divides to 0.0 and
+        // a perfectly finite pixel yields the zero vector — finite, but neither unit nor forward-facing.
+        // Dividing through by the largest component first keeps all three squares in [0, 1] and costs
+        // nothing on the ordinary path: whenever |normalizedX| and |normalizedY| are both <= 1 the scale
+        // is exactly 1.0 and the arithmetic below is bit-for-bit the unscaled form.
+        val scale = max(1.0, max(abs(normalizedX), abs(normalizedY)))
+        val scaledX = normalizedX / scale
+        val scaledY = normalizedY / scale
+        val scaledZ = 1.0 / scale
+
+        // In [1, sqrt(3)] always: by construction one of the three scaled components is exactly ±1. So
+        // this can neither divide by zero nor amplify a component, and scaledZ — itself never smaller
+        // than 1 / Double.MAX_VALUE — stays strictly positive through the division.
+        val scaledLength = sqrt(scaledX * scaledX + scaledY * scaledY + scaledZ * scaledZ)
         return BufferOpticalCameraVector(
-            x = normalizedX / length,
-            y = normalizedY / length,
-            z = 1.0 / length,
+            x = scaledX / scaledLength,
+            y = scaledY / scaledLength,
+            z = scaledZ / scaledLength,
         )
     }
 
