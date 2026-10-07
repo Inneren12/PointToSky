@@ -24,8 +24,12 @@ import kotlinx.serialization.json.put
  *
  * ## Schema history
  * - `1`: initial PTS-03 export.
+ * - `2`: PTS-03 follow-up. `physicalBindingRequest` (the physical ID requested on the selector, the Preview
+ *   interop and the ImageAnalysis interop — REQUESTED_BIND_CONFIGURATION, not a proven producer);
+ *   `physicalResultObservation` per frame and per session (with counts) in Group A. A2 sessions in schema 2
+ *   set the interop IDs; schema-1 A2 sessions pinned the selector only.
  */
-internal const val PTS03_CAMERA_TRUTH_JSON_SCHEMA_VERSION: Int = 1
+internal const val PTS03_CAMERA_TRUTH_JSON_SCHEMA_VERSION: Int = 2
 
 /**
  * The CameraX version this build declares (`gradle/libs.versions.toml` `camerax`). Pinned to the catalog by
@@ -157,6 +161,18 @@ internal fun pts03CaptureResultJson(captureResult: SkyCaptureResultSnapshot?): J
     }
 }
 
+/**
+ * What the bind requested at each of the three physical-ID levels (`null` = not set). A record of
+ * configuration ([Pts03PhysicalBindingRequest]), never of which sensor produced the frames.
+ */
+internal fun pts03PhysicalBindingRequestJson(r: Pts03PhysicalBindingRequest): JsonObject =
+    buildJsonObject {
+        put("provenance", "REQUESTED_BIND_CONFIGURATION")
+        put("selectorPhysicalCameraId", r.selectorPhysicalCameraId)
+        put("previewInteropPhysicalCameraId", r.previewInteropPhysicalCameraId)
+        put("analysisInteropPhysicalCameraId", r.analysisInteropPhysicalCameraId)
+    }
+
 /** One frame's camera attribution (A1/A2 semantics; see [attributePts03Frame]). */
 internal fun pts03AttributionJson(a: Pts03FrameCameraAttribution): JsonObject =
     buildJsonObject {
@@ -184,6 +200,7 @@ internal fun pts03AttributionJson(a: Pts03FrameCameraAttribution): JsonObject =
                     Pts03PhysicalResultStatus.PRESENT_TIMESTAMP_MATCHED
             },
         )
+        put("physicalResultObservation", a.physicalResultObservation?.name)
         put("physicalDynamicMetadataResolved", a.physicalDynamicMetadataResolved)
         put("effectiveDistortionMode", a.effectiveDistortionMode().label)
     }
@@ -548,6 +565,23 @@ private fun identityJson(
                     "physicalResultStatusCounts",
                     countsJson(summary.physicalResultStatusCounts.mapKeys { it.key.name }),
                 )
+                put(
+                    "physicalResultObservation",
+                    summarizePts03PhysicalResultObservation(
+                        session.sessionClass,
+                        session.requestedPhysicalCameraId,
+                        summary,
+                    ).name,
+                )
+                put(
+                    "physicalResultObservationCounts",
+                    countsJson(summary.physicalResultObservationCounts.mapKeys { it.key.name }),
+                )
+                put(
+                    "physicalResultObservationRule",
+                    "top-level logical active ID qualifies a missing physical result as a diagnostic only; " +
+                        "only PHYSICAL_RESULT_PRESENT resolves physical dynamic metadata",
+                )
             },
         )
         put("framesByPhysicalResultCameraId", countsJson(summary.framesByPhysicalResultCameraId))
@@ -637,6 +671,7 @@ internal fun buildPts03CameraTruthJson(
                     put("zoomPinned", session.sessionClass == Pts03SessionClass.EXPLICIT_PHYSICAL)
                 },
             )
+            put("physicalBindingRequest", pts03PhysicalBindingRequestJson(session.physicalBindingRequest))
             put(
                 "safety",
                 buildJsonObject {
@@ -769,7 +804,19 @@ internal fun buildPts03CameraTruthSummaryText(session: Pts03TruthSessionState): 
                         session.requestedPhysicalCameraId,
                         session.identity,
                     ) +
+                    " observation=" +
+                    summarizePts03PhysicalResultObservation(
+                        session.sessionClass,
+                        session.requestedPhysicalCameraId,
+                        session.identity,
+                    ) +
                     " (logical active ID is diagnostic only)",
+            )
+            val request = session.physicalBindingRequest
+            appendLine(
+                "requested bind: selector=${request.selectorPhysicalCameraId} " +
+                    "previewInterop=${request.previewInteropPhysicalCameraId} " +
+                    "analysisInterop=${request.analysisInteropPhysicalCameraId}",
             )
         }
         appendLine(

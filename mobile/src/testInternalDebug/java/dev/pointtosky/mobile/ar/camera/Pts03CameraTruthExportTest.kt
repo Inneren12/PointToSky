@@ -69,10 +69,10 @@ class Pts03CameraTruthExportTest {
 
     @Test
     fun `schema version is pinned`() {
-        assertEquals(1, PTS03_CAMERA_TRUTH_JSON_SCHEMA_VERSION)
+        assertEquals(2, PTS03_CAMERA_TRUTH_JSON_SCHEMA_VERSION)
         val root = parse(buildPts03CameraTruthJson(session(), environment, 5L, includeAllRetainedFrameRecords = true))
         assertEquals("pointtosky.pts03.camera_truth", root["schema"]!!.jsonPrimitive.content)
-        assertEquals(1, root["schemaVersion"]!!.jsonPrimitive.int)
+        assertEquals(2, root["schemaVersion"]!!.jsonPrimitive.int)
     }
 
     @Test
@@ -89,6 +89,7 @@ class Pts03CameraTruthExportTest {
                 "exportedAtEpochMillis",
                 "environment",
                 "session",
+                "physicalBindingRequest",
                 "safety",
                 "streamConfiguration",
                 "joinStatistics",

@@ -141,6 +141,8 @@ internal data class Pts03IdentitySummary(
     val dynamicMetadataSourceCounts: Map<Pts03DynamicMetadataSource, Long> = emptyMap(),
     /** A2: status of the requested ID's physical result per frame. Empty in A1. */
     val physicalResultStatusCounts: Map<Pts03PhysicalResultStatus, Long> = emptyMap(),
+    /** A2: [Pts03PhysicalResultObservation] per frame. Empty in A1. */
+    val physicalResultObservationCounts: Map<Pts03PhysicalResultObservation, Long> = emptyMap(),
     /** Which physical IDs appeared in each frame's physical-result map (any session class). */
     val framesByPhysicalResultCameraId: Map<String, Long> = emptyMap(),
     val framesByProducingPhysicalId: Map<String, Long> = emptyMap(),
@@ -195,6 +197,9 @@ internal data class Pts03IdentitySummary(
                 physicalResultStatusCounts =
                     attribution.physicalResultStatus?.let { physicalResultStatusCounts.increment(it) }
                         ?: physicalResultStatusCounts,
+                physicalResultObservationCounts =
+                    attribution.physicalResultObservation?.let { physicalResultObservationCounts.increment(it) }
+                        ?: physicalResultObservationCounts,
                 framesByPhysicalResultCameraId =
                     record.captureResult.physicalResultsByCameraId.keys
                         .fold(framesByPhysicalResultCameraId) { acc, k -> acc.increment(k) },
@@ -299,6 +304,26 @@ internal fun summarizePts03ExplicitPhysicalResults(
 }
 
 /**
+ * A2 session-level device-result discriminator: the per-frame [Pts03PhysicalResultObservation] when every
+ * matched frame agrees, [Pts03PhysicalResultObservation.MIXED] otherwise. Like the per-frame value, it never
+ * promotes the top-level logical active ID to the producer of the analysed stream.
+ */
+internal fun summarizePts03PhysicalResultObservation(
+    sessionClass: Pts03SessionClass,
+    requestedPhysicalCameraId: String?,
+    summary: Pts03IdentitySummary,
+): Pts03PhysicalResultObservation {
+    if (sessionClass == Pts03SessionClass.LOGICAL_UNPINNED || requestedPhysicalCameraId == null) {
+        return Pts03PhysicalResultObservation.NOT_APPLICABLE_LOGICAL_SESSION
+    }
+    if (summary.matchedFrameCount == 0L) return Pts03PhysicalResultObservation.NO_MATCHED_FRAMES
+    val observed = summary.physicalResultObservationCounts.filterValues { it > 0L }.keys
+    return observed.singleOrNull()?.takeIf {
+        summary.physicalResultObservationCounts[it] == summary.matchedFrameCount
+    } ?: Pts03PhysicalResultObservation.MIXED
+}
+
+/**
  * One operator-captured printed-target placement: the frozen frame-content snapshot (which carries its own
  * exact-joined `CaptureResult` and the lighting label of its own frame), the camera attribution of that
  * frame, the Group B evidence computed from it, and the residual points Group C measures. Nothing here is
@@ -373,6 +398,17 @@ internal data class Pts03TruthSessionState(
     val evidenceCaptures: List<Pts03TargetEvidenceCapture> = emptyList(),
 ) {
     val totalFrameRecords: Long get() = identity.matchedFrameCount
+
+    /**
+     * The physical IDs this bind requests (selector, Preview interop, ImageAnalysis interop). Derived from
+     * [requestedPhysicalCameraId] — `null` for A1 — so the bind and the export read the same request.
+     * REQUESTED_BIND_CONFIGURATION, never a proven producer.
+     */
+    val physicalBindingRequest: Pts03PhysicalBindingRequest
+        get() =
+            Pts03PhysicalBindingRequest(
+                requestedPhysicalCameraId.takeIf { sessionClass == Pts03SessionClass.EXPLICIT_PHYSICAL },
+            )
 
     /** Frames folded into the summaries but not retained as raw records. */
     val omittedFrameRecords: Long get() = totalFrameRecords - headRecords.size - tailRecords.size
