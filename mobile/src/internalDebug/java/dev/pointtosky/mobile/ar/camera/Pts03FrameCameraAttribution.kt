@@ -11,8 +11,9 @@ import dev.pointtosky.core.astro.projection.camera.skylog.SkyExposureSample
  * - **A1 [Pts03SessionClass.LOGICAL_UNPINNED]**: the analysed stream is the logical camera's. Its producing
  *   physical camera is the top-level `LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID` when reported, otherwise
  *   unknown. The top-level result is the stream's own dynamic metadata. Natural switching is inferred only here.
- * - **A2 [Pts03SessionClass.EXPLICIT_PHYSICAL]**: `CameraSelector.setPhysicalCameraId(id)` configures a
- *   physical-camera-specific output, so the producing camera is the requested ID **by configuration**. The
+ * - **A2 [Pts03SessionClass.EXPLICIT_PHYSICAL]**: the requested ID is set on the `CameraSelector` and, since
+ *   the PTS-03 follow-up, on both use cases via `Camera2Interop` (see [Pts03PhysicalBindingRequest]), so the
+ *   producing camera is the requested ID **by configuration**. The
  *   top-level active ID describes the logical camera's backing sensor, not this output: it is kept as a
  *   diagnostic and never confirms or contradicts the pin. Dynamic metadata for this output comes only from
  *   the physical result entry for the requested ID with an exactly matching `SENSOR_TIMESTAMP`; when that
@@ -42,6 +43,63 @@ internal enum class Pts03DynamicMetadataSource {
     UNRESOLVED_PHYSICAL_RESULT_TIMESTAMP_MISSING,
 }
 
+/**
+ * PTS-03 follow-up: how one A2 frame's physical-result lookup turned out, together with what the top-level
+ * logical active ID said about the logical camera on the same result. The top-level part is a **diagnostic
+ * qualifier only**: [PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_DIFFERS_FROM_REQUESTED] is unresolved dynamic
+ * metadata, not evidence that the analysed pixels came from the top-level camera, and
+ * [PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_MATCHES_REQUESTED] does not resolve physical metadata either. Only
+ * [PHYSICAL_RESULT_PRESENT] does.
+ */
+internal enum class Pts03PhysicalResultObservation {
+    /** A timestamp-matched physical result for the requested ID. */
+    PHYSICAL_RESULT_PRESENT,
+
+    /** No physical result for the requested ID; the top-level active ID equals the requested ID. */
+    PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_MATCHES_REQUESTED,
+
+    /** No physical result for the requested ID; the top-level active ID is a different camera. */
+    PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_DIFFERS_FROM_REQUESTED,
+
+    /** No physical result for the requested ID, and the top-level active ID is not reported either. */
+    PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_NOT_REPORTED,
+
+    /** A physical result for the requested ID whose `SENSOR_TIMESTAMP` differs from the frame's. */
+    PHYSICAL_RESULT_TIMESTAMP_MISMATCH,
+
+    /** A physical result for the requested ID without a `SENSOR_TIMESTAMP`. */
+    PHYSICAL_RESULT_TIMESTAMP_MISSING,
+
+    /** Session level only: an A1 session, where no physical ID is requested. */
+    NOT_APPLICABLE_LOGICAL_SESSION,
+
+    /** Session level only: no matched frames. */
+    NO_MATCHED_FRAMES,
+
+    /** Session level only: matched frames did not all share one observation. */
+    MIXED,
+}
+
+/** The per-frame observation for a requested ID, a lookup status and the top-level logical active ID. */
+internal fun pts03PhysicalResultObservationOf(
+    requestedPhysicalCameraId: String,
+    status: Pts03PhysicalResultStatus,
+    logicalActivePhysicalCameraId: String?,
+): Pts03PhysicalResultObservation =
+    when (status) {
+        Pts03PhysicalResultStatus.PRESENT_TIMESTAMP_MATCHED -> Pts03PhysicalResultObservation.PHYSICAL_RESULT_PRESENT
+        Pts03PhysicalResultStatus.TIMESTAMP_MISMATCH ->
+            Pts03PhysicalResultObservation.PHYSICAL_RESULT_TIMESTAMP_MISMATCH
+        Pts03PhysicalResultStatus.TIMESTAMP_MISSING -> Pts03PhysicalResultObservation.PHYSICAL_RESULT_TIMESTAMP_MISSING
+        Pts03PhysicalResultStatus.NOT_REPORTED ->
+            when (logicalActivePhysicalCameraId) {
+                null -> Pts03PhysicalResultObservation.PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_NOT_REPORTED
+                requestedPhysicalCameraId ->
+                    Pts03PhysicalResultObservation.PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_MATCHES_REQUESTED
+                else -> Pts03PhysicalResultObservation.PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_DIFFERS_FROM_REQUESTED
+            }
+    }
+
 internal data class Pts03FrameCameraAttribution(
     val sessionClass: Pts03SessionClass,
     val frameSensorTimestampNanos: Long,
@@ -60,6 +118,19 @@ internal data class Pts03FrameCameraAttribution(
     val dynamicTruth: Pts03CaptureTruth?,
     val dynamicExposure: SkyExposureSample?,
 ) {
+    /** A2 only: [physicalResultStatus] qualified by the top-level active ID (diagnostic); `null` in A1. */
+    val physicalResultObservation: Pts03PhysicalResultObservation?
+        get() =
+            if (requestedPhysicalCameraId != null && physicalResultStatus != null) {
+                pts03PhysicalResultObservationOf(
+                    requestedPhysicalCameraId,
+                    physicalResultStatus,
+                    logicalActivePhysicalCameraId,
+                )
+            } else {
+                null
+            }
+
     /** True when per-camera dynamic metadata is attributable to [producingPhysicalCameraId]. */
     val physicalDynamicMetadataResolved: Boolean
         get() = producingPhysicalCameraId != null && dynamicTruth != null

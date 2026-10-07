@@ -9,7 +9,6 @@ import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraInfo
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.ResolutionInfo
@@ -139,9 +138,17 @@ internal class FrameContentJoinControl {
 internal const val FRAME_CONTENT_JOIN_CAPACITY: Int = 16
 
 /**
- * Binds CameraX `Preview` + `ImageAnalysis` for [cameraSelector] (an explicit physical-camera selector
- * — see [explicitPhysicalCameraSelector] — or, for the PTS-03 A1 session, the plain logical back camera),
- * reading the analysis `ImageAnalysis.Analyzer`'s luma plane directly (task §1).
+ * Binds CameraX `Preview` + `ImageAnalysis` as [physicalBindingRequest] says, reading the analysis
+ * `ImageAnalysis.Analyzer`'s luma plane directly (task §1).
+ *
+ * ## PTS-03 follow-up: the physical ID is requested at all three levels
+ * For A2 ([Pts03PhysicalBindingRequest.explicitPhysicalCameraId] `X`) the selector is
+ * [explicitPhysicalCameraSelector]`(X)` **and** both builders get `Camera2Interop.Extender.setPhysicalCameraId(X)`
+ * — the same ID, so the bound use cases never carry conflicting physical IDs. The selector pin is kept on
+ * purpose; the redundancy is a diagnostic control (see [Pts03PhysicalBindingRequest]). For A1 nothing is
+ * pinned: the plain logical back camera and no interop physical ID. The interop setter exists only on API 28+;
+ * an A2 bind below that reports `explicit_physical_interop_api_unsupported` rather than binding a session
+ * whose export would claim a request that was never applied.
  *
  * ## PTS-03: every delivered frame carries its own `CaptureResult`
  * A `Camera2Interop` session capture callback on the same session builds one [SkyCaptureResultSnapshot] per
@@ -164,7 +171,7 @@ internal const val FRAME_CONTENT_JOIN_CAPACITY: Int = 16
 @Composable
 internal fun FrameContentCameraPreview(
     modifier: Modifier = Modifier,
-    cameraSelector: CameraSelector,
+    physicalBindingRequest: Pts03PhysicalBindingRequest,
     analysisResolutionOverride: AnalysisResolutionRequest?,
     targetSpec: FrameContentTargetSpec,
     detectionTolerances: FrameContentDetectionTolerances,
@@ -242,11 +249,24 @@ internal fun FrameContentCameraPreview(
             }
 
         scope.launch {
+            if (physicalBindingRequest.isExplicitPhysical &&
+                android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P
+            ) {
+                session.shutdownExecutorOnce { analysisExecutor.shutdownNow() }
+                MobileLog.cameraAnalysisBindFailed("explicit_physical_interop_api_unsupported")
+                currentOnExplicitBindFailure("explicit_physical_interop_api_unsupported")
+                return@launch
+            }
             val cameraProvider = context.getFrameContentCameraProvider()
             if (session.isDisposed) return@launch
 
             val previewBuilder = androidx.camera.core.Preview.Builder()
-            Camera2Interop.Extender(previewBuilder).applyPts03DistortionMode(requestedDistortionMode)
+            val previewInterop = Camera2Interop.Extender(previewBuilder)
+            // Physical output ID and distortion mode are separate Camera2Interop options; neither replaces the other.
+            previewInterop.applyPts03DistortionMode(requestedDistortionMode)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                physicalBindingRequest.previewInteropPhysicalCameraId?.let { previewInterop.setPhysicalCameraId(it) }
+            }
             val preview = previewBuilder.build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
 
             val analysisBuilder =
@@ -270,6 +290,9 @@ internal fun FrameContentCameraPreview(
             Camera2Interop.Extender(analysisBuilder).apply {
                 setSessionCaptureCallback(captureCallback)
                 applyPts03DistortionMode(requestedDistortionMode)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    physicalBindingRequest.analysisInteropPhysicalCameraId?.let { setPhysicalCameraId(it) }
+                }
             }
             val imageAnalysis =
                 analysisBuilder
@@ -300,7 +323,13 @@ internal fun FrameContentCameraPreview(
             var boundCamera: Camera? = null
             val bindFailure: RuntimeException? =
                 try {
-                    boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
+                    boundCamera =
+                        cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            physicalBindingRequest.cameraSelector(),
+                            preview,
+                            imageAnalysis,
+                        )
                     null
                 } catch (e: IllegalStateException) {
                     e

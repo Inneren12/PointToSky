@@ -42,7 +42,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.camera.core.CameraSelector
 import androidx.core.content.ContextCompat
 import dev.pointtosky.mobile.ar.EXPLICIT_PHYSICAL_CAMERA_FIXED_ZOOM_RATIO
 import dev.pointtosky.mobile.ar.copyCamDiagnosticTextToClipboard
@@ -351,8 +350,8 @@ internal fun FrameContentCorrespondenceSession(
     Box(modifier = Modifier.fillMaxSize()) {
         FrameContentCameraPreview(
             modifier = Modifier.fillMaxSize(),
-            cameraSelector =
-                if (isLogicalSession) CameraSelector.DEFAULT_BACK_CAMERA else explicitPhysicalCameraSelector(state.physicalCameraId),
+            // The same request object the PTS-03 export records, so the export states exactly what was bound.
+            physicalBindingRequest = state.pts03.physicalBindingRequest,
             analysisResolutionOverride = requestedResolution,
             targetSpec = DEFAULT_FRAME_CONTENT_TARGET_SPEC,
             detectionTolerances = DEFAULT_FRAME_CONTENT_DETECTION_TOLERANCES,

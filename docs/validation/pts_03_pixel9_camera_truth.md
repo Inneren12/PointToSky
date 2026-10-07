@@ -53,7 +53,8 @@ Two session classes, never merged, with different identity semantics (per-frame 
 - **A1 `LOGICAL_UNPINNED`** — logical rear camera bound as production binds it (`DEFAULT_BACK_CAMERA`, no
   `setPhysicalCameraId`, no zoom call). Producing camera = the top-level active ID when reported, else
   unknown; the top-level result is the stream's dynamic metadata. **Only here** is natural switching inferred.
-- **A2 `EXPLICIT_PHYSICAL`** — `setPhysicalCameraId(id)` configures a physical-camera-specific output, so the
+- **A2 `EXPLICIT_PHYSICAL`** — `setPhysicalCameraId(id)` on the selector and, from export schema 2, on the
+  Preview and ImageAnalysis `Camera2Interop` too (see *A2 physical-ID propagation follow-up* below), so the
   producing camera is the requested ID **by configuration**. The top-level active ID describes the logical
   camera's backing sensor, not this output: it is recorded as a **diagnostic only** and never confirms or
   contradicts the pin. Dynamic metadata for the output comes only from `physicalResultsByCameraId[id]` with a
@@ -74,6 +75,65 @@ frame reporting `4`). Missing-key frames are still counted (`framesWithNullActiv
 | A2: physical result present for it? timestamp matched? | UNRESOLVED (pending) | `explicitPhysicalOutput.physicalResultStatus` (`PHYSICAL_RESULT_PRESENT` / `_PARTIALLY_PRESENT` / `_NOT_REPORTED` / `_TIMESTAMP_MISMATCH`), `physicalResultStatusCounts`; per frame `attribution.physicalResultTimestampMatched` |
 | A2: top-level logical active ID | diagnostic only | `groupA_identity.logicalTopLevel.framesByLogicalActivePhysicalId` (role `DIAGNOSTIC_ONLY`) |
 | AF / focus behaviour per producing camera | UNRESOLVED (pending) | `producingCamera.afStateCountsByProducingPhysicalId`; per frame `controlAfMode`, `controlAfState`, `lensFocusDistanceDiopters`, `lensState` |
+
+### A2 physical-ID propagation follow-up (Pixel 9 re-test pending)
+
+**Trigger.** Pixel 9 (`tokay`, Android 17 / API 37, CameraX 1.4.2), A2 bound with the selector pin only
+(export schema 1): physical 2 → 746/746 matched, top-level active ID 2, `physicalResultsByCameraId = {}`;
+physical 3 → 389/389 matched, top-level active ID **2** on every frame, top-level focal length 6.9 mm,
+`physicalResultsByCameraId = {}`, and a 1280×720 `sensorToBufferTransformMatrix` with
+`sx = sy = 0.3137255` (= 1280 / 4080, the logical active-array width, not camera 3's 4032).
+
+**Bind configuration.**
+
+| | Selector | Preview interop | ImageAnalysis interop |
+|---|---|---|---|
+| Schema 1 (#245), A2 `X` | `X` | — | — |
+| Schema 2 (this follow-up), A2 `X` | `X` | `X` | `X` |
+| A1 (both schemas) | — | — | — |
+
+Recorded in the export as `physicalBindingRequest` (`provenance = REQUESTED_BIND_CONFIGURATION`, never a
+proven producer). The selector pin is kept deliberately; the redundancy is a diagnostic control.
+
+**What CameraX 1.4.2 does with each request (read from its sources, not observed on the device).**
+`ProcessCameraProvider` copies the selector's physical ID onto every bound `UseCase`. `Preview` passes it to
+its `SessionConfig.OutputConfig`; `ImageAnalysis.createPipeline` passes `null`, so with the selector alone
+the analysis `OutputConfig` carries no physical ID. `Camera2Interop.Extender.setPhysicalCameraId` is a
+different option (`camera2.cameraCaptureSession.physicalCameraId`); `CaptureSession` applies it to **every**
+stream's `OutputConfiguration.setPhysicalCameraId`, in preference to the per-`OutputConfig` ID. The distortion
+request is a separate `Camera2Interop` capture-request option, so the two do not overwrite each other. This
+makes the interop request a real control for the analysis stream. It does not predict what the Pixel 9 HAL
+reports: that is what the re-test decides.
+
+**Device-result discriminator** (`groupA_identity.explicitPhysicalOutput.physicalResultObservation`, counts in
+`physicalResultObservationCounts`, per frame `attribution.physicalResultObservation`):
+`PHYSICAL_RESULT_PRESENT` · `PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_MATCHES_REQUESTED` ·
+`PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_DIFFERS_FROM_REQUESTED` · `PHYSICAL_RESULT_NOT_REPORTED_TOP_LEVEL_NOT_REPORTED` ·
+`PHYSICAL_RESULT_TIMESTAMP_MISMATCH` · `PHYSICAL_RESULT_TIMESTAMP_MISSING` (session level also `MIXED`,
+`NO_MATCHED_FRAMES`, `NOT_APPLICABLE_LOGICAL_SESSION`). Only `PRESENT` resolves physical dynamic metadata; the
+top-level ID qualifies a missing result as a diagnostic and never becomes the producer. The schema-1 phys3
+shape (requested 3, top-level 2, no nested result) classifies as `..._DIFFERS_FROM_REQUESTED`: unresolved
+dynamic metadata, not proof that pixels came from camera 2.
+
+**Re-test (operator).** Install this revision as internalDebug; candidate **Physical camera 3**, lighting
+`NORMAL_INDOOR`, distortion `DEVICE_DEFAULT`, resolution 1280×720; run ~20–30 s; **Finalize & save PTS-03 JSON**.
+Decisive fields: `physicalBindingRequest`, `session.requestedPhysicalCameraId`, per-frame
+`captureResult.physicalResultsByCameraId`, `explicitPhysicalOutput.physicalResultStatus` /
+`physicalResultObservation`, `logicalTopLevel.framesByLogicalActivePhysicalId`, top-level `lensFocalLengthMm`,
+`streamConfiguration.analysisResolutionInfo`, `sensorToBufferTransformMatrix`.
+
+**Decision.**
+- *Outcome A* — `physicalResultsByCameraId["3"]` appears: the per-use-case request changed the observable
+  Camera2 result path; continue A2/B/C with this configuration.
+- *Outcome B* — `physicalResultsByCameraId` stays empty while all three `physicalBindingRequest` IDs are `3`:
+  record "Pixel 9 / Android 17 / CameraX 1.4.2: nested physical result metadata not exposed in this
+  experiment path even with selector + explicit Preview/ImageAnalysis physical-ID requests", stop metadata
+  experiments, and continue PTS-03 on configuration provenance, static physical characteristics,
+  frame-content correspondence, and conservatively unresolved dynamic physical metadata.
+
+| Re-test | Status |
+|---|---|
+| Physical 3, schema 2 | **pending device execution** |
 
 ## B — Projection domain (per physical ID)
 
