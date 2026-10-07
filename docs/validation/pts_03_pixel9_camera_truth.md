@@ -336,6 +336,6 @@ Focused PTS-03 classes, 101 tests across 10 classes, all passing in the run abov
 `Pts03ProjectionDomainEvidenceTest` (5), `Pts03StaticCharacteristicsTest` (5), `Pts03CameraTruthSessionTest` (21),
 `Pts03CameraTruthExportTest` (8), `Pts03PhysicalResultTest` (10), `Pts03PhysicalBindingRequestTest` (13).
 
-GitHub Actions: the Android jobs fail in `android-actions/setup-android` (`sdkmanager`: "Failed to find package
-'tools'") before any project build step, identically on base `main @ dfffb23`. That is the known PTS-02 SDK-setup
-infrastructure failure and is not addressed here.
+GitHub Actions on this PR: `Lint` PASS; `smoke` and `Build catalog artifacts` fail in
+`android-actions/setup-android` (`sdkmanager`: "Failed to find package 'tools'") before any project build step,
+as on base `main @ dfffb23`. That is the known PTS-02 SDK-setup infrastructure failure and is not addressed here.
